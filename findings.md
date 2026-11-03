@@ -1581,6 +1581,14 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **所以并行生成的改动面比预想小，而且形状要求明确**：候选骨架里加**多调用**条目即可，由现成的复数提取器拆成多项。但**必须用带块标签的 wire 形式**——两个裸 JSON 直接相接时 `api_json_ok(整段)` 不成立、复数扫描器又找不到块标签，会整段判空；带标签时每块各自闭合，F195/F196 的解析与扇出立刻可用。骨架预算需 96→约 192（两块 ≈ 74 token）。
 **实验本身已回滚**：两条 `echo` 与 `build_f197.log` 所在的探针版本不入主干——`git checkout engine/main.php` 回到 F196 提交态（`e4a178a`），主干无新增日志噪声。
 
+### F199 · 并行工具调用真正打通（`parallel_tool_calls` 开关 + 统一 wire 形态）
+**为什么 F198 失败而这次成功**：`api_constrain_loop` 在**任一候选完整匹配**时就结束（`engine/main.php:285` 的 `$done = 1`），所以只要单调用候选还在列表里，贪心解码永远先收一条 ⇒ 并行"看起来实现了却从不出现"。这次的解法不是改解码器（那会动所有语法路径的保证），而是**按调用方的意图换候选集**：`parallel_tool_calls:true` 时**只放两块串联的候选**，缺省仍放单块。
+**统一形态**：required 的候选一律用 `api_tool_wire()` 写成模板自己的带块标签形式（一个语法、一处提取），并把兜底分支加条件 `strpos($text, 开标签) === false`——F198 那次"参数变空"正是兜底用 `$reqSkels[0]` 顶替不可解析的带标签文本造成的静默错答。
+**活服务判据（成对、可判回归）**：同一 prompt/seed/两工具 —— 带 `"parallel_tool_calls":true` ⇒ **2 个调用**（`call_1 get_weather` / `call_2 get_time`，各自参数完整，40 token）；不带 ⇒ **1 个调用**（20 token）。常驻守卫 `chat-tool-parallel-calls` 同时断言"两项 / id 唯一 / 两个不同函数名 / 参数都在枚举内 / 缺省仍是一项"，回归与"开关失效"都能抓到。
+**已知不完整（别当成全好）**：成对候选每工具只取**第一个**参数候选，所以 prompt 里"get_time 用 London"实际回参仍是 `{"city":"Paris"}`（`engine/api_smoke_f199.log` 的断言只校验枚举合法）；要按语义挑值需要把每个工具的候选叉乘进候选集（组合数会平方级增长，需预算与去重策略）。
+**范围**：并行目前只在**非流式 + `tool_choice:"required"`** 生效；点名 `tool_choice:{name}` 与流式（chat `index` / Responses `output_index` 递增）未接；自由 `tools` 路径实测模型只答文本（`$text` 为 `Paris`，5 字符），要并行仍需模型自发产出多块。
+**回归**：`engine/build_f199c.log`（0 error）；`engine/run_f199.log` **134 PASS / 0 FAIL**（`TOOL-CALLS-PARALLEL`、`TOOL-CALLS-FANOUT` 均 PASS）；`engine/api_smoke_f199.log` **90/90**；`engine/par_smoke_f199.log` **8/8** + `engine/fairness_f199.log` PASS（短流 0.27 s vs 长流 4.95 s）；两服务日志 `Accept failed` 0 行，`serve*.on` 已清。判定用的诊断 echo 已在提交前移除。
+
 ### F198 · 并行生成首次尝试：负结果，且把真正的拦路石定位到 required 兜底分支
 **做了什么**：按 F197 的判定结果实现——加 `api_tool_wire()`（模板自己的带标签形式），在 required 候选里保留单调用骨架的同时追加**两块串联**的候选（A+B、B+A，各取每个工具的第一个参数候选），`maxSteps` 96→192；编译通过（`engine/build_f198.log`，0 error）。
 **实测结果是负的**：同一对工具同一 prompt 同一 seed 的 required 请求 ⇒ **`N_CALLS=1` 且 `arguments="{}"`**（`/c/Users/ASUS/AppData/Local/Temp/probe_f198.json`）。比 F194a 之前**更差**（F194a 是 1 项但参数为 `{"city":"Paris"}`）。
