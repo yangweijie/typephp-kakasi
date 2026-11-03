@@ -496,8 +496,9 @@
 
 | 05:10 | F159 oneOf 分支含 grammar：一次全绿 | — | 形状 `{"item":{"oneOf":[book/cd 两支…]}}`；**分支选择 = api_constrained 多候选约束解码**（const 首属性互异 → 分叉点模型选支），分支识别用 `api_constrain_loop` 契约（选中序列恰为一个候选完整 ids）+ `tok_encode` 尾比对；三边界核实：F142 展平器对无 enum 分支 no-op、F143 候选路径对 grammar 分支弃权、**平铺嵌套检测器会误认领**（lookahead 穿过 `[`）→ 新检测器排在 nested 前。Python 8 用例（含 5 防误认领）先行 ALL PASS → 实现 → 重建全量自检 `engine/build_f159.log`：**121 PASS / 0 FAIL**、`RUN_EXIT=0`、`SCHEMA-ONEOF-GRAMMAR: PASS`（本次模型选 book 支、title 空串——合法，如实记录）；`api_smoke.py 8000` **61/61**；服务已停（F159） |
 
-## 当前未决（2026-11-03 03:42 本地）
+## 当前未决（2026-11-03 03:50 本地）
 
+- **探针与暂缓项（未改码）**：① `/v1/completions` + `stream:true` 是**显式拒绝**（`completions streaming is not supported`），形状正确、无需修；② 整数 N 维数组（rank ≥ 7）需要 4 处检测 + 4 处分发（非流式 / 单槽 SSE / `api_schema_token_value` / 并行槽），本轮预算不足，代码已撤销、留待下个窗口按 `api_array_n_string_value` 模式实现并补 `SCHEMA-ARR7-INT`。
 - **F177（`output_format` + 本地 `$ref`）已验证**：无需改码（翻译先于预处理），新增 smoke `anth-json-schema-ref`；`api_smoke_f177.log` **74/74 PASS**。
 - **F176（Responses 流式工具出口）已验证**：`api_resp_call_start/done` + 两处工具出口 typed events；首跑抓到 arguments 二次转义并修复；`engine/build_f176c.log` 成功、`api_smoke_f176b.log` **73/73 PASS**（新增 `responses-tool-stream`）。
 - **F175（Responses 流式 schema 出口）已验证**：`$sJOut` 出口按 `$wantResponses` 输出 typed events；`engine/build_f175.log` 成功、`api_smoke_f175.log` **72/72 PASS**（新增 `responses-stream-json-schema`）。工具调用流式出口仍为 Chat 形状。
