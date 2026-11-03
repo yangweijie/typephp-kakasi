@@ -1818,6 +1818,153 @@ function api_array6_string_value(string $ids, string $prop, string $charset, int
     return $s;
 }
 
+// Generic N-dimensional string array for ranks not covered by the fixed builders (>= 7):
+// {"m":[[[…["word"]…]]]}. Each level allows up to maxPerLevel entries ("," opens the sublist
+// chain back down to the innermost level), then "]" closes one level; the tail closes the rest.
+function api_array_n_string_value(string $ids, string $prop, int $dims, string $charset, int $maxPerLevel, int $maxSteps, int $useCache = 1): string
+{
+    $charsetIds = gguf_charset_ids($charset);
+    $quoteIds = gguf_charset_ids("\"");
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($charsetIds == "" || $quoteIds == "" || $commaIds == "" || $bracketIds == "" || $dims < 2) {
+        return "";
+    }
+    $open = "";
+    for ($i = 0; $i < $dims; $i++) {
+        $open = $open . "[";
+    }
+    $pre = "{\"" . $prop . "\":" . $open . "\"";
+    $s = api_constrained($ids, [$pre], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $stepIds = $charsetIds . "," . $quoteIds;
+    $q = "," . $quoteIds . ",";
+    $cnt = [];
+    for ($i = 0; $i < $dims; $i++) {
+        $cnt[$i] = 1;
+    }
+    $closed = 0;
+    for ($d = 0; $d < $maxSteps; $d++) {
+        $nx = model_session_next_allowed(0, $stepIds);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos($q, "," . $nx . ",") !== false) {
+            $closed = 1;
+            break;
+        }
+    }
+    if ($closed == 0) {
+        $cq = api_constrained_continue(["\""], 4);
+        if ($cq == "") {
+            return "";
+        }
+        $s = $s . "," . $cq;
+    }
+    $lv = $dims - 1;
+    $guard = 0;
+    while ($lv >= 0 && $guard < 64) {
+        $guard++;
+        $allow = $cnt[$lv] >= $maxPerLevel ? $bracketIds : $commaIds . "," . $bracketIds;
+        $nx = model_session_next_allowed(0, $allow);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos("," . $bracketIds . ",", "," . $nx . ",") !== false) {
+            $lv = $lv - 1;
+            continue;
+        }
+        $nest = "";
+        for ($i = 0; $i < $dims - 1 - $lv; $i++) {
+            $nest = $nest . "[";
+        }
+        $fc = api_constrained_continue([$nest . "\""], 48);
+        if ($fc == "") {
+            return "";
+        }
+        $s = $s . "," . $fc;
+        $c2 = 0;
+        for ($d2 = 0; $d2 < $maxSteps; $d2++) {
+            $n2 = model_session_next_allowed(0, $stepIds);
+            if ($n2 < 0) {
+                break;
+            }
+            $s = $s . "," . $n2;
+            if (strpos($q, "," . $n2 . ",") !== false) {
+                $c2 = 1;
+                break;
+            }
+        }
+        if ($c2 == 0) {
+            $cq2 = api_constrained_continue(["\""], 4);
+            if ($cq2 == "") {
+                return "";
+            }
+            $s = $s . "," . $cq2;
+        }
+        $cnt[$lv] = $cnt[$lv] + 1;
+        for ($i = $lv + 1; $i < $dims; $i++) {
+            $cnt[$i] = 1;
+        }
+        $lv = $dims - 1;
+    }
+    $rest = "";
+    if ($lv >= 0) {
+        for ($i = 0; $i <= $lv; $i++) {
+            $rest = $rest . "]";
+        }
+    }
+    $rest = $rest . "}";
+    $cb = api_constrained_continue([$rest], 2 * $dims + 8);
+    if ($cb == "") {
+        return "";
+    }
+    return $s . "," . $cb;
+}
+
+// Rank of a pure nested string array (prop → array^n → string). Returns "<prop>|<n>" only for
+// ranks >= 7; the fixed 2..6 builders own the smaller ranks and run earlier.
+function api_response_schema_array_n_string(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    $schema = api_json_object_after($body, "schema");
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $pm = [];
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{/', $schema, $pm) != 1) {
+        return "";
+    }
+    $ip = strpos($schema, $pm[0]);
+    if ($ip === false) {
+        return "";
+    }
+    $win = substr($schema, $ip, 4000);
+    $sm = [];
+    if (preg_match('/^(.*?)"type"\s*:\s*"string"/s', $win, $sm) != 1) {
+        return "";
+    }
+    $head = $sm[1];
+    if (strpos($head, '"properties"') !== false) {
+        return "";
+    }
+    $na = preg_match_all('/"type"\s*:\s*"array"/', $head);
+    $nt = preg_match_all('/"type"\s*:/', $head);
+    if ($na < 7 || $na != $nt) {
+        return "";
+    }
+    return $pm[1] . "|" . $na;
+}
+
 // Detect six nested array levels ending in a string items type.
 function api_response_schema_array6_string(string $body): string
 {
@@ -5450,7 +5597,11 @@ Connection: close
                                 $scOut = api_constrained($ids, $schemaCands, 128, 1);
                             } else {
                                 // One-level nested string first (see the non-stream path).
-                                $scArr6 = api_response_schema_array6_string($body);
+                                $scArrN = api_response_schema_array_n_string($body);
+                                $scArr6 = "";
+                                if ($scArrN == "") {
+                                    $scArr6 = api_response_schema_array6_string($body);
+                                }
                                 $scArr5 = "";
                                 if ($scArr6 == "") {
                                     $scArr5 = api_response_schema_array5_string($body);
@@ -5500,7 +5651,11 @@ Connection: close
                                     $scMix = api_response_schema_mixed_object($body);
                                 }
                                 $scProp = [];
-                                if ($scArr6 != "") {
+                                if (isset($scArrN) && $scArrN != "") {
+                                    $sann = explode("|", $scArrN);
+                                    $scOut = api_array_n_string_value($ids, $sann[0], (int) $sann[1],
+                                        api_schema_charset(), 2, 3, 1);
+                                } else if ($scArr6 != "") {
                                     $scOut = api_array6_string_value($ids, $scArr6,
                                         api_schema_charset(), 2, 2, 2, 2, 2, 2, 3, 1);
                                 } else if ($scArr5 != "") {
@@ -6308,7 +6463,11 @@ function api_serve(int $port): void
                     if (count($sSchema) > 0) {
                         $sJOut = api_constrained($ids, $sSchema, 128, $prefixCache);
                     } else {
-                        $sArr6 = api_response_schema_array6_string($body);
+                        $sArrN = api_response_schema_array_n_string($body);
+                        $sArr6 = "";
+                        if ($sArrN == "") {
+                            $sArr6 = api_response_schema_array6_string($body);
+                        }
                         $sArr5 = "";
                         if ($sArr6 == "") {
                             $sArr5 = api_response_schema_array5_string($body);
@@ -6357,7 +6516,11 @@ function api_serve(int $port): void
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == "") {
                             $sMix = api_response_schema_mixed_object($body);
                         }
-                        if ($sArr6 != "") {
+                        if (isset($sArrN) && $sArrN != "") {
+                            $sann2 = explode("|", $sArrN);
+                            $sJOut = api_array_n_string_value($ids, $sann2[0], (int) $sann2[1],
+                                api_schema_charset(), 2, 3, $prefixCache);
+                        } else if ($sArr6 != "") {
                             $sJOut = api_array6_string_value($ids, $sArr6, api_schema_charset(), 2,
                                 2, 2, 2, 2, 2, 3, $prefixCache);
                         } else if ($sArr5 != "") {
@@ -6600,7 +6763,11 @@ function api_serve(int $port): void
                 } else {
                     // One-level nested string first: the flat detector would otherwise mistake
                     // the inner property for a top-level one.
-                    $arr6 = api_response_schema_array6_string($body);
+                    $arrN = api_response_schema_array_n_string($body);
+                    $arr6 = "";
+                    if ($arrN == "") {
+                        $arr6 = api_response_schema_array6_string($body);
+                    }
                     $arr5 = "";
                     if ($arr6 == "") {
                         $arr5 = api_response_schema_array5_string($body);
@@ -6656,7 +6823,12 @@ function api_serve(int $port): void
                         $mixPlan = api_response_schema_mixed_object($body);
                     }
                     $strProps = [];
-                    if ($arr6 != "") {
+                    if (isset($arrN) && $arrN != "") {
+                        $aann = explode("|", $arrN);
+                        $enumOut = api_array_n_string_value($ids, $aann[0], (int) $aann[1],
+                            api_schema_charset(), 2, 3, $prefixCache);
+                        $jsonMode = 1;
+                    } else if ($arr6 != "") {
                         $enumOut = api_array6_string_value($ids, $arr6, api_schema_charset(), 2, 2,
                             2, 2, 2, 2, 3, $prefixCache);
                         $jsonMode = 1;
@@ -9145,6 +9317,44 @@ function main(): void
         echo "SCHEMA-ARR6: PASS (six-level array assembled and closed)\n";
     } else {
         echo "SCHEMA-ARR6: FAIL shape=" . $f6Shape . "\n";
+    }
+
+    // Seven levels: the generic N-dimensional builder takes over from the fixed 2..6 ones.
+    $a7Open = "";
+    for ($i = 0; $i < 7; $i++) {
+        $a7Open = $a7Open . '{"type":"array","items":';
+    }
+    $a7Close = "";
+    for ($i = 0; $i < 7; $i++) {
+        $a7Close = $a7Close . "}";
+    }
+    $a7Body = '{"json_schema":{"name":"r","schema":{"type":"object","properties":{"m":'
+        . $a7Open . '{"type":"string"}' . $a7Close . '}}}}';
+    $a7Det = api_response_schema_array_n_string($a7Body);
+    $a7Ids = tok_chat("user", "Name a color.") . "," . tok_chat_open("assistant");
+    $a7Out = api_array_n_string_value($a7Ids, "m", 7, "abcdefghijklmnopqrstuvwxyz ", 1, 3, 0);
+    $a7Parts = explode(",", $a7Out);
+    $a7Base = count(explode(",", $a7Ids));
+    $a7Text = "";
+    for ($i = $a7Base; $i < count($a7Parts); $i++) {
+        $a7Text = $a7Text . gguf_token_str((int) $a7Parts[$i]);
+    }
+    $a7Text = str_replace("Ġ", " ", $a7Text);
+    $a7Pat = '/^\{"m":';
+    for ($i = 0; $i < 7; $i++) {
+        $a7Pat = $a7Pat . '\[';
+    }
+    $a7Pat = $a7Pat . '"[a-z ]*"';
+    for ($i = 0; $i < 7; $i++) {
+        $a7Pat = $a7Pat . '\]';
+    }
+    $a7Pat = $a7Pat . '\}$/';
+    $a7Shape = preg_match($a7Pat, $a7Text);
+    echo "SCHEMA-ARR7 det=[" . $a7Det . "] text=[" . $a7Text . "]\n";
+    if ($a7Det == "m|7" && $a7Out != "" && $a7Shape == 1 && api_json_ok($a7Text) == 1) {
+        echo "SCHEMA-ARR7: PASS (seven-level array via generic builder)\n";
+    } else {
+        echo "SCHEMA-ARR7: FAIL det=[" . $a7Det . "] shape=" . $a7Shape . "\n";
     }
 
     // Unbounded multipleOf: 4 model-chosen digits + a forced 3-digit suffix divisible by 7.

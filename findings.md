@@ -1501,6 +1501,11 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f165b.log` 构建成功；`engine/run_f165b.log`：**126 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP20 plan=[a/b/…/t|city:s,count:i]: PASS`（DEEP12 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f165.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
 **限制**：32 层以上仍被截断；单链、每层唯一属性。
 
+### F166 · 通用 N 维字符串数组（rank ≥ 7）
+**做法**：新增 `api_array_n_string_value(ids, prop, dims, charset, maxPerLevel, maxSteps, useCache)`：运行时拼 `{"m":` + `[`×dims + `"`；每层最多 maxPerLevel 项，`,` 表示回到该层再开子链（强制 `[`×(dims-1-lv)+`"`），`]` 关闭该层；尾部按剩余层数补 `]` 再闭 `}`。检测器 `api_response_schema_array_n_string` 统计叶子 `"type":"string"` 之前的 `"type":"array"` 数作为 rank，**只在 rank ≥ 7 时返回**（2–6 维仍走原专用构造器）。三出口都在 6 维检测之前接入。
+**验证**：`engine/build_f166.log` 构建成功；`engine/run_f166.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR7 det=[m|7] text=[{"m":[[[[[[["red"]]]]]]]}]: PASS`（ARR6 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f166.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
+**限制**：叶子仅字符串；rank 上限受检测窗口（4000 字符）与 `[`×dims 前缀长度约束，实际可到数十维；每层预算由 maxPerLevel 控制。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|
