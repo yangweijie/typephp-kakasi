@@ -131,6 +131,20 @@ def main():
         rok = False
     check("responses-json-schema-string", rok, rtext)
 
+    # F191 guard: `text.format: json_object` must reach the validate+retry path, whose observable
+    # side is that `stop` is skipped. Same prompt without text.format gets cut by that stop, so the
+    # fenced block survives only in the json_object reply (a half-block means the guard regressed).
+    jreq = {"input": "Return one JSON object with key city, value Paris.", "max_output_tokens": 48,
+            "seed": 7, "stop": ["```"]}
+    r = post("/v1/responses", dict(jreq, text={"format": {"type": "json_object"}}))
+    robj = r["output"][0]["content"][0]["text"]
+    r = post("/v1/responses", dict(jreq))
+    rcut = r["output"][0]["content"][0]["text"]
+    check("responses-json-object", "{" in robj and "}" in robj and robj.count("```") != 1
+          and len(robj) >= len(rcut)
+          and (rcut == "" or robj.count("```") == 2 or ("```" not in robj and "```" not in rcut)),
+          "json_object=%r control=%r" % (robj[:60], rcut[:60]))
+
     # Responses streaming must emit the typed event sequence, not Chat chunks.
     r = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 8,
                                "stream": True}, stream=True)

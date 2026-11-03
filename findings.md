@@ -1573,6 +1573,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
 **限制**：129 层以上仍被截断；单链、每层唯一属性。
 
+### F192 · `responses-json-object` 常驻守卫（第 87 个 API 形状）
+**做法**：`engine/main.php` 零改动；在 `engine/tests/api_smoke.py` 的 Responses 段成对发同一请求（同 prompt、同 `seed:7`、同 `"stop":["```"]`），一侧带 `text.format:{"type":"json_object"}`、一侧不带，断言带侧文本含 `{`/`}`、围栏不成半截、长度不小于对照侧，且对照侧确实被裁（`rcut == ""`）或两侧都无围栏。
+**为什么这样断言**：F191 的成对活探针实测 `text.format` 侧保留完整围栏块 ```` ```json { "city": "Paris" } ``` ````，对照侧被 `stop` 裁成空串——即 `jsonMode` 生效的外部可观察面。首版守卫只写 `robj.count("```") != 1 and len(robj) >= len(rcut)`，用回归态的合成人输入一验就发现**回归时两侧同为空串仍判 PASS**（`0 >= 0`），补上"必须含花括号"与"对照侧确实被裁"两支后才有判别力。
+**判别力实测**（谓词离线求值）：今日（围栏完整 + 对照裁空）→ True；F191 被回退（两侧皆空）→ **False**；未来 `json_object` 直接给裸 JSON（两侧同为裸 JSON）→ True；`stop` 咬进围栏中段（半截块）→ False。
+**验证**：`engine/api_smoke_f192.log`（首版，87/87）、`engine/api_smoke_f192b.log`（收紧后，`PASS=87 FAIL=0`、`SMOKE_EXIT=0`、服务日志 `Accept failed` 0 行）。
+
 ### F191 · `/v1/responses` 的 `text.format.type=json_object` 已接入校验重试（闭合 F184）
 **根因**：非流式出口共用一段生成逻辑，`$jsonMode` 只匹配 `"response_format":{"type":"json_object"}`（`engine/main.php:7294`）；Responses 用 `text.format` 拼写，故从未进入"校验 + 一次重试"，`api_json_ok` 与 `stop` 跳过门都未生效（F184 观察到的围栏文本即此症状）。
 **修复**：`$jsonMode == 0` 时再匹配一次 `/"format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/`。用带引号的 `"format"` 而非裸 `format`，因此 `"response_format"`（`_` 前缀）与 Anthropic `"output_format"` 都不会被误认领；`json_schema` 分支不受影响。

@@ -498,6 +498,7 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
+- **F192（`responses-json-object` 常驻守卫）已验证**：只改测试不改引擎；成对请求（同 prompt/seed/`stop`）断言 `text.format` 侧围栏完整且对照侧被裁空，首版谓词经合成回归输入证明"无判别力"后收紧；`engine/api_smoke_f192b.log` **87/87 PASS、`SMOKE_EXIT=0`**、`Accept failed` 0 行。
 - **F191（Responses `text.format` 的 `json_object`，闭合 F184）已验证**：`$jsonMode` 检测补 `"format"` 拼写分支（`engine/main.php:7294`）；判据为成对活服务探针（带 `text.format` 时 `stop` 被跳过、围栏整体保留；对照组被裁成空串）+ `engine/build_f191.log` + `engine/api_smoke_f191.log` **86/86** + `engine/run_f191.log` **131 PASS / 0 FAIL**。仍未闭合：`json_object` 下模型裸输出率（两次均围栏则原样返回）、Responses 流式的 `json_object`。
 - **F190（工具白名单作用域）已验证**：`api_tool_names` 只在 `tools` 数组内解析；`engine/build_f190.log` 成功、`engine/run_f190.log` **131 PASS / 0 FAIL / `RUN_EXIT=0`**（新增 `TOOL-NAMES-SCOPE: PASS`）、`engine/api_smoke_f190.log` **86/86 PASS**；同二进制 8001 门禁 `par_smoke_f190.log` **7/7** + `fairness_f190.log` PASS（0.29 s vs 4.87 s）、`Accept failed` 0 行。
 - **F189（`tool_choice:"auto"` 负例）已验证**：流式 + tools 仍自由文本；`api_smoke_f189.log` **86/86 PASS**（零改码）。
