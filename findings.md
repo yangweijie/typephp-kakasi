@@ -1573,6 +1573,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
 **限制**：129 层以上仍被截断；单链、每层唯一属性。
 
+### F191 · `/v1/responses` 的 `text.format.type=json_object` 已接入校验重试（闭合 F184）
+**根因**：非流式出口共用一段生成逻辑，`$jsonMode` 只匹配 `"response_format":{"type":"json_object"}`（`engine/main.php:7294`）；Responses 用 `text.format` 拼写，故从未进入"校验 + 一次重试"，`api_json_ok` 与 `stop` 跳过门都未生效（F184 观察到的围栏文本即此症状）。
+**修复**：`$jsonMode == 0` 时再匹配一次 `/"format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/`。用带引号的 `"format"` 而非裸 `format`，因此 `"response_format"`（`_` 前缀）与 Anthropic `"output_format"` 都不会被误认领；`json_schema` 分支不受影响。
+**判定性证据（活服务成对探针）**：同一 prompt、同一 `"stop":["```"]`，带 `text.format:json_object` 时围栏整体保留（`output_tokens=15`，说明 `stop` 裁剪被跳过 ⇒ `jsonMode=1`）；去掉 `text.format` 的对照组被 `stop` 裁成空串（`output_tokens=14`）⇒ 新分支确已生效，而非"看起来一样"。
+**回归**：`engine/build_f191.log`（`BUILD_EXIT=0`）；`engine/api_smoke_f191.log` **86/86 PASS、0 FAIL、`SMOKE_EXIT=0`**；`engine/run_f191.log` **131 PASS / 0 FAIL / `RUN_EXIT=0`**（注：首次误用 `engine` 目录相对路径调 `scripts\run-kakasi-selftest.bat`，报"系统找不到指定的路径"且日志缺失，改在仓库根重跑后才有效）。
+**未闭合**：F184 的"裸输出率"问题仍在——该模型对 `json_object` 仍先给围栏，校验重试后若两次都围栏则按契约原样返回；`/v1/responses` 流式路径与 `json_object` 的 `stream_options` 语义仍未接。
+
 ### F184 · `/v1/responses` 的 `text.format.type=json_object` 未接入校验重试（已知缺口，未修）
 **实测**：`{"text":{"format":{"type":"json_object"}}}` 返回代码围栏文本 ```` ```json … ``` ````；Chat 对照组同样返回围栏文本（其 `json_object` 设计为校验+一次重试，模型两次都围栏则原样返回）。Responses 出口完全没有 `json_object` 分支（只识别 `json_schema` 的 `text.format`）。
 **未修原因**：即便复用 Chat 的校验+重试也不保证裸 JSON，且会引入一次额外生成；是否有收益需先实测模型在“仅输出 JSON”提示下的裸输出率。
