@@ -498,6 +498,7 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
+- **F194a（`tool_choice:"required"` 丢 arguments）已修并验证**：`required` 分支改为逐工具取参数候选骨架、`$toolJson` 门控并上 `$reqCands`；实测 `{} ` → `{"city":"Paris"}`，守卫 `chat-tool-required-args` 修前即为假；`run_f194.log` 132 PASS、`api_smoke_f194b.log` **89/89**、`par_smoke_f194.log` 8/8 + `fairness_f194.log` PASS。**教训**：`FAIL=0` 不等于套件跑完——首跑 `SMOKE_EXIT=1 / PASS=16`（守卫自己的 `%` 解包 TypeError），判据必须带 exit code。
 - **F194（生成侧并行工具调用 + `required` 丢参数）已实测、未修**：8000 成对探针证明单次响应最多一个调用（`tools` 自由路径 0 个、`required` 强制路径 1 个且 `arguments='{}'`）；根因在 `api_tool_call_json` 只返回单个调用、三出口按单调用序列化、Responses 流式硬编码 `fc_1`/`output_index:0`，以及强制路径 `$qArgs==""` 兜底成 `{}`。**下一步先修 ③（参数丢失，改动面最小）再做 ①②（并行）**，别把两者混成一件事。
 - **F193（`json_object` 贯通流式 + 并行槽）已验证**：判定抽成 `api_json_object_requested()`，流式 stop 门 `main.php:7232` 一带、并行槽 `$stopV` 一带；新增自检 `JSON-OBJECT-DETECT` 与成对流式探针（json_object 侧 26 delta 完整围栏、对照侧 0 delta）、`par_smoke` 第 8 项 `oai-json-object-keeps-stream`（同文件 `oai-stop` 仍裁成 `"P"`）；`engine/run_f193b.log` **132 PASS/0 FAIL**、`engine/api_smoke_f193c.log` **88/88**、`engine/par_smoke_f193.log` **8/8** + `fairness_f193.log` PASS。
 - **F192（`responses-json-object` 常驻守卫）已验证**：只改测试不改引擎；成对请求（同 prompt/seed/`stop`）断言 `text.format` 侧围栏完整且对照侧被裁空，首版谓词经合成回归输入证明"无判别力"后收紧；`engine/api_smoke_f192b.log` **87/87 PASS、`SMOKE_EXIT=0`**、`Accept failed` 0 行。

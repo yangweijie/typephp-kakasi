@@ -145,6 +145,20 @@ def main():
           and (rcut == "" or robj.count("```") == 2 or ("```" not in robj and "```" not in rcut)),
           "json_object=%r control=%r" % (robj[:60], rcut[:60]))
 
+    # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
+    # real arguments - an empty object is not executable by the client.
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
+                                      "max_tokens": 64, "seed": 3, "tool_choice": "required",
+                                      "tools": [{"type": "function", "function": {
+                                          "name": "get_weather",
+                                          "parameters": {"type": "object", "properties": {
+                                              "city": {"type": "string",
+                                                       "enum": ["Paris", "London"]}}}}}]})
+    tc = r["choices"][0]["message"].get("tool_calls") or []
+    rargs = json.loads(tc[0]["function"]["arguments"]) if tc else {}
+    check("chat-tool-required-args", bool(tc) and rargs.get("city") in ("Paris", "London"),
+          str([[t["function"]["name"] for t in tc], rargs]))
+
     # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
     # block arrives whole, while the control stream is cut at the leading fence and ends early.
     jstream = {"input": "Return one JSON object with key city, value Paris.",

@@ -7546,12 +7546,24 @@ function api_serve(int $port): void
                 $tcRequired = preg_match('/"tool_choice"\s*:\s*"(required|any)"/', $body) ? 1 : 0;
                 $toolSkel = "";
                 $argCands = [];
+                $reqCands = 0;
                 if ($toolChoice == "" && $tcRequired == 1 && count($toolNames) > 0) {
+                    // "required" names no function, so every declared tool is a candidate - and each
+                    // one still owes its real arguments: an empty object is not executable (F194a).
                     $reqSkels = [];
                     for ($ri = 0; $ri < count($toolNames); $ri++) {
-                        $reqSkels[] = "{\"name\":\"" . $toolNames[$ri] . "\",\"arguments\":{}}";
+                        $reqArgs = api_schema_arg_candidates($body, $toolNames[$ri]);
+                        if (count($reqArgs) > 0) {
+                            for ($rj = 0; $rj < count($reqArgs); $rj++) {
+                                $reqSkels[] = "{\"name\":\"" . $toolNames[$ri] . "\",\"arguments\":\""
+                                          . api_esc($reqArgs[$rj]) . "\"}";
+                            }
+                            $reqCands = 1;
+                        } else {
+                            $reqSkels[] = "{\"name\":\"" . $toolNames[$ri] . "\",\"arguments\":{}}";
+                        }
                     }
-                    $enumOut = api_constrained($ids, $reqSkels, 64, $prefixCache);
+                    $enumOut = api_constrained($ids, $reqSkels, 96, $prefixCache);
                 }
                 if ($toolChoice != "") {
                     // Flat enum/const properties give real arguments; otherwise the object stays {}.
@@ -7569,7 +7581,7 @@ function api_serve(int $port): void
                     }
                 }
                 $toolJson = "";
-                if ($enumOut != "" && ($toolSkel != "" || count($argCands) > 0)) {
+                if ($enumOut != "" && ($toolSkel != "" || count($argCands) > 0 || $reqCands == 1)) {
                     $toolJson = api_tool_call_json($enumOut, $toolNames);
                 }
                 $tries = $enumOut != "" ? 1 : ($jsonMode ? 2 : 1);

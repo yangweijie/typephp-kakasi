@@ -1573,6 +1573,9 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
 **限制**：129 层以上仍被截断；单链、每层唯一属性。
 
+**F194a 已修（`required` 丢 arguments）**：根因不止一处——`required` 分支给每把工具硬编码 `"arguments":{}` 骨架、且从不查参数候选（`api_schema_arg_candidates` 只在点名工具路径被调用），而下游 `$toolJson` 的门控 `$toolSkel != "" || count($argCands) > 0` 在该分支恒假。现按工具逐个取候选生成骨架（真的无候选才退 `{}`），门控并上 `$reqCands == 1`，骨架预算 64→96。实测同一双工具请求由 `('get_weather','{}')` 变为 `get_weather` + `{"city":"Paris"}`；常驻守卫 `chat-tool-required-args`（断言 `city ∈ {Paris,London}`）在修前即为假，故可判回归。证据：`engine/build_f194.log`、`engine/run_f194.log` **132 PASS / 0 FAIL**、`engine/api_smoke_f194b.log` **89/89**、`engine/par_smoke_f194.log` **8/8** + `engine/fairness_f194.log` PASS（短流 0.30 s vs 长流 5.01 s），两个服务日志 `Accept failed` 0 行。
+**守卫自身也栽过一次**：首跑 `api_smoke_f194.log` 是 `PASS=16 FAIL=0` 却 `SMOKE_EXIT=1` —— 我的 detail 串写成 `"%s %s" % [a, b]`，Python 的 `%` 只解包 tuple 不解包 list，TypeError 让套件在第 17 项崩掉。**崩溃与失败在计数上长得一样（都不算 FAIL）**，所以判据必须同时看 exit code，不能只看 `FAIL=0`。
+
 ### F194 · 生成侧并行工具调用未支持 + `tool_choice:"required"` 丢参数（两项实测缺口）
 **动机**：F193 收口后挑下一个 API 缺口，先量再改（此前审计只记了历史侧并行 F63/F65，生成侧从未取证）。
 **实测 A（并行）**：同一请求（两把工具 `get_weather`/`get_time`，prompt 明确要求"一次调用两者"，`seed:3`，`max_tokens:192`）——`tools` 自由路径 `chat tool_calls = 0`、`/v1/responses` 只出 `['message']`（无 `function_call`）；`tool_choice:"required"` 强制路径 `tool_calls = 1`（`get_weather`）。⇒ **一次响应最多一个调用**，不是模型偶发不调用：`api_tool_call_json`（`engine/main.php:4455`）本身只返回单个调用对象，文件里没有复数版前向调用提取器（`api_tool_calls_of`/`api_tool_calls_group` 只服务历史回放），三个出口都按单调用序列化（Responses 流式更是把 `fc_1`/`output_index:0`/`call_1` 硬编码在 `api_resp_call_start`/`api_resp_call_done`，`engine/main.php:4760`、`4771`）。
