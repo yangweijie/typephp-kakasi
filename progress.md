@@ -564,6 +564,8 @@
 - **【02:00 更新】恢复会话（未重启机器）**：① WMI 僵死依旧（tasklist >120 s），但实测 `taskkill //F //IM` 挂起的同时**杀进程生效**——残留 8001 监听（PID 595564）被清掉、端口释放（F156）；② 确认 01:09 的 aoa3 构建 = **`SCHEMA-ARR-OBJ-ARR2`（元素内混合叶子：字符串数组 + 标量兄弟，检测器 `items|tags|note`）**，但 01:19 的自检运行被会话中断杀在 `PARITY16 144`——自检段顺序是 **PARITY 在前、SCHEMA 在最后**（build_aoa2.log 403/778 行），所以 ARR-OBJ-ARR2 结果当时未被捕获；③ 已以显式 PATH 重跑全量自检 → `engine/run_aoa3b.log`；④ 待办：自检 0 FAIL 后起 8001 新服务跑 `par_smoke.py` 7/7 + `fairness_test.py`（替代被阻塞的 `par_gate.bat`），再跑 `api_smoke.py 8000` 61/61；`par_gate.bat` 本体（setvars+taskkill 路径）仍留待重启后复测一次。
 - **【03:10 收口，F157】全部完成**：②③④ 已闭环——自检重跑暴露检测器回归 2 FAIL → 修复（tail 判定/返回段数/3 调用点 isset 守卫）→ 重建全量自检 **119 PASS / 0 FAIL / RUN_EXIT=0**（ARR-OBJ-ARR 与 ARR-OBJ-ARR2 双 PASS）；8001 新服务 `par_smoke` **7/7** + `fairness` **PASS**（首跑 1.2 s 压线，warm 1.0 s）；8000 `api_smoke` **61/61**。僵死态进程处置升级为 **`Stop-Process -Id` + netstat 迭代 + curl(RC=7) 验证**（taskkill /IM 3/3 挂起，netstat OwningProcess 出假行）。遗留非阻塞项：① `par_gate.bat` 本体重启后一次性复测（其功能已被替代路径覆盖）；② par 服务 accept 空转刷 "Accept failed"（40 min 2 万行，无害，建议 stream_select 修）；③ 临时文件可删：`serve_par13.log`（73 MB）、`serve_par_fix.log`、`par_gate_console*.txt`、`par_gate_health.txt`、`par_health.txt`。
 
+**有一条未决门禁**：F201（点名 `tool_choice` 并行）以 `wip` 提交（`54b2161`），其完整门禁结论稍后会落在 `engine/gates_f201.txt`。**先读那条再决定**：全绿就按 findings 里 F201 段的"交接判据"升级记录（形状 91→92、audit 头改指 `run_f201.log`），任一不绿就 `git revert 54b2161`。在该文件出现之前，**任何地方都不许把 F201 写成已验证**。
+
 ## 续作入口（若恢复）
 
 1. **per-session KV 真并行**：现状是单线程 accept + 全局 `g_kv`/`g_sess_*`。**第一步已完成（F86：KV 快照/恢复 + SESSION-SNAP 交接逐位一致）**；下一步：把 save/restore 用一个显式 session 句柄封装（或直接两槽），在 accept 循环里对进行中的流式连接做时间片推进，先验证"长流不饿死短请求"，再谈墙钟收益与线程。
