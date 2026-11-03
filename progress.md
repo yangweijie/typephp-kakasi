@@ -582,6 +582,8 @@
 
 - **F210（负结果，已回滚）**：`api_nested_object_value` 内就地重试 `api_constrained` 不能救回冷启动空返回（`run_f210.log` 仍 `first_len=0`，137 PASS 无回退）⇒ 有效状态变化发生在该函数**收尾**而非解码调用本身；重试代码不留，`SCHEMA-DEEP200-RETRY` 作为可测证据（修好后 `first_len>0`）。
 
+- **F211（延时重试实验＝无效，已回滚）**：`usleep(300000)` 后重试仍 `first_len=0`，但**无法证明新码在跑**（只在 AST/obj 里见到 usleep；此前确实发生过增量构建吃旧源码的事故）⇒ 该实验既不能否定也不能支持时间假说，实验代码已回滚。**下次先立阳性对照**：在待证分支里 `echo` 一个唯一标记，看它在自检输出里出现没有，再谈结论。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
