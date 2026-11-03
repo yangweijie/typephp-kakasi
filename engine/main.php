@@ -5119,6 +5119,47 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
 
 function api_schema_resolve_refs(string $s): string
 {
+    // Out-of-document refs first: they arrive in a caller-supplied registry, never fetched. The
+    // engine has no network and must not read paths that request data names, so resolution is
+    // limited to schemas the caller handed over alongside the ref.
+    for ($xround = 0; $xround < 6; $xround++) {
+        $xp = strpos($s, '"$ref"');
+        if ($xp === false) {
+            break;
+        }
+        $xm = [];
+        if (preg_match('/"\\$ref"\s*:\s*"([^"]+)"/', substr($s, $xp, 300), $xm) != 1) {
+            break;
+        }
+        if (substr($xm[1], 0, 1) == "#") {
+            break;      // local pointer: handled by the pass below
+        }
+        $reg = api_json_object_after($s, "schema_registry");
+        if ($reg == "") {
+            break;
+        }
+        $kp = strpos($reg, "\"" . $xm[1] . "\"");
+        if ($kp === false) {
+            break;      // unregistered external ref: leave it, the grammar falls back as before
+        }
+        $kbo = strpos($reg, "{", $kp);
+        if ($kbo === false) {
+            break;
+        }
+        $kobj = api_balance_block($reg, $kbo);
+        if ($kobj == "") {
+            break;
+        }
+        $obo = strrpos(substr($s, 0, $xp), "{");
+        if ($obo === false) {
+            break;
+        }
+        $refobj = api_balance_block($s, $obo);
+        if ($refobj == "" || strpos($refobj, '"$ref"') === false) {
+            break;      // the ref has sibling keys we would erase; refuse rather than corrupt
+        }
+        $s = substr($s, 0, $obo) . $kobj . substr($s, $obo + strlen($refobj));
+    }
     $defKey = "\"definitions\"";
     $dk = strpos($s, $defKey);
     if ($dk === false) {
@@ -10591,6 +10632,36 @@ function main(): void
         echo "SCHEMA-REF: PASS (local \$ref inlined)\n";
     } else {
         echo "SCHEMA-REF: FAIL\n";
+    }
+
+    // External $ref: resolved from a caller-supplied registry, never fetched. The ref must be gone
+    // and the referenced enum must drive candidates.
+    $exBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":'
+        . '{"type":"object","properties":{"city":{"$ref":"city.json#/City"}}}}},'
+        . '"schema_registry":{"city.json#/City":{"type":"string","enum":["Paris","London"]}}}';
+    $exResolved = api_schema_resolve_refs($exBody);
+    $exSchema = api_json_object_after($exResolved, "schema");
+    $exC = api_schema_candidates($exSchema);
+    $exJoin = "";
+    for ($i = 0; $i < count($exC); $i++) {
+        $exJoin = $exJoin . $exC[$i];
+    }
+    echo "SCHEMA-EXTREF n=" . count($exC) . " leftover_refs=" . (strpos($exResolved, '"$ref"') === false ? "0" : "1")
+        . " [" . $exJoin . "]\n";
+    if (count($exC) == 2 && strpos($exResolved, '"$ref"') === false
+        && strpos($exJoin, '"city":"Paris"') !== false
+        && strpos($exJoin, '"city":"London"') !== false) {
+        echo "SCHEMA-EXTREF: PASS (registry-supplied external ref inlined)\n";
+    } else {
+        echo "SCHEMA-EXTREF: FAIL\n";
+    }
+
+    // Unregistered external refs must stay untouched (grammar falls back, no silent corruption).
+    $unBody = '{"schema":{"type":"object","properties":{"city":{"$ref":"unknown.json#/City"}}}}';
+    if (api_schema_resolve_refs($unBody) == $unBody) {
+        echo "SCHEMA-EXTREF-UNREG: PASS (unknown external ref left as-is)\n";
+    } else {
+        echo "SCHEMA-EXTREF-UNREG: FAIL\n";
     }
 
     // allOf merge: two object members contribute properties to one finite candidate set.

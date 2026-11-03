@@ -1588,6 +1588,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **顺带纠正一条我写下的错数**：上一轮我在 progress 里把套件耗时"推算"为 6–8 min，实测是 **102 s**；推算当成数据写进日志就是这种后果。**只写量到的数**。
 **新增硬规则（进 progress 入口）**：**任何时刻只允许一个引擎进程**。起服务前先看 `netstat` 8000/8001 是否有人监听、后台链是否仍在跑；要并行跑两条门禁必须串行化，或干脆等到前一条结束。这条比"别用 `ps -W`"更要命，因为它产出的是**错误的实验结论**，不是慢。
 
+### F207 · 外部 $ref 走调用方提供的 schema_registry（不联网、不读请求里的路径）
+**为什么是这个形状**：本地推理引擎没有网络；而按请求里给的相对路径去读文件等于开一条目录穿越口子。所以外部引用只在**调用方随请求交出被引用 schema** 时才解析：`{"$ref":"city.json#/City"}` 配合顶层 `"schema_registry":{"city.json#/City":{…}}`。注册表里没有的引用**原样留着**（语法回退到旧行为），不做静默猜测或破坏。
+**实现**：`api_schema_resolve_refs()` 在原有的本地 `#/definitions|\$defs` 内联之前加一轮外部内联：取 `"$ref"` 值，非 `#` 开头才走注册表；替换的对象要求是**纯 ref 对象**（含兄弟键就放弃替换，避免把 description 之类一起吃掉）。
+**守卫**：自检 `SCHEMA-EXTREF`（解析后无残留 `$ref`、候选是 `{city:Paris}`/`{city:London}`）与 `SCHEMA-EXTREF-UNREG`（未注册引用保持不变），`run_f207.log` **136 PASS / 0 FAIL**（原 134，新增两条，`SCHEMA-REF` 本地路径未回退）。活服务形状 `chat-json-schema-extref` 走完整请求链，`api_smoke_f207.log` **96/96、SMOKE_EXIT=0、Accept failed 0 行**。
+**仍未做（诚实边界）**：URL/文件解析被有意排除；同一 schema 内既有本地又有外部引用时，外部那一轮遇到本地指针就停（不做混合交替求解）；`$ref` 指向另一文档里的**深层 JSON Pointer**（如 `#/a/b/c`）只取对象值，不支持数组下标。
+
 ### F202 预研 · 流式并行的接线点（本轮只定位，未动手）
 **先按符号定位，别信本条的行号**：这些数字是写这条时的快照，之后每个增量都会漂移几百行；用 `grep -n "fwrite(\\$c, api_resp_call_start"`、`grep -n "api_tool_call_json(\\$qPick"`、`grep -n "function api_resp_call_start"` 重新定位比对着行号读更快也更准。
 **为什么现在不做**：流式两处强制工具分支各自**从"骨架前缀匹配"重建单调用**（`engine/main.php:6982` 一带的 `required` 与 `7054` 一带的点名），要做并行必须把它们改成"对解码文本用复数提取器"，而这两条链上有 5 个以上现有流式工具形状（`chat-tool-required-stream`、`anth-tool-any-stream`、`responses-tool-stream` 等）；在本轮 F201 门禁还没出结果时动它们，等于同时开两处未验证面。

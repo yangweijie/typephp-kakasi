@@ -145,6 +145,23 @@ def main():
           and (rcut == "" or robj.count("```") == 2 or ("```" not in robj and "```" not in rcut)),
           "json_object=%r control=%r" % (robj[:60], rcut[:60]))
 
+    # F207: an out-of-document $ref resolves from a caller-supplied schema_registry (nothing is
+    # fetched), so the referenced enum still drives constrained decoding over the real API.
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 64, "seed": 3,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "city", "schema": {
+                                              "type": "object", "properties": {
+                                                  "city": {"$ref": "city.json#/City"}}}}},
+                                      "schema_registry": {"city.json#/City": {
+                                          "type": "string", "enum": ["Paris", "London"]}}})
+    ext = r["choices"][0]["message"]["content"]
+    try:
+        ec = json.loads(ext).get("city")
+    except Exception:
+        ec = None
+    check("chat-json-schema-extref", ec in ("Paris", "London"), str(ext)[:120])
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
