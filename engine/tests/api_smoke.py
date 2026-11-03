@@ -165,6 +165,35 @@ def main():
           and "chat.completion.chunk" not in r,
           "%s %s" % (rev2[:4], rjtext))
 
+    # Responses streaming + tool call: function_call item with argument events.
+    r = post("/v1/responses", {"input": "Weather in London?", "max_output_tokens": 64,
+                               "stream": True,
+                               "tools": [{"type": "function", "function": {"name": "get_weather",
+                                          "parameters": {"type": "object", "properties": {
+                                              "city": {"type": "string",
+                                                       "enum": ["Paris", "London"]}}}}}],
+                               "tool_choice": {"type": "function",
+                                               "function": {"name": "get_weather"}}}, stream=True)
+    rev3 = events(r)
+    fname, fargs = "", ""
+    for d in sse_data(r):
+        o = json.loads(d)
+        if o.get("type") == "response.output_item.done":
+            item = o.get("item", {})
+            fname = item.get("name", "")
+            fargs = item.get("arguments", "")
+    try:
+        fcity = json.loads(fargs).get("city")
+    except Exception:
+        fcity = None
+    check("responses-tool-stream",
+          fname == "get_weather" and fcity == "London"
+          and "response.output_item.added" in rev3
+          and "response.function_call_arguments.delta" in rev3
+          and "response.completed" in rev3
+          and "chat.completion.chunk" not in r,
+          "%s %s %s" % (rev3[:4], fname, fargs))
+
     # Element 2-D array through the Responses exit (same grammar, third dispatch site).
     r2d_schema = {"type": "object", "properties": {"items": {
         "type": "array", "items": {"type": "object", "properties": {

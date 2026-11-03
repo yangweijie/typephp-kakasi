@@ -1549,7 +1549,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 ### F175 · `/v1/responses` 流式（schema 出口）
 **做法**：schema 流式出口（`$sJOut` 生成后）在 `$wantResponses` 时复用 `api_resp_start/delta/done` 输出 typed events，并跳过 Chat final 与 `[DONE]`；Chat 路径保持不变。
 **验证**：`engine/build_f175.log` 构建成功；`engine/api_smoke_f175.log`：**72/72 PASS**，新增 `responses-stream-json-schema`（事件序列 + JSON 文本 + 无 Chat chunk）。
-**限制**：工具调用（`tool_calls`/`tool_use`）流式出口仍为 Chat 形状（Responses 的 `function_call` 流式事件未做）。
+**限制**：工具调用（`tool_calls`/`tool_use`）流式出口仍为 Chat 形状（Responses 的 `function_call` 流式事件未做）。**→ 已由 F176 实现。**
+
+### F176 · `/v1/responses` 流式（工具调用出口）
+**做法**：新增 `api_resp_call_start` / `api_resp_call_done`（`response.output_item.added` 的 `function_call` item、`response.function_call_arguments.delta/done`、`output_item.done`、`response.completed` 携带 function_call 与 usage）；两处工具出口（`tool_choice` 指定名 / `required`）在 `$wantResponses` 时改为 typed events，Chat 路径保持原样。
+**首跑真 bug**：`arguments` 被 `api_esc` 二次转义（Chat 路径直接内插已转义串）→ smoke 得到 `{\"city\":\"London\"}`；去掉多余的 `api_esc` 后 PASS。
+**验证**：`engine/build_f176c.log` 构建成功；`engine/api_smoke_f176b.log`：**73/73 PASS**，新增 `responses-tool-stream`（item 名 `get_weather`、arguments 城市 `London`、事件序列含 added/delta/completed、无 Chat chunk）。
+**限制**：仅单工具调用；并行 `tool_use` 的 Responses 流式事件未做。
 
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。

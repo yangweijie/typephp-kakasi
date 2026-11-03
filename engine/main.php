@@ -4607,6 +4607,35 @@ function api_resp_done(string $text, int $outTok, string $modelId, int $promptN)
         . ",\"total_tokens\":" . ($promptN + $outTok) . "}}}\n\n";
 }
 
+function api_resp_call_start(string $modelId, string $name): string
+{
+    return "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\","
+        . "\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"" . $modelId
+        . "\",\"output\":[]}}\n\n"
+        . "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\","
+        . "\"output_index\":0,\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\","
+        . "\"status\":\"in_progress\",\"call_id\":\"call_1\",\"name\":\"" . api_esc($name)
+        . "\",\"arguments\":\"\"}}\n\n";
+}
+
+function api_resp_call_done(string $name, string $args, int $outTok, string $modelId, int $promptN): string
+{
+    return "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\","
+        . "\"item_id\":\"fc_1\",\"output_index\":0,\"delta\":\"" . $args . "\"}\n\n"
+        . "event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\","
+        . "\"item_id\":\"fc_1\",\"output_index\":0,\"arguments\":\"" . $args . "\"}\n\n"
+        . "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\","
+        . "\"output_index\":0,\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\","
+        . "\"status\":\"completed\",\"call_id\":\"call_1\",\"name\":\"" . api_esc($name)
+        . "\",\"arguments\":\"" . $args . "\"}}\n\n"
+        . "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\","
+        . "\"object\":\"response\",\"status\":\"completed\",\"model\":\"" . $modelId . "\",\"output\":["
+        . "{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"completed\",\"call_id\":\"call_1\","
+        . "\"name\":\"" . api_esc($name) . "\",\"arguments\":\"" . $args . "\"}],"
+        . "\"usage\":{\"input_tokens\":" . $promptN . ",\"output_tokens\":" . $outTok
+        . ",\"total_tokens\":" . ($promptN + $outTok) . "}}}\n\n";
+}
+
 function api_anthropic_output_format(string $body): string
 {
     $o = strpos($body, "\"output_format\"");
@@ -6656,31 +6685,41 @@ function api_serve(int $port): void
                                 if ($qArgs == "") {
                                     $qArgs = "{}";
                                 }
-                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                         . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                         . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
-                                         . "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
-                                         . "\"function\":{\"name\":\"" . api_esc($qName) . "\",\"arguments\":\"\"}}]},"
-                                         . "\"finish_reason\":null}]}\n\n");
-                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                         . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                         . "\"delta\":{\"tool_calls\":[{\"index\":0,"
-                                         . "\"function\":{\"arguments\":\"" . $qArgs . "\"}}]},"
-                                         . "\"finish_reason\":null}]}\n\n");
-                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                         . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                         . "\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n");
-                                if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                                if ($wantResponses) {
                                     $quTok = count(explode(",", $qOut)) - $promptN;
                                     if ($quTok < 0) {
                                         $quTok = 0;
                                     }
+                                    fwrite($c, api_resp_call_start($modelId, $qName));
+                                    fwrite($c, api_resp_call_done($qName, $qArgs, $quTok,
+                                        $modelId, $promptN));
+                                } else {
                                     fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                             . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
-                                             . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $quTok
-                                             . ",\"total_tokens\":" . ($promptN + $quTok) . "}}\n\n");
+                                             . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                             . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
+                                             . "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
+                                             . "\"function\":{\"name\":\"" . api_esc($qName) . "\",\"arguments\":\"\"}}]},"
+                                             . "\"finish_reason\":null}]}\n\n");
+                                    fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                             . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                             . "\"delta\":{\"tool_calls\":[{\"index\":0,"
+                                             . "\"function\":{\"arguments\":\"" . $qArgs . "\"}}]},"
+                                             . "\"finish_reason\":null}]}\n\n");
+                                    fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                             . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                             . "\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n");
+                                    if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                                        $quTok = count(explode(",", $qOut)) - $promptN;
+                                        if ($quTok < 0) {
+                                            $quTok = 0;
+                                        }
+                                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                                 . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
+                                                 . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $quTok
+                                                 . ",\"total_tokens\":" . ($promptN + $quTok) . "}}\n\n");
+                                    }
+                                    fwrite($c, "data: [DONE]\n\n");
                                 }
-                                fwrite($c, "data: [DONE]\n\n");
                                 echo "SESSION stream tool=call reason=complete name=" . $qName
                                     . " mode=required\n";
                                 fclose($c);
@@ -6718,31 +6757,41 @@ function api_serve(int $port): void
                         if ($sArgs == "") {
                             $sArgs = "{}";
                         }
-                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                 . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                 . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
-                                 . "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
-                                 . "\"function\":{\"name\":\"" . api_esc($sName) . "\",\"arguments\":\"\"}}]},"
-                                 . "\"finish_reason\":null}]}\n\n");
-                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                 . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                 . "\"delta\":{\"tool_calls\":[{\"index\":0,"
-                                 . "\"function\":{\"arguments\":\"" . $sArgs . "\"}}]},"
-                                 . "\"finish_reason\":null}]}\n\n");
-                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                 . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                 . "\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n");
-                        if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                        if ($wantResponses) {
                             $suTok = count(explode(",", $sOut)) - $promptN;
                             if ($suTok < 0) {
                                 $suTok = 0;
                             }
+                            fwrite($c, api_resp_call_start($modelId, $sName));
+                            fwrite($c, api_resp_call_done($sName, $sArgs, $suTok,
+                                $modelId, $promptN));
+                        } else {
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                     . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
-                                     . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $suTok
-                                     . ",\"total_tokens\":" . ($promptN + $suTok) . "}}\n\n");
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
+                                     . "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
+                                     . "\"function\":{\"name\":\"" . api_esc($sName) . "\",\"arguments\":\"\"}}]},"
+                                     . "\"finish_reason\":null}]}\n\n");
+                            fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{\"tool_calls\":[{\"index\":0,"
+                                     . "\"function\":{\"arguments\":\"" . $sArgs . "\"}}]},"
+                                     . "\"finish_reason\":null}]}\n\n");
+                            fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n");
+                            if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                                $suTok = count(explode(",", $sOut)) - $promptN;
+                                if ($suTok < 0) {
+                                    $suTok = 0;
+                                }
+                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                         . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
+                                         . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $suTok
+                                         . ",\"total_tokens\":" . ($promptN + $suTok) . "}}\n\n");
+                            }
+                            fwrite($c, "data: [DONE]\n\n");
                         }
-                        fwrite($c, "data: [DONE]\n\n");
                         echo "SESSION stream tool=call reason=complete name=" . $sName . "\n";
                         fclose($c);
                         continue;
