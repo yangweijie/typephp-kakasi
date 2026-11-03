@@ -1525,6 +1525,11 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f169.log` 构建成功；`engine/run_f169.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**；`api_smoke.py` 扩到 **67** 形状，`engine/api_smoke_f169.log`：**67/67 PASS**，新增 `anth-json-schema-array-obj-arr2d`（`output_format` + 元素内二维数组）PASS。
 **限制**：仅非流式路径生效。实测（`engine/api_smoke_f170.log`，探针用例后已回退）Anthropic **流式** `output_format` 仍输出纯文本 `1. Red, Blue, Yellow`，SSE 分支未走 grammar——后续需把 schema 链接入 Anthropic SSE 文本增量路径。
 
+### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
+**做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
+**验证**：`engine/build_f170.log` 构建成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40 plan=[a/…/a13|city:s,count:i]: PASS`（DEEP12/DEEP20 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f170b.log`：**67/67 PASS、`SMOKE_EXIT=0`**。
+**限制**：65 层以上仍被截断；单链、每层唯一属性。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|
