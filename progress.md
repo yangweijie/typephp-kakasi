@@ -596,6 +596,8 @@
 
 - **F219（构建既不吃新码也不清旧码）**：回滚探针后重建，产物里**仍**有 F217-MARK（2 处）⇒ exe 与 HEAD 源码不同源（残留 echo 路径未触发，行为不变）。规程补条：要声明源码==二进制，必须清 `build/gen/cache/ast`（必要时删 `build/gen/*.cc`）全量重建，并**双向核对**（新串在、旧串不在）。**待办**：下一次开工先做这一次干净重建再谈其他测量；在此之前基线只认 `run_f214.log`。
 
+- **F221（干净重建已完成；推翻 F219 与"工具链陷阱"那条，并降级 F215/F218 的前缀结论）**：照 F219 的待办做了全量重建（`rm -rf build/gen/cache/ast && rm -f build/gen/*.cc`，BUILD_EXIT=0）并双向核对，结论与 F219 相反——`grep -c api_nested_object_value` 在 `build/gen/main.cc` = **20**、`extension-kakasi_engine.cc` = 3；`F2..-MARK` 在 `main.cc` = **0**，在 `extension-kakasi_engine.cc` = 2，而那两行的原文是 `php::Str{ZEND_STRL("F217-MARK cand="), true}, // [1820]`。⇒ **`main.cc` 才是函数体，`extension-*.cc` 只是只追加的字面量池；删码后死串留在池里不产生行为。源码与二进制同源，F219 作废**（progress 里"工具链陷阱"那条同样作废）。连带后果：**F216/F218 用错了控制文件**，所以"前缀标记打印 0 次 ⇒ 前缀无辜"不再成立，前缀嫌疑重开；F217 的分隔符结论**保留**，但依据换成 `run_f217.log:682` 起真打印过 `F217-MARK cand=1 first=3 allowed_empty=0 done=0`。**新规程（覆盖 F214 的方法条）**：探针证据强度 ①自检输出出现（最强）＞ ②`build/gen/main.cc` 出现 ＞ ②`extension-*.cc`/`.obj` 出现＝**无效**；只有②时判"未证"，不得写"已核对产物"。冷启动硬事实未变：`run_f214.log` 137 PASS / 0 FAIL、`first_len=0 second_len=3909`。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
