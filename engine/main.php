@@ -309,7 +309,9 @@ function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = "")
         }
         $nx = model_session_next_allowed(0, $allowed);
         if ($nx < 0) {
-            if ($restartIds == "" || $restarts >= 4) {
+            // Only a step the grammar fully determines (one forced id) is worth re-prefilling: a
+            // refusal there is the cold 'no logits computed' defect, not the model declining.
+            if ($restartIds == "" || $restarts >= 4 || strpos($allowed, ",") !== false) {
                 break;
             }
             $rp = $restartIds;
