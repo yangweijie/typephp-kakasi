@@ -588,6 +588,8 @@
 
 - **工具链陷阱（重要）**：`engine/build/gen/cache` 会**复用已生成的 C++**，源码删除后产物仍留旧代码（实测 `grep F212-MARK build/gen/extension-kakasi_engine.cc` = 2，而 main.php 里已为 0）。⇒ 任何靠输出标记做的归因，**必须先清缓存干净构建**，否则标记可能在二进制里根本不存在。
 
+- **F214（撤回 F212 归因 + 立测量规程）**：清缓存重建后全树扫标记，`F213-MARK` **只在 `build/gen/cache/ast/*.ast`**，`build/gen/main.cc` 与 `.obj` 里都没有 ⇒ 增量构建没把改动带进生成码，`MARKS=0` 什么也不能说明 ⇒ **F212 的阶段归因作废**（已在原文标注撤回）。成立且不依赖标记的硬事实只有一条：同一运行内第一条 200 层调用返回空、第二条 3909 字符且 JSON 合法（`run_f209c.log`）。**新规程**：改动后先 `grep` 产物（`build/gen/main.cc`）确认唯一字符串在里面，再跑测量；不在就删 `build/gen/cache/ast` 全量重建。**只加 echo 不改行为的实验，无法用反推**——这是本轮最大的方法论收获。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
