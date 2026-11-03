@@ -836,6 +836,30 @@ def main():
         a7ok = False
     check("chat-json-schema-array7", a7ok, a7content)
 
+    # Twenty-level object chain through the live path (the closer token budget is sized by
+    # depth; a fixed budget used to truncate 20-level closes).
+    deep_leaf = {"type": "object",
+                 "properties": {"city": {"type": "string"}, "count": {"type": "integer"}}}
+    deep_schema = deep_leaf
+    deep_keys = "abcdefghijklmnopqrst"
+    for k in reversed(deep_keys):
+        deep_schema = {"type": "object", "properties": {k: deep_schema}}
+    deep_body = {"messages": [{"role": "user", "content": "The capital of France is"}],
+                 "max_tokens": 192,
+                 "response_format": {"type": "json_schema", "json_schema": {
+                     "name": "deep", "schema": deep_schema}}}
+    r = post("/v1/chat/completions", deep_body)
+    dcontent = r["choices"][0]["message"]["content"]
+    try:
+        dval = json.loads(dcontent)
+        for k in deep_keys:
+            dval = dval[k]
+        dok = (isinstance(dval.get("city"), str)
+               and isinstance(dval.get("count"), int) and not isinstance(dval.get("count"), bool))
+    except Exception:
+        dok = False
+    check("chat-json-schema-deep20", dok, dcontent)
+
     # stop / stop_sequences cut the text and report the right reason (baseline answer is "Paris").
     cap = {"messages": [{"role": "user", "content": "The capital of France is"}], "max_tokens": 16}
     r = post("/v1/chat/completions", dict(cap, stop=["ari"]))

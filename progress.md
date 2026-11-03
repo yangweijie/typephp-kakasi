@@ -498,7 +498,7 @@
 
 ## 当前未决（2026-11-03 02:18 本地）
 
-- **F168（接线 bug）已修复并验证**：顶层 2-D 检测器会抢占元素内 2-D 数组（活服务输出缺 `items` 包裹；自检直调检测器所以未暴露）。三入口在顶层 arr2 之前先检测元素级 ARR2D；`engine/build_f168.log` 成功、`engine/run_f168.log` **127 PASS / 0 FAIL**；`api_smoke.py` 扩到 **65 形状**（含三出口的 2-D 元素数组），`engine/api_smoke_f168d.log` **65/65 PASS**。
+- **F168（接线 bug）已修复并验证**：顶层 2-D 检测器会抢占元素内 2-D 数组（活服务输出缺 `items` 包裹；自检直调检测器所以未暴露）。三入口在顶层 arr2 之前先检测元素级 ARR2D；`engine/build_f168.log` 成功、`engine/run_f168.log` **127 PASS / 0 FAIL**；`api_smoke.py` 扩到 **66 形状**（三出口 2-D 元素数组 + 20 层嵌套生产路径），`engine/api_smoke_f168e.log` **66/66 PASS**。
 - **F167（par accept 空转告警）已修复并验证**：`stream_select` 门控 + `$c` 空闲时指向监听器（规避 TypePHP 资源类型改判限制）。8001 空闲 8 s 内 `Accept failed` **0 行**（原 30 s 443 行）；`par_smoke_f167c.log` **7/7**、`fairness_f167.log` **PASS**（0.28 s vs 4.91 s）；全量回归 `run_f167.log` **127 PASS / 0 FAIL / `RUN_EXIT=0`**。
 - **F166（通用 N 维字符串数组）已验证**：`api_array_n_string_value` + rank 检测器（≥7 才接管），三出口在 6 维之前接入；`engine/build_f166.log` 构建成功；`engine/run_f166.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR7 det=[m|7] text=[{"m":[[[[[[["red"]]]]]]]}]: PASS`；同一二进制活服务 `engine/api_smoke_f166.log`：**61/61 PASS**。
 - **F165（嵌套上限 32、DEEP20）已验证**：两处下钻循环 12→32；新增 `SCHEMA-DEEP20`。首跑暴露闭合串 token 预算 bug（固定 8，21 个 `}` 被截断），两处构造器改为 `count($keys)*2+8` 后 PASS；`engine/build_f165b.log` 构建成功；`engine/run_f165b.log`：**126 PASS / 0 FAIL / `RUN_EXIT=0`**；同一二进制活服务 `engine/api_smoke_f165.log`：**61/61 PASS**。
@@ -526,7 +526,7 @@
 2. **grammar-constrained 解码**：已覆盖（F109–F147、F152–F159）：字符串 charset/有符号整数/小数/科学计数法/布尔/嵌套 1–12 层/同层混合叶子/2–6 维数组/三类数组/对象数组/顶层数组/元素内字符串数组+标量混合叶子（F157）/元素内嵌套链 ≤12 层（F158）/**oneOf 分支含 grammar（F159：const 选支 + 分支自有语法）**/**根级 oneOf 分支含 grammar（F160）**/有界·无界 multipleOf/排他边界/本地 `$ref`/`allOf`/属性级·根级 `oneOf`。**剩余缺口**：外部 `$ref`、转义字符串；>12 层与 >6 维收益递减暂缓。离线复刻检测器到 Python 的方法已工具化（F158/F159 两轮使用），下个增量先跑防误认领矩阵再重建。
 3. 其余：多分片 GGUF 合并、多样草稿器、并行多卡、FR-05 插件、UNIKERN 决策。
 
-复现：`scripts\build-kakasi-nosetvars.bat norun`（构建，WMI/`setvars` 挂起时亦可）→ `scripts\run-kakasi-selftest.bat run.log`（全量自检，判据 121 PASS / 0 FAIL / `RUN_EXIT=0`，当前证据 `engine/run_f157.log`）→ 起 8000 服务后 `python engine\tests\api_smoke.py 8000`（**65/65**，`engine/api_smoke_f168d.log`）；8001：`scripts\serve-par.bat` 后 `python engine\tests\par_smoke.py 8001`（7/7）、`python engine\tests\fairness_test.py 8001`（替代路径证据见 F157）。环境正常时仍可用 `scripts\build-kakasi.bat` 一次完成构建+自检。
+复现：`scripts\build-kakasi-nosetvars.bat norun`（构建，WMI/`setvars` 挂起时亦可）→ `scripts\run-kakasi-selftest.bat run.log`（全量自检，判据 121 PASS / 0 FAIL / `RUN_EXIT=0`，当前证据 `engine/run_f157.log`）→ 起 8000 服务后 `python engine\tests\api_smoke.py 8000`（**66/66**，`engine/api_smoke_f168e.log`）；8001：`scripts\serve-par.bat` 后 `python engine\tests\par_smoke.py 8001`（7/7）、`python engine\tests\fairness_test.py 8001`（替代路径证据见 F157）。环境正常时仍可用 `scripts\build-kakasi.bat` 一次完成构建+自检。
 
 ## 5-Question Reboot Check
 | Question | Answer |
