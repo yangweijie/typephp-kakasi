@@ -1862,3 +1862,17 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **实验 2（分词洗清）**：在分隔符那一步之前打 `tok_encode($sep)`（同一个全量重建流程）⇒ `engine/run_f223b.log:702-703` 两次都是 `sep=[1335,1830,788]`，**首调与再调完全相同且非空**；但同一步的已解码长度是 **首调 1938 字符 / 再调 3382 字符**。⇒ `api_constrain_loop` 拿到的候选没问题，**首调是在更早的地方就"少解码了"一大截**，随后才在分隔符处拿不到续解码状态（F222 的 E5 是**症状**不是根因）。
 **归因更新**：冷启动缺陷＝**首调时约束解码的有效预算显著偏小**（同一 prompt、同一 plan，1938 vs 3382）。与 F216 当年"长前缀填满会话后容量判定把放不下当结束"方向一致，但现在有量：差距出现在前缀+第一叶子之前，不在分隔符处。
 **下一步判据（很省，一次构建就够）**：在 `api_constrain_loop` 每一步打印 `d / strlen($s) / model_session 剩余容量(若可得) / allowed 个数`，把首调与再调的**截断点**打出来；截断若在预算用尽处，就查预算是从哪来的（会话 n_ctx、缓存位置、还是 `maxSteps` 传入值）。**验收仍是** `SCHEMA-DEEP200-RETRY` 的 `first_len` 转非零。
+
+### F224 · **根因定位**：冷启动不是分隔符、也不是缓存/分词，而是 `session_next_allowed` 在**强制前缀解码第 502 步**返回 -1（同一条前缀热态能走完 893 步）
+**做法**：`api_constrain_loop` 的两个 break 各打标记，用 `$maxSteps > 1000` 只放行深案例的前缀调用（预算 `count($keys)*8+64=1664`，其余调用都在 32/4/96 级别）⇒ 清 AST 全量重建、一次自检。
+**实测**（`engine/run_f224.log`，137 PASS / 0 FAIL）：
+- 702 行 `F224-NXNEG d=502 chosen=502` —— **首调**：`model_session_next_allowed` 在第 502 步返回 -1，强制前缀被**截断**；
+- 703 行 `F224-BREAK d=893 done=1 allowedempty=1` —— **再调**：走满 893 步并**完整匹配**候选（`done=1`）。
+⇒ 链条闭合：前缀被截断 → 后续叶子/分隔符的续解码在无正确 logits 状态下返回 -1/空 → F222 看到的 E5。**E5 是症状，真正的失效点是 `api_constrained` 前缀解码本身**。同时解释 F210 就地重试无效（重试的是分隔符，不是被截断的前缀）。
+**native 侧的四个 -1 出口**（`engine/src/model_sycl.cc:1482` `session_next_allowed`）：
+1. `g_last_logits.empty() || allowed.empty()` → `g_err="constrained step: no logits/set"`
+2. 所有 allowed id 越界 → `g_err="constrained step: no allowed id is in range"`
+3. 选中 id == eos → 无 g_err
+4. `prefill_top1(...)` 返回空 → 无 g_err（**容量/KV 失败面**）
+**顺带发现一条独立缺陷**：第 1495-1497 行 `g_sess_len += 1;` 写在 `if (r.empty()) return -1;` **之前** ⇒ prefill 失败时**会话长度仍然自增**，状态与实际 KV 脱钩；任何"失败后继续用同一会话"的路径都会被这一步污染。
+**下一步（判据不变：`SCHEMA-DEEP200-RETRY` 的 `first_len>0`）**：① 先在 PHP 侧读 `g_err`（若已有 `model_last_error` 访问器）区分 1/2 与 3/4，**纯 PHP 改动，不用重编 SYCL**；② 若是 4，就查 `prefill_top1(backend,{best},-1,g_sess_len)` 的位置/窗口容量：冷态 `g_sess_len` 从哪来、`model_session_start` 的初始窗口是否小于 `prompt+893`；③ 顺手把 `g_sess_len += 1` 挪到成功分支之后（单独一次 C++ 重建验证，别和 ①② 混在同一轮）。
