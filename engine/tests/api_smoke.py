@@ -8,6 +8,7 @@ must be true, not just "got 200" - a wrong shape is a failure.
 """
 import json
 import re
+import socket
 import sys
 import time
 import urllib.error
@@ -1113,6 +1114,21 @@ def main():
     tfin = tchunks[-1]["choices"][0].get("finish_reason") if tchunks else None
     check("chat-stream-timeout", tfin == "length" and telapsed < 5.0,
           "finish=%s %.2fs" % (tfin, telapsed))
+
+    # FR-07.2: a client that drops mid-stream must not wedge the server.
+    body = json.dumps({"messages": [{"role": "user", "content": "Count from one to twenty."}],
+                       "max_tokens": 64, "stream": True}).encode()
+    s = socket.create_connection(("127.0.0.1", PORT), timeout=10)
+    s.sendall(b"POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+              b"Content-Type: application/json\r\nConnection: close\r\n"
+              b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+    s.recv(64)
+    s.close()
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 8})
+    check("chat-stream-client-gone",
+          "Paris" in (r["choices"][0]["message"]["content"] or ""),
+          str(r)[:160])
 
     r = post("/v1/messages", dict(cap, stop_sequences=["ari"]))
     check("anth-stop", r["content"][0]["text"] == "P" and r["stop_reason"] == "stop_sequence",

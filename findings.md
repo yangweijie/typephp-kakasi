@@ -1582,6 +1582,10 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **做法**：无需改码（`timeout_ms` 已在文本/tool 两个流式循环中检查）；新增 `chat-stream-timeout`：长 prompt + `timeout_ms=1`，断言最后一个 chunk 的 `finish_reason=="length"` 且总耗时 < 5 s。
 **验证**：`engine/api_smoke_f185.log`：**81/81 PASS**。
 
+### F186 · 流式客户端中途断开（`client-gone`）的 smoke 覆盖
+**做法**：无需改码（流式循环写失败即置 `client-gone` 并结束）；smoke 用原始 socket 发起流式请求、读到首批字节后立即关闭，随后再发一条普通请求，断言仍返回 “Paris”。
+**验证**：`engine/api_smoke_f186.log`：**82/82 PASS**（`chat-stream-client-gone`）。
+
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。
