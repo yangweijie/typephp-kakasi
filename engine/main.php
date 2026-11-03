@@ -7669,7 +7669,11 @@ function api_serve(int $port): void
                     for ($ri = 0; $ri < count($toolNames); $ri++) {
                         $reqArgs = api_schema_arg_candidates($body, $toolNames[$ri]);
                         if (count($reqArgs) > 0) {
-                            $reqWire[] = api_tool_wire($toolNames[$ri], $reqArgs[0]);
+                            // Offer every argument value, not just the first: with pairs built from
+                            // this list the model can answer "weather in Paris, time in London".
+                            for ($rj = 0; $rj < count($reqArgs); $rj++) {
+                                $reqWire[] = api_tool_wire($toolNames[$ri], $reqArgs[$rj]);
+                            }
                             $reqCands = 1;
                         } else {
                             $reqWire[] = api_tool_wire($toolNames[$ri], "{}");
@@ -7689,6 +7693,11 @@ function api_serve(int $port): void
                         for ($rb = 0; $rb < count($reqWire); $rb++) {
                             if ($ra == $rb) {
                                 continue;
+                            }
+                            // Every pair costs a candidate to scan at each decoded step, so the
+                            // cross product is capped rather than allowed to grow squared.
+                            if (count($reqSkels) >= 24) {
+                                break;
                             }
                             $reqSkels[] = $reqWire[$ra] . "\n" . $reqWire[$rb];
                         }

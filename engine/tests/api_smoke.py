@@ -179,6 +179,18 @@ def main():
                                       in ("Paris", "London") for t in pt) and len(st) == 1,
           "parallel=%d single=%d %s" % (len(pt), len(st), str(pt)[:160]))
 
+    # The pair candidates carry each tool's own argument values, so the two cities in one prompt
+    # must land on the two calls respectively - that is the point of offering the cross product.
+    sem = dict(par)
+    sem["messages"] = [{"role": "user",
+                        "content": "Call get_weather for Paris and get_time for London in one turn."}]
+    r = post("/v1/chat/completions", sem)
+    st2 = r["choices"][0]["message"].get("tool_calls") or []
+    got = dict((t["function"]["name"], json.loads(t["function"]["arguments"]).get("city"))
+               for t in st2)
+    check("chat-tool-parallel-args", got.get("get_weather") == "Paris"
+          and got.get("get_time") == "London", str(st2)[:200])
+
     # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
     # block arrives whole, while the control stream is cut at the leading fence and ends early.
     jstream = {"input": "Return one JSON object with key city, value Paris.",
