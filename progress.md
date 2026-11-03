@@ -498,7 +498,8 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
-- **探针与暂缓项（未改码）**：① `/v1/completions` + `stream:true` 是**显式拒绝**（`completions streaming is not supported`），形状正确、无需修；② 整数 N 维数组（rank ≥ 7）需要 4 处检测 + 4 处分发（非流式 / 单槽 SSE / `api_schema_token_value` / 并行槽），本轮预算不足，代码已撤销、留待下个窗口按 `api_array_n_string_value` 模式实现并补 `SCHEMA-ARR7-INT`。
+- **F178（通用整数 N 维数组）已验证**：`api_array_n_int_value` + `api_response_schema_array_n_int`，四处接线；首跑抓到并行槽误用 `$prefixCache` 的编译错误，改为 `1`；`engine/build_f178b.log` 成功、`engine/run_f178.log` **129 PASS / 0 FAIL**，`SCHEMA-ARR7-INT text=[{"m":[[[[[[[123]]]]]]]}]: PASS`。
+- **探针与暂缓项（未改码）**：① `/v1/completions` + `stream:true` 是**显式拒绝**（`completions streaming is not supported`），形状正确、无需修；
 - **F177（`output_format` + 本地 `$ref`）已验证**：无需改码（翻译先于预处理），新增 smoke `anth-json-schema-ref`；`api_smoke_f177.log` **74/74 PASS**。
 - **F176（Responses 流式工具出口）已验证**：`api_resp_call_start/done` + 两处工具出口 typed events；首跑抓到 arguments 二次转义并修复；`engine/build_f176c.log` 成功、`api_smoke_f176b.log` **73/73 PASS**（新增 `responses-tool-stream`）。
 - **F175（Responses 流式 schema 出口）已验证**：`$sJOut` 出口按 `$wantResponses` 输出 typed events；`engine/build_f175.log` 成功、`api_smoke_f175.log` **72/72 PASS**（新增 `responses-stream-json-schema`）。工具调用流式出口仍为 Chat 形状。

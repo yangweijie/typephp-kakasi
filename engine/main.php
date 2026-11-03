@@ -1965,6 +1965,113 @@ function api_response_schema_array_n_string(string $body): string
     return $pm[1] . "|" . $na;
 }
 
+// Generic N-dimensional integer array for ranks >= 7: {"m":[[…[7]…]]}. One integer per
+// innermost list; each outer level allows up to maxPerLevel entries.
+function api_array_n_int_value(string $ids, string $prop, int $dims, int $maxPerLevel, int $maxSteps, int $useCache = 1): string
+{
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($commaIds == "" || $bracketIds == "" || $dims < 2) {
+        return "";
+    }
+    $open = "";
+    for ($i = 0; $i < $dims; $i++) {
+        $open = $open . "[";
+    }
+    $pre = "{\"" . $prop . "\":" . $open;
+    $s = api_constrained($ids, [$pre], $dims * 8 + 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $cnt = [];
+    for ($i = 0; $i < $dims; $i++) {
+        $cnt[$i] = 1;
+    }
+    $s = $s . "," . api_number_fill(0, $maxSteps);
+    $lv = $dims - 1;
+    $guard = 0;
+    while ($lv >= 0 && $guard < 64) {
+        $guard++;
+        $allow = $cnt[$lv] >= $maxPerLevel ? $bracketIds : $commaIds . "," . $bracketIds;
+        $nx = model_session_next_allowed(0, $allow);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos("," . $bracketIds . ",", "," . $nx . ",") !== false) {
+            $lv = $lv - 1;
+            continue;
+        }
+        $nest = "";
+        for ($i = 0; $i < $dims - 1 - $lv; $i++) {
+            $nest = $nest . "[";
+        }
+        if ($nest != "") {
+            $fc = api_constrained_continue([$nest], 48);
+            if ($fc == "") {
+                return "";
+            }
+            $s = $s . "," . $fc;
+        }
+        $s = $s . "," . api_number_fill(0, $maxSteps);
+        $cnt[$lv] = $cnt[$lv] + 1;
+        for ($i = $lv + 1; $i < $dims; $i++) {
+            $cnt[$i] = 1;
+        }
+        $lv = $dims - 1;
+    }
+    $rest = "";
+    if ($lv >= 0) {
+        for ($i = 0; $i <= $lv; $i++) {
+            $rest = $rest . "]";
+        }
+    }
+    $rest = $rest . "}";
+    $cb = api_constrained_continue([$rest], 2 * $dims + 8);
+    if ($cb == "") {
+        return "";
+    }
+    return $s . "," . $cb;
+}
+
+// Rank of a pure nested integer array (prop → array^n → integer); only ranks >= 7.
+function api_response_schema_array_n_int(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    $schema = api_json_object_after($body, "schema");
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $pm = [];
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{/', $schema, $pm) != 1) {
+        return "";
+    }
+    $ip = strpos($schema, $pm[0]);
+    if ($ip === false) {
+        return "";
+    }
+    $win = substr($schema, $ip, 4000);
+    $sm = [];
+    if (preg_match('/^(.*?)"type"\s*:\s*"integer"/s', $win, $sm) != 1) {
+        return "";
+    }
+    $head = $sm[1];
+    if (strpos($head, '"properties"') !== false) {
+        return "";
+    }
+    $na = preg_match_all('/"type"\s*:\s*"array"/', $head);
+    $nt = preg_match_all('/"type"\s*:/', $head);
+    if ($na < 7 || $na != $nt) {
+        return "";
+    }
+    return $pm[1] . "|" . $na;
+}
+
 // Detect six nested array levels ending in a string items type.
 function api_response_schema_array6_string(string $body): string
 {
@@ -4669,6 +4776,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         return $scOut;
     }
     $scArrN = api_response_schema_array_n_string($body);
+    $scArrNI = api_response_schema_array_n_int($body);
     $scArr6 = "";
     if ($scArrN == "") {
         $scArr6 = api_response_schema_array6_string($body);
@@ -4726,7 +4834,10 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $scMix = api_response_schema_mixed_object($body);
     }
     $scProp = [];
-    if ($scArrN != "") {
+    if ($scArrNI != "") {
+        $sani = explode("|", $scArrNI);
+        $scOut = api_array_n_int_value($ids, $sani[0], (int) $sani[1], 2, 3, 1);
+    } else if ($scArrN != "") {
         $sann = explode("|", $scArrN);
         $scOut = api_array_n_string_value($ids, $sann[0], (int) $sann[1],
             api_schema_charset(), 2, 3, 1);
@@ -5874,6 +5985,8 @@ Connection: close
                             } else {
                                 // One-level nested string first (see the non-stream path).
                                 $scArrN = api_response_schema_array_n_string($body);
+    $scArrNI = api_response_schema_array_n_int($body);
+                                $scArrNI = api_response_schema_array_n_int($body);
                                 $scArr6 = "";
                                 if ($scArrN == "") {
                                     $scArr6 = api_response_schema_array6_string($body);
@@ -5932,7 +6045,11 @@ Connection: close
                                     $scMix = api_response_schema_mixed_object($body);
                                 }
                                 $scProp = [];
-                                if (isset($scArrN) && $scArrN != "") {
+                                if ($scArrNI != "") {
+                                    $sani2 = explode("|", $scArrNI);
+                                    $scOut = api_array_n_int_value($ids, $sani2[0], (int) $sani2[1],
+                                        2, 3, 1);
+                                } else if (isset($scArrN) && $scArrN != "") {
                                     $sann = explode("|", $scArrN);
                                     $scOut = api_array_n_string_value($ids, $sann[0], (int) $sann[1],
                                         api_schema_charset(), 2, 3, 1);
@@ -6804,6 +6921,7 @@ function api_serve(int $port): void
                         $sJOut = api_constrained($ids, $sSchema, 128, $prefixCache);
                     } else {
                         $sArrN = api_response_schema_array_n_string($body);
+                        $sArrNI = api_response_schema_array_n_int($body);
                         $sArr6 = "";
                         if ($sArrN == "") {
                             $sArr6 = api_response_schema_array6_string($body);
@@ -6859,7 +6977,11 @@ function api_serve(int $port): void
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == "") {
                             $sMix = api_response_schema_mixed_object($body);
                         }
-                        if (isset($sArrN) && $sArrN != "") {
+                        if ($sArrNI != "") {
+                            $sani3 = explode("|", $sArrNI);
+                            $sJOut = api_array_n_int_value($ids, $sani3[0], (int) $sani3[1],
+                                2, 3, $prefixCache);
+                        } else if (isset($sArrN) && $sArrN != "") {
                             $sann2 = explode("|", $sArrN);
                             $sJOut = api_array_n_string_value($ids, $sann2[0], (int) $sann2[1],
                                 api_schema_charset(), 2, 3, $prefixCache);
@@ -7135,6 +7257,7 @@ function api_serve(int $port): void
                     // One-level nested string first: the flat detector would otherwise mistake
                     // the inner property for a top-level one.
                     $arrN = api_response_schema_array_n_string($body);
+                    $arrNI = api_response_schema_array_n_int($body);
                     $arr6 = "";
                     if ($arrN == "") {
                         $arr6 = api_response_schema_array6_string($body);
@@ -7197,7 +7320,12 @@ function api_serve(int $port): void
                         $mixPlan = api_response_schema_mixed_object($body);
                     }
                     $strProps = [];
-                    if (isset($arrN) && $arrN != "") {
+                    if ($arrNI != "") {
+                        $sani4 = explode("|", $arrNI);
+                        $enumOut = api_array_n_int_value($ids, $sani4[0], (int) $sani4[1],
+                            2, 3, $prefixCache);
+                        $jsonMode = 1;
+                    } else if (isset($arrN) && $arrN != "") {
                         $aann = explode("|", $arrN);
                         $enumOut = api_array_n_string_value($ids, $aann[0], (int) $aann[1],
                             api_schema_charset(), 2, 3, $prefixCache);
@@ -9778,6 +9906,44 @@ function main(): void
         echo "SCHEMA-ARR7: PASS (seven-level array via generic builder)\n";
     } else {
         echo "SCHEMA-ARR7: FAIL det=[" . $a7Det . "] shape=" . $a7Shape . "\n";
+    }
+
+    // Seven levels of integer arrays through the generic integer builder.
+    $i7Open = "";
+    for ($i = 0; $i < 7; $i++) {
+        $i7Open = $i7Open . '{"type":"array","items":';
+    }
+    $i7Close = "";
+    for ($i = 0; $i < 7; $i++) {
+        $i7Close = $i7Close . "}";
+    }
+    $i7Body = '{"json_schema":{"name":"r","schema":{"type":"object","properties":{"m":'
+        . $i7Open . '{"type":"integer"}' . $i7Close . '}}}}';
+    $i7Det = api_response_schema_array_n_int($i7Body);
+    $i7Ids = tok_chat("user", "Pick a number.") . "," . tok_chat_open("assistant");
+    $i7Out = api_array_n_int_value($i7Ids, "m", 7, 1, 3, 0);
+    $i7Parts = explode(",", $i7Out);
+    $i7Base = count(explode(",", $i7Ids));
+    $i7Text = "";
+    for ($i = $i7Base; $i < count($i7Parts); $i++) {
+        $i7Text = $i7Text . gguf_token_str((int) $i7Parts[$i]);
+    }
+    $i7Text = str_replace("Ġ", " ", $i7Text);
+    $i7Pat = '/^\{"m":';
+    for ($i = 0; $i < 7; $i++) {
+        $i7Pat = $i7Pat . '\[';
+    }
+    $i7Pat = $i7Pat . '(0|[1-9][0-9]*)';
+    for ($i = 0; $i < 7; $i++) {
+        $i7Pat = $i7Pat . '\]';
+    }
+    $i7Pat = $i7Pat . '\}$/';
+    $i7Shape = preg_match($i7Pat, $i7Text);
+    echo "SCHEMA-ARR7-INT det=[" . $i7Det . "] text=[" . $i7Text . "]\n";
+    if ($i7Det == "m|7" && $i7Out != "" && $i7Shape == 1 && api_json_ok($i7Text) == 1) {
+        echo "SCHEMA-ARR7-INT: PASS (seven-level integer array via generic builder)\n";
+    } else {
+        echo "SCHEMA-ARR7-INT: FAIL det=[" . $i7Det . "] shape=" . $i7Shape . "\n";
     }
 
     // Unbounded multipleOf: 4 model-chosen digits + a forced 3-digit suffix divisible by 7.

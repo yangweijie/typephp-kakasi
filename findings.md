@@ -1561,6 +1561,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **做法**：无需改代码——F169 的翻译发生在 `$ref`/`allOf`/`oneOf` 预处理之前，因此追加的 `json_schema` 副本会一并被解析。新增 smoke `anth-json-schema-ref` 固化该行为。
 **验证**：`engine/api_smoke_f177.log`：**74/74 PASS**，`anth-json-schema-ref`（`#/definitions/city`）PASS。
 
+### F178 · 通用整数 N 维数组（rank ≥ 7）
+**做法**：`api_array_n_int_value`（与字符串版同构：每层 `,` 回到该层开子链、`]` 关闭；innermost 用 `api_number_fill` 生成整数）+ 检测器 `api_response_schema_array_n_int`（叶子前全为 array 且 rank ≥ 7）；四处接线：`api_schema_token_value`、并行槽、单槽 SSE、Responses。
+**首跑真 bug**：并行槽分支误用 `$prefixCache`（该作用域不存在）→ 编译报 `undeclared identifier`；改为字面量 `1` 后构建通过。
+**验证**：`engine/build_f178b.log` 构建成功；`engine/run_f178.log`：**129 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR7-INT det=[m|7] text=[{"m":[[[[[[[123]]]]]]]}]: PASS`（字符串版 ARR7 未回退）。
+**限制**：整数数组 rank ≥ 7 的活服务 smoke 用例未加（当前仅自检覆盖）；每层预算 2、每条内层一个整数。
+
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
 **验证**：`engine/build_f170.log` 构建成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40 plan=[a/…/a13|city:s,count:i]: PASS`（DEEP12/DEEP20 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f170b.log`：**67/67 PASS、`SMOKE_EXIT=0`**。
