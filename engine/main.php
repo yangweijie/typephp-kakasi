@@ -7009,32 +7009,58 @@ function api_serve(int $port): void
                         if (count($qSkels) > 0) {
                             $qOut = api_constrained($ids, $qSkels, 192, $prefixCache);
                             $qText = api_gen_text($qOut, $promptN);
-                            $qPick = $qSkels[0];
-                            for ($qi = 0; $qi < count($qSkels); $qi++) {
-                                if (strpos($qText, $qSkels[$qi]) === 0) {
-                                    $qPick = $qSkels[$qi];
-                                }
-                            }
-                            $qCall = api_tool_call_json($qPick, $qNames);
-                            $qName = $qCall == "" ? "" : api_str($qCall, "name");
+                            // Plural extraction so a two-block turn streams every call. The previous
+                            // prefix match rebuilt a single skeleton and silently substituted another
+                            // candidate when nothing matched - F198's wrong answer.
+                            $qList = api_tool_calls_json($qText, $qNames);
+                            $qItems = api_tool_items($qList);
+                            $qName = count($qItems) > 0 ? api_str($qItems[0], "name") : "";
                             if ($qName != "") {
-                                $qArgs = api_str($qCall, "arguments");
-                                if ($qArgs == "") {
-                                    $qArgs = "{}";
+                                $qNameList = "";
+                                $qArgList = "";
+                                $qRespOut = "";
+                                $qn = 0;
+                                for ($qi = 0; $qi < count($qItems); $qi++) {
+                                    $qOneName = api_str($qItems[$qi], "name");
+                                    if ($qOneName == "") {
+                                        continue;
+                                    }
+                                    $qOneArgs = api_str($qItems[$qi], "arguments");
+                                    if ($qOneArgs == "") {
+                                        $qOneArgs = "{}";
+                                    }
+                                    if ($qn > 0) {
+                                        $qNameList = $qNameList . ",";
+                                        $qArgList = $qArgList . ",";
+                                        $qRespOut = $qRespOut . ",";
+                                    }
+                                    $qNameList = $qNameList . "{\"index\":" . $qn . ",\"id\":\"call_"
+                                        . ($qn + 1) . "\",\"type\":\"function\",\"function\":{\"name\":\""
+                                        . api_esc($qOneName) . "\",\"arguments\":\"\"}}";
+                                    $qArgList = $qArgList . "{\"index\":" . $qn
+                                        . ",\"function\":{\"arguments\":\"" . $qOneArgs . "\"}}";
+                                    $qRespOut = $qRespOut . "{\"id\":\"fc_" . ($qn + 1)
+                                        . "\",\"type\":\"function_call\",\"status\":\"completed\",\"call_id\":\"call_"
+                                        . ($qn + 1) . "\",\"name\":\"" . api_esc($qOneName)
+                                        . "\",\"arguments\":\"" . $qOneArgs . "\"}";
+                                    $qn = $qn + 1;
                                 }
                                 if ($wantResponses) {
                                     $quTok = count(explode(",", $qOut)) - $promptN;
                                     if ($quTok < 0) {
                                         $quTok = 0;
                                     }
-                                    fwrite($c, api_resp_call_start($modelId, $qName, 0));
-                                    fwrite($c, api_resp_call_done($qName, $qArgs, $quTok,
-                                        $modelId, $promptN, 0, 1, ""));
+                                    for ($qi = 0; $qi < $qn; $qi++) {
+                                        $qOneName = api_str($qItems[$qi], "name");
+                                        $qOneArgs = api_str($qItems[$qi], "arguments");
+                                        if ($qOneArgs == "") {
+                                            $qOneArgs = "{}";
+                                        }
+                                        fwrite($c, api_resp_call_start($modelId, $qOneName, $qi));
+                                        fwrite($c, api_resp_call_done($qOneName, $qOneArgs, $quTok,
+                                            $modelId, $promptN, $qi, $qi == $qn - 1 ? 1 : 0, $qRespOut));
+                                    }
                                 } else {
-                                    $qNameList = "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
-                                        . "\"function\":{\"name\":\"" . api_esc($qName) . "\",\"arguments\":\"\"}}";
-                                    $qArgList = "{\"index\":0,"
-                                        . "\"function\":{\"arguments\":\"" . $qArgs . "\"}}";
                                     fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                              . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
                                              . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
@@ -7071,20 +7097,38 @@ function api_serve(int $port): void
                         $sNames = api_tool_names($body);
                         $sArgs0 = api_schema_arg_candidates($body, $sChoice);
                         $sSkels = [];
-                        if (count($sArgs0) > 0) {
-                            for ($i = 0; $i < count($sArgs0); $i++) {
-                                $sSkels[] = "{\"name\":\"" . $sChoice . "\",\"arguments\":\""
-                                          . api_esc($sArgs0[$i]) . "\"}";
-                            }
-                        } else {
-                            $sSkels[] = "{\"name\":\"" . $sChoice . "\",\"arguments\":{}}";
+                        $sWire = [];
+                        for ($i = 0; $i < count($sArgs0); $i++) {
+                            $sWire[] = api_tool_wire($sChoice, $sArgs0[$i]);
                         }
-                        $sOut = api_constrained($ids, $sSkels, 96, $prefixCache);
+                        if (count($sWire) == 0) {
+                            $sWire[] = api_tool_wire($sChoice, "{}");
+                        }
+                        for ($i = 0; $i < count($sWire); $i++) {
+                            $sSkels[] = $sWire[$i];
+                        }
+                        if (preg_match('/"parallel_tool_calls"\s*:\s*true/', $body) == 1
+                            && count($sWire) > 1) {
+                            $sSkels = [];
+                            for ($sa = 0; $sa < count($sWire); $sa++) {
+                                for ($sb = 0; $sb < count($sWire); $sb++) {
+                                    if ($sa == $sb) {
+                                        continue;
+                                    }
+                                    if (count($sSkels) >= 24) {
+                                        break;
+                                    }
+                                    $sSkels[] = $sWire[$sa] . "\n" . $sWire[$sb];
+                                }
+                            }
+                        }
+                        $sOut = api_constrained($ids, $sSkels, 192, $prefixCache);
                         // api_constrained returns token ids: decode the generated part before
                         // handing it to the call parser.
                         $sText = api_gen_text($sOut, $promptN);
-                        $sCall = $sText == "" ? "" : api_tool_call_json($sText, $sNames);
-                        $sName = $sCall == "" ? "" : api_str($sCall, "name");
+                        $sCall = $sText == "" ? "" : api_tool_calls_json($sText, $sNames);
+                        $sItems = api_tool_items($sCall);
+                        $sName = count($sItems) > 0 ? api_str($sItems[0], "name") : "";
                         if ($sName == "") {
                             fwrite($c, "data: {\"error\":{\"message\":\"tool constraint failed\"}}\n\n");
                             echo "SESSION stream tool=failed reason=constraint cands=" . count($sArgs0)
@@ -7092,29 +7136,63 @@ function api_serve(int $port): void
                             fclose($c);
                             continue;
                         }
-                        $sArgs = api_str($sCall, "arguments");
-                        if ($sArgs == "") {
-                            $sArgs = "{}";
+                        $sNameList = "";
+                        $sArgList = "";
+                        $sRespOut = "";
+                        $sn = 0;
+                        for ($si = 0; $si < count($sItems); $si++) {
+                            $sOneName = api_str($sItems[$si], "name");
+                            if ($sOneName == "") {
+                                continue;
+                            }
+                            $sOneArgs = api_str($sItems[$si], "arguments");
+                            if ($sOneArgs == "") {
+                                $sOneArgs = "{}";
+                            }
+                            if ($sn > 0) {
+                                $sNameList = $sNameList . ",";
+                                $sArgList = $sArgList . ",";
+                                $sRespOut = $sRespOut . ",";
+                            }
+                            $sNameList = $sNameList . "{\"index\":" . $sn . ",\"id\":\"call_" . ($sn + 1)
+                                . "\",\"type\":\"function\",\"function\":{\"name\":\"" . api_esc($sOneName)
+                                . "\",\"arguments\":\"\"}}";
+                            $sArgList = $sArgList . "{\"index\":" . $sn
+                                . ",\"function\":{\"arguments\":\"" . $sOneArgs . "\"}}";
+                            $sRespOut = $sRespOut . "{\"id\":\"fc_" . ($sn + 1)
+                                . "\",\"type\":\"function_call\",\"status\":\"completed\",\"call_id\":\"call_"
+                                . ($sn + 1) . "\",\"name\":\"" . api_esc($sOneName)
+                                . "\",\"arguments\":\"" . $sOneArgs . "\"}";
+                            $sn = $sn + 1;
                         }
                         if ($wantResponses) {
                             $suTok = count(explode(",", $sOut)) - $promptN;
                             if ($suTok < 0) {
                                 $suTok = 0;
                             }
-                            fwrite($c, api_resp_call_start($modelId, $sName, 0));
-                            fwrite($c, api_resp_call_done($sName, $sArgs, $suTok,
-                                $modelId, $promptN, 0, 1, ""));
+                            for ($si = 0; $si < count($sItems); $si++) {
+                                $sOneName = api_str($sItems[$si], "name");
+                                if ($sOneName == "") {
+                                    continue;
+                                }
+                                $sOneArgs = api_str($sItems[$si], "arguments");
+                                if ($sOneArgs == "") {
+                                    $sOneArgs = "{}";
+                                }
+                                $sIdx = $si;
+                                fwrite($c, api_resp_call_start($modelId, $sOneName, $sIdx));
+                                fwrite($c, api_resp_call_done($sOneName, $sOneArgs, $suTok,
+                                    $modelId, $promptN, $sIdx, $si == count($sItems) - 1 ? 1 : 0, $sRespOut));
+                            }
                         } else {
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                      . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
                                      . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
-                                     . "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
-                                     . "\"function\":{\"name\":\"" . api_esc($sName) . "\",\"arguments\":\"\"}}]},"
+                                     . $sNameList . "]},"
                                      . "\"finish_reason\":null}]}\n\n");
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                      . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                     . "\"delta\":{\"tool_calls\":[{\"index\":0,"
-                                     . "\"function\":{\"arguments\":\"" . $sArgs . "\"}}]},"
+                                     . "\"delta\":{\"tool_calls\":[" . $sArgList . "]},"
                                      . "\"finish_reason\":null}]}\n\n");
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                      . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
