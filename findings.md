@@ -1581,6 +1581,15 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **所以并行生成的改动面比预想小，而且形状要求明确**：候选骨架里加**多调用**条目即可，由现成的复数提取器拆成多项。但**必须用带块标签的 wire 形式**——两个裸 JSON 直接相接时 `api_json_ok(整段)` 不成立、复数扫描器又找不到块标签，会整段判空；带标签时每块各自闭合，F195/F196 的解析与扇出立刻可用。骨架预算需 96→约 192（两块 ≈ 74 token）。
 **实验本身已回滚**：两条 `echo` 与 `build_f197.log` 所在的探针版本不入主干——`git checkout engine/main.php` 回到 F196 提交态（`e4a178a`），主干无新增日志噪声。
 
+### F202 预研 · 流式并行的接线点（本轮只定位，未动手）
+**为什么现在不做**：流式两处强制工具分支各自**从"骨架前缀匹配"重建单调用**（`engine/main.php:6982` 一带的 `required` 与 `7054` 一带的点名），要做并行必须把它们改成"对解码文本用复数提取器"，而这两条链上有 5 个以上现有流式工具形状（`chat-tool-required-stream`、`anth-tool-any-stream`、`responses-tool-stream` 等）；在本轮 F201 门禁还没出结果时动它们，等于同时开两处未验证面。
+**具体改动清单（照做即可，不必再重新定位）**：
+1. 两处都改为先取解码文本（`api_gen_text($qOut, $promptN)` / `api_gen_text($sOut, $promptN)`），再用 `api_tool_calls_json(text, names)` 得到逗号拼接的多项，交给 `api_tool_items()` 逐项发事件；**同时删掉"匹配不上就用第一个骨架"的静默兜底**（F198 的错答就来自这里，非流式侧 F199 已删，流式侧还在）。
+2. chat 出口：每项一条 `delta.tool_calls[{index:N,id:"call_{N+1}",...}]`，`index` 从 0 递增；收尾仍是一条 `finish_reason:"tool_calls"`。
+3. Responses 出口：`api_resp_call_start` / `api_resp_call_done`（`engine/main.php:4811`、`4822` 一带）**当前把 `fc_1`、`call_1`、`output_index:0` 写死**，需要加一个输出项序号参数，逐项发 `response.output_item.added` / `...arguments.delta|done` / `response.output_item.done`，`output_index` 递增。
+4. 判据（可判回归，别只看 200）：带 `parallel_tool_calls:true` 的流式请求应看到 **两组** `tool_calls`（`index` 0/1 且 id 各异）或 Responses 侧 **两组** `output_item.added/done`；对照请求（不带开关）仍为 1 组。现成的 `responses-tool-stream`、`chat-tool-required-stream` 形状可复用为对照组。
+5. 并行候选在流式侧同样要"只放两块"（F199 的停止规则同样适用），并且流式 forced 分支的 `maxSteps`/`$maxTok` 需容纳两块（≈74 token），否则会出现 F198 那种"截断后退回单调用"。
+
 ### F201 · 点名 `tool_choice` 也能并行（同一函数两次、参数各异）
 **做法**：`parallel_tool_calls` 判定上提到两条分支之前（`$parReq`，原来埋在 required 块里）；点名分支在 `parallel_tool_calls:true` 且该函数有 ≥2 个参数候选时，**只放两块串联的候选**（与 F199 同一理由：任一候选完整就停，单块在场则并行永不出现），叉乘同样设 24 上限。
 **活服务实测（单探针）**：`tool_choice={name:get_weather}` + `parallel_tool_calls:true` + 枚举 `[Paris,London]` + "Weather in Paris and London, two calls in one turn." ⇒ **两项** `call_1 {"city":"Paris"}` / `call_2 {"city":"London"}`，28 s（`C:/Users/ASUS/AppData/Local/Temp/p201c.json`）。

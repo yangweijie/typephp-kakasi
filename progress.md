@@ -570,7 +570,8 @@
 2. **grammar-constrained 解码**：已覆盖（F109–F147、F152–F159）：字符串 charset/有符号整数/小数/科学计数法/布尔/嵌套 1–12 层/同层混合叶子/2–6 维数组/三类数组/对象数组/顶层数组/元素内字符串数组+标量混合叶子（F157）/元素内嵌套链 ≤12 层（F158）/**oneOf 分支含 grammar（F159：const 选支 + 分支自有语法）**/**根级 oneOf 分支含 grammar（F160）**/有界·无界 multipleOf/排他边界/本地 `$ref`/`allOf`/属性级·根级 `oneOf`。**剩余缺口**：外部 `$ref`、转义字符串；>12 层与 >6 维收益递减暂缓。离线复刻检测器到 Python 的方法已工具化（F158/F159 两轮使用），下个增量先跑防误认领矩阵再重建。
 3. 其余：多分片 GGUF 合并、多样草稿器、并行多卡、FR-05 插件、UNIKERN 决策。
 
-复现：`scripts\build-kakasi-nosetvars.bat norun`（构建，WMI/`setvars` 挂起时亦可）→ `scripts\run-kakasi-selftest.bat run.log`（全量自检，判据 121 PASS / 0 FAIL / `RUN_EXIT=0`，当前证据 `engine/run_f157.log`）→ 起 8000 服务后 `python engine\tests\api_smoke.py 8000`（**66/66**，`engine/api_smoke_f168e.log`）；8001：`scripts\serve-par.bat` 后 `python engine\tests\par_smoke.py 8001`（7/7）、`python engine\tests\fairness_test.py 8001`（替代路径证据见 F157）。环境正常时仍可用 `scripts\build-kakasi.bat` 一次完成构建+自检。
+复现：`scripts\build-kakasi-nosetvars.bat norun`（构建，WMI/`setvars` 挂起时亦可；在 `engine` 目录下用 `..\scripts\...`，**在仓库根用 `scripts\...`**，路径写错会得到"系统找不到指定的路径"且日志缺失）→ `scripts\run-kakasi-selftest.bat run.log`（**必须从仓库根调用**；全量自检判据 **134 PASS / 0 FAIL / `RUN_EXIT=0`**，当前证据 `engine/run_f200.log`）→ 起 8000 服务（`engine` 下 `touch serve.on` + 显式 PATH 直起 `build/kakasi_engine_sycl.exe`）后 `python engine\tests\api_smoke.py 8000`（**91/91**，`engine/api_smoke_f200.log`；F201 的 92 项形状以 `engine/gates_f201.txt` 为准）→ 8001：`serve.par.on` 起服务后 `python engine\tests\par_smoke.py 8001`（**8/8**）、`python engine\tests\fairness_test.py 8001`（PASS，短流应远早于长流）。环境正常时仍可用 `scripts\build-kakasi.bat` 一次完成构建+自检。
+**两条本机操作纪律（都踩过）**：① 长跑门禁期间**不要**再往后台队列插探测命令，尤其**绝不用 `ps -W`**（走 WMI 会挂死，并把排在后面的门禁步骤一起堵死）；看进度用读文件（`gates_*.txt`），判活死用 `netstat`/端口。② 门禁判据必须**同时**看 `FAIL` 计数与 exit code：套件崩在中间时会出现 `PASS` 计数偏少而 `FAIL=0`。
 
 ## 5-Question Reboot Check
 | Question | Answer |
