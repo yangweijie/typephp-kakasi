@@ -1473,7 +1473,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 ### F161 · 对象数组元素内的整数数组（`{"items":[{"nums":[100,200]}]}`）
 **做法**：新增 `api_array_object_int_array_value`（元素对象只有一个整数数组属性；内层 1..maxInts 个整数由 `api_number_fill` 填值，模型在 `,`/`]` 间决定是否继续，最后强制 `]}`）与检测器 `api_response_schema_array_object_int_array`（`items.type=integer`、恰两个 `"type"`、无嵌套 `properties`、元素无标量兄弟），三出口均在字符串数组检测之后、平坦 object-array 之前接入。
 **首跑真 bug**：内层数字后模型已选 `,`，下一轮又强制一个 `,` → `[100,,200]`（与 F155 同型）；删除多余强制逗号后 PASS。
-**证据**：`engine/build_f161b.log` 构建成功（norun）；`engine/run_f161b.log`：**123 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-NUM det=[items|nums] text=[{"items":[{"nums":[100,200]},{"nums":[300,400]}]}]: PASS`；同一二进制活服务 `engine/api_smoke_f161.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
+**证据**：`engine/build_f161b.log` 构建成功（norun）；`engine/run_f161b.log`：**123 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-NUM det=[items|nums] text=[{"items":[{"nums":[100,200]},{"nums":[300,400]}]}]: PASS`；同一二进制活服务 `engine/api_smoke_f161.log`：**61/61 PASS、`SMOKE_EXIT=0`**；8001 替代路径同二进制：`engine/par_smoke_f161.log` **7/7 PASS**、`engine/fairness_f161.log` **PASS**（短流 0.26 s vs 长流 3.98 s）。
 **限制**：元素只能有这一个整数数组属性；内层仅非负整数；元素数/内层数由模型在 `,`/`]` 间选择。
 
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
