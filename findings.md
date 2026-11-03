@@ -1581,6 +1581,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **所以并行生成的改动面比预想小，而且形状要求明确**：候选骨架里加**多调用**条目即可，由现成的复数提取器拆成多项。但**必须用带块标签的 wire 形式**——两个裸 JSON 直接相接时 `api_json_ok(整段)` 不成立、复数扫描器又找不到块标签，会整段判空；带标签时每块各自闭合，F195/F196 的解析与扇出立刻可用。骨架预算需 96→约 192（两块 ≈ 74 token）。
 **实验本身已回滚**：两条 `echo` 与 `build_f197.log` 所在的探针版本不入主干——`git checkout engine/main.php` 回到 F196 提交态（`e4a178a`），主干无新增日志噪声。
 
+### F198 · 并行生成首次尝试：负结果，且把真正的拦路石定位到 required 兜底分支
+**做了什么**：按 F197 的判定结果实现——加 `api_tool_wire()`（模板自己的带标签形式），在 required 候选里保留单调用骨架的同时追加**两块串联**的候选（A+B、B+A，各取每个工具的第一个参数候选），`maxSteps` 96→192；编译通过（`engine/build_f198.log`，0 error）。
+**实测结果是负的**：同一对工具同一 prompt 同一 seed 的 required 请求 ⇒ **`N_CALLS=1` 且 `arguments="{}"`**（`/c/Users/ASUS/AppData/Local/Temp/probe_f198.json`）。比 F194a 之前**更差**（F194a 是 1 项但参数为 `{"city":"Paris"}`）。
+**为什么（这条比结果更值钱）**：真正把 `required` 序列化出来的是**兜底分支**（`engine/main.php:7667` 一带）：它拿解码后的文本去和**裸 JSON 骨架**做 `strpos($text, $skel) === 0` 前缀匹配，匹配不上就**默默取 `$reqSkels[0]`** 重建调用。我把候选换成带标签的 wire 形式后，解码文本以标签开头，**没有任何裸 JSON 骨架能前缀匹配**，于是走到默认元素——既丢并行又丢参数。**教训**：`$pick = $reqSkels[0];` 这种"匹配不上就用第一个"的静默兜底，会把上游改动变成看起来能跑的错答；改候选形状必须同步改兜底的匹配对象。
+**正确改法（下一步，勿再绕）**：兜底分支不要再从骨架前缀匹配重建，而是**直接对解码文本用复数提取器**（`api_tool_calls_json`，F195/F196 已就绪且带自检），wire 与裸 JSON 两种形状都吃；同时保留"提取失败就不算 required"的显式失败路径（别再用第一个骨架顶上去）。之后并行判据仍是活服务 `"tool_calls"` 两项。
+**已回滚**：`engine/main.php` 回到 `e4a178a` 的 F196 提交态（`git checkout`），主干不留这次退化；`engine/build_f198.log` 与探针 JSON 留在原地作证据。
+
 ### F197 · 并行**生成**的前置判定：哪条提取分支真正生效（已判定，实现待做）
 **为什么停在这里**：`api_constrained()` 返回的是 **token id 的 CSV**（`engine/main.php:314` 起：`$s = $ids; ... $s . "," . $chosen[$i]`），而 required 路径的调用提取写的是 `$toolJson = api_tool_call_json($enumOut, $toolNames)`——把 id CSV 当**文本**解析（`engine/main.php:7585` 一带）。两者对不上，但 F194a 的活服务实测确实拿到了 `{"city":"Paris"}`。⇒ **我对这条链的理解有一处是错的**，可能是：(a) 中间某处已把 `$enumOut` 解码成文本（`api_gen_text`）；(b) 真正生效的是 `engine/main.php:7667` 之后的骨架兜底路径（它拿的是骨架原文，且能匹配前缀）。
 **为什么不能盲改**：把"两条线"的并行骨架塞进 required 候选（`api_constrained` 的候选是任意字符串，`api_constrain_loop` 逐 token 编码比较，`engine/main.php:267` 一带已确认支持任意串），若提取端其实走的是 (b) 兜底路径，那么并行串会被兜底的**单骨架前缀匹配**重新压回一个调用，改了也白改；若走 (a) 而解码窗口不足，第二块会被截断。**两种失败都不会报错，只会静默退回单调用**——正是最容易假装完成的地方。
