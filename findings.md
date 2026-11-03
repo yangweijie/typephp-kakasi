@@ -1476,6 +1476,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **证据**：`engine/build_f161b.log` 构建成功（norun）；`engine/run_f161b.log`：**123 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-NUM det=[items|nums] text=[{"items":[{"nums":[100,200]},{"nums":[300,400]}]}]: PASS`；同一二进制活服务 `engine/api_smoke_f161.log`：**61/61 PASS、`SMOKE_EXIT=0`**；8001 替代路径同二进制：`engine/par_smoke_f161.log` **7/7 PASS**、`engine/fairness_f161.log` **PASS**（短流 0.26 s vs 长流 3.98 s）。
 **限制**：元素只能有这一个整数数组属性；内层仅非负整数；元素数/内层数由模型在 `,`/`]` 间选择。
 
+### F162 · 转义字符串尝试（失败，已回滚，未提交）
+**目标**：让约束解码允许字符串内 `\"` 转义，使引号不终止值。
+**两次做法**：① 在 `api_string_value` / `api_string_value_multi` 增加 `\` token 集合与逐 token 转义状态（转义态只允许 `"`/`\`）；② 改为 `$forceEsc` 确定性注入（先强制一个 `\` token 再进入转义态）。
+**结果**：`engine/run_f162.log`、`engine/run_f162b.log` 的 `SCHEMA-ESCAPE` 均输出非法 JSON（`json=0`）。Python repr 证实所选反斜杠 token 片段是多字节（`\\`、`\`+`n` 等形态），“一个 token = 一个转义字符”的假设不成立，强制注入也无法与片段内容对齐。
+**处理**：`git checkout -- engine/main.php` 回滚到 F161 已验证源码；重建 `engine/build_f161c.log` 成功；工作区干净，失败代码未提交。
+**下一步设计**：按 token 片段（`gguf_token_str`）做字节级扫描维护“串内/转义奇偶”状态，或把候选集限制为**完整合法转义片段**（`\"`/`\\`/`\n` 作为整体匹配），再重建验证。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|
