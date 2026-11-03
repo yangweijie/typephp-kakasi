@@ -4743,6 +4743,16 @@ function api_resp_call_done(string $name, string $args, int $outTok, string $mod
         . ",\"total_tokens\":" . ($promptN + $outTok) . "}}}\n\n";
 }
 
+// Requested number of choices ("n"), defaulting to one.
+function api_request_n(string $body): int
+{
+    $m = [];
+    if (preg_match('/"n"\s*:\s*([0-9]+)/', $body, $m) == 1) {
+        return (int) $m[1];
+    }
+    return 1;
+}
+
 function api_anthropic_output_format(string $body): string
 {
     $o = strpos($body, "\"output_format\"");
@@ -6473,6 +6483,11 @@ function api_serve(int $port): void
         } else if (strpos($req, "/v1/completions") !== false
                    && preg_match('/"stream"\s*:\s*true/', $body) == 1) {
             $payload = "{\"error\":{\"message\":\"completions streaming is not supported\",\"type\":\"invalid_request_error\"}}";
+            $status = "400 Bad Request";
+        } else if (preg_match('/"stream"\s*:\s*true/', $body) == 1 && api_request_n($body) > 1) {
+            // Streaming emits one choice (index 0); returning a single stream for n>1 silently
+            // drops candidates, so reject the combination instead of pretending.
+            $payload = "{\"error\":{\"message\":\"streaming supports one choice; use n=1\",\"type\":\"invalid_request_error\"}}";
             $status = "400 Bad Request";
         } else {
             // Responses API takes a plain "input" string; chat/completions takes "messages".

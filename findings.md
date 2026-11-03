@@ -1577,6 +1577,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。
 
+### F181 · `n>1` + `stream:true` 改为显式拒绝
+**现象（实测）**：`{"n":2,"stream":true}` 只返回 index 0 的 chunk，静默丢弃第二个候选；非流式 `n=2` 正常（F84）。
+**做法**：新增 `api_request_n`；在请求分派最前面（completions 流式拒绝之后）匹配 `stream:true` 且 `n>1` → `400 {"message":"streaming supports one choice; use n=1"}`，与 completions 流式的拒绝保持同一契约。
+**验证**：`engine/build_f181b.log` 构建成功；`engine/api_smoke_f181.log`/`f181b.log`：**79/79 PASS**，新增 `chat-n2`（两条 choice）与 `chat-n2-stream-rejected`（400 + 文案）。
+**限制**：流式仍只支持单候选；`n>1` 需走非流式。
+
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
 **验证**：`engine/build_f170.log` 构建成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40 plan=[a/…/a13|city:s,count:i]: PASS`（DEEP12/DEEP20 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f170b.log`：**67/67 PASS、`SMOKE_EXIT=0`**。

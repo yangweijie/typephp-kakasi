@@ -1073,6 +1073,23 @@ def main():
                               "max_tokens": 1})
     check("anth-maxlen", r["stop_reason"] == "max_tokens", r["stop_reason"])
 
+    # n>1 works non-streaming; streaming rejects it explicitly instead of silently returning one.
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 8, "n": 2})
+    check("chat-n2", len(r["choices"]) == 2
+          and all(c["message"]["content"] for c in r["choices"]), str(r["choices"])[:160])
+    try:
+        nraw = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                             "max_tokens": 8, "n": 2, "stream": True}, stream=True)
+        ncode = 200
+    except Exception as e:
+        body = getattr(e, "read", lambda: b"")()
+        nraw = body.decode("utf-8", "replace") if isinstance(body, bytes) else str(body)
+        ncode = getattr(e, "code", 0)
+    check("chat-n2-stream-rejected",
+          ncode == 400 and "streaming supports one choice" in nraw,
+          str(ncode) + " " + nraw[:140])
+
     raw = post("/v1/chat/completions", dict(cap, stop="ari", stream=True), stream=True)
     got = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
                   for d in sse_data(raw) if d != "[DONE]")
