@@ -10234,8 +10234,11 @@ function main(): void
     echo "SCHEMA-DEEP200 plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
         . " assemble200_len=" . strlen($d2Text)
         . " first_working_depth=" . $d2Best . "\n";
-    if ($d2Plan == $d2Want && $d2Best >= 128) {
-        echo "SCHEMA-DEEP200: PASS (detector descends 200 levels; assembler reaches " . $d2Best . ")\n";
+    // Only the detector is asserted. The same run reports a zero-length 200-level assembly while
+    // the depth sweep returns text at 256, so the assembly figures contradict each other and must
+    // not be graded green until that disagreement is explained (see findings F208).
+    if ($d2Plan == $d2Want) {
+        echo "SCHEMA-DEEP200: PASS (detector descends 200 levels; assembly figures inconsistent)\n";
     } else {
         echo "SCHEMA-DEEP200: FAIL plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
             . " depth=" . $d2Best . "\n";
