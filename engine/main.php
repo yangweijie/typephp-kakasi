@@ -4486,6 +4486,10 @@ function api_tool_call_json(string $text, array $names): string
     $args = api_str($json, "arguments");
     if ($args != "") {
         $args = api_unesc($args);   // schema candidates carry the object as an escaped string
+    } else {
+        // The model writes arguments as a nested object, not as a string; take that object whole
+        // instead of reporting an empty one (the old F52 limitation).
+        $args = api_json_object_after($json, "arguments");
     }
     if ($args == "") {
         $args = "{}";
@@ -4526,6 +4530,70 @@ function api_tool_calls_json(string $text, array $names): string
     }
     if ($n == 0) {
         return api_tool_call_json($text, $names);
+    }
+    return $out;
+}
+
+// Top-level objects of a comma-joined call list, in order.
+function api_tool_items(string $joined): array
+{
+    $out = [];
+    $pos = 0;
+    while ($pos < strlen($joined)) {
+        $ob = strpos($joined, "{", $pos);
+        if ($ob === false) {
+            break;
+        }
+        $obj = api_balance_block($joined, $ob);
+        if ($obj == "") {
+            break;
+        }
+        $out[] = $obj;
+        $pos = $ob + strlen($obj);
+    }
+    return $out;
+}
+
+// Anthropic puts calls in content blocks, so each item needs its own toolu id.
+function api_anthropic_tool_blocks(string $joined): string
+{
+    $items = api_tool_items($joined);
+    $out = "";
+    for ($i = 0; $i < count($items); $i++) {
+        $one = api_anthropic_tool_block($items[$i]);
+        if ($one == "") {
+            continue;
+        }
+        $one = str_replace("\"toolu_1\"", "\"toolu_" . ($i + 1) . "\"", $one);
+        $out = $out == "" ? $one : $out . "," . $one;
+    }
+    if ($out == "") {
+        return api_anthropic_tool_block($joined);
+    }
+    return $out;
+}
+
+// A Responses tool call is a function_call output item; a parallel turn is several items, each
+// with its own item id and call id.
+function api_responses_call_items(string $joined): string
+{
+    $items = api_tool_items($joined);
+    $out = "";
+    $n = 0;
+    for ($i = 0; $i < count($items); $i++) {
+        $nm = api_str($items[$i], "name");
+        if ($nm == "") {
+            continue;
+        }
+        $ar = api_unesc(api_str($items[$i], "arguments"));
+        if ($ar == "") {
+            $ar = "{}";
+        }
+        $n = $n + 1;
+        $one = "{\"type\":\"function_call\",\"id\":\"fc_" . $n . "\",\"call_id\":\"call_" . $n
+             . "\",\"name\":\"" . api_esc($nm) . "\",\"arguments\":\"" . api_esc($ar)
+             . "\",\"status\":\"completed\"}";
+        $out = $out == "" ? $one : $out . "," . $one;
     }
     return $out;
 }
@@ -7766,21 +7834,14 @@ function api_serve(int $port): void
                         // Anthropic tool call: tool_use content block + stop_reason "tool_use".
                         $payload = "{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\","
                                  . "\"model\":\"" . $modelId . "\","
-                                 . "\"content\":[" . api_anthropic_tool_block($toolJson) . "],"
+                                 . "\"content\":[" . api_anthropic_tool_blocks($toolJson) . "],"
                                  . "\"stop_reason\":\"tool_use\",\"usage\":{\"input_tokens\":" . $promptN
                                  . ",\"output_tokens\":" . $genN . "}}";
                     } else if ($toolJson != "" && $wantResponses) {
-                        // Responses API: a tool call is a function_call output item, not a chat choice.
-                        $rName = api_str($toolJson, "name");
-                        $rArgs = api_unesc(api_str($toolJson, "arguments"));
-                        if ($rArgs == "") {
-                            $rArgs = "{}";
-                        }
+                        // Responses API: every call is its own function_call output item.
                         $payload = "{\"id\":\"resp_1\",\"object\":\"response\",\"created_at\":0,"
                                  . "\"status\":\"completed\",\"model\":\"" . $modelId . "\","
-                                 . "\"output\":[{\"type\":\"function_call\",\"id\":\"fc_1\","
-                                 . "\"call_id\":\"call_1\",\"name\":\"" . api_esc($rName)
-                                 . "\",\"arguments\":\"" . api_esc($rArgs) . "\",\"status\":\"completed\"}],"
+                                 . "\"output\":[" . api_responses_call_items($toolJson) . "],"
                                  . "\"usage\":{\"input_tokens\":" . $promptN
                                  . ",\"output_tokens\":" . $genN
                                  . ",\"total_tokens\":" . ($promptN + $genN) . "}}";
@@ -10697,6 +10758,23 @@ function main(): void
         echo "TOOL-CALLS-PARALLEL: PASS (both blocks kept, ids renumbered, undeclared name dropped)\n";
     } else {
         echo "TOOL-CALLS-PARALLEL: FAIL two=" . $plTwo . " one=" . $plOne . " bad=" . $plBad . "\n";
+    }
+
+    // The same list must fan out through the other two outlets: Anthropic wants one tool_use block
+    // per call with its own id, Responses wants one function_call output item per call.
+    $plItems = api_tool_items($plTwo);
+    $plAnth = api_anthropic_tool_blocks($plTwo);
+    $plResp = api_responses_call_items($plTwo);
+    $plFan = count($plItems) == 2
+        && substr_count($plAnth, "\"type\":\"tool_use\"") == 2
+        && strpos($plAnth, "toolu_2") !== false
+        && substr_count($plResp, "\"type\":\"function_call\"") == 2
+        && strpos($plResp, "\"fc_2\"") !== false
+        && strpos($plResp, "Paris") !== false && strpos($plResp, "London") !== false;
+    if ($plFan) {
+        echo "TOOL-CALLS-FANOUT: PASS (both outlets emit two items with per-item ids)\n";
+    } else {
+        echo "TOOL-CALLS-FANOUT: FAIL items=" . count($plItems) . " anth=" . $plAnth . " resp=" . $plResp . "\n";
     }
 
     // Detector scoping: a sibling property (count) or a nested object's leaf (n) must not leak

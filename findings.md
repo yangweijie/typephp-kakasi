@@ -1577,6 +1577,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **守卫自身也栽过一次**：首跑 `api_smoke_f194.log` 是 `PASS=16 FAIL=0` 却 `SMOKE_EXIT=1` —— 我的 detail 串写成 `"%s %s" % [a, b]`，Python 的 `%` 只解包 tuple 不解包 list，TypeError 让套件在第 17 项崩掉。**崩溃与失败在计数上长得一样（都不算 FAIL）**，所以判据必须同时看 exit code，不能只看 `FAIL=0`。
 **接线图（F194b 预研，省掉下一轮重查）**：`required` 其实有两条路径——主路径 `engine/main.php:7549` 一带（F194a 已改为逐工具取候选），以及兜底路径 `engine/main.php:7667-7680`，后者仍硬编码 name + 空 arguments 骨架、按前缀挑一个，只在主路径解析失败时到达；做并行时要同步它，否则 `required` 会在边界退回空参数。**本轮故意没改兜底**：现有套件下该分支不可达，改了什么也无法用自检或 smoke 证明，属不可验证补丁。自由 `tools` 解析在 `7664-7666`（单调用），Anthropic 流式 `6820-6836`、Anthropic 非流式 `6626`/`6674`、流式 forced `6867`/`6933`，全部只取一个调用。复数提取能力已存在但只服务历史回放：`api_tool_calls_of`（`5612`、`7821`）与 `api_tool_calls_group`；多块写法可参考自检里那条真实模型输出（`8962` 一带，两个块各带一对标签）。仍缺的一环：chat 非流式的响应组装处不把 `$toolJson` 写成字面 `tool_calls":[`，本轮 grep 未定位到，下轮先找 `$toolJson` 的下游消费点再动序列化。**并行生成不是纯解析问题**：约束解码每条骨架约 37 token，两工具 × 2 候选 = 4 条约 148 token，而 `api_constrained` 一次只生成一条骨架 ⇒ 并行需要"一次生成多调用"的文法（或多次 `api_constrained` 串联），这是 F194b 的真实成本，别当成加个循环就行。
 
+### F196 · 并行调用扇出到 Anthropic 与 Responses，并补回自由文本的参数
+**做法**：新增三个可测函数——`api_tool_items()`（用 `api_balance_block` 把逗号拼接的调用列表切成顶层对象）、`api_anthropic_tool_blocks()`（每项一个 `tool_use` 块，`toolu_1..n` 重编号）、`api_responses_call_items()`（每项一个 `function_call` 输出项，`fc_n`/`call_n`）；两个非流式出口改用它。**顺带修掉 F52 时代的一条限制**：`api_tool_call_json` 原先只把参数当"转义字符串"读，模型按模板写出的**嵌套对象**参数（`"arguments":{"city":"Paris"}`）会被丢成 `{}`；现在字符串读不到就退到 `api_json_object_after(json,"arguments")` 取整个对象。
+**这条是怎么暴露的**：不是靠读代码猜，是 `TOOL-CALLS-FANOUT` 首跑 **133 PASS / 1 FAIL** 把中间产物整条打印出来——结构对了（两个 `tool_use`、两个 `function_call`、id 也对），但 `input":{}` 与 `arguments":"{}"` 露馅。**断言打中间产物，才看得见"形状对、内容空"这一类假通过**。
+**守卫**：`TOOL-CALLS-FANOUT` 一次判六件事——切出 2 项、Anthropic 两个块且含 `toolu_2`、Responses 两项且含 `fc_2`、`Paris` 与 `London` 两个参数值都活着。前一条守卫 `TOOL-CALLS-PARALLEL` 判两块/一块/未声明名。
+**验证**：`engine/build_f196.log`（扇出，参数仍空）→ `engine/build_f196b.log`（补参数抽取，0 error）；`engine/run_f196b.log` **134 PASS / 0 FAIL / `RUN_EXIT=0`**；同一二进制活服务 `engine/api_smoke_f196.log` **89/89**、`engine/par_smoke_f196.log` **8/8**、`engine/fairness_f196.log` PASS（短流 0.28 s vs 长流 4.78 s），服务日志 `Accept failed` 0 行，门禁后 `serve*.on` 已清。
+**仍未闭合**：① **生成**并行仍不可能——约束解码一次只吐一条骨架，`required`/点名被构造为单调用；② 流式侧仍是一项（chat 的 `index` 与 Responses 的 `output_index` 没递增）；③ 活服务仍无法自发产生两个调用块（探针实测 0 项），所以并行**出口**目前只有程序化证据，没有端到端证据——这条别记成"已实测"。
+
 ### F195 · 生成侧并行工具调用的解析半闭合（chat 非流式）
 **做了什么**：新增 `api_tool_calls_json(text, names)`（紧跟单调用解析器，复用它的白名单/参数/转义处理），把一轮里**每一**个工具块都解析出来、id 从 1 重编号、以逗号拼接（出口自己加方括号，见 `engine/main.php:7756`）；自由 `tools` 路径 `engine/main.php:7664` 改用它。无块时回退单调用读取器，所以约束骨架那条裸 JSON 路径不变。
 **程序化守卫**：`TOOL-CALLS-PARALLEL` 三条同时成立才算过——两块 ⇒ 两项且含 `call_2`；一块 ⇒ 仍是一项；未声明名混在两块里 ⇒ 只保留声明过的那一项（白名单在复数路径没被绕过）。
