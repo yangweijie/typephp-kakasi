@@ -264,7 +264,11 @@ function api_cache_should_store(int $hit, int $promptN): int
 
 // Candidate-prefix argmax loop over the CURRENT session: at every step only tokens that extend
 // some candidate's already-matched prefix are reachable. Returns the chosen ids as strings.
-function api_constrain_loop(array $vals, int $maxSteps): array
+// A constrained step can come back empty because the engine had no logits for the current
+// position (cold session: "no logits computed"), not because the grammar ran out. Re-prefilling
+// the tokens consumed so far restores exactly the state a successful decode would have left, so
+// one retry per blocked step recovers the rest of the forced literal instead of truncating it.
+function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = ""): array
 {
     $cand = [];
     for ($i = 0; $i < count($vals); $i++) {
@@ -277,6 +281,7 @@ function api_constrain_loop(array $vals, int $maxSteps): array
     if (count($cand) == 0) {
         return $chosen;
     }
+    $restarts = 0;
     for ($d = 0; $d < $maxSteps; $d++) {
         $allowed = "";
         $done = 0;
@@ -304,7 +309,21 @@ function api_constrain_loop(array $vals, int $maxSteps): array
         }
         $nx = model_session_next_allowed(0, $allowed);
         if ($nx < 0) {
-            break;
+            if ($restartIds == "" || $restarts >= 4) {
+                break;
+            }
+            $rp = $restartIds;
+            for ($ci = 0; $ci < count($chosen); $ci++) {
+                $rp = $rp . "," . $chosen[$ci];
+            }
+            $restarts = $restarts + 1;
+            if (model_session_start(0, $rp) != 0) {
+                break;
+            }
+            $nx = model_session_next_allowed(0, $allowed);
+            if ($nx < 0) {
+                break;
+            }
         }
         $chosen[] = "" . $nx;
     }
@@ -320,7 +339,7 @@ function api_constrained(string $ids, array $vals, int $maxSteps, int $useCache 
     if ($hitc < 0 && model_session_start(0, $ids) != 0) {
         return "";
     }
-    $chosen = api_constrain_loop($vals, $maxSteps);
+    $chosen = api_constrain_loop($vals, $maxSteps, $ids);
     if (api_cache_should_store($hitc, $promptNc) == 1) {
         model_cache_store(0, $ids, $pcPathC);
     }
@@ -10227,14 +10246,15 @@ function main(): void
     echo "SCHEMA-DEEP200 plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
         . " opens=" . $d2Opens . " json=" . $d2Json
         . " retry_len=" . strlen($d2Text) . "\n";
-    // Graded on the second, identical call: the first one in this same run returns an empty string
-    // (SCHEMA-DEEP200-RETRY), so depth is not the limit - a cold-start state effect is. The earlier
-    // depth sweep is gone: its numbers disagreed with this call and it cost minutes per run.
-    if ($d2Plan == $d2Want && $d2Opens == 200 && $d2Json == 1) {
-        echo "SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the second attempt)\n";
+    // Graded on the FIRST call, not a warm retry: a cold session must assemble the whole object
+    // too. F208-F225 traced the empty first result to 'no logits computed' blocking the forced
+    // prefix, and F226 recovered it by re-prefilling the consumed ids inside the constrain loop.
+    if ($d2Plan == $d2Want && $d2Opens == 200 && $d2Json == 1 && strlen($d2Probe) > 0) {
+        echo "SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the first attempt)\n";
     } else {
         echo "SCHEMA-DEEP200: FAIL plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
-            . " opens=" . $d2Opens . " json=" . $d2Json . "\n";
+            . " opens=" . $d2Opens . " json=" . $d2Json
+            . " first_len=" . strlen($d2Probe) . "\n";
     }
 
     // Mixed object: a string leaf and an integer leaf at the same level, keys forced in order.
