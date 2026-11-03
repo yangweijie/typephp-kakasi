@@ -586,6 +586,8 @@
 
 - **F212（冷启动空返回已归因到分隔符续解码）**：`api_constrained` 两个空出口打标记并**用 `grep -rl F212-MARK build/gen` 证明标记已编进 .cc/.obj**，自检里标记 0 次而 `first_len=0` ⇒ 200 层长前缀解码成功，空串出自 `api_nested_object_value` 前缀之后的出口穷举，唯一可能是叶子分隔符的 `api_constrained_continue` 返回空（收尾 `}` 那步不会返回空）。下一步：把 marker 打在 `engine/main.php:2549` 那一处即可确认，再决定是重试还是修续解码的容量判定。**本轮全部临时 echo 已回滚**，HEAD 源码 == 被测量的构建。
 
+- **工具链陷阱（重要）**：`engine/build/gen/cache` 会**复用已生成的 C++**，源码删除后产物仍留旧代码（实测 `grep F212-MARK build/gen/extension-kakasi_engine.cc` = 2，而 main.php 里已为 0）。⇒ 任何靠输出标记做的归因，**必须先清缓存干净构建**，否则标记可能在二进制里根本不存在。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
