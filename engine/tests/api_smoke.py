@@ -802,6 +802,20 @@ def main():
         a2ok = False
     check("chat-json-schema-array-obj-arr2d", a2ok, a2content)
 
+    # Same element 2-D array streamed: the SSE exit must dispatch it as well.
+    r = post("/v1/chat/completions", dict(arr2d_body, stream=True), stream=True)
+    chunks = [json.loads(d) for d in sse_data(r) if d != "[DONE]"]
+    a2stream = "".join(ch["choices"][0]["delta"].get("content", "") for ch in chunks)
+    try:
+        a2sval = json.loads(a2stream)["items"]
+        a2sok = (isinstance(a2sval, list) and 1 <= len(a2sval) <= 2
+                 and all(isinstance(e, dict) and set(e.keys()) == {"m"}
+                         and isinstance(e["m"], list) and len(e["m"]) >= 1
+                         for e in a2sval))
+    except Exception:
+        a2sok = False
+    check("chat-json-schema-array-obj-arr2d-stream", a2sok, a2stream)
+
     # Seven-level string array through the generic N-dimensional builder (F166).
     a7schema = {"type": "string"}
     for _ in range(7):
