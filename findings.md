@@ -1557,6 +1557,10 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f176c.log` 构建成功；`engine/api_smoke_f176b.log`：**73/73 PASS**，新增 `responses-tool-stream`（item 名 `get_weather`、arguments 城市 `London`、事件序列含 added/delta/completed、无 Chat chunk）。
 **限制**：仅单工具调用；并行 `tool_use` 的 Responses 流式事件未做。
 
+### F177 · Anthropic `output_format` 内的本地 `$ref`
+**做法**：无需改代码——F169 的翻译发生在 `$ref`/`allOf`/`oneOf` 预处理之前，因此追加的 `json_schema` 副本会一并被解析。新增 smoke `anth-json-schema-ref` 固化该行为。
+**验证**：`engine/api_smoke_f177.log`：**74/74 PASS**，`anth-json-schema-ref`（`#/definitions/city`）PASS。
+
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
 **验证**：`engine/build_f170.log` 构建成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40 plan=[a/…/a13|city:s,count:i]: PASS`（DEEP12/DEEP20 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f170b.log`：**67/67 PASS、`SMOKE_EXIT=0`**。

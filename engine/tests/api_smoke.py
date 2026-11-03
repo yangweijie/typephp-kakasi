@@ -301,6 +301,22 @@ def main():
         atsok = False
     check("anth-json-schema-string", atsok, atscontent)
 
+    # Local $ref inside output_format: the translated copy must still go through $ref resolution.
+    ath_ref = {"messages": [{"role": "user", "content": "The capital of France is"}],
+               "max_tokens": 32,
+               "output_format": {"type": "json_schema", "schema": {
+                   "type": "object",
+                   "properties": {"city": {"$ref": "#/definitions/city"}},
+                   "definitions": {"city": {"type": "string"}}}}}
+    r = post("/v1/messages", ath_ref)
+    arcontent = r["content"][0]["text"]
+    try:
+        arval = json.loads(arcontent)["city"]
+        arok = isinstance(arval, str)
+    except Exception:
+        arok = False
+    check("anth-json-schema-ref", arok, arcontent)
+
     # Same flat schema streamed: the Messages SSE exit replays the constrained value as deltas.
     raw = post("/v1/messages", dict(ath_str, stream=True), stream=True)
     astream = ""
