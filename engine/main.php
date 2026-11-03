@@ -4870,31 +4870,41 @@ function api_resp_done(string $text, int $outTok, string $modelId, int $promptN)
         . ",\"total_tokens\":" . ($promptN + $outTok) . "}}}\n\n";
 }
 
-function api_resp_call_start(string $modelId, string $name): string
+function api_resp_call_start(string $modelId, string $name, int $idx): string
 {
+    $item = "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\","
+        . "\"output_index\":" . $idx . ",\"item\":{\"id\":\"fc_" . ($idx + 1) . "\",\"type\":\"function_call\","
+        . "\"status\":\"in_progress\",\"call_id\":\"call_" . ($idx + 1) . "\",\"name\":\"" . api_esc($name)
+        . "\",\"arguments\":\"\"}}\n\n";
+    if ($idx > 0) {
+        return $item;
+    }
     return "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\","
         . "\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"" . $modelId
-        . "\",\"output\":[]}}\n\n"
-        . "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\","
-        . "\"output_index\":0,\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\","
-        . "\"status\":\"in_progress\",\"call_id\":\"call_1\",\"name\":\"" . api_esc($name)
-        . "\",\"arguments\":\"\"}}\n\n";
+        . "\",\"output\":[]}}\n\n" . $item;
 }
 
-function api_resp_call_done(string $name, string $args, int $outTok, string $modelId, int $promptN): string
+function api_resp_call_done(string $name, string $args, int $outTok, string $modelId, int $promptN,
+                            int $idx, int $last, string $outputItems): string
 {
-    return "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\","
-        . "\"item_id\":\"fc_1\",\"output_index\":0,\"delta\":\"" . $args . "\"}\n\n"
+    $fc = "fc_" . ($idx + 1);
+    $ev = "event: response.function_call_arguments.delta\ndata: {\"type\":\"response.function_call_arguments.delta\","
+        . "\"item_id\":\"" . $fc . "\",\"output_index\":" . $idx . ",\"delta\":\"" . $args . "\"}\n\n"
         . "event: response.function_call_arguments.done\ndata: {\"type\":\"response.function_call_arguments.done\","
-        . "\"item_id\":\"fc_1\",\"output_index\":0,\"arguments\":\"" . $args . "\"}\n\n"
+        . "\"item_id\":\"" . $fc . "\",\"output_index\":" . $idx . ",\"arguments\":\"" . $args . "\"}\n\n"
         . "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\","
-        . "\"output_index\":0,\"item\":{\"id\":\"fc_1\",\"type\":\"function_call\","
-        . "\"status\":\"completed\",\"call_id\":\"call_1\",\"name\":\"" . api_esc($name)
-        . "\",\"arguments\":\"" . $args . "\"}}\n\n"
-        . "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\","
+        . "\"output_index\":" . $idx . ",\"item\":{\"id\":\"" . $fc . "\",\"type\":\"function_call\","
+        . "\"status\":\"completed\",\"call_id\":\"call_" . ($idx + 1) . "\",\"name\":\"" . api_esc($name)
+        . "\",\"arguments\":\"" . $args . "\"}}\n\n";
+    if ($last != 1) {
+        return $ev;
+    }
+    $items = $outputItems == "" ? ("{\"id\":\"" . $fc . "\",\"type\":\"function_call\",\"status\":\"completed\","
+             . "\"call_id\":\"call_" . ($idx + 1) . "\",\"name\":\"" . api_esc($name)
+             . "\",\"arguments\":\"" . $args . "\"}") : $outputItems;
+    return $ev . "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\","
         . "\"object\":\"response\",\"status\":\"completed\",\"model\":\"" . $modelId . "\",\"output\":["
-        . "{\"id\":\"fc_1\",\"type\":\"function_call\",\"status\":\"completed\",\"call_id\":\"call_1\","
-        . "\"name\":\"" . api_esc($name) . "\",\"arguments\":\"" . $args . "\"}],"
+        . $items . "],"
         . "\"usage\":{\"input_tokens\":" . $promptN . ",\"output_tokens\":" . $outTok
         . ",\"total_tokens\":" . ($promptN + $outTok) . "}}}\n\n";
 }
@@ -6965,11 +6975,39 @@ function api_serve(int $port): void
                     if ($qReq == 1) {
                         $qNames = api_tool_names($body);
                         $qSkels = [];
+                        $qWire = [];
+                        // Same rule as the non-stream path: every declared tool is a candidate, each
+                        // with its real argument values - empty arguments are not executable (F194a).
                         for ($qi = 0; $qi < count($qNames); $qi++) {
-                            $qSkels[] = "{\"name\":\"" . $qNames[$qi] . "\",\"arguments\":{}}";
+                            $qArgsI = api_schema_arg_candidates($body, $qNames[$qi]);
+                            if (count($qArgsI) > 0) {
+                                for ($qj = 0; $qj < count($qArgsI); $qj++) {
+                                    $qWire[] = api_tool_wire($qNames[$qi], $qArgsI[$qj]);
+                                }
+                            } else {
+                                $qWire[] = api_tool_wire($qNames[$qi], "{}");
+                            }
+                        }
+                        for ($qi = 0; $qi < count($qWire); $qi++) {
+                            $qSkels[] = $qWire[$qi];
+                        }
+                        if (preg_match('/"parallel_tool_calls"\s*:\s*true/', $body) == 1
+                            && count($qWire) > 1) {
+                            $qSkels = [];
+                            for ($qa = 0; $qa < count($qWire); $qa++) {
+                                for ($qb = 0; $qb < count($qWire); $qb++) {
+                                    if ($qa == $qb) {
+                                        continue;
+                                    }
+                                    if (count($qSkels) >= 24) {
+                                        break;
+                                    }
+                                    $qSkels[] = $qWire[$qa] . "\n" . $qWire[$qb];
+                                }
+                            }
                         }
                         if (count($qSkels) > 0) {
-                            $qOut = api_constrained($ids, $qSkels, 64, $prefixCache);
+                            $qOut = api_constrained($ids, $qSkels, 192, $prefixCache);
                             $qText = api_gen_text($qOut, $promptN);
                             $qPick = $qSkels[0];
                             for ($qi = 0; $qi < count($qSkels); $qi++) {
@@ -6989,20 +7027,22 @@ function api_serve(int $port): void
                                     if ($quTok < 0) {
                                         $quTok = 0;
                                     }
-                                    fwrite($c, api_resp_call_start($modelId, $qName));
+                                    fwrite($c, api_resp_call_start($modelId, $qName, 0));
                                     fwrite($c, api_resp_call_done($qName, $qArgs, $quTok,
-                                        $modelId, $promptN));
+                                        $modelId, $promptN, 0, 1, ""));
                                 } else {
+                                    $qNameList = "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
+                                        . "\"function\":{\"name\":\"" . api_esc($qName) . "\",\"arguments\":\"\"}}";
+                                    $qArgList = "{\"index\":0,"
+                                        . "\"function\":{\"arguments\":\"" . $qArgs . "\"}}";
                                     fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                              . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
                                              . "\"delta\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":["
-                                             . "{\"index\":0,\"id\":\"call_1\",\"type\":\"function\","
-                                             . "\"function\":{\"name\":\"" . api_esc($qName) . "\",\"arguments\":\"\"}}]},"
+                                             . $qNameList . "]},"
                                              . "\"finish_reason\":null}]}\n\n");
                                     fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                              . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                             . "\"delta\":{\"tool_calls\":[{\"index\":0,"
-                                             . "\"function\":{\"arguments\":\"" . $qArgs . "\"}}]},"
+                                             . "\"delta\":{\"tool_calls\":[" . $qArgList . "]},"
                                              . "\"finish_reason\":null}]}\n\n");
                                     fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                              . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
@@ -7061,9 +7101,9 @@ function api_serve(int $port): void
                             if ($suTok < 0) {
                                 $suTok = 0;
                             }
-                            fwrite($c, api_resp_call_start($modelId, $sName));
+                            fwrite($c, api_resp_call_start($modelId, $sName, 0));
                             fwrite($c, api_resp_call_done($sName, $sArgs, $suTok,
-                                $modelId, $promptN));
+                                $modelId, $promptN, 0, 1, ""));
                         } else {
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                                      . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"

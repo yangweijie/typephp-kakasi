@@ -575,6 +575,7 @@
 复现：`scripts\build-kakasi-nosetvars.bat norun`（构建，WMI/`setvars` 挂起时亦可；在 `engine` 目录下用 `..\scripts\...`，**在仓库根用 `scripts\...`**，路径写错会得到"系统找不到指定的路径"且日志缺失）→ `scripts\run-kakasi-selftest.bat run.log`（**必须从仓库根调用**；全量自检判据 **134 PASS / 0 FAIL / `RUN_EXIT=0`**，当前证据 `engine/run_f200.log`）→ 起 8000 服务（`engine` 下 `touch serve.on` + 显式 PATH 直起 `build/kakasi_engine_sycl.exe`）后 `python engine\tests\api_smoke.py 8000`（**91/91**，`engine/api_smoke_f200.log`；F201 的 92 项形状以 `engine/gates_f201.txt` 为准）→ 8001：`serve.par.on` 起服务后 `python engine\tests\par_smoke.py 8001`（**8/8**）、`python engine\tests\fairness_test.py 8001`（PASS，短流应远早于长流）。环境正常时仍可用 `scripts\build-kakasi.bat` 一次完成构建+自检。
 **两条本机操作纪律（都踩过）**：① 长跑门禁期间**不要**再往后台队列插探测命令，尤其**绝不用 `ps -W`**（走 WMI 会挂死，并把排在后面的门禁步骤一起堵死）；看进度用读文件（`gates_*.txt`），判活死用 `netstat`/端口。② 门禁判据必须**同时**看 `FAIL` 计数与 exit code：套件崩在中间时会出现 `PASS` 计数偏少而 `FAIL=0`。③ **F201 起套件变慢是预期的**：并行/强制调用形状各要跑一次约束解码（单次实测 ≈28 s），整套**实测 102 s**（`engine/api_smoke_f202.log`，92 形状；我先前"推算 6–8 min"是错的，已按实测改正——推算不该写成数据）；且 `api_smoke_*.log` 因 Python 块缓冲**要到进程结束才有内容**，中途读到空文件不代表卡住。判进度只看 `gates_*.txt` 有没有出现、`netstat` 端口在不在，别为"看进度"往队列里插命令。
 
+- **F204（流式 `required` 丢参数 + 序号管道）已验证**：流式强制分支原先给每把工具硬编码空 arguments 骨架（非流式侧 F194a 修过，流式漏了），现改为逐工具取参数候选并用 `api_tool_wire` 统一形态；实测流式 `arguments` 由 `"{}"` 变成带内容的对象，`run_f204.log` **134 PASS / 0 FAIL**。**并行扇出本身仍未做**：`api_resp_call_start/done` 已加 `output_index`/`last`/`items` 参数（单条目按 0/1/"" 调用，行为不变），发事件循环留给 F205。
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
