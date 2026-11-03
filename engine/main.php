@@ -7292,6 +7292,11 @@ function api_serve(int $port): void
                 // the model is free to emit anything, so a broken shape earns exactly one retry
                 // and the outcome is logged rather than hidden.
                 $jsonMode = preg_match('/"response_format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/', $body) ? 1 : 0;
+                if ($jsonMode == 0) {
+                    // Responses spells the same request as `text.format`; without it the outlet skipped
+                    // validation entirely and returned fenced code text (F184).
+                    $jsonMode = preg_match('/"format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/', $body) ? 1 : 0;
+                }
                 // Structured outputs: a finite json_schema becomes a constrained object set.
                 $schemaCands = api_response_schema_candidates($body);
                 if (count($schemaCands) > 0) {
