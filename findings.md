@@ -1522,7 +1522,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 ### F169 · Anthropic `output_format` 结构化输出（复用 grammar）
 **缺口**：`/v1/messages` 不认 Anthropic 的 `"output_format":{"type":"json_schema","schema":{…}}`，结构化输出只能走 Chat/Responses。
 **做法**：新增 `api_anthropic_output_format`：在两处请求体提取后（单槽与并行槽）、schema 预处理之前，若路径是 `/v1/messages` 且体含 `output_format`，用 `api_balance_block` 取出 schema 对象，并把 `,"json_schema":{"schema":<schema>}` 追加到检测体上——所有既有检测器/构造器与三出口逻辑原样复用，响应仍按 Anthropic Messages 形状返回 `content[0].text`。
-**验证**：`engine/build_f169.log` 构建成功；`engine/run_f169.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**；`api_smoke.py` 扩到 **67** 形状，`engine/api_smoke_f169.log`：**67/67 PASS**，新增 `anth-json-schema-array-obj-arr2d`（`output_format` + 元素内二维数组）PASS。
+**验证**：`engine/build_f169.log` 构建成功；`engine/run_f169.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**；`api_smoke.py` 扩到 **67** 形状，`engine/api_smoke_f169.log`：**67/67 PASS**，新增 `anth-json-schema-array-obj-arr2d`（`output_format` + 元素内二维数组）PASS；后续 `engine/api_smoke_f171.log` 扩到 **68/68**（新增平坦字符串 `anth-json-schema-string`）。
 **限制**：仅非流式路径生效。实测（`engine/api_smoke_f170.log`，探针用例后已回退）Anthropic **流式** `output_format` 仍输出纯文本 `1. Red, Blue, Yellow`，SSE 分支未走 grammar——后续需把 schema 链接入 Anthropic SSE 文本增量路径。
 
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）

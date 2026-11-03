@@ -222,6 +222,20 @@ def main():
         atok = False
     check("anth-json-schema-array-obj-arr2d", atok, atcontent)
 
+    # Flat string schema through output_format: exercises the simple grammar path as well.
+    ath_str = {"messages": [{"role": "user", "content": "The capital of France is"}],
+               "max_tokens": 32,
+               "output_format": {"type": "json_schema", "schema": {
+                   "type": "object", "properties": {"city": {"type": "string"}}}}}
+    r = post("/v1/messages", ath_str)
+    atscontent = r["content"][0]["text"]
+    try:
+        atsval = json.loads(atscontent)["city"]
+        atsok = isinstance(atsval, str) and bool(re.fullmatch(r"[A-Za-z0-9 .,'-]*", atsval))
+    except Exception:
+        atsok = False
+    check("anth-json-schema-string", atsok, atscontent)
+
     ath_tool = {"messages": [{"role": "user", "content": "What is the weather in Paris?"}],
                 "max_tokens": 64,
                 "tools": [{"name": "get_weather", "input_schema": {
