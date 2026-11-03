@@ -1573,6 +1573,11 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
 **限制**：129 层以上仍被截断；单链、每层唯一属性。
 
+### F184 · `/v1/responses` 的 `text.format.type=json_object` 未接入校验重试（已知缺口，未修）
+**实测**：`{"text":{"format":{"type":"json_object"}}}` 返回代码围栏文本 ```` ```json … ``` ````；Chat 对照组同样返回围栏文本（其 `json_object` 设计为校验+一次重试，模型两次都围栏则原样返回）。Responses 出口完全没有 `json_object` 分支（只识别 `json_schema` 的 `text.format`）。
+**未修原因**：即便复用 Chat 的校验+重试也不保证裸 JSON，且会引入一次额外生成；是否有收益需先实测模型在“仅输出 JSON”提示下的裸输出率。
+**建议**：若要补，检测 `"format":{"type":"json_object"` 后置 `$jsonMode=1`，复用现有校验+重试；smoke 用“两次均为围栏”的输入断言重试发生（日志/耗时）而非断言有效 JSON。
+
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。
