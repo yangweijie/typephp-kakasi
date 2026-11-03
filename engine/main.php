@@ -2605,7 +2605,7 @@ function api_response_schema_nested_object(string $body): string
     $path = $pm[1];
     $win = substr($schema, $ip, 8000);
     // Descend while the current properties block has no flat leaves, up to 64 levels.
-    for ($depth = 0; $depth < 64; $depth++) {
+    for ($depth = 0; $depth < 128; $depth++) {
         $pp = strpos($win, "\"properties\"");
         if ($pp === false) {
             return "";
@@ -2632,7 +2632,7 @@ function api_response_schema_nested_object(string $body): string
         if ($ci === false) {
             return "";
         }
-        $win = substr($block, $ci, 2000);
+        $win = substr($block, $ci, 20000);
     }
     return "";
 }
@@ -3432,7 +3432,7 @@ function api_response_schema_array_object_nested(string $body): string
     // with its own "properties"), ending at the first level that has flat leaves.
     $path = "";
     $cur = $block;
-    for ($depth = 0; $depth < 64; $depth++) {
+    for ($depth = 0; $depth < 128; $depth++) {
         $cm = [];
         if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s', $cur, $cm) != 1) {
             return "";
@@ -9736,6 +9736,56 @@ function main(): void
         echo "SCHEMA-DEEP40: PASS (forty-level nested object assembled)\n";
     } else {
         echo "SCHEMA-DEEP40: FAIL shape=" . $d40Shape . "\n";
+    }
+
+    // Eighty levels: window and forced-prefix budgets scale with depth, cap is 128 now.
+    $d80Keys = [];
+    for ($i = 0; $i < 80; $i++) {
+        $d80Keys[] = "k" . $i;
+    }
+    $d80Part = "";
+    for ($i = 0; $i < 80; $i++) {
+        $d80Part = $d80Part . '{"' . $d80Keys[$i] . '":{"type":"object","properties":';
+    }
+    $d80Close = "";
+    for ($i = 0; $i < 80; $i++) {
+        $d80Close = $d80Close . "}}";
+    }
+    $d80Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":'
+        . '{"type":"object","properties":' . $d80Part
+        . '{"city":{"type":"string"},"count":{"type":"integer"}}'
+        . $d80Close . '}}}}';
+    $d80Plan = api_response_schema_nested_object($d80Body);
+    $d80Path = "";
+    for ($i = 0; $i < 80; $i++) {
+        $d80Path = $i == 0 ? $d80Keys[$i] : $d80Path . "/" . $d80Keys[$i];
+    }
+    $d80Ids = tok_chat("user", "The capital of France is") . "," . tok_chat_open("assistant");
+    $d80Out = api_nested_object_value($d80Ids, $d80Path, "city:s,count:i",
+        "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+    $d80Parts = explode(",", $d80Out);
+    $d80Base = count(explode(",", $d80Ids));
+    $d80Text = "";
+    for ($i = $d80Base; $i < count($d80Parts); $i++) {
+        $d80Text = $d80Text . gguf_token_str((int) $d80Parts[$i]);
+    }
+    $d80Text = str_replace("Ġ", " ", $d80Text);
+    $d80Pat = '/^\{"k0":';
+    for ($i = 1; $i < 80; $i++) {
+        $d80Pat = $d80Pat . '\{"' . $d80Keys[$i] . '":';
+    }
+    $d80Pat = $d80Pat . '\{"city":"[a-z ]*","count":-?(0|[1-9][0-9]*)\}';
+    for ($i = 0; $i < 80; $i++) {
+        $d80Pat = $d80Pat . '\}';
+    }
+    $d80Pat = $d80Pat . '$/';
+    $d80Shape = preg_match($d80Pat, $d80Text);
+    echo "SCHEMA-DEEP80 plan=[" . $d80Plan . "] text=[" . $d80Text . "]\n";
+    if ($d80Plan == $d80Path . "|city:s,count:i" && $d80Shape == 1
+        && api_json_ok($d80Text) == 1) {
+        echo "SCHEMA-DEEP80: PASS (eighty-level nested object assembled)\n";
+    } else {
+        echo "SCHEMA-DEEP80: FAIL shape=" . $d80Shape . "\n";
     }
 
     // Mixed object: a string leaf and an integer leaf at the same level, keys forced in order.

@@ -1567,6 +1567,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f178b.log` 构建成功；`engine/run_f178.log`：**129 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR7-INT det=[m|7] text=[{"m":[[[[[[[123]]]]]]]}]: PASS`（字符串版 ARR7 未回退）；同一二进制活服务 `engine/api_smoke_f178.log`：**75/75 PASS**，新增 `chat-json-schema-array7-int`。
 **限制**：每层预算 2、每条内层一个整数；仅非负整数。
 
+### F179 · 嵌套上限 128 + DEEP80（每层下钻窗口真 bug）
+**做法**：两处下钻循环 64→**128**；新增 `SCHEMA-DEEP80`（键 k0…k79，程序化 body/path/正则）。
+**首跑真 bug**：DEEP80 生成正确但检测器 plan 为空。根因是**每层下钻窗口** `substr($block, $ci, 2000)` —— 每层约 45 字符，44 层后窗口截断、平衡块失败；改为 **20000** 后 PASS。
+**验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
+**限制**：129 层以上仍被截断；单链、每层唯一属性。
+
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
 **验证**：`engine/build_f170.log` 构建成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40 plan=[a/…/a13|city:s,count:i]: PASS`（DEEP12/DEEP20 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f170b.log`：**67/67 PASS、`SMOKE_EXIT=0`**。
