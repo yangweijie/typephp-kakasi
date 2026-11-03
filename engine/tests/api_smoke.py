@@ -129,6 +129,21 @@ def main():
         rok = False
     check("responses-json-schema-string", rok, rtext)
 
+    # Responses streaming must emit the typed event sequence, not Chat chunks.
+    r = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 8,
+                               "stream": True}, stream=True)
+    rev = events(r)
+    rstream = ""
+    for d in sse_data(r):
+        o = json.loads(d)
+        if o.get("type") == "response.output_text.delta":
+            rstream = rstream + o.get("delta", "")
+    check("responses-stream",
+          ("response.created" in rev and "response.output_text.delta" in rev
+           and "response.completed" in rev and "Paris" in rstream
+           and "chat.completion.chunk" not in r),
+          "%s %s" % (rev[:4], rstream))
+
     # Element 2-D array through the Responses exit (same grammar, third dispatch site).
     r2d_schema = {"type": "object", "properties": {"items": {
         "type": "array", "items": {"type": "object", "properties": {

@@ -4567,6 +4567,46 @@ function api_schema_flatten_choices(string $s): string
 // Anthropic structured outputs carry {"output_format":{"type":"json_schema","schema":{…}}}.
 // Append the same schema under the {"json_schema":{"schema":…}} marker that every grammar
 // detector already understands, so the Messages exit reuses the whole constrained-Decoding chain.
+function api_resp_start(string $modelId): string
+{
+    return "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_1\","
+        . "\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"" . $modelId
+        . "\",\"output\":[]}}\n\n"
+        . "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\","
+        . "\"output_index\":0,\"item\":{\"id\":\"msg_1\",\"type\":\"message\",\"status\":\"in_progress\","
+        . "\"role\":\"assistant\",\"content\":[]}}\n\n"
+        . "event: response.content_part.added\ndata: {\"type\":\"response.content_part.added\","
+        . "\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,"
+        . "\"part\":{\"type\":\"output_text\",\"text\":\"\",\"annotations\":[]}}\n\n";
+}
+
+function api_resp_delta(string $text): string
+{
+    return "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\","
+        . "\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,"
+        . "\"delta\":\"" . api_esc($text) . "\"}\n\n";
+}
+
+function api_resp_done(string $text, int $outTok, string $modelId, int $promptN): string
+{
+    return "event: response.output_text.done\ndata: {\"type\":\"response.output_text.done\","
+        . "\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,"
+        . "\"text\":\"" . api_esc($text) . "\"}\n\n"
+        . "event: response.content_part.done\ndata: {\"type\":\"response.content_part.done\","
+        . "\"item_id\":\"msg_1\",\"output_index\":0,\"content_index\":0,"
+        . "\"part\":{\"type\":\"output_text\",\"text\":\"" . api_esc($text) . "\",\"annotations\":[]}}\n\n"
+        . "event: response.output_item.done\ndata: {\"type\":\"response.output_item.done\","
+        . "\"output_index\":0,\"item\":{\"id\":\"msg_1\",\"type\":\"message\",\"status\":\"completed\","
+        . "\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"" . api_esc($text)
+        . "\",\"annotations\":[]}]}}\n\n"
+        . "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\","
+        . "\"object\":\"response\",\"status\":\"completed\",\"model\":\"" . $modelId . "\",\"output\":["
+        . "{\"id\":\"msg_1\",\"type\":\"message\",\"status\":\"completed\",\"role\":\"assistant\","
+        . "\"content\":[{\"type\":\"output_text\",\"text\":\"" . api_esc($text) . "\",\"annotations\":[]}]}],"
+        . "\"usage\":{\"input_tokens\":" . $promptN . ",\"output_tokens\":" . $outTok
+        . ",\"total_tokens\":" . ($promptN + $outTok) . "}}}\n\n";
+}
+
 function api_anthropic_output_format(string $body): string
 {
     $o = strpos($body, "\"output_format\"");
@@ -6917,6 +6957,10 @@ function api_serve(int $port): void
                         $reason = "start-failed";
                     } else {
                         model_session_seed($seed);
+                        $respText = "";
+                        if ($wantResponses) {
+                            fwrite($c, api_resp_start($modelId));
+                        }
                         $stops = api_stop_list($body);
                         $maxStop = 0;
                         for ($si = 0; $si < count($stops); $si++) {
@@ -6951,10 +6995,15 @@ function api_serve(int $port): void
                                 }
                             }
                             if ($emit != "") {
-                                $wrote = fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                         . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                         . "\"delta\":{\"content\":\"" . api_esc($emit) . "\"},"
-                                         . "\"finish_reason\":null}]}\n\n");
+                                $respText = $respText . $emit;
+                                if ($wantResponses) {
+                                    $wrote = fwrite($c, api_resp_delta($emit));
+                                } else {
+                                    $wrote = fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                             . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                             . "\"delta\":{\"content\":\"" . api_esc($emit) . "\"},"
+                                             . "\"finish_reason\":null}]}\n\n");
+                                }
                                 if ($wrote < 1) {
                                     $reason = "client-gone";   // the peer closed: stop generating
                                     break;
@@ -6967,26 +7016,35 @@ function api_serve(int $port): void
                             }
                         }
                         if ($stopHit == 0 && $hold != "") {
-                            fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                     . "\"delta\":{\"content\":\"" . api_esc($hold) . "\"},"
-                                     . "\"finish_reason\":null}]}\n\n");
+                            $respText = $respText . $hold;
+                            if ($wantResponses) {
+                                $wrote = fwrite($c, api_resp_delta($hold));
+                            } else {
+                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                         . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                         . "\"delta\":{\"content\":\"" . api_esc($hold) . "\"},"
+                                         . "\"finish_reason\":null}]}\n\n");
+                            }
                             $sent++;
                         }
                         if ($reason == "eos" && $i >= $maxTok) {
                             $reason = "max-tokens";
                         }
                         $fin = ($reason == "timeout" || $reason == "max-tokens") ? "length" : "stop";
-                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                 . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                 . "\"delta\":{},\"finish_reason\":\"" . $fin . "\"}]}\n\n");
-                        if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                        if ($wantResponses) {
+                            fwrite($c, api_resp_done($respText, $sent, $modelId, $promptN));
+                        } else {
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                     . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
-                                     . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $sent
-                                     . ",\"total_tokens\":" . ($promptN + $sent) . "}}\n\n");
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{},\"finish_reason\":\"" . $fin . "\"}]}\n\n");
+                            if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                         . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
+                                         . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $sent
+                                         . ",\"total_tokens\":" . ($promptN + $sent) . "}}\n\n");
+                            }
+                            fwrite($c, "data: [DONE]\n\n");
                         }
-                        fwrite($c, "data: [DONE]\n\n");
                         if (api_cache_should_store($sCacheHit, $promptN) == 1) {
                             model_cache_store(0, $ids, $pcPath);
                         }

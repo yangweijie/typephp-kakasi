@@ -1539,7 +1539,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **实测**：`curl -N -d '{"input":"The capital of France is","max_output_tokens":8,"stream":true}' /v1/responses` 返回 `object:"chat.completion.chunk"` 与 `data: [DONE]`，而非 Responses 事件序列（`response.created` / `response.output_text.delta` / `response.completed` 等）。流式分支只按 Chat 形状写入。
 **根因**：单槽 SSE 文本循环（`main.php:6954/6970`）与 schema 出口（`6889`）、工具出口都硬编码 Chat chunk；`$wantResponses` 只影响非流式 payload 选择。
 **未修原因**：需同时覆盖文本 / schema / 工具三条流式出口并映射事件，剩余预算不足以保证全量回归。
-**建议修复**：在 SSE 分支开头按 `$wantResponses` 发 `response.created` + `output_item.added` + `content_part.added`；三处 delta 写入改为 `response.output_text.delta`；收尾改为 `output_text.done` + `content_part.done` + `output_item.done` + `response.completed`（并跳过 `[DONE]`）；smoke 增加 `responses-stream` 事件序列断言。
+**建议修复**：在 SSE 分支开头按 `$wantResponses` 发 `response.created` + `output_item.added` + `content_part.added`；三处 delta 写入改为 `response.output_text.delta`；收尾改为 `output_text.done` + `content_part.done` + `output_item.done` + `response.completed`（并跳过 `[DONE]`）；smoke 增加 `responses-stream` 事件序列断言。**→ 文本路径已由 F174 实现；schema/工具出口仍按 Chat 形状（未改）。**
+
+### F174 · `/v1/responses` 流式事件（纯文本路径）
+**做法**：新增 `api_resp_start/api_resp_delta/api_resp_done` 生成 Responses 事件序列；单槽 SSE 文本循环在 `$wantResponses` 时：进入前发 `response.created`/`output_item.added`/`content_part.added`，两处文本增量改写 `response.output_text.delta`，收尾发 `output_text.done`/`content_part.done`/`output_item.done`/`response.completed` 并跳过 Chat final 与 `[DONE]`；同时累计 `$respText`。
+**验证**：`engine/build_f174.log` 构建成功；`engine/api_smoke_f174.log`：**71/71 PASS**，新增 `responses-stream` 断言（事件序列含 created/delta/completed、文本含 Paris、无 `chat.completion.chunk`）。
+**限制**：schema 与工具调用两条流式出口仍返回 Chat 形状；`output_tokens` 用 delta 数近似。
 
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
