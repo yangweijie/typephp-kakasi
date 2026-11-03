@@ -1513,6 +1513,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **修复**：循环开头 `stream_select($rd,$wr,$ex,0,1000)` 探测监听器；`$c = ($sel>0) ? stream_socket_accept($srv,0) : $srv;`（两分支同为资源类型），请求分支改为 `if ($c !== false && $c !== $srv)`。空闲时 `$c` 指向监听器本身、跳过请求块，且 1 ms 等待不阻塞槽位推进。
 **验证**：`engine/build_f167d.log` 构建成功；起 8001 后 8 s 空闲：`Accept failed` **0 行**（总日志 2 行）；`engine/par_smoke_f167c.log` **7/7 PASS**；`engine/fairness_f167.log` **PASS**（短流 0.28 s vs 长流 4.91 s）；全量回归 `engine/run_f167.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**。
 
+### F168 · 活服务接线 bug：顶层 2-D 检测器抢占元素内 2-D 数组
+**现象**：扩展 smoke 新增 `chat-json-schema-array-obj-arr2d` 后失败，返回 `{"m":[["Red, Blue,"]]}` —— 缺少 `items` 包裹与元素对象。自检直接调用检测器/构造器，因此 F163 自检通过但**活服务 dispatch 从未走到 ARR2D**。
+**根因**：非流式/SSE/Responses 三条链都先算顶层 `api_response_schema_array2_string`，其守卫是 `$scArr4 == "" && $scArr3 == ""`；该检测器在 schema 中全局搜索 `"m":{array of array}`，抢在元素级检测器之前认领。
+**修复**：三个入口在调用顶层 arr2 之前先调用 `api_response_schema_array_object_array2`；元素级命中时 `$scArr2` 保持空串，后续元素块再正式接管。
+**验证**：`engine/build_f168.log` 构建成功；`engine/run_f168.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**（`SCHEMA-ARR2` 未回退）；扩展 `api_smoke.py`（61→**63** 形状）后 `engine/api_smoke_f168.log`：**63/63 PASS、`SMOKE_EXIT=0`**，`chat-json-schema-array-obj-arr2d` 与 `chat-json-schema-array7` 均 PASS。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|

@@ -753,6 +753,54 @@ def main():
         aook = False
     check("chat-json-schema-array-object", aook, aocontent)
 
+    # Object-array element holding a two-level string array (F163).
+    arr2d_body = {"messages": [{"role": "user",
+                                "content": "List two records, each with a list of lists of colors."}],
+                  "max_tokens": 64,
+                  "response_format": {"type": "json_schema", "json_schema": {
+                      "name": "rows", "schema": {
+                          "type": "object",
+                          "properties": {"items": {
+                              "type": "array",
+                              "items": {"type": "object", "properties": {
+                                  "m": {"type": "array",
+                                        "items": {"type": "array",
+                                                  "items": {"type": "string"}}}}}}}}}}}
+    r = post("/v1/chat/completions", arr2d_body)
+    a2content = r["choices"][0]["message"]["content"]
+    try:
+        a2val = json.loads(a2content)["items"]
+        a2ok = (isinstance(a2val, list) and 1 <= len(a2val) <= 2
+                and all(isinstance(e, dict) and set(e.keys()) == {"m"}
+                        and isinstance(e["m"], list) and len(e["m"]) >= 1
+                        and all(isinstance(inner, list)
+                                and all(isinstance(s, str) for s in inner)
+                                for inner in e["m"])
+                        for e in a2val))
+    except Exception:
+        a2ok = False
+    check("chat-json-schema-array-obj-arr2d", a2ok, a2content)
+
+    # Seven-level string array through the generic N-dimensional builder (F166).
+    a7schema = {"type": "string"}
+    for _ in range(7):
+        a7schema = {"type": "array", "items": a7schema}
+    arr7_body = {"messages": [{"role": "user", "content": "Name a color."}],
+                 "max_tokens": 64,
+                 "response_format": {"type": "json_schema", "json_schema": {
+                     "name": "deep", "schema": {"type": "object",
+                                                "properties": {"m": a7schema}}}}}
+    r = post("/v1/chat/completions", arr7_body)
+    a7content = r["choices"][0]["message"]["content"]
+    try:
+        a7val = json.loads(a7content)["m"]
+        for _ in range(7):
+            a7val = a7val[0]
+        a7ok = isinstance(a7val, str)
+    except Exception:
+        a7ok = False
+    check("chat-json-schema-array7", a7ok, a7content)
+
     # stop / stop_sequences cut the text and report the right reason (baseline answer is "Paris").
     cap = {"messages": [{"role": "user", "content": "The capital of France is"}], "max_tokens": 16}
     r = post("/v1/chat/completions", dict(cap, stop=["ari"]))

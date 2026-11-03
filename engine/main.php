@@ -5623,7 +5623,12 @@ Connection: close
                                 }
                                 $scArr2 = "";
                                 if ($scArr4 == "" && $scArr3 == "") {
-                                    $scArr2 = api_response_schema_array2_string($body);
+                                    // An element-level two-level array must win over the flat
+                                    // top-level detector, which would match the inner "m" key.
+                                    $scArr2e = api_response_schema_array_object_array2($body);
+                                    if ($scArr2e == "") {
+                                        $scArr2 = api_response_schema_array2_string($body);
+                                    }
                                 }
                                 $scArrObj2 = "";
                                 $scArrObjNum = "";
@@ -6489,7 +6494,10 @@ function api_serve(int $port): void
                         }
                         $sArr2 = "";
                         if ($sArr4 == "" && $sArr3 == "") {
-                            $sArr2 = api_response_schema_array2_string($body);
+                            $sArr2e = api_response_schema_array_object_array2($body);
+                            if ($sArr2e == "") {
+                                $sArr2 = api_response_schema_array2_string($body);
+                            }
                         }
                         $sArrObj2 = "";
                         $sArrObjNum = "";
@@ -6789,7 +6797,10 @@ function api_serve(int $port): void
                     }
                     $arrArr = "";
                     if ($arr4 == "" && $arr3 == "") {
-                        $arrArr = api_response_schema_array2_string($body);
+                        $arrArrE = api_response_schema_array_object_array2($body);
+                        if ($arrArrE == "") {
+                            $arrArr = api_response_schema_array2_string($body);
+                        }
                     }
                     $arrObjArr = "";
                     if ($arr3 == "" && $arrArr == "") {
