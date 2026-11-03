@@ -496,8 +496,9 @@
 
 | 05:10 | F159 oneOf 分支含 grammar：一次全绿 | — | 形状 `{"item":{"oneOf":[book/cd 两支…]}}`；**分支选择 = api_constrained 多候选约束解码**（const 首属性互异 → 分叉点模型选支），分支识别用 `api_constrain_loop` 契约（选中序列恰为一个候选完整 ids）+ `tok_encode` 尾比对；三边界核实：F142 展平器对无 enum 分支 no-op、F143 候选路径对 grammar 分支弃权、**平铺嵌套检测器会误认领**（lookahead 穿过 `[`）→ 新检测器排在 nested 前。Python 8 用例（含 5 防误认领）先行 ALL PASS → 实现 → 重建全量自检 `engine/build_f159.log`：**121 PASS / 0 FAIL**、`RUN_EXIT=0`、`SCHEMA-ONEOF-GRAMMAR: PASS`（本次模型选 book 支、title 空串——合法，如实记录）；`api_smoke.py 8000` **61/61**；服务已停（F159） |
 
-## 当前未决（2026-11-03 01:13 本地）
+## 当前未决（2026-11-03 01:28 本地）
 
+- **F163（对象数组元素内二维字符串数组）已验证**：`api_array_object_array2_value` + 专用检测器，三出口接入；`engine/build_f163b.log` 构建成功；`engine/run_f163b.log`：**124 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-ARR2D text=[{"items":[{"m":[["red"]]},{"m":[["blue"]]}]}]: PASS`。首跑抓到第二元素前缀漏开引号，已修；同一二进制活服务 `engine/api_smoke_f163.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
 - **F162 转义字符串：尝试失败、已回滚**：两版实现（逐 token 转义状态 / `$forceEsc` 注入）均产生非法 JSON（`run_f162*.log` 的 `SCHEMA-ESCAPE json=0`）；根因是反斜杠 token 片段为多字节（`\\`、`\n` 形态）。已 `git checkout` 回滚到 F161 源码，重建 `engine/build_f161c.log` 成功，失败代码未提交；新方案见 findings F162。
 - **F161（对象数组元素内整数数组）已验证**：`api_array_object_int_array_value` + 专用检测器，三出口接入；`engine/build_f161b.log` 构建成功；`engine/run_f161b.log`：**123 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-NUM text=[{"items":[{"nums":[100,200]},{"nums":[300,400]}]}]: PASS`。首跑抓到双逗号 bug（与 F155 同型），删掉多余强制逗号后通过；同一二进制活服务 `engine/api_smoke_f161.log`：**61/61 PASS、`SMOKE_EXIT=0`**；8001 替代路径同二进制：`par_smoke_f161.log` **7/7**、`fairness_f161.log` **PASS**（0.26 s vs 3.98 s）。回滚点：`engine/main.php.f160.bak`。本地 git 已初始化并提交 `569e9ee`（111 文件，`*.log`/`engine/build`/模型与缓存已排除）。
 - **F160（根级 oneOf + grammar）已验证**：新增 `api_response_schema_root_oneof_grammar` / `api_root_oneof_grammar_value`（复用 F159 候选选支），三出口接入；`engine/build_f160.log` 构建成功；`engine/run_f160.log`：**122 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ROOT-ONEOF-GRAMMAR det=[root|kind=book,title:s;kind=cd,tracks:i]: PASS`（book 支、title 空串，与 F159 同口径）；同一二进制活服务 `engine/api_smoke_f160.log`：**61/61 PASS、`SMOKE_EXIT=0`**。构建期间一次 C1083 撞锁源于误留的排队构建（`build_f160n.log` 为失败记录）。

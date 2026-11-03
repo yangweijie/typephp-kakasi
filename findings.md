@@ -1483,6 +1483,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **处理**：`git checkout -- engine/main.php` 回滚到 F161 已验证源码；重建 `engine/build_f161c.log` 成功；工作区干净，失败代码未提交。
 **下一步设计**：按 token 片段（`gguf_token_str`）做字节级扫描维护“串内/转义奇偶”状态，或把候选集限制为**完整合法转义片段**（`\"`/`\\`/`\n` 作为整体匹配），再重建验证。
 
+### F163 · 对象数组元素内的二维字符串数组（`{"items":[{"m":[["red"]]}]}`）
+**做法**：新增 `api_array_object_array2_value`（元素只有一个二维数组属性；内层固定一条字符串，闭合强制 `]]}`）与检测器 `api_response_schema_array_object_array2`（items 对象 `properties` 块内恰三个 `"type"`：array→array→string，无嵌套 `properties`），三出口在整数数组检测之后接入。
+**首跑真 bug**：第二元素的续写前缀写成 `{"m":[[`，漏了开引号 → `[["blue"]]` 变成 `[[blue"]]`（`run_f163.log` FAIL）；补上 `\"` 后 PASS。
+**证据**：`engine/build_f163b.log` 构建成功；`engine/run_f163b.log`：**124 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-ARR2D det=[items|m] text=[{"items":[{"m":[["red"]]},{"m":[["blue"]]}]}]: PASS`；同一二进制活服务 `engine/api_smoke_f163.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
+**限制**：元素只能有这一个二维数组属性；内层固定 1 条字符串；仅字符串叶子。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|

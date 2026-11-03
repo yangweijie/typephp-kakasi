@@ -2864,6 +2864,149 @@ function api_response_schema_array_object_int_array(string $body): string
     return $pm[1] . "|" . $pm[2];
 }
 
+// An array of objects whose only property is a two-level string array:
+// {"items":[{"m":[["red"]]}]}. One string per inner list keeps the "]]} close unambiguous.
+function api_array_object_array2_value(string $ids, string $prop, string $arrProp, string $charset, int $maxItems, int $maxSteps, int $useCache = 1): string
+{
+    $charsetIds = gguf_charset_ids($charset);
+    $quoteIds = gguf_charset_ids("\"");
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($charsetIds == "" || $quoteIds == "" || $commaIds == "" || $bracketIds == "") {
+        return "";
+    }
+    $head = "{\"" . $prop . "\":[{\"" . $arrProp . "\":[[\"";
+    $s = api_constrained($ids, [$head], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $stepIds = $charsetIds . "," . $quoteIds;
+    $q = "," . $quoteIds . ",";
+    $qComma = "," . $commaIds . ",";
+    $done = 0;
+    for ($it = 0; $it < $maxItems; $it++) {
+        if ($it > 0) {
+            $hd = api_constrained_continue(["{\"" . $arrProp . "\":[[\""], 48);
+            if ($hd == "") {
+                return "";
+            }
+            $s = $s . "," . $hd;
+        }
+        $closed = 0;
+        for ($d = 0; $d < $maxSteps; $d++) {
+            $nx = model_session_next_allowed(0, $stepIds);
+            if ($nx < 0) {
+                break;
+            }
+            $s = $s . "," . $nx;
+            if (strpos($q, "," . $nx . ",") !== false) {
+                $closed = 1;
+                break;
+            }
+        }
+        if ($closed == 0) {
+            $cq = api_constrained_continue(["\""], 4);
+            if ($cq == "") {
+                return "";
+            }
+            $s = $s . "," . $cq;
+        }
+        $cb = api_constrained_continue(["]" . "]}"], 8);
+        if ($cb == "") {
+            return "";
+        }
+        $s = $s . "," . $cb;
+        $nx2 = model_session_next_allowed(0, $it < $maxItems - 1 ? $commaIds : $bracketIds);
+        if ($nx2 < 0) {
+            break;
+        }
+        $s = $s . "," . $nx2;
+        if (strpos($qComma, "," . $nx2 . ",") === false) {
+            $done = 1;
+            break;
+        }
+    }
+    if ($done == 0) {
+        $rb = api_constrained_continue(["]"], 4);
+        if ($rb == "") {
+            return "";
+        }
+        $s = $s . "," . $rb;
+    }
+    $end = api_constrained_continue(["}"], 4);
+    if ($end == "") {
+        return "";
+    }
+    return $s . "," . $end;
+}
+
+// Same outer shape when the element's only property is a two-level string array.
+// Returns "<prop>|<arrProp>"; runs before the one-level and flat-leaf object-array detectors.
+function api_response_schema_array_object_array2(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    $schema = api_json_object_after($body, "schema");
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $pm = [];
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
+        . '"items"\s*:\s*\{\s*"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{\s*'
+        . '"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
+        . '"items"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
+        . '"items"\s*:\s*\{\s*"type"\s*:\s*"string"/s', $schema, $pm) != 1) {
+        return "";
+    }
+    $ip = strpos($schema, $pm[0]);
+    if ($ip === false) {
+        return "";
+    }
+    $win = substr($schema, $ip, 1500);
+    $pp = strpos($win, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($win, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($win, $bo);
+    if ($block == "") {
+        return "";
+    }
+    if (preg_match('/"properties"\s*:/', $block) == 1) {
+        return "";
+    }
+    if (preg_match_all('/"type"\s*:/', $block) != 3) {
+        return "";
+    }
+    $apos = strpos($block, "\"" . $pm[2] . "\"");
+    if ($apos === false) {
+        return "";
+    }
+    $ao = strpos($block, "{", $apos);
+    if ($ao === false) {
+        return "";
+    }
+    $ab = api_balance_block($block, $ao);
+    if ($ab == "") {
+        return "";
+    }
+    $aend = strpos($block, $ab, $apos);
+    if ($aend === false) {
+        return "";
+    }
+    if (trim(substr($block, $aend + strlen($ab))) != "}") {
+        return "";
+    }
+    return $pm[1] . "|" . $pm[2];
+}
+
 // Same outer array-of-objects shape when the element's only property is a string array.
 // Returns "<prop>|<arrProp>". Must run BEFORE api_response_schema_array_object, whose flat-leaf
 // scan would otherwise read the inner array's "items" as a sibling property.
@@ -5285,6 +5428,7 @@ Connection: close
                                 if ($scArr4 == "" && $scArr3 == "") {
                                     $scArr2 = api_response_schema_array2_string($body);
                                 }
+                                $scArrObj2 = "";
                                 $scArrObjNum = "";
                                 $scRootOneof = "";
                                 $scArrObjArr = "";
@@ -5294,6 +5438,7 @@ Connection: close
                                     $scOneof = api_response_schema_oneof_grammar($body);
                                     $scRootOneof = api_response_schema_root_oneof_grammar($body);
                                     $scArrObjNum = api_response_schema_array_object_int_array($body);
+                                    $scArrObj2 = api_response_schema_array_object_array2($body);
                                 }
                                 $scArrObj = "";
                                 if ($scArrObjArr == "" && $scArr3 == "" && $scArr2 == "") {
@@ -5331,6 +5476,10 @@ Connection: close
                                 } else if ($scArr2 != "") {
                                     $scOut = api_array2_string_value($ids, $scArr2,
                                         api_schema_charset(), 2, 2, 4, 1);
+                                } else if ($scArrObj2 != "") {
+                                    $sao2d = explode("|", $scArrObj2);
+                                    $scOut = api_array_object_array2_value($ids, $sao2d[0], $sao2d[1],
+                                        api_schema_charset(), 2, 4, 1);
                                 } else if ($scArrObjNum != "") {
                                     $saoin = explode("|", $scArrObjNum);
                                     $scOut = api_array_object_int_array_value($ids, $saoin[0],
@@ -6137,6 +6286,7 @@ function api_serve(int $port): void
                         if ($sArr4 == "" && $sArr3 == "") {
                             $sArr2 = api_response_schema_array2_string($body);
                         }
+                        $sArrObj2 = "";
                         $sArrObjNum = "";
                         $sRootOneof = "";
                         $sArrObjArr = "";
@@ -6146,6 +6296,7 @@ function api_serve(int $port): void
                             $sOneof = api_response_schema_oneof_grammar($body);
                             $sRootOneof = api_response_schema_root_oneof_grammar($body);
                             $sArrObjNum = api_response_schema_array_object_int_array($body);
+                            $sArrObj2 = api_response_schema_array_object_array2($body);
                         }
                         $sArrObj = "";
                         if ($sArrObjArr == "" && $sArr3 == "" && $sArr2 == "") {
@@ -6182,6 +6333,10 @@ function api_serve(int $port): void
                         } else if ($sArr2 != "") {
                             $sJOut = api_array2_string_value($ids, $sArr2, api_schema_charset(), 2,
                                 2, 4, $prefixCache);
+                        } else if ($sArrObj2 != "") {
+                            $sao2d2 = explode("|", $sArrObj2);
+                            $sJOut = api_array_object_array2_value($ids, $sao2d2[0], $sao2d2[1],
+                                api_schema_charset(), 2, 4, $prefixCache);
                         } else if ($sArrObjNum != "") {
                             $saoin2 = explode("|", $sArrObjNum);
                             $sJOut = api_array_object_int_array_value($ids, $saoin2[0],
@@ -6435,6 +6590,7 @@ function api_serve(int $port): void
                     if ($arrObjArr == "" && $arrObjNest == "" && $arr3 == "" && $arrArr == "") {
                         $arrObj = api_response_schema_array_object($body);
                     }
+                    $arrObj2 = "";
                     $arrObjNum = "";
                     $arrRootOneof = "";
                     $arrOneof = "";
@@ -6442,6 +6598,7 @@ function api_serve(int $port): void
                         $arrOneof = api_response_schema_oneof_grammar($body);
                         $arrRootOneof = api_response_schema_root_oneof_grammar($body);
                         $arrObjNum = api_response_schema_array_object_int_array($body);
+                        $arrObj2 = api_response_schema_array_object_array2($body);
                     }
                     $nestProp = "";
                     if ($arrArr == "" && $arrObj == "") {
@@ -6479,6 +6636,11 @@ function api_serve(int $port): void
                     } else if ($arrArr != "") {
                         $enumOut = api_array2_string_value($ids, $arrArr, api_schema_charset(), 2, 2,
                             4, $prefixCache);
+                        $jsonMode = 1;
+                    } else if ($arrObj2 != "") {
+                        $ao2d = explode("|", $arrObj2);
+                        $enumOut = api_array_object_array2_value($ids, $ao2d[0], $ao2d[1],
+                            api_schema_charset(), 2, 4, $prefixCache);
                         $jsonMode = 1;
                     } else if ($arrObjNum != "") {
                         $aoin = explode("|", $arrObjNum);
@@ -9312,6 +9474,31 @@ function main(): void
         echo "SCHEMA-ARR-OBJ-NUM: PASS (integer array inside object-array element)\n";
     } else {
         echo "SCHEMA-ARR-OBJ-NUM: FAIL det=[" . $oniDet . "] shape=" . $oniShape . "\n";
+    }
+
+    // Element object whose only property is a two-level string array.
+    $od2Body = '{"json_schema":{"name":"r","schema":{"type":"object","properties":{"items":'
+        . '{"type":"array","items":{"type":"object","properties":{"m":{"type":"array",'
+        . '"items":{"type":"array","items":{"type":"string"}}}}}}}}}}';
+    $od2Det = api_response_schema_array_object_array2($od2Body);
+    $od2Ids = tok_chat("user", "List two records, each with a list of lists of colors.")
+        . "," . tok_chat_open("assistant");
+    $od2Out = api_array_object_array2_value($od2Ids, "items", "m",
+        "abcdefghijklmnopqrstuvwxyz ", 2, 4, 0);
+    $od2Parts = explode(",", $od2Out);
+    $od2Base = count(explode(",", $od2Ids));
+    $od2Text = "";
+    for ($i = $od2Base; $i < count($od2Parts); $i++) {
+        $od2Text = $od2Text . gguf_token_str((int) $od2Parts[$i]);
+    }
+    $od2Text = str_replace("Ġ", " ", $od2Text);
+    $od2Shape = preg_match('/^\{"items":\[\{"m":\[\["[a-z ]*"\]\]\}'
+        . '(,\{"m":\[\["[a-z ]*"\]\]\})*\]\}$/', $od2Text);
+    echo "SCHEMA-ARR-OBJ-ARR2D det=[" . $od2Det . "] text=[" . $od2Text . "]\n";
+    if ($od2Det == "items|m" && $od2Out != "" && $od2Shape == 1 && api_json_ok($od2Text) == 1) {
+        echo "SCHEMA-ARR-OBJ-ARR2D: PASS (two-level string array inside object-array element)\n";
+    } else {
+        echo "SCHEMA-ARR-OBJ-ARR2D: FAIL det=[" . $od2Det . "] shape=" . $od2Shape . "\n";
     }
 
     // Element object holding a two-level nested chain that ends in flat leaves: the nested
