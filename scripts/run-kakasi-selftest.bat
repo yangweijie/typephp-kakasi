@@ -8,5 +8,9 @@ set "ONEAPI=C:\Program Files (x86)\Intel\oneAPI"
 set "TPC=C:\git\php\tpc_v0.9.5_windows_x64"
 set "PATH=%ONEAPI%\compiler\latest\bin;%ONEAPI%\tbb\latest\bin;%TPC%;%TPC%\phpx\lib;%TPC%\SDK\lib;%PATH%"
 cd /d C:\git\c\typephp-kakasi\engine
+rem Serve flags are read at startup: a leftover serve.on turns this self-test into a
+rem server that never exits (observed once as a 9 minute run full of accept warnings).
+if exist serve.on del serve.on
+if exist serve.par.on del serve.par.on
 build\kakasi_engine_sycl.exe > %1 2>&1
 echo ==RUN_EXIT=%ERRORLEVEL%== >> %1
