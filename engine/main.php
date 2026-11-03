@@ -4564,6 +4564,30 @@ function api_schema_flatten_choices(string $s): string
 // Inline local "#/definitions/X" / "#/$defs/X" references: replace each {"$ref":...} object with
 // the definition body, then empty the definitions container so property detectors never scan it.
 // Handles chains of refs (up to six replacements); external refs are left untouched.
+// Anthropic structured outputs carry {"output_format":{"type":"json_schema","schema":{…}}}.
+// Append the same schema under the {"json_schema":{"schema":…}} marker that every grammar
+// detector already understands, so the Messages exit reuses the whole constrained-Decoding chain.
+function api_anthropic_output_format(string $body): string
+{
+    $o = strpos($body, "\"output_format\"");
+    if ($o === false) {
+        return $body;
+    }
+    $s = strpos($body, "\"schema\"", $o);
+    if ($s === false) {
+        return $body;
+    }
+    $b = strpos($body, "{", $s);
+    if ($b === false) {
+        return $body;
+    }
+    $schema = api_balance_block($body, $b);
+    if ($schema == "") {
+        return $body;
+    }
+    return $body . ",\"json_schema\":{\"schema\":" . $schema . "}";
+}
+
 function api_schema_resolve_refs(string $s): string
 {
     $defKey = "\"definitions\"";
@@ -5476,6 +5500,9 @@ function api_serve_par(int $port): void
                 }
             }
             $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
+            if ($body != "" && strpos($req, "/v1/messages") !== false) {
+                $body = api_anthropic_output_format($body);
+            }
             if (strpos($body, '"$ref"') !== false) {
                 $body = api_schema_resolve_refs($body);
             }
@@ -6026,6 +6053,9 @@ function api_serve(int $port): void
             }
         }
         $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
+        if ($body != "" && strpos($req, "/v1/messages") !== false) {
+            $body = api_anthropic_output_format($body);
+        }
         if (strpos($body, '"$ref"') !== false) {
             $body = api_schema_resolve_refs($body);
         }

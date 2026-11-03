@@ -199,6 +199,29 @@ def main():
     r = post("/v1/messages", anth)
     check("anth-text", "Paris" in r["content"][0]["text"] and r["stop_reason"] == "end_turn", str(r)[:200])
 
+    # Anthropic structured outputs: output_format is translated into the json_schema marker, so
+    # the Messages exit reuses the whole constrained-decoding chain.
+    ath_schema = {"messages": [{"role": "user",
+                                "content": "List two records, each with a list of lists of colors."}],
+                  "max_tokens": 64,
+                  "output_format": {"type": "json_schema", "schema": {
+                      "type": "object",
+                      "properties": {"items": {
+                          "type": "array",
+                          "items": {"type": "object", "properties": {
+                              "m": {"type": "array",
+                                    "items": {"type": "array",
+                                              "items": {"type": "string"}}}}}}}}}}
+    r = post("/v1/messages", ath_schema)
+    atcontent = r["content"][0]["text"]
+    try:
+        atval = json.loads(atcontent)["items"]
+        atok = (isinstance(atval, list) and 1 <= len(atval) <= 2
+                and all(isinstance(e, dict) and set(e.keys()) == {"m"} for e in atval))
+    except Exception:
+        atok = False
+    check("anth-json-schema-array-obj-arr2d", atok, atcontent)
+
     ath_tool = {"messages": [{"role": "user", "content": "What is the weather in Paris?"}],
                 "max_tokens": 64,
                 "tools": [{"name": "get_weather", "input_schema": {

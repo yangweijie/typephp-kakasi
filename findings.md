@@ -1519,6 +1519,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **修复**：三个入口在调用顶层 arr2 之前先调用 `api_response_schema_array_object_array2`；元素级命中时 `$scArr2` 保持空串，后续元素块再正式接管。
 **验证**：`engine/build_f168.log` 构建成功；`engine/run_f168.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**（`SCHEMA-ARR2` 未回退）；扩展 `api_smoke.py`（61→**66** 形状）后 `engine/api_smoke_f168e.log`：**66/66 PASS、`SMOKE_EXIT=0`**，`chat-json-schema-array-obj-arr2d`、其流式版本、`chat-json-schema-array7`、`chat-json-schema-deep20`、`responses-json-schema-array-obj-arr2d` 均 PASS（三出口 + 20 层生产路径全覆盖）。
 
+### F169 · Anthropic `output_format` 结构化输出（复用 grammar）
+**缺口**：`/v1/messages` 不认 Anthropic 的 `"output_format":{"type":"json_schema","schema":{…}}`，结构化输出只能走 Chat/Responses。
+**做法**：新增 `api_anthropic_output_format`：在两处请求体提取后（单槽与并行槽）、schema 预处理之前，若路径是 `/v1/messages` 且体含 `output_format`，用 `api_balance_block` 取出 schema 对象，并把 `,"json_schema":{"schema":<schema>}` 追加到检测体上——所有既有检测器/构造器与三出口逻辑原样复用，响应仍按 Anthropic Messages 形状返回 `content[0].text`。
+**验证**：`engine/build_f169.log` 构建成功；`engine/run_f169.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**；`api_smoke.py` 扩到 **67** 形状，`engine/api_smoke_f169.log`：**67/67 PASS**，新增 `anth-json-schema-array-obj-arr2d`（`output_format` + 元素内二维数组）PASS。
+**限制**：仅非流式路径验证；流式 Anthropic 结构化输出未接入 smoke。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|
