@@ -580,6 +580,8 @@
 - **F207（外部 $ref 注册表解析）已验证**：`api_schema_resolve_refs()` 增外部内联轮，仅解析调用方随请求交出的 `schema_registry`，**不联网、不读请求里指定的文件路径**（避免目录穿越）；未注册引用原样保留。自检 `SCHEMA-EXTREF`/`SCHEMA-EXTREF-UNREG` ⇒ `run_f207.log` **136 PASS / 0 FAIL**；活服务 `chat-json-schema-extref` ⇒ `api_smoke_f207.log` **96/96、SMOKE_EXIT=0**；8001 同二进制 `par_smoke_f207.log` 8/8 + `fairness_f207.log` PASS、`Accept failed` 0 行（并行槽也调用同一个引用解析器，必须单独测）。边界：不做 URL/FS 解析，混合本地+外部引用只解外部那一轮到本地指针即停。
 - **F209（200 层嵌套 = 冷启动缺陷，不是深度限制）已验证**：同一运行内对完全相同的 200 层装配打两次 ⇒ `first_len=0`、`second_len=3909` ⇒ 深度从来不是上限；`SCHEMA-DEEP200` 改为以第二次计分并在 `run_f209c.log` 实测通过（`opens=200 json=1`，137 PASS / 0 FAIL），RETRY 行留作该缺陷的常驻证据。**遗留真 bug**：会话内第一条长约束解码返回空——影响面比嵌套更深，任何冷启动长约束解码都可能中招。**另一条教训**：`run_f209b.log` 其实是改动前二进制产出的，我差点把不符合事实的日志当证据提交——之后核对输出文案本身，而不是只看 PASS 计数。
 
+- **F210（负结果，已回滚）**：`api_nested_object_value` 内就地重试 `api_constrained` 不能救回冷启动空返回（`run_f210.log` 仍 `first_len=0`，137 PASS 无回退）⇒ 有效状态变化发生在该函数**收尾**而非解码调用本身；重试代码不留，`SCHEMA-DEEP200-RETRY` 作为可测证据（修好后 `first_len>0`）。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
