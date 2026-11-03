@@ -498,6 +498,7 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
+- **F187（seed 可复现 smoke）已验证**：同 seed 两次 Chat 文本一致；`api_smoke_f187.log` **83/83 PASS**（零改码）。
 - **F186（客户端中途断开 smoke）已验证**：原始 socket 读首批字节后关闭，随后普通请求仍返回 “Paris”；`api_smoke_f186.log` **82/82 PASS**（零改码）。
 - **F185（流式超时 smoke）已验证**：`timeout_ms=1` → 最后 chunk `finish_reason=="length"` 且 <5 s；`api_smoke_f185.log` **81/81 PASS**（零改码）。
 - **临时文件清理（2026-11-03 04:54）**：删除 findings 标注可删的旧日志 `serve_par13.log`（91 MB）、`serve_par_fix.log`（185 MB）、`build_f148.log`、`par_gate_console*.txt`、`par_gate_health.txt`、`par_health.txt`；`engine/` 体积 379 MB → **111 MB**。保留所有当前证据日志（`build_f*`、`run_f*`、`api_smoke_f*`、`par_smoke_f*`、`fairness_f*`）。

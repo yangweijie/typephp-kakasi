@@ -1130,6 +1130,13 @@ def main():
           "Paris" in (r["choices"][0]["message"]["content"] or ""),
           str(r)[:160])
 
+    # FR-08: the same seed twice must reproduce the same text.
+    sbody = {"messages": [{"role": "user", "content": "The capital of France is"}],
+             "max_tokens": 8, "seed": 42}
+    s1 = post("/v1/chat/completions", sbody)["choices"][0]["message"]["content"]
+    s2 = post("/v1/chat/completions", sbody)["choices"][0]["message"]["content"]
+    check("chat-seed-repro", s1 != "" and s1 == s2, "%r vs %r" % (s1, s2))
+
     r = post("/v1/messages", dict(cap, stop_sequences=["ari"]))
     check("anth-stop", r["content"][0]["text"] == "P" and r["stop_reason"] == "stop_sequence",
           str(r)[:160])
