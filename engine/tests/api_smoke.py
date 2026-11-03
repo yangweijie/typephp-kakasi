@@ -1069,6 +1069,14 @@ def main():
                                       "max_tokens": 1})
     check("chat-maxlen", r["choices"][0]["finish_reason"] == "length",
           str(r["choices"][0])[:120])
+
+    # OpenAI's newer max_completion_tokens is an alias for max_tokens.
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Count from one to ten."}],
+                                      "max_completion_tokens": 1})
+    check("chat-max-completion-tokens",
+          r["usage"]["completion_tokens"] == 1
+          and r["choices"][0]["finish_reason"] == "length",
+          str(r["usage"]) + " " + str(r["choices"][0]["finish_reason"]))
     r = post("/v1/messages", {"messages": [{"role": "user", "content": "The capital of France is"}],
                               "max_tokens": 1})
     check("anth-maxlen", r["stop_reason"] == "max_tokens", r["stop_reason"])

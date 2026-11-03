@@ -5932,7 +5932,8 @@ Connection: close
                     } else {
                         $ids = $ids . "," . tok_chat_open("assistant");
                         $pn = count(explode(",", $ids));
-                        $mxv = api_max_tokens(api_num($body, "max_tokens", 64));
+                        $mxv = api_max_tokens(api_num($body, "max_tokens",
+                            api_num($body, "max_completion_tokens", 64)));
                         $tev = api_float($body, "temperature", 0.0);
                         $tpv = api_float($body, "top_p", 1.0);
                         $sdv = api_num($body, "seed", 12345);
@@ -6392,8 +6393,14 @@ function api_serve(int $port): void
     echo "API_LISTEN " . $port . "\n";
 
     while (true) {
-        $c = stream_socket_accept($srv, 20);
-        if (!$c) {
+        // Same select-gating as the parallel slots: accept() on an idle listener raises a
+        // PHP-layer "Accept failed" warning on every timeout.
+        $rd = [$srv];
+        $wr = [];
+        $ex = [];
+        $sel = stream_select($rd, $wr, $ex, 0, 1000);
+        $c = ($sel !== false && $sel > 0) ? stream_socket_accept($srv, 0) : $srv;
+        if ($c === false || $c === $srv) {
             continue;   // idle tick: stay serving
         }
         $req = fread($c, 32768);
@@ -6521,7 +6528,9 @@ function api_serve(int $port): void
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
             } else {
-                $maxTok = api_max_tokens(api_num($body, "max_tokens", api_num($body, "max_output_tokens", 64)));
+                $maxTok = api_max_tokens(api_num($body, "max_tokens",
+                    api_num($body, "max_completion_tokens",
+                        api_num($body, "max_output_tokens", 64))));
                 $temp = api_float($body, "temperature", 0.0);
                 $seed = api_num($body, "seed", 12345);
                 $nChoices = api_num($body, "n", 1);

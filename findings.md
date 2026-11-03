@@ -1583,6 +1583,17 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f181b.log` 构建成功；`engine/api_smoke_f181.log`/`f181b.log`：**79/79 PASS**，新增 `chat-n2`（两条 choice）与 `chat-n2-stream-rejected`（400 + 文案）。
 **限制**：流式仍只支持单候选；`n>1` 需走非流式。
 
+### F182 · Chat `max_completion_tokens` 别名（实测缺口的修复）
+**现象**：`{"max_completion_tokens":1}` 被忽略（长 prompt 输出 29 token）；Responses 的 `max_tokens` 别名与 `stop` 已生效（探针 A/B）。
+**做法**：两处上限解析加入别名链 —— `max_tokens` → **`max_completion_tokens`** → `max_output_tokens` → 64（单槽 `$maxTok` 与并行槽 `$mxv`）。
+**验证**：`engine/build_f182.log` 构建成功；`engine/api_smoke_f182.log` 新增 `chat-max-completion-tokens`（长 prompt、上限 1 → `completion_tokens==1` 且 `finish_reason=="length"`）；**80/80 PASS**。F182 与 F183 同源，统一由 `engine/run_f183.log` 提供自检证据。
+
+### F183 · 单槽 8000 accept 空转告警（与 F167 同因，单槽此前未修）
+**现象**：F182 自测误以服务态启动（残留 `serve.on`），日志 9 分钟内出现 **57 行** `PHP Request Startup: Accept failed`（`main.php:8050` 映射），证明 F167 只修了并行槽。
+**做法**：单槽 accept 循环从 `stream_socket_accept($srv, 20)` 改为与并行槽相同的 `stream_select` 门控（1 ms）+ `$c = 就绪 ? accept : $srv`，空闲时跳过请求处理。
+**验证**：`engine/build_f183.log` 构建成功；起 8000 后空闲 10 s：`Accept failed` **0 行**（日志仅 1 行 `API_LISTEN`）；`engine/api_smoke_f183.log` **80/80 PASS**；全量自检 `engine/run_f183.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**（同时覆盖 F182 的别名改动）。
+**限制**：1 ms 轮询（与并行槽一致）。
+
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
 **验证**：`engine/build_f170.log` 构建成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40 plan=[a/…/a13|city:s,count:i]: PASS`（DEEP12/DEEP20 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f170b.log`：**67/67 PASS、`SMOKE_EXIT=0`**。

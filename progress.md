@@ -498,6 +498,8 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
+- **F183（单槽 accept 告警）已验证**：单槽 `accept(20s)` 改为 `stream_select` 门控；空闲 10 s 内 `Accept failed` **0 行**（原 9 分钟 57 行）、smoke `api_smoke_f183.log` **80/80 PASS**；与 F182 同源，自检证据见 `run_f183.log`。
+- **F182（`max_completion_tokens` 别名）已验证（活服务）**：smoke 新增 `chat-max-completion-tokens`，`api_smoke_f182.log` **80/80 PASS**。
 - **F181（`n>1 + stream` 显式拒绝）已验证**：新增 `api_request_n` 与早分支 400；`engine/build_f181b.log` 成功、`api_smoke_f181b.log` **79/79 PASS**（新增 `chat-n2`、`chat-n2-stream-rejected`）。
 - **F180（`output_format` 的 `const`/`allOf`）已验证**：无需改码，新增两条 smoke；`api_smoke_f180.log` **77/77 PASS**。
 - **F179（DEEP80，嵌套上限 128）已验证**：两处下钻 64→128；首跑暴露每层下钻窗口固定 2000 字符（44 层后截断），改为 20000 后 PASS；`engine/build_f179b.log` 成功、`engine/run_f179b.log` **130 PASS / 0 FAIL / `RUN_EXIT=0`**。
