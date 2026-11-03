@@ -2314,7 +2314,7 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
     for ($ci = 0; $ci < count($keys) + 1; $ci++) {
         $closers = $closers . "}";
     }
-    $cb = api_constrained_continue([$closers], 8);
+    $cb = api_constrained_continue([$closers], count($keys) * 2 + 8);
     if ($cb != "") {
         $s = $s . "," . $cb;
     }
@@ -2351,7 +2351,7 @@ function api_response_schema_nested_object(string $body): string
     $path = $pm[1];
     $win = substr($schema, $ip, 2000);
     // Descend while the current properties block has no flat leaves, up to twelve levels.
-    for ($depth = 0; $depth < 12; $depth++) {
+    for ($depth = 0; $depth < 32; $depth++) {
         $pp = strpos($win, "\"properties\"");
         if ($pp === false) {
             return "";
@@ -2578,7 +2578,7 @@ function api_array_object_nested_value(string $ids, string $prop, string $path, 
                 }
             }
         }
-        $cb = api_constrained_continue([$closers], 8);
+        $cb = api_constrained_continue([$closers], count($keys) * 2 + 8);
         if ($cb == "") {
             return "";
         }
@@ -3178,7 +3178,7 @@ function api_response_schema_array_object_nested(string $body): string
     // with its own "properties"), ending at the first level that has flat leaves.
     $path = "";
     $cur = $block;
-    for ($depth = 0; $depth < 12; $depth++) {
+    for ($depth = 0; $depth < 32; $depth++) {
         $cm = [];
         if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s', $cur, $cm) != 1) {
             return "";
@@ -8965,6 +8965,54 @@ function main(): void
         echo "SCHEMA-DEEP12: PASS (twelve-level nested object assembled)\n";
     } else {
         echo "SCHEMA-DEEP12: FAIL shape=" . $d12Shape . "\n";
+    }
+
+    // Twenty levels: the descent cap is 32 now, so keys a..t prove depth past the old 12.
+    $d20Keys = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j",
+        "k", "l", "m", "n", "o", "p", "q", "r", "s", "t"];
+    $d20Part = "";
+    for ($i = 0; $i < 20; $i++) {
+        $d20Part = $d20Part . '{"' . $d20Keys[$i] . '":{"type":"object","properties":';
+    }
+    $d20Close = "";
+    for ($i = 0; $i < 20; $i++) {
+        $d20Close = $d20Close . "}}";
+    }
+    $d20Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":'
+        . '{"type":"object","properties":' . $d20Part
+        . '{"city":{"type":"string"},"count":{"type":"integer"}}'
+        . $d20Close . '}}}}';
+    $d20Plan = api_response_schema_nested_object($d20Body);
+    $d20Path = "";
+    for ($i = 0; $i < 20; $i++) {
+        $d20Path = $i == 0 ? $d20Keys[$i] : $d20Path . "/" . $d20Keys[$i];
+    }
+    $d20Ids = tok_chat("user", "The capital of France is") . "," . tok_chat_open("assistant");
+    $d20Out = api_nested_object_value($d20Ids, $d20Path, "city:s,count:i",
+        "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+    $d20Parts = explode(",", $d20Out);
+    $d20Base = count(explode(",", $d20Ids));
+    $d20Text = "";
+    for ($i = $d20Base; $i < count($d20Parts); $i++) {
+        $d20Text = $d20Text . gguf_token_str((int) $d20Parts[$i]);
+    }
+    $d20Text = str_replace("Ġ", " ", $d20Text);
+    $d20Pat = '/^\{"a":';
+    for ($i = 1; $i < 20; $i++) {
+        $d20Pat = $d20Pat . '\{"' . $d20Keys[$i] . '":';
+    }
+    $d20Pat = $d20Pat . '\{"city":"[a-z ]*","count":-?(0|[1-9][0-9]*)\}';
+    for ($i = 0; $i < 20; $i++) {
+        $d20Pat = $d20Pat . '\}';
+    }
+    $d20Pat = $d20Pat . '$/';
+    $d20Shape = preg_match($d20Pat, $d20Text);
+    echo "SCHEMA-DEEP20 plan=[" . $d20Plan . "] text=[" . $d20Text . "]\n";
+    if ($d20Plan == $d20Path . "|city:s,count:i" && $d20Shape == 1
+        && api_json_ok($d20Text) == 1) {
+        echo "SCHEMA-DEEP20: PASS (twenty-level nested object assembled)\n";
+    } else {
+        echo "SCHEMA-DEEP20: FAIL shape=" . $d20Shape . "\n";
     }
 
     // Mixed object: a string leaf and an integer leaf at the same level, keys forced in order.

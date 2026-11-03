@@ -1495,6 +1495,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f164.log` 构建成功；`engine/run_f164.log`：**125 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ESCAPE text=[{"s":"a\"s\"s\""}] json=1: PASS`（模型在强制 `\"` 之后又自然产出多个 `\"`，全程 JSON 合法）；同一二进制活服务 `engine/api_smoke_f164.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
 **限制**：允许的转义仅 `\"` 与偶数反斜杠；`\n`/`\uXXXX` 等未纳入白名单；字符串内容仍受 charset 限制。
 
+### F165 · 嵌套上限 12 → 32（20 层自检；闭合预算真 bug）
+**做法**：`api_response_schema_nested_object` 与 `api_response_schema_array_object_nested` 的下钻循环上限 12 → **32**；新增 `SCHEMA-DEEP20`（键 a…t，20 层单链，计划串 `a/b/…/t|city:s,count:i`）。
+**首跑真 bug**：`SCHEMA-DEEP20` 组装文本只有 16 个闭合括号（应 21）。根因是闭合串 `api_constrained_continue([$closers], 8)` 的 `8` 是 **token 预算**：13 个 `}`（12 层）约 7 token 尚可，21 个 `}`（20 层）被截断。两处构造器（`api_nested_object_value`、`api_array_object_nested_value`）均改为 `count($keys) * 2 + 8`。
+**验证**：`engine/build_f165b.log` 构建成功；`engine/run_f165b.log`：**126 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP20 plan=[a/b/…/t|city:s,count:i]: PASS`（DEEP12 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f165.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
+**限制**：32 层以上仍被截断；单链、每层唯一属性。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|
