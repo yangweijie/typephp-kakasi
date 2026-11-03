@@ -1578,6 +1578,10 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **未修原因**：即便复用 Chat 的校验+重试也不保证裸 JSON，且会引入一次额外生成；是否有收益需先实测模型在“仅输出 JSON”提示下的裸输出率。
 **建议**：若要补，检测 `"format":{"type":"json_object"` 后置 `$jsonMode=1`，复用现有校验+重试；smoke 用“两次均为围栏”的输入断言重试发生（日志/耗时）而非断言有效 JSON。
 
+### F185 · FR-07.2 流式超时预算的 smoke 覆盖
+**做法**：无需改码（`timeout_ms` 已在文本/tool 两个流式循环中检查）；新增 `chat-stream-timeout`：长 prompt + `timeout_ms=1`，断言最后一个 chunk 的 `finish_reason=="length"` 且总耗时 < 5 s。
+**验证**：`engine/api_smoke_f185.log`：**81/81 PASS**。
+
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。

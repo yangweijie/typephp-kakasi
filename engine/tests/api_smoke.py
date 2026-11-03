@@ -9,6 +9,7 @@ must be true, not just "got 200" - a wrong shape is a failure.
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -1102,6 +1103,16 @@ def main():
     got = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
                   for d in sse_data(raw) if d != "[DONE]")
     check("chat-stop-stream", got == "P", got)
+
+    # FR-07.2: the per-request streaming time budget ends the stream promptly as "length".
+    t0 = time.time()
+    raw = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Count from one to ten."}],
+                                        "max_tokens": 64, "timeout_ms": 1, "stream": True}, stream=True)
+    tchunks = [json.loads(d) for d in sse_data(raw) if d != "[DONE]"]
+    telapsed = time.time() - t0
+    tfin = tchunks[-1]["choices"][0].get("finish_reason") if tchunks else None
+    check("chat-stream-timeout", tfin == "length" and telapsed < 5.0,
+          "finish=%s %.2fs" % (tfin, telapsed))
 
     r = post("/v1/messages", dict(cap, stop_sequences=["ari"]))
     check("anth-stop", r["content"][0]["text"] == "P" and r["stop_reason"] == "stop_sequence",
