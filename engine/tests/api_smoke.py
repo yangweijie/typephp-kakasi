@@ -253,9 +253,11 @@ def main():
     # Same 2-D element schema streamed: exercises the grammar dispatch through the replay path.
     raw = post("/v1/messages", dict(ath_schema, stream=True), stream=True)
     a2stream = ""
+    a2deltas = 0
     for d in sse_data(raw):
         o = json.loads(d)
         if o.get("type") == "content_block_delta":
+            a2deltas += 1
             a2stream = a2stream + o["delta"].get("text", "")
     try:
         a2sval = json.loads(a2stream)["items"]
@@ -263,7 +265,8 @@ def main():
                  and all(isinstance(e, dict) and set(e.keys()) == {"m"} for e in a2sval))
     except Exception:
         a2sok = False
-    check("anth-json-schema-array-obj-arr2d-stream", a2sok, a2stream)
+    check("anth-json-schema-array-obj-arr2d-stream", a2sok and a2deltas >= 2,
+          "%s deltas=%d" % (a2stream, a2deltas))
 
     ath_tool = {"messages": [{"role": "user", "content": "What is the weather in Paris?"}],
                 "max_tokens": 64,

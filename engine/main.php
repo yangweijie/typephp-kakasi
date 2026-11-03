@@ -6471,9 +6471,14 @@ function api_serve(int $port): void
                                  . "\"usage\":{\"input_tokens\":" . $promptN . ",\"output_tokens\":0}}}\n\n");
                         fwrite($c, "event: content_block_start\ndata: {\"type\":\"content_block_start\","
                                  . "\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n");
-                        fwrite($c, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-                                 . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
-                                 . api_esc($ajText) . "\"}}\n\n");
+                        $ajLeft = $ajText;
+                        while ($ajLeft != "") {
+                            $ajChunk = strlen($ajLeft) > 16 ? substr($ajLeft, 0, 16) : $ajLeft;
+                            fwrite($c, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
+                                     . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
+                                     . api_esc($ajChunk) . "\"}}\n\n");
+                            $ajLeft = strlen($ajLeft) > 16 ? substr($ajLeft, 16) : "";
+                        }
                         fwrite($c, "event: content_block_stop\ndata: "
                                  . "{\"type\":\"content_block_stop\",\"index\":0}\n\n");
                         fwrite($c, "event: message_delta\ndata: {\"type\":\"message_delta\","
