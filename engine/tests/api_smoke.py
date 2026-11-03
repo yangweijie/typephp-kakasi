@@ -1137,6 +1137,30 @@ def main():
     s2 = post("/v1/chat/completions", sbody)["choices"][0]["message"]["content"]
     check("chat-seed-repro", s1 != "" and s1 == s2, "%r vs %r" % (s1, s2))
 
+    # tool_choice "none" on the stream must stay plain text (no tool_calls deltas).
+    raw = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "What is the weather in Paris?"}],
+                                        "max_tokens": 16, "stream": True, "tool_choice": "none",
+                                        "tools": [{"type": "function", "function": {
+                                            "name": "get_weather", "parameters": {
+                                                "type": "object", "properties": {
+                                                    "city": {"type": "string"}}}}}]}, stream=True)
+    nchunks = [json.loads(d) for d in sse_data(raw) if d != "[DONE]"]
+    ntext = "".join((ch["choices"][0]["delta"].get("content") or "") for ch in nchunks)
+    ntool = any(ch["choices"][0]["delta"].get("tool_calls") for ch in nchunks)
+    check("chat-tool-none-stream", ntext != "" and not ntool, "%r tool=%s" % (ntext[:80], ntool))
+
+    # Responses streaming honours stop: the cut text ends at "P".
+    raw = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 16,
+                                 "stream": True, "stop": ["ari"]}, stream=True)
+    rev4 = events(raw)
+    stext = ""
+    for d in sse_data(raw):
+        o = json.loads(d)
+        if o.get("type") == "response.output_text.delta":
+            stext = stext + o.get("delta", "")
+    check("responses-stream-stop", stext == "P" and "response.completed" in rev4,
+          "%r %s" % (stext, rev4[-2:]))
+
     r = post("/v1/messages", dict(cap, stop_sequences=["ari"]))
     check("anth-stop", r["content"][0]["text"] == "P" and r["stop_reason"] == "stop_sequence",
           str(r)[:160])

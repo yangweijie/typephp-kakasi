@@ -4405,8 +4405,23 @@ function api_tool_choice(string $body): string
     if (count($parts) < 2) {
         return "";
     }
+    $rest = $parts[1];
+    // String forms are never a named choice; without this guard the search below would find a
+    // function name inside the "tools" array that follows "tool_choice":"none".
+    $sm = [];
+    if (preg_match('/^\s*:\s*"[a-zA-Z_\-]+"/', $rest, $sm) == 1) {
+        return "";
+    }
+    $ob = strpos($rest, "{");
+    if ($ob === false) {
+        return "";
+    }
+    $obj = api_balance_block($rest, $ob);
+    if ($obj == "") {
+        return "";
+    }
     $m = [];
-    return preg_match('/"name"\s*:\s*"([A-Za-z0-9_\-]+)"/', $parts[1], $m) ? $m[1] : "";
+    return preg_match('/"name"\s*:\s*"([A-Za-z0-9_\-]+)"/', $obj, $m) ? $m[1] : "";
 }
 
 function api_tool_call_json(string $text, array $names): string

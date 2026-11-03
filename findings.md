@@ -1590,6 +1590,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **做法**：无需改码（`seed` 已在 F74/F75 透传）；smoke 连续两次发送同 seed 的 Chat 请求，断言文本完全一致。
 **验证**：`engine/api_smoke_f187.log`：**83/83 PASS**（`chat-seed-repro`）。
 
+### F188 · `tool_choice:"none"` 被误判为点名（真 bug）
+**现象**：新增 smoke `chat-tool-none-stream`（`tool_choice:"none"` + tools + 流式）失败：请求被当成点名调用，返回 `tool_calls` 而非文本。
+**根因**：`api_tool_choice` 以 `"tool_choice"` 切分后，在**整个剩余 body** 里找 `"name"`；当 `tool_choice` 是字符串（`"none"`）且 `tools` 数组随后出现时，匹配到 tools 里的函数名，误当点名。
+**修复**：字符串形式（`"none"/"auto"/"required"/"any"`）直接返回空；对象形式用 `api_balance_block` 限定在 `{…}` 内再取 `name`。
+**验证**：`engine/build_f188.log` 构建成功；`engine/api_smoke_f188.log`：**85/85 PASS**（`chat-tool-none-stream` 纯文本、`responses-stream-stop` 截断到 "P"）；全量自检 `engine/run_f188.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**。
+
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。
