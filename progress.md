@@ -590,6 +590,8 @@
 
 - **F214（撤回 F212 归因 + 立测量规程）**：清缓存重建后全树扫标记，`F213-MARK` **只在 `build/gen/cache/ast/*.ast`**，`build/gen/main.cc` 与 `.obj` 里都没有 ⇒ 增量构建没把改动带进生成码，`MARKS=0` 什么也不能说明 ⇒ **F212 的阶段归因作废**（已在原文标注撤回）。成立且不依赖标记的硬事实只有一条：同一运行内第一条 200 层调用返回空、第二条 3909 字符且 JSON 合法（`run_f209c.log`）。**新规程**：改动后先 `grep` 产物（`build/gen/main.cc`）确认唯一字符串在里面，再跑测量；不在就删 `build/gen/cache/ast` 全量重建。**只加 echo 不改行为的实验，无法用反推**——这是本轮最大的方法论收获。**冷启动事实已在清缓存全量重建后复核**（`run_f214.log` 137 PASS / 0 FAIL，`first_len=0 second_len=3909`）。
 
+- **F216（冷启动＝叶子分隔符续解码，标记已核对产物）**：`build/gen/cache/ast` 清空重建后，`grep -rc F215-MARK build/gen/*.cc` 命中 `extension-kakasi_engine.cc:1`（**函数体生成在这个文件，不在 main.cc——我第一版控制查错了文件**）；产物里有标记而自检输出 0 次，且 `first_len=0` 依旧 ⇒ 前缀阶段无辜，`api_nested_object_value` 前缀之后的唯一可能出口是**分隔符续解码**（`engine/main.php:2549`）。修复方向：长前缀填满会话后容量判定把放不下当结束；判据现成——`SCHEMA-DEEP200-RETRY` 的 `first_len` 必须转非零。**F212 的归因在正确方法下重新成立**，撤稿记录保留作为方法教训。临时 echo 已回滚。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
