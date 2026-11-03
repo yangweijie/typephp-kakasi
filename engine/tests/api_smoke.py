@@ -317,6 +317,35 @@ def main():
         arok = False
     check("anth-json-schema-ref", arok, arcontent)
 
+    # const via output_format: finite candidate path must survive the translation.
+    ath_const = {"messages": [{"role": "user", "content": "Pick a color."}],
+                 "max_tokens": 32,
+                 "output_format": {"type": "json_schema", "schema": {
+                     "type": "object",
+                     "properties": {"color": {"const": "red"}}}}}
+    r = post("/v1/messages", ath_const)
+    accontent = r["content"][0]["text"]
+    try:
+        accval = json.loads(accontent).get("color")
+    except Exception:
+        accval = None
+    check("anth-json-schema-const", accval == "red", accontent)
+
+    # allOf via output_format: member properties merge before detection.
+    ath_allof = {"messages": [{"role": "user", "content": "The capital of France is"}],
+                 "max_tokens": 32,
+                 "output_format": {"type": "json_schema", "schema": {
+                     "allOf": [{"type": "object",
+                                "properties": {"city": {"type": "string"}}}]}}}
+    r = post("/v1/messages", ath_allof)
+    aacontent = r["content"][0]["text"]
+    try:
+        aaval = json.loads(aacontent).get("city")
+        aaok = isinstance(aaval, str)
+    except Exception:
+        aaok = False
+    check("anth-json-schema-allof", aaok, aacontent)
+
     # Same flat schema streamed: the Messages SSE exit replays the constrained value as deltas.
     raw = post("/v1/messages", dict(ath_str, stream=True), stream=True)
     astream = ""
