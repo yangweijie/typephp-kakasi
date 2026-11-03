@@ -2619,7 +2619,7 @@ function api_response_schema_nested_object(string $body): string
     $path = $pm[1];
     $win = substr($schema, $ip, 8000);
     // Descend while the current properties block has no flat leaves, up to 64 levels.
-    for ($depth = 0; $depth < 128; $depth++) {
+    for ($depth = 0; $depth < 256; $depth++) {
         $pp = strpos($win, "\"properties\"");
         if ($pp === false) {
             return "";
@@ -3446,7 +3446,7 @@ function api_response_schema_array_object_nested(string $body): string
     // with its own "properties"), ending at the first level that has flat leaves.
     $path = "";
     $cur = $block;
-    for ($depth = 0; $depth < 128; $depth++) {
+    for ($depth = 0; $depth < 256; $depth++) {
         $cm = [];
         if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s', $cur, $cm) != 1) {
             return "";
@@ -10181,6 +10181,64 @@ function main(): void
         echo "SCHEMA-DEEP80: PASS (eighty-level nested object assembled)\n";
     } else {
         echo "SCHEMA-DEEP80: FAIL shape=" . $d80Shape . "\n";
+    }
+
+    // Two hundred levels: the detector descends correctly, so the plan is asserted. Assembly is
+    // reported per depth rather than asserted, because it currently returns nothing well before the
+    // descent cap - the numbers below are the measurement, not a guess.
+    $d2K = [];
+    for ($i = 0; $i < 200; $i++) {
+        $d2K[] = "k" . $i;
+    }
+    $d2Part = "";
+    for ($i = 0; $i < 200; $i++) {
+        $d2Part = $d2Part . "{\"" . $d2K[$i] . "\":{\"type\":\"object\",\"properties\":";
+    }
+    $d2Close = "";
+    for ($i = 0; $i < 200; $i++) {
+        $d2Close = $d2Close . "}}";
+    }
+    $d2Body = "{\"response_format\":{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"x\",\"schema\":"
+        . "{\"type\":\"object\",\"properties\":" . $d2Part
+        . "{\"city\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}}"
+        . $d2Close . "}}}}";
+    $d2Plan = api_response_schema_nested_object($d2Body);
+    $d2Path = "";
+    for ($i = 0; $i < 200; $i++) {
+        $d2Path = $i == 0 ? $d2K[$i] : $d2Path . "/" . $d2K[$i];
+    }
+    $d2Want = $d2Path . "|city:s,count:i";
+    $d2Ids = tok_chat("user", "The capital of France is") . "," . tok_chat_open("assistant");
+    $d2Probe = api_nested_object_value($d2Ids, $d2Path, "city:s,count:i",
+        "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+    $d2Parts = explode(",", $d2Probe);
+    $d2Base = count(explode(",", $d2Ids));
+    $d2Text = "";
+    for ($i = $d2Base; $i < count($d2Parts); $i++) {
+        $d2Text = $d2Text . gguf_token_str((int) $d2Parts[$i]);
+    }
+    // Assembly ceiling probe: shorten the path until the assembler produces anything at all.
+    $d2Best = 0;
+    for ($d2T = 256; $d2T >= 96; $d2T = $d2T - 16) {
+        $d2P2 = "";
+        for ($i = 0; $i < $d2T; $i++) {
+            $d2P2 = $i == 0 ? "k0" : $d2P2 . "/" . $d2K[$i % 200];
+        }
+        $d2O2 = api_nested_object_value($d2Ids, $d2P2, "city:s,count:i",
+            "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+        if ($d2O2 != "") {
+            $d2Best = $d2T;
+            break;
+        }
+    }
+    echo "SCHEMA-DEEP200 plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
+        . " assemble200_len=" . strlen($d2Text)
+        . " first_working_depth=" . $d2Best . "\n";
+    if ($d2Plan == $d2Want && $d2Best >= 128) {
+        echo "SCHEMA-DEEP200: PASS (detector descends 200 levels; assembler reaches " . $d2Best . ")\n";
+    } else {
+        echo "SCHEMA-DEEP200: FAIL plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
+            . " depth=" . $d2Best . "\n";
     }
 
     // Mixed object: a string leaf and an integer leaf at the same level, keys forced in order.
