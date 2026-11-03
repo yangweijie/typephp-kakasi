@@ -1582,6 +1582,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **实验本身已回滚**：两条 `echo` 与 `build_f197.log` 所在的探针版本不入主干——`git checkout engine/main.php` 回到 F196 提交态（`e4a178a`），主干无新增日志噪声。
 
 ### F202 预研 · 流式并行的接线点（本轮只定位，未动手）
+**先按符号定位，别信本条的行号**：这些数字是写这条时的快照，之后每个增量都会漂移几百行；用 `grep -n "fwrite(\\$c, api_resp_call_start"`、`grep -n "api_tool_call_json(\\$qPick"`、`grep -n "function api_resp_call_start"` 重新定位比对着行号读更快也更准。
 **为什么现在不做**：流式两处强制工具分支各自**从"骨架前缀匹配"重建单调用**（`engine/main.php:6982` 一带的 `required` 与 `7054` 一带的点名），要做并行必须把它们改成"对解码文本用复数提取器"，而这两条链上有 5 个以上现有流式工具形状（`chat-tool-required-stream`、`anth-tool-any-stream`、`responses-tool-stream` 等）；在本轮 F201 门禁还没出结果时动它们，等于同时开两处未验证面。
 **具体改动清单（照做即可，不必再重新定位）**：
 1. 两处都改为先取解码文本（`api_gen_text($qOut, $promptN)` / `api_gen_text($sOut, $promptN)`），再用 `api_tool_calls_json(text, names)` 得到逗号拼接的多项，交给 `api_tool_items()` 逐项发事件；**同时删掉"匹配不上就用第一个骨架"的静默兜底**（F198 的错答就来自这里，非流式侧 F199 已删，流式侧还在）。
