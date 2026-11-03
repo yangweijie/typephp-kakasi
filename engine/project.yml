@@ -1,0 +1,27 @@
+name: kakasi_engine
+mode: bin
+sources:
+  - src/gguf.cc
+  - src/gguf.stub.php
+  - src/backend.cc
+  - src/backend.stub.php
+  - src/ops.cc
+  - src/ops.stub.php
+  - src/model.cc
+  - src/model.stub.php
+  - src/tokenizer.cc
+  - src/tokenizer.stub.php
+  - main.php
+cxx-std: c++17
+build-dir: build/gen
+output: build/kakasi_engine.exe
+objects:
+  - build/obj/sycl_backend.obj
+  - build/obj/ops_sycl.obj
+  - build/obj/model_sycl.obj
+link-paths:
+  - C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib
+link-libs:
+  - sycl.lib
+  - ur_loader.lib
+  - tbb12.lib

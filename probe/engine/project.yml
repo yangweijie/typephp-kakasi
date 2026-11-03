@@ -1,0 +1,17 @@
+name: kakasi_probe
+mode: bin
+sources:
+  - src/kakasi.cc
+  - src/kakasi.stub.php
+  - main.php
+cxx-std: c++17
+build-dir: build/gen
+output: build/kakasi_probe.exe
+objects:
+  - build/obj/sycl_matmul.obj
+link-paths:
+  - C:/Program Files (x86)/Intel/oneAPI/compiler/latest/lib
+link-libs:
+  - sycl.lib
+  - ur_loader.lib
+  - tbb12.lib

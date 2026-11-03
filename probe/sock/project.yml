@@ -1,0 +1,5 @@
+name: sock_probe
+mode: bin
+sources:
+  - main.php
+output: build/sock_probe.exe

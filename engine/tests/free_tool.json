@@ -1,0 +1,1 @@
+{"model":"q","max_tokens":64,"tools":[{"type":"function","function":{"name":"get_weather","parameters":{"type":"object","properties":{"city":{"type":"string","enum":["Paris","London"]}}}}}],"messages":[{"role":"user","content":"What is the weather in Paris? Answer with a tool call."}]}

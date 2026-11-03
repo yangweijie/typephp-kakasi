@@ -1,0 +1,29 @@
+# build artifacts
+engine/build/
+probe/*/build/
+*.exe
+*.obj
+*.lib
+*.exp
+*.pdb
+*.bin
+*.kv
+*.gguf
+
+# runtime sentinels and caches
+engine/serve.on
+engine/serve.par.on
+serve.on
+serve.par.on
+setvars.log
+engine/models/
+
+# logs and gate outputs
+*.log
+engine/par_gate_*.txt
+engine/par_*.txt
+
+# python / backups
+__pycache__/
+*.pyc
+*.bak
