@@ -1588,6 +1588,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **顺带纠正一条我写下的错数**：上一轮我在 progress 里把套件耗时"推算"为 6–8 min，实测是 **102 s**；推算当成数据写进日志就是这种后果。**只写量到的数**。
 **新增硬规则（进 progress 入口）**：**任何时刻只允许一个引擎进程**。起服务前先看 `netstat` 8000/8001 是否有人监听、后台链是否仍在跑；要并行跑两条门禁必须串行化，或干脆等到前一条结束。这条比"别用 `ps -W`"更要命，因为它产出的是**错误的实验结论**，不是慢。
 
+### F212 · 冷启动空返回**不是**前缀阶段（用标记 + 产物核对做了归因）
+**方法**：在 `api_constrained` 的两个 `return ""` 出口前各加一条 `F212-MARK` echo（仅当强制前缀长度 > 300 字符才打印，避免刷屏），编译后跑全量自检。**先证明标记真的进了构建**：`grep -rl F212-MARK build/gen` 命中 `build/gen/extension-kakasi_engine.cc` 与 `.../objects/generated/extension-kakasi_engine.obj` —— 这一步是关键，F211 的含糊正是因为缺它。
+**结果**：自检输出里 `F212-MARK` **0 次**，而 `SCHEMA-DEEP200-RETRY` 依旧 `first_len=0 second_len=3909`。⇒ 200 层那次**长前缀强制解码本身成功返回了非空 CSV**；空串是 `api_nested_object_value` **后段**产生的。
+**按代码出口穷举**：`api_nested_object_value` 在前缀之后只有三处能返回空串 —— ① `count($kv)!=2`（计划串畸形，本例 plan=ok 排除）；② 叶子分隔符 `api_constrained_continue([$sep], 32)` 返回空 ⇒ 直接 `return ""`（`engine/main.php:2549` 一带）；③ 收尾 `}` 串那步**不会**返回空（只跳过拼接）。因此冷启动失败**收敛到 ②：分隔符续解码在首条超长解码后返回空**。
+**下一步（很窄了）**：把 marker 打在 ② 处（唯一出口），一次构建即可看到 `cause=separator`；随后要么在该处也做一次带节拍的续解码重试，要么去 `api_constrained_continue` 查会话剩余容量为何在首条超长前缀后暂时不足。这个 bug 的影响面超出嵌套：**任何长约束解码后的第一个续解码步**都可能吃到。
+**收尾**：本轮所有临时 echo 已回滚（`grep -c F212-MARK engine/main.php` = 0），HEAD 源码与 `run_f212.log` 所用构建一致，137 PASS / 0 FAIL。
+
 ### F211 · 实验不作数：加了 300ms 延时重试仍是 `first_len=0`，但无法证明跑的就是新码（已回滚）
 **做了什么**：在 `api_nested_object_value` 的空返回分支里 `usleep(300000)` 后重试，想区分『异步会话拆卸』与『尝试次数』两种解释。`run_f211.log` 仍是 `first_len=0 second_len=3909`（137 PASS / 0 FAIL）。
 **为什么这条不算证据**：`grep usleep build/gen/...` 只在 AST/build-state/obj 里命中，`build/gen/main.cpp` 未定位到；而本轮之前已经抓到过一次**增量构建跑了改动前的源码**（`run_f209b.log` 事件）。行为没变 + 编译产物不能自证 ⇒ 既不能否定时间假说，也不能肯定延时有效。**结论：悬案照旧**，延时实验**作废并已 `git checkout` 回滚**。
