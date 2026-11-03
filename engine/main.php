@@ -332,10 +332,34 @@ function api_constrained_continue(array $vals, int $maxSteps): string
     return $s;
 }
 
+// Tokens that are complete JSON escapes by themselves: a \" pair or an even run of
+// backslashes. Odd runs or mixed pieces would leave the string in an ambiguous state.
+function api_json_escape_safe_ids(string $idsCsv): string
+{
+    $out = "";
+    $parts = explode(",", $idsCsv);
+    for ($i = 0; $i < count($parts); $i++) {
+        if ($parts[$i] == "") {
+            continue;
+        }
+        $pc = gguf_token_str((int) $parts[$i]);
+        $ok = 0;
+        if ($pc == "\\\"") {
+            $ok = 1;
+        } else if ($pc != "" && preg_match('/^\\\\+$/', $pc) == 1 && strlen($pc) % 2 == 0) {
+            $ok = 1;
+        }
+        if ($ok == 1) {
+            $out = $out == "" ? $parts[$i] : $out . "," . $parts[$i];
+        }
+    }
+    return $out;
+}
+
 // Grammar-constrained JSON string value. Force `prefix` literally, then emit only tokens whose
 // decoded text stays inside `charset`, allowing the closing quote to terminate early; finally
 // force the rest of the object so the result is always parseable. Returns the full id string.
-function api_string_value(string $ids, string $prefix, string $charset, int $maxSteps, int $useCache = 1): string
+function api_string_value(string $ids, string $prefix, string $charset, int $maxSteps, int $useCache = 1, int $forceEsc = 0): string
 {
     $charsetIds = gguf_charset_ids($charset);
     if ($charsetIds == "") {
@@ -346,11 +370,22 @@ function api_string_value(string $ids, string $prefix, string $charset, int $max
         return "";
     }
     $quoteIds = gguf_charset_ids("\"");
+    $bsIds = api_json_escape_safe_ids(gguf_charset_ids("\\\""));
     $stepIds = $charsetIds;
     if ($quoteIds != "") {
         $stepIds = $stepIds . "," . $quoteIds;
     }
+    if ($bsIds != "") {
+        $stepIds = $stepIds . "," . $bsIds;
+    }
     $q = "," . $quoteIds . ",";
+    if ($forceEsc == 1) {
+        $fb = api_constrained_continue(["\\\""], 8);
+        if ($fb == "") {
+            return "";
+        }
+        $s = $s . "," . $fb;
+    }
     $closed = 0;
     $tail = "";
     for ($d = 0; $d < $maxSteps; $d++) {
@@ -437,6 +472,10 @@ function api_string_value_multi(string $ids, array $props, string $charset, int 
         return "";
     }
     $stepIds = $charsetIds . "," . $quoteIds;
+    $bsIds = api_json_escape_safe_ids(gguf_charset_ids("\\\""));
+    if ($bsIds != "") {
+        $stepIds = $stepIds . "," . $bsIds;
+    }
     $q = "," . $quoteIds . ",";
     for ($pi = 0; $pi < count($props); $pi++) {
         if ($pi > 0) {
@@ -8615,6 +8654,27 @@ function main(): void
         echo "SCHEMA-STR: PASS (grammar filled a free-form string; only charset bytes emitted)\n";
     } else {
         echo "SCHEMA-STR: FAIL shape=" . $strShape . "\n";
+    }
+
+    // Escaped string: force one complete \" pair, then continue the charset grammar; the pair
+    // must survive and the object must still parse.
+    $escPre = "{\"s\":\"a";
+    $escIds = tok_chat("user", "Write a quoted note.") . "," . tok_chat_open("assistant");
+    $escOut = api_string_value($escIds, $escPre, "bcdefghijklmnopqrstuvwxyz ", 4, 0, 1);
+    $escParts = explode(",", $escOut);
+    $escBase = count(explode(",", $escIds));
+    $escText = "";
+    for ($i = $escBase; $i < count($escParts); $i++) {
+        $escText = $escText . gguf_token_str((int) $escParts[$i]);
+    }
+    $escText = str_replace("Ġ", " ", $escText);
+    $escStart = substr($escText, 0, 9) == "{\"s\":\"a\\\"";
+    $escJson = api_json_ok($escText);
+    echo "SCHEMA-ESCAPE text=[" . $escText . "] json=" . $escJson . "\n";
+    if ($escOut != "" && $escStart == 1 && $escJson == 1) {
+        echo "SCHEMA-ESCAPE: PASS (escaped quote kept inside the JSON string)\n";
+    } else {
+        echo "SCHEMA-ESCAPE: FAIL start=" . $escStart . " json=" . $escJson . "\n";
     }
 
     // Bare integer: digits (optional leading "-"), so the value is valid JSON whatever the model

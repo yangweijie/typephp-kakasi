@@ -1481,13 +1481,19 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **两次做法**：① 在 `api_string_value` / `api_string_value_multi` 增加 `\` token 集合与逐 token 转义状态（转义态只允许 `"`/`\`）；② 改为 `$forceEsc` 确定性注入（先强制一个 `\` token 再进入转义态）。
 **结果**：`engine/run_f162.log`、`engine/run_f162b.log` 的 `SCHEMA-ESCAPE` 均输出非法 JSON（`json=0`）。Python repr 证实所选反斜杠 token 片段是多字节（`\\`、`\`+`n` 等形态），“一个 token = 一个转义字符”的假设不成立，强制注入也无法与片段内容对齐。
 **处理**：`git checkout -- engine/main.php` 回滚到 F161 已验证源码；重建 `engine/build_f161c.log` 成功；工作区干净，失败代码未提交。
-**下一步设计**：按 token 片段（`gguf_token_str`）做字节级扫描维护“串内/转义奇偶”状态，或把候选集限制为**完整合法转义片段**（`\"`/`\\`/`\n` 作为整体匹配），再重建验证。
+**下一步设计**：按 token 片段（`gguf_token_str`）做字节级扫描维护“串内/转义奇偶”状态，或把候选集限制为**完整合法转义片段**（`\"`/`\\`/`\n` 作为整体匹配），再重建验证。**→ 已按后者落地，见 F164。**
 
 ### F163 · 对象数组元素内的二维字符串数组（`{"items":[{"m":[["red"]]}]}`）
 **做法**：新增 `api_array_object_array2_value`（元素只有一个二维数组属性；内层固定一条字符串，闭合强制 `]]}`）与检测器 `api_response_schema_array_object_array2`（items 对象 `properties` 块内恰三个 `"type"`：array→array→string，无嵌套 `properties`），三出口在整数数组检测之后接入。
 **首跑真 bug**：第二元素的续写前缀写成 `{"m":[[`，漏了开引号 → `[["blue"]]` 变成 `[[blue"]]`（`run_f163.log` FAIL）；补上 `\"` 后 PASS。
 **证据**：`engine/build_f163b.log` 构建成功；`engine/run_f163b.log`：**124 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR-OBJ-ARR2D det=[items|m] text=[{"items":[{"m":[["red"]]},{"m":[["blue"]]}]}]: PASS`；同一二进制活服务 `engine/api_smoke_f163.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
 **限制**：元素只能有这一个二维数组属性；内层固定 1 条字符串；仅字符串叶子。
+
+### F164 · 转义字符串（片段级白名单，已解决 F162）
+**做法**：新增 `api_json_escape_safe_ids`：把 `gguf_charset_ids("\\\"")` 的候选按**片段**过滤，只保留两类完整合法转义——恰为 `\"` 的 token，或**偶数个**反斜杠的 token（`\\`、`\\\\`）。这些片段自包含，不需要逐 token 转义状态。`api_string_value` / `api_string_value_multi` 把该集合并入允许 token 集；`api_string_value` 增加 `$forceEsc`（强制一个完整 `\"` 对）供确定性自检。
+**根因对照（F162 失败）**：旧实现假设“一个 token = 一个转义字符”，而词表反斜杠片段是多字节（`\\`、`\`+`n` 形态），奇数长度或混合片段会把字符串留在不明确状态，导致 JSON 非法。白名单过滤后不再存在该状态。
+**验证**：`engine/build_f164.log` 构建成功；`engine/run_f164.log`：**125 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ESCAPE text=[{"s":"a\"s\"s\""}] json=1: PASS`（模型在强制 `\"` 之后又自然产出多个 `\"`，全程 JSON 合法）；同一二进制活服务 `engine/api_smoke_f164.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
+**限制**：允许的转义仅 `\"` 与偶数反斜杠；`\n`/`\uXXXX` 等未纳入白名单；字符串内容仍受 charset 限制。
 
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
