@@ -4494,6 +4494,42 @@ function api_tool_call_json(string $text, array $names): string
         . "\",\"arguments\":\"" . api_esc($args) . "\"}}";
 }
 
+// Every call the model emitted in one turn, as the comma-joined items of an OpenAI tool_calls
+// array (the outlets add the brackets). Each block goes through the same declared-only whitelist
+// as a single call and ids are renumbered from 1. A turn with no blocks at all falls back to the
+// single-call reader, which also accepts the bare JSON object the constrained skeletons emit.
+function api_tool_calls_json(string $text, array $names): string
+{
+    $open = "<" . "tool_call" . ">";
+    $close = "<" . "/" . "tool_call" . ">";
+    $out = "";
+    $n = 0;
+    $rest = $text;
+    while (true) {
+        $tp = strpos($rest, $open);
+        if ($tp === false) {
+            break;
+        }
+        $rest = substr($rest, $tp + strlen($open));
+        $te = strpos($rest, $close);
+        if ($te === false) {
+            break;
+        }
+        $one = api_tool_call_json($open . substr($rest, 0, $te) . $close, $names);
+        $rest = substr($rest, $te + strlen($close));
+        if ($one == "") {
+            continue;
+        }
+        $n = $n + 1;
+        $one = str_replace("\"call_1\"", "\"call_" . $n . "\"", $one);
+        $out = $out == "" ? $one : $out . "," . $one;
+    }
+    if ($n == 0) {
+        return api_tool_call_json($text, $names);
+    }
+    return $out;
+}
+
 // api_constrained returns "prompt,ids,generated,ids"; the answer starts at $promptN.
 function api_gen_text(string $csv, int $promptN): string
 {
@@ -7662,7 +7698,7 @@ function api_serve(int $port): void
                     $payload = "{\"error\":{\"message\":\"" . api_esc(model_last_error()) . "\"}}";
                 } else {
                     if ($toolJson == "" && count($toolNames) > 0 && $tcNone == 0) {
-                        $toolJson = api_tool_call_json($text, $toolNames);
+                        $toolJson = api_tool_calls_json($text, $toolNames);
                     }
                     if ($toolJson == "" && $tcRequired == 1 && count($toolNames) > 0) {
                         // The constrained decode picked one skeleton; its decoded text can lose a
@@ -10642,6 +10678,25 @@ function main(): void
         echo "JSON-OBJECT-DETECT: PASS (both spellings claimed, json_schema and other keys are not)\n";
     } else {
         echo "JSON-OBJECT-DETECT: FAIL\n";
+    }
+
+    // Parallel tool calls: a turn with two blocks must report both with renumbered ids, a single
+    // block must keep the one-call shape, and an undeclared name must still be dropped.
+    $plOpen = chr(60) . "tool_call" . chr(62);
+    $plClose = chr(60) . "/" . "tool_call" . chr(62);
+    $plTN = ["get_weather", "get_time"];
+    $plTwo = api_tool_calls_json($plOpen . "{\"name\":\"get_weather\",\"arguments\":{\"city\":\"Paris\"}}"
+        . $plClose . $plOpen . "{\"name\":\"get_time\",\"arguments\":{\"city\":\"London\"}}" . $plClose, $plTN);
+    $plOne = api_tool_calls_json($plOpen . "{\"name\":\"get_weather\",\"arguments\":{}}" . $plClose, $plTN);
+    $plBad = api_tool_calls_json($plOpen . "{\"name\":\"ghost\",\"arguments\":{}}" . $plClose
+        . $plOpen . "{\"name\":\"get_time\",\"arguments\":{}}" . $plClose, $plTN);
+    $plOk = substr_count($plTwo, "\"function\":") == 2 && strpos($plTwo, "\"call_2\"") !== false
+        && substr_count($plOne, "\"function\":") == 1
+        && substr_count($plBad, "\"function\":") == 1 && strpos($plBad, "get_time") !== false;
+    if ($plOk) {
+        echo "TOOL-CALLS-PARALLEL: PASS (both blocks kept, ids renumbered, undeclared name dropped)\n";
+    } else {
+        echo "TOOL-CALLS-PARALLEL: FAIL two=" . $plTwo . " one=" . $plOne . " bad=" . $plBad . "\n";
     }
 
     // Detector scoping: a sibling property (count) or a nested object's leaf (n) must not leak
