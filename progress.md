@@ -592,6 +592,8 @@
 
 - **F216（冷启动＝叶子分隔符续解码，标记已核对产物）**：`build/gen/cache/ast` 清空重建后，`grep -rc F215-MARK build/gen/*.cc` 命中 `extension-kakasi_engine.cc:1`（**函数体生成在这个文件，不在 main.cc——我第一版控制查错了文件**）；产物里有标记而自检输出 0 次，且 `first_len=0` 依旧 ⇒ 前缀阶段无辜，`api_nested_object_value` 前缀之后的唯一可能出口是**分隔符续解码**（`engine/main.php:2549`）。修复方向：长前缀填满会话后容量判定把放不下当结束；判据现成——`SCHEMA-DEEP200-RETRY` 的 `first_len` 必须转非零。**F212 的归因在正确方法下重新成立**，撤稿记录保留作为方法教训。临时 echo 已回滚。
 
+- **F218（冷启动：前缀与分隔符都被洗清，候选收窄）**：两次标记实验都在**先确认标记进了 build/gen 产物**之后才解读——前缀出口标记 0 次输出（前缀无辜）；分隔符那一步打出 `cand=1 first=3 allowed_empty=0 done=0`（首步可达，不是它返回空）。剩余候选见 findings F218；**下一步建议一把梭**：在该函数每个 `return ""` 前打编号标记，一次构建一次自检就把所有出口枚举完。基线仍是 `run_f214.log` 137 PASS / 0 FAIL、`first_len=0 second_len=3909`；探针已全部回滚并重建核对。
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|

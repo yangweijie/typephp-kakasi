@@ -1588,6 +1588,14 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **顺带纠正一条我写下的错数**：上一轮我在 progress 里把套件耗时"推算"为 6–8 min，实测是 **102 s**；推算当成数据写进日志就是这种后果。**只写量到的数**。
 **新增硬规则（进 progress 入口）**：**任何时刻只允许一个引擎进程**。起服务前先看 `netstat` 8000/8001 是否有人监听、后台链是否仍在跑；要并行跑两条门禁必须串行化，或干脆等到前一条结束。这条比"别用 `ps -W`"更要命，因为它产出的是**错误的实验结论**，不是慢。
 
+### F218 · 冷启动空返回：**前缀与分隔符两个嫌疑都被产物核对过的标记洗清**（机制仍未定，但候选集缩窄）
+**做了什么**（每步都先确认标记真进了构建：`grep -rl F21x-MARK build/gen`）：
+1. `F215-MARK`（前缀强制解码返回空才打印）：产物里有（`extension-kakasi_engine.cc:1`），自检输出 **0 次**，而 `first_len` 仍 0 ⇒ **前缀无辜**。
+2. `F217-MARK`（分隔符那一步在 d=0 打印 `cand/first/allowed_empty/done`）：DEEP200 附近确实打出 `cand=1 first=3 allowed_empty=0 done=0` ⇒ 分隔符候选**编码成功、首步可达**，`api_constrained_continue` 不是返回空的那一步。
+**剩下的候选（收窄到这里）**：`api_nested_object_value` 里只还剩 `charsetIds/quoteIds` 为空、`count($kv)!=2`、以及**返回空串之外的一条路**——即函数返回了非空 CSV，但调用方 `api_gen_text`/解码环节把它解成空文本？注意 `SCHEMA-DEEP200-RETRY` 打的是 `strlen($d2Probe)`（函数返回值本身），所以确实返回了空串；因此嫌疑转向**同一函数里未被列举的提前 return**（`api_object_head($plan)` 返回空 → 但这只会让前缀短一截，不会返回空）。
+**下一步怎么打（很省）**：在函数**每个** `return "";` 之前统一打 `stage=` 编号（一次构建，产物核对后跑一次自检），一次性把所有出口枚举出来——比继续一个个猜方向便宜得多。若所有编号都不出现，就说明返回空并非由这些分支产生，要怀疑**函数根本没跑到底**（例如被上游某处直接跳过），那就要在调用点打出入参。
+**当前基线**：探针全部回滚（源码 0 处标记），重建后产物里也不应再出现（本轮已核）；行为基线证据仍是清缓存重建后的 `run_f214.log` **137 PASS / 0 FAIL** 与 `first_len=0 second_len=3909`。
+
 ### F216 · 冷启动空返回定位到**叶子分隔符续解码**（这次的标记经过产物核对，F212 的归因在正确方法下重新成立）
 **怎么做到可信的**：前缀出口打 `F215-MARK` echo，删 `build/gen/cache/ast` 重建，然后**扫产物树**确认标记进了编译——`grep -rc F215-MARK build/gen/*.cc` ⇒ `build/gen/extension-kakasi_engine.cc:1`（我第一版控制条件只查 `main.cc`，**查错了文件**：函数体生成在 `extension-kakasi_engine.cc`）。标记在二进制里、自检输出里 `F215-MARK` 计数为 0、同时 `SCHEMA-DEEP200-RETRY` 仍 `first_len=0` ⇒ **前缀强制解码不是失败点**（`run_f215b.log` 137 PASS / 0 FAIL）。
 **排除法剩下的唯一出口**：`api_nested_object_value` 在前缀之后只有 ① 计划串畸形（`plan=ok` 且同一 plan 第二次成功 ⇒ 排除）、② 字符集/键集为空（两次调用参数完全相同 ⇒ 排除）、③ **叶子分隔符 `api_constrained_continue([$sep], 32)` 返回空**（`engine/main.php:2549` 一带）；收尾补 `}` 那步不返回空串。**⇒ 归因：超长前缀解码之后的第一个续解码步骤拿不到 token。**
