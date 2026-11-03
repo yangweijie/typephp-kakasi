@@ -1573,6 +1573,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
 **限制**：129 层以上仍被截断；单链、每层唯一属性。
 
+### F194 · 生成侧并行工具调用未支持 + `tool_choice:"required"` 丢参数（两项实测缺口）
+**动机**：F193 收口后挑下一个 API 缺口，先量再改（此前审计只记了历史侧并行 F63/F65，生成侧从未取证）。
+**实测 A（并行）**：同一请求（两把工具 `get_weather`/`get_time`，prompt 明确要求"一次调用两者"，`seed:3`，`max_tokens:192`）——`tools` 自由路径 `chat tool_calls = 0`、`/v1/responses` 只出 `['message']`（无 `function_call`）；`tool_choice:"required"` 强制路径 `tool_calls = 1`（`get_weather`）。⇒ **一次响应最多一个调用**，不是模型偶发不调用：`api_tool_call_json`（`engine/main.php:4455`）本身只返回单个调用对象，文件里没有复数版前向调用提取器（`api_tool_calls_of`/`api_tool_calls_group` 只服务历史回放），三个出口都按单调用序列化（Responses 流式更是把 `fc_1`/`output_index:0`/`call_1` 硬编码在 `api_resp_call_start`/`api_resp_call_done`，`engine/main.php:4760`、`4771`）。
+**实测 B（参数丢失）**：`tool_choice:"required"` 两工具请求返回 `('get_weather', '{}')`——名字对了但 **arguments 是空对象**，客户端无法执行。根因方向：强制路径在 `$qArgs == ""` 时兜底成 `"{}"`（`engine/main.php:6871` 一带），只兜了骨架没兜模型真正选中的那个调用；对照 `tool_choice` 点名路径会走 `api_schema_arg_candidates` 拿到具体取值。
+**证据**：`/c/Users/ASUS/AppData/Local/Temp/probe_f194_chat.json`、`probe_f194_resp.json`、`probe_f194b.json`（8000 活服务，`serve.on` 哨兵 + 显式 PATH 直起，探针后进程已停、`serve.on` 已删）。
+**未做（按工程量排序，供下一轮）**：① 复数前向调用提取器（返回 name/arguments 对的扁平数组）+ chat/Anthropic/Responses 三出口的序列化与 `finish_reason`/`stop_reason` 计数；② Responses 流式的 `output_index` 递增与逐项 `response.output_item.added/done`；③ 修 `required` 的参数丢失（优先，改动面小且是协议正确性问题）。**不要把这两项当成同一件事**：①是能力缺口，③是已有能力走偏。
+
 ### F193 · `json_object` 贯通流式与并行槽（并收掉 F191 的流式残留）
 **做法**：把两处内联正则抽成单点判定 `api_json_object_requested()`（同时认领 OpenAI `response_format` 与 Responses `text.format` 两种拼写；带引号的 `"format"` 使 `"response_format"`/`"output_format"` 不会被短式误认领）；非流式改为复用该函数；流式在 stop 应用处加 `$jsonObj == 0` 门（`engine/main.php:7232` 一带），并行槽把同一判定并入 `$stopV`（`engine/main.php:5954` 一带）——结构化输出自己决定形状，`stop` 应当被丢弃而不是把块咬断。
 **程序化守卫**：自检 `JSON-OBJECT-DETECT` 断言两种拼写为 1、`json_schema` 与 `output_format` 与无 `response_format` 三种为 0（不依赖模型）。
