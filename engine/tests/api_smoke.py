@@ -236,6 +236,35 @@ def main():
         atsok = False
     check("anth-json-schema-string", atsok, atscontent)
 
+    # Same flat schema streamed: the Messages SSE exit replays the constrained value as deltas.
+    raw = post("/v1/messages", dict(ath_str, stream=True), stream=True)
+    astream = ""
+    for d in sse_data(raw):
+        o = json.loads(d)
+        if o.get("type") == "content_block_delta":
+            astream = astream + o["delta"].get("text", "")
+    try:
+        asval = json.loads(astream)["city"]
+        asok = isinstance(asval, str) and bool(re.fullmatch(r"[A-Za-z0-9 .,'-]*", asval))
+    except Exception:
+        asok = False
+    check("anth-json-schema-string-stream", asok, astream)
+
+    # Same 2-D element schema streamed: exercises the grammar dispatch through the replay path.
+    raw = post("/v1/messages", dict(ath_schema, stream=True), stream=True)
+    a2stream = ""
+    for d in sse_data(raw):
+        o = json.loads(d)
+        if o.get("type") == "content_block_delta":
+            a2stream = a2stream + o["delta"].get("text", "")
+    try:
+        a2sval = json.loads(a2stream)["items"]
+        a2sok = (isinstance(a2sval, list) and 1 <= len(a2sval) <= 2
+                 and all(isinstance(e, dict) and set(e.keys()) == {"m"} for e in a2sval))
+    except Exception:
+        a2sok = False
+    check("anth-json-schema-array-obj-arr2d-stream", a2sok, a2stream)
+
     ath_tool = {"messages": [{"role": "user", "content": "What is the weather in Paris?"}],
                 "max_tokens": 64,
                 "tools": [{"name": "get_weather", "input_schema": {

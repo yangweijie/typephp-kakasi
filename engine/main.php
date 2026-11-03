@@ -4588,6 +4588,179 @@ function api_anthropic_output_format(string $body): string
     return $body . ",\"json_schema\":{\"schema\":" . $schema . "}";
 }
 
+// Full JSON-schema grammar dispatch used by the streaming exits: returns the generated token-id
+// list ("" when no schema applies). Mirrors the non-stream chain so every detector/writer is
+// reachable from a single call site.
+function api_schema_token_value(string $ids, string $body, int $useCache): string
+{
+    $schemaCands = api_response_schema_candidates($body);
+    $scOut = "";
+    if (count($schemaCands) > 0) {
+        $scOut = api_constrained($ids, $schemaCands, 128, $useCache);
+        return $scOut;
+    }
+    $scArrN = api_response_schema_array_n_string($body);
+    $scArr6 = "";
+    if ($scArrN == "") {
+        $scArr6 = api_response_schema_array6_string($body);
+    }
+    $scArr5 = "";
+    if ($scArr6 == "") {
+        $scArr5 = api_response_schema_array5_string($body);
+    }
+    $scArr4 = "";
+    if ($scArr5 == "") {
+        $scArr4 = api_response_schema_array4_string($body);
+    }
+    $scArr3 = "";
+    if ($scArr4 == "") {
+        $scArr3 = api_response_schema_array3_string($body);
+    }
+    $scArr2 = "";
+    if ($scArr4 == "" && $scArr3 == "") {
+        // Element-level two-level arrays win over the flat top-level detector.
+        $scArr2e = api_response_schema_array_object_array2($body);
+        if ($scArr2e == "") {
+            $scArr2 = api_response_schema_array2_string($body);
+        }
+    }
+    $scArrObj2 = "";
+    $scArrObjNum = "";
+    $scRootOneof = "";
+    $scArrObjArr = "";
+    if ($scArr3 == "" && $scArr2 == "") {
+        $scArrObjArr = api_response_schema_array_object_array($body);
+        $scArrObjNest = api_response_schema_array_object_nested($body);
+        $scOneof = api_response_schema_oneof_grammar($body);
+        $scRootOneof = api_response_schema_root_oneof_grammar($body);
+        $scArrObjNum = api_response_schema_array_object_int_array($body);
+        $scArrObj2 = api_response_schema_array_object_array2($body);
+    }
+    $scArrObj = "";
+    if ($scArrObjArr == "" && $scArr3 == "" && $scArr2 == "") {
+        $scArrObj = api_response_schema_array_object($body);
+    }
+    $scNest = "";
+    if ($scArr2 == "" && $scArrObj == "") {
+        $scNest = api_response_schema_nested_object($body);
+    }
+    $scArr = "";
+    if ($scArrObj == "" && $scNest == "") {
+        $scArr = api_response_schema_array_string($body);
+    }
+    $scArrNum = "";
+    if ($scArrObj == "" && $scNest == "" && $scArr == "") {
+        $scArrNum = api_response_schema_array_number($body);
+    }
+    $scMix = "";
+    if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "") {
+        $scMix = api_response_schema_mixed_object($body);
+    }
+    $scProp = [];
+    if ($scArrN != "") {
+        $sann = explode("|", $scArrN);
+        $scOut = api_array_n_string_value($ids, $sann[0], (int) $sann[1],
+            api_schema_charset(), 2, 3, 1);
+    } else if ($scArr6 != "") {
+        $scOut = api_array6_string_value($ids, $scArr6,
+            api_schema_charset(), 2, 2, 2, 2, 2, 2, 3, 1);
+    } else if ($scArr5 != "") {
+        $scOut = api_array5_string_value($ids, $scArr5,
+            api_schema_charset(), 2, 2, 2, 2, 2, 3, 1);
+    } else if ($scArr4 != "") {
+        $scOut = api_array4_string_value($ids, $scArr4,
+            api_schema_charset(), 2, 2, 2, 2, 3, 1);
+    } else if ($scArr3 != "") {
+        $scOut = api_array3_string_value($ids, $scArr3,
+            api_schema_charset(), 2, 2, 2, 4, 1);
+    } else if ($scArr2 != "") {
+        $scOut = api_array2_string_value($ids, $scArr2,
+            api_schema_charset(), 2, 2, 4, 1);
+    } else if ($scArrObj2 != "") {
+        $sao2d = explode("|", $scArrObj2);
+        $scOut = api_array_object_array2_value($ids, $sao2d[0], $sao2d[1],
+            api_schema_charset(), 2, 4, 1);
+    } else if ($scArrObjNum != "") {
+        $saoin = explode("|", $scArrObjNum);
+        $scOut = api_array_object_int_array_value($ids, $saoin[0],
+            $saoin[1], 2, 2, 3, 1);
+    } else if ($scArrObjArr != "") {
+        $saoa = explode("|", $scArrObjArr);
+        $scOut = api_array_object_array_value($ids, $saoa[0], $saoa[1],
+            (isset($saoa[2]) ? $saoa[2] : ""), api_schema_charset(), 2, 6, 1);
+    } else if ($scArrObjNest != "") {
+        $saon = explode("|", $scArrObjNest);
+        $scOut = api_array_object_nested_value($ids, $saon[0], $saon[1],
+            $saon[2], api_schema_charset(), 2, 6, 1);
+    } else if ($scArrObj != "") {
+        $sao = explode("|", $scArrObj);
+        $scOut = api_array_object_value($ids, $sao[0], $sao[1],
+            api_schema_charset(), 3, 6, 1);
+    } else if ($scRootOneof != "") {
+        $sro = explode("|", $scRootOneof);
+        $scOut = api_root_oneof_grammar_value($ids, $sro[1],
+            api_schema_charset(), 6, 1);
+    } else if ($scOneof != "") {
+        $sof = explode("|", $scOneof);
+        $scOut = api_oneof_grammar_value($ids, $sof[0], $sof[1],
+            api_schema_charset(), 6, 1);
+    } else if ($scNest != "") {
+        $snp = explode("|", $scNest);
+        $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
+            api_schema_charset(), 8, 1);
+    } else if ($scArr != "") {
+        $scOut = api_array_string_value($ids, $scArr,
+            api_schema_charset(), 4, 6, 1);
+    } else if ($scArrNum != "") {
+        $san = explode("|", $scArrNum);
+        $scOut = api_array_number_value($ids, $san[0], (int) $san[1],
+            4, 3, 1);
+    } else if ($scMix != "") {
+        $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1);
+    } else if (api_response_schema_top_array_string($body) == 1) {
+        $scOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4, 1);
+    } else if (api_response_schema_top_array_number($body) >= 0) {
+        $scOut = api_top_array_number_value($ids,
+            api_response_schema_top_array_number($body), 3, 3, 1);
+    } else if (api_response_schema_top_array_bool($body) == 1) {
+        $scOut = api_constrained($ids, api_top_bool_candidates(), 8, 1);
+    } else if (api_response_schema_top_array_nested_object($body) != "") {
+        $tson = explode("|", api_response_schema_top_array_nested_object($body));
+        $scOut = api_top_array_nested_object_value($ids, $tson[0],
+            $tson[1], api_schema_charset(), 2, 6, 1);
+    } else if (api_response_schema_top_array_object($body) != "") {
+        $scOut = api_top_array_object_value($ids,
+            api_response_schema_top_array_object($body),
+            api_schema_charset(), 2, 6, 1);
+    } else {
+        $scProp = api_response_schema_string_props($body);
+        if (count($scProp) > 0) {
+            $scOut = api_string_value_multi($ids, $scProp,
+                api_schema_charset(), 16, 1);
+        } else {
+            $scNestNum = api_response_schema_nested_number($body);
+            if ($scNestNum != "") {
+                $snn = explode("|", $scNestNum);
+                $scOut = api_number_nested($ids, $snn[0], $snn[1],
+                    (int) $snn[2], 6, 1);
+            } else {
+                $scMult = api_response_schema_multiple_unbounded($body);
+                if ($scMult != "") {
+                    $smu = explode("|", $scMult);
+                    $scOut = api_multiple_value($ids, $smu[0], (int) $smu[1], 4, 1);
+                } else {
+                    $scNum = api_response_schema_number_prop($body);
+                    if ($scNum != "") {
+                        $sp2 = explode("|", $scNum);
+                        $scOut = api_number_value($ids, $sp2[0], (int) $sp2[1], 6, 1);
+                    }
+                }
+            }
+        }
+    }
+    return $scOut;
+}
+
 function api_schema_resolve_refs(string $s): string
 {
     $defKey = "\"definitions\"";
@@ -6277,6 +6450,37 @@ function api_serve(int $port): void
                                  . $aGen . "}}\n\n");
                         fwrite($c, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
                         echo "SESSION anth-stream tool=call reason=complete name=" . $aName . "\n";
+                        fclose($c);
+                        continue;
+                    }
+                    // Structured output over the Messages stream: generate the constrained value
+                    // first, then replay it as text deltas (grammar ran to completion above).
+                    $anthJson = "";
+                    if (strpos($body, '"json_schema"') !== false) {
+                        $anthJson = api_schema_token_value($ids, $body, 0);
+                    }
+                    if ($anthJson != "") {
+                        $ajText = api_gen_text($anthJson, $promptN);
+                        $ajGen = count(explode(",", $anthJson)) - $promptN;
+                        if ($ajGen < 0) {
+                            $ajGen = 0;
+                        }
+                        fwrite($c, "event: message_start\ndata: {\"type\":\"message_start\",\"message\":"
+                                 . "{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\","
+                                 . "\"model\":\"" . $modelId . "\",\"content\":[],"
+                                 . "\"usage\":{\"input_tokens\":" . $promptN . ",\"output_tokens\":0}}}\n\n");
+                        fwrite($c, "event: content_block_start\ndata: {\"type\":\"content_block_start\","
+                                 . "\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n");
+                        fwrite($c, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
+                                 . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
+                                 . api_esc($ajText) . "\"}}\n\n");
+                        fwrite($c, "event: content_block_stop\ndata: "
+                                 . "{\"type\":\"content_block_stop\",\"index\":0}\n\n");
+                        fwrite($c, "event: message_delta\ndata: {\"type\":\"message_delta\","
+                                 . "\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":"
+                                 . $ajGen . "}}\n\n");
+                        fwrite($c, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+                        echo "SESSION anth-stream json reason=complete\n";
                         fclose($c);
                         continue;
                     }

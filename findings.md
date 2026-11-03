@@ -1523,7 +1523,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **缺口**：`/v1/messages` 不认 Anthropic 的 `"output_format":{"type":"json_schema","schema":{…}}`，结构化输出只能走 Chat/Responses。
 **做法**：新增 `api_anthropic_output_format`：在两处请求体提取后（单槽与并行槽）、schema 预处理之前，若路径是 `/v1/messages` 且体含 `output_format`，用 `api_balance_block` 取出 schema 对象，并把 `,"json_schema":{"schema":<schema>}` 追加到检测体上——所有既有检测器/构造器与三出口逻辑原样复用，响应仍按 Anthropic Messages 形状返回 `content[0].text`。
 **验证**：`engine/build_f169.log` 构建成功；`engine/run_f169.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**；`api_smoke.py` 扩到 **67** 形状，`engine/api_smoke_f169.log`：**67/67 PASS**，新增 `anth-json-schema-array-obj-arr2d`（`output_format` + 元素内二维数组）PASS；后续 `engine/api_smoke_f171.log` 扩到 **68/68**（新增平坦字符串 `anth-json-schema-string`）。
-**限制**：仅非流式路径生效。实测（`engine/api_smoke_f170.log`，探针用例后已回退）Anthropic **流式** `output_format` 仍输出纯文本 `1. Red, Blue, Yellow`，SSE 分支未走 grammar——后续需把 schema 链接入 Anthropic SSE 文本增量路径。
+**限制**：仅非流式路径生效。实测（`engine/api_smoke_f170.log`，探针用例后已回退）Anthropic **流式** `output_format` 仍输出纯文本 `1. Red, Blue, Yellow`，SSE 分支未走 grammar——后续需把 schema 链接入 Anthropic SSE 文本增量路径。**→ 已由 F171 解决。**
+
+### F171 · Anthropic 流式结构化输出（约束解码 + 增量回放）
+**做法**：把完整 schema 分发链抽成 `api_schema_token_value($ids, $body, $useCache)`（有限候选 → N 维/6..2 维数组 → 元素级 → 嵌套 → oneOf → 顶层数组 → 自由字符串/数字/倍数）；单槽 Messages 流式分支在进入自由生成循环前，若检测体含 `json_schema` 就调用该函数得到完整 token 序列，再 `api_gen_text` 解码并按 Messages 事件序列（`message_start` → `content_block_start` → 一个 `text_delta` → `content_block_stop` → `message_delta(end_turn)` → `message_stop`）回放后关闭连接。
+**验证**：`engine/build_f171.log` 构建成功；`engine/run_f171.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**（非流式路径未改动，无回退）；`api_smoke.py` 扩到 **70** 形状，`engine/api_smoke_f171c.log`：**70/70 PASS**，新增 `anth-json-schema-string-stream` 与 `anth-json-schema-array-obj-arr2d-stream` 均 PASS。
+**限制**：增量粒度为**整段回放**（一次 delta），不是逐 token 流；工具调用流式仍走原路径。
 
 ### F170 · 嵌套上限 64 + DEEP40（窗口/前缀预算随深度放大）
 **做法**：两处下钻循环 32→**64**；`api_response_schema_nested_object` 的检测窗口 2000→**8000** 字符；三处强制前缀 token 预算改为按深度放大——`api_array_n_string_value` 用 `$dims*8+64`、`api_nested_object_value` 的首元素前缀与 `api_array_object_nested_value` 的后续元素前缀用 `count($keys)*8+64`（40 层前缀超过固定 64 token 会被截断）。新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13）。
