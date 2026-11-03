@@ -1506,6 +1506,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f166.log` 构建成功；`engine/run_f166.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-ARR7 det=[m|7] text=[{"m":[[[[[[["red"]]]]]]]}]: PASS`（ARR6 同构建仍 PASS）；同一二进制活服务 `engine/api_smoke_f166.log`：**61/61 PASS、`SMOKE_EXIT=0`**。
 **限制**：叶子仅字符串；rank 上限受检测窗口（4000 字符）与 `[`×dims 前缀长度约束，实际可到数十维；每层预算由 maxPerLevel 控制。
 
+### F167 · par 服务 accept 空转告警修复（stream_select 门控）
+**现象**：两槽 8001 服务无连接时持续刷 `PHP Request Startup: Accept failed`（旧 `serve_par13.log` 73 MB；本次实测 30 s 内 443 行）。
+**失败的尝试**：空闲时把 `stream_socket_accept($srv, 0.01)` 改为阻塞 10 ms —— 告警仍在 443 行（超时同样触发告警），说明必须**完全不调用 accept**。
+**TypePHP 限制**：先写 `$c = false;` 再赋 accept 结果会报 `Cannot re-assign $c from php::Stream to php::Bool`（资源类型也不可改判）。
+**修复**：循环开头 `stream_select($rd,$wr,$ex,0,1000)` 探测监听器；`$c = ($sel>0) ? stream_socket_accept($srv,0) : $srv;`（两分支同为资源类型），请求分支改为 `if ($c !== false && $c !== $srv)`。空闲时 `$c` 指向监听器本身、跳过请求块，且 1 ms 等待不阻塞槽位推进。
+**验证**：`engine/build_f167d.log` 构建成功；起 8001 后 8 s 空闲：`Accept failed` **0 行**（总日志 2 行）；`engine/par_smoke_f167c.log` **7/7 PASS**；`engine/fairness_f167.log` **PASS**（短流 0.28 s vs 长流 4.91 s）；全量回归 `engine/run_f167.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**。
+
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |
 |------|------|

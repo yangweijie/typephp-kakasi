@@ -5437,8 +5437,15 @@ function api_serve_par(int $port): void
     $holdA = "";
     $holdB = "";
     while (true) {
-        $c = stream_socket_accept($srv, 0);
-        if ($c !== false) {
+        // stream_select avoids calling accept() on an empty listener, which raises a PHP-level
+        // "Accept failed" warning on every timeout. When nothing is readable, $c points at the
+        // listener itself (same resource type) and the request block below is skipped.
+        $rd = [$srv];
+        $wr = [];
+        $ex = [];
+        $sel = stream_select($rd, $wr, $ex, 0, 1000);
+        $c = ($sel !== false && $sel > 0) ? stream_socket_accept($srv, 0) : $srv;
+        if ($c !== false && $c !== $srv) {
             // A socket accepted from a non-blocking listener is non-blocking too, so fread would
             // return "" before the body arrives. Make the client blocking with a timeout.
             stream_set_blocking($c, true);
