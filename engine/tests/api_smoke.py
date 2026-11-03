@@ -191,6 +191,26 @@ def main():
     check("chat-tool-parallel-args", got.get("get_weather") == "Paris"
           and got.get("get_time") == "London", str(st2)[:200])
 
+    # F201: a named tool_choice with parallel_tool_calls answers with the same function twice, one
+    # call per argument value - the pair candidates are built from that function's own candidates.
+    r = post("/v1/chat/completions", {"messages": [{"role": "user",
+                                                    "content": "Weather in Paris and London, "
+                                                               "two calls in one turn."}],
+                                      "max_tokens": 64, "seed": 5,
+                                      "tool_choice": {"type": "function",
+                                                      "function": {"name": "get_weather"}},
+                                      "parallel_tool_calls": True,
+                                      "tools": [{"type": "function", "function": {
+                                          "name": "get_weather",
+                                          "parameters": {"type": "object", "properties": {
+                                              "city": {"type": "string",
+                                                       "enum": ["Paris", "London"]}}}}}]})
+    nt = r["choices"][0]["message"].get("tool_calls") or []
+    ncity = sorted(json.loads(t["function"]["arguments"]).get("city", "") for t in nt)
+    check("chat-tool-named-parallel", len(nt) == 2 and ncity == ["London", "Paris"]
+          and all(t["function"]["name"] == "get_weather" for t in nt)
+          and len(set(t["id"] for t in nt)) == 2, str(nt)[:200])
+
     # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
     # block arrives whole, while the control stream is cut at the leading fence and ends early.
     jstream = {"input": "Return one JSON object with key city, value Paris.",

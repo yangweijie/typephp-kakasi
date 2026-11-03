@@ -1581,6 +1581,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **所以并行生成的改动面比预想小，而且形状要求明确**：候选骨架里加**多调用**条目即可，由现成的复数提取器拆成多项。但**必须用带块标签的 wire 形式**——两个裸 JSON 直接相接时 `api_json_ok(整段)` 不成立、复数扫描器又找不到块标签，会整段判空；带标签时每块各自闭合，F195/F196 的解析与扇出立刻可用。骨架预算需 96→约 192（两块 ≈ 74 token）。
 **实验本身已回滚**：两条 `echo` 与 `build_f197.log` 所在的探针版本不入主干——`git checkout engine/main.php` 回到 F196 提交态（`e4a178a`），主干无新增日志噪声。
 
+### F201 · 点名 `tool_choice` 也能并行（同一函数两次、参数各异）
+**做法**：`parallel_tool_calls` 判定上提到两条分支之前（`$parReq`，原来埋在 required 块里）；点名分支在 `parallel_tool_calls:true` 且该函数有 ≥2 个参数候选时，**只放两块串联的候选**（与 F199 同一理由：任一候选完整就停，单块在场则并行永不出现），叉乘同样设 24 上限。
+**活服务实测（单探针）**：`tool_choice={name:get_weather}` + `parallel_tool_calls:true` + 枚举 `[Paris,London]` + "Weather in Paris and London, two calls in one turn." ⇒ **两项** `call_1 {"city":"Paris"}` / `call_2 {"city":"London"}`，28 s（`C:/Users/ASUS/AppData/Local/Temp/p201c.json`）。
+**一次假失败的教训**：首轮成对探针两条请求都返回**空响应**，我按"实现挂了"去查——真相是 curl 的 `-m 150` 在 `max_tokens:256` 下超时；把窗口放到 420 s、`max_tokens:64` 后同一实现 28 s 就出正确结果。**超时与错答必须分开判**：先量耗时再下结论（`elapsed=` 记录就是这个用途）。
+**常驻守卫**：`chat-tool-named-parallel`（两项、同函数、两个 city 齐全、id 唯一）。
+**门禁状态**：本轮提交前的完整门禁（自检 + 92 形状活服务 + 8001 并行/公平性）在 `engine/gates_f201.txt` 出结果之前**不得引用**；写这条时该文件尚未产生（活服务阶段还没开始）。运行门禁期间本机 shell 明显被拖慢（一个 `cat` 都能超 120 s），后续同类链应错峰。
+
 ### F200 · 并行调用的参数按工具各取所需（候选叉乘 + 上限）
 **问题**：F199 的成对候选每个工具只用**第一个**参数候选，所以 "get_weather 用 Paris、get_time 用 London" 两句里的两个城市被答成同一个（两项都是 Paris）。
 **做法**：required 候选改为**逐工具枚举全部参数候选**生成 wire 单块，成对候选是这个 wire 列表的有序叉乘；每步解码都要扫全部候选，故对成对候选数量设 **24** 的上限（不是让它按平方长）。
