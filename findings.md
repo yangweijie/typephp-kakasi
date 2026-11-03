@@ -1590,7 +1590,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 
 ### F207 · 外部 $ref 走调用方提供的 schema_registry（不联网、不读请求里的路径）
 **为什么是这个形状**：本地推理引擎没有网络；而按请求里给的相对路径去读文件等于开一条目录穿越口子。所以外部引用只在**调用方随请求交出被引用 schema** 时才解析：`{"$ref":"city.json#/City"}` 配合顶层 `"schema_registry":{"city.json#/City":{…}}`。注册表里没有的引用**原样留着**（语法回退到旧行为），不做静默猜测或破坏。
-**实现**：`api_schema_resolve_refs()` 在原有的本地 `#/definitions|\$defs` 内联之前加一轮外部内联：取 `"$ref"` 值，非 `#` 开头才走注册表；替换的对象要求是**纯 ref 对象**（含兄弟键就放弃替换，避免把 description 之类一起吃掉）。
+**实现**：`api_schema_resolve_refs()` 在原有的本地 `#/definitions|$defs` 内联之前加一轮外部内联：取 `"$ref"` 值，非 `#` 开头才走注册表；替换的对象要求是**纯 ref 对象**（含兄弟键就放弃替换，避免把 description 之类一起吃掉）。
 **守卫**：自检 `SCHEMA-EXTREF`（解析后无残留 `$ref`、候选是 `{city:Paris}`/`{city:London}`）与 `SCHEMA-EXTREF-UNREG`（未注册引用保持不变），`run_f207.log` **136 PASS / 0 FAIL**（原 134，新增两条，`SCHEMA-REF` 本地路径未回退）。活服务形状 `chat-json-schema-extref` 走完整请求链，`api_smoke_f207.log` **96/96、SMOKE_EXIT=0、Accept failed 0 行**。
 **仍未做（诚实边界）**：URL/文件解析被有意排除；同一 schema 内既有本地又有外部引用时，外部那一轮遇到本地指针就停（不做混合交替求解）；`$ref` 指向另一文档里的**深层 JSON Pointer**（如 `#/a/b/c`）只取对象值，不支持数组下标。
 
