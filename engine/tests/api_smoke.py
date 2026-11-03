@@ -228,6 +228,39 @@ def main():
     check("anth-tool-named-parallel", len(ab) == 2 and acities == ["London", "Paris"]
           and r.get("stop_reason") == "tool_use", "%s %s" % (str(ab)[:120], r.get("stop_reason")))
 
+    # F205: the same parallel turn must survive streaming. OpenAI deltas carry one entry per call
+    # with its own index and id; Responses streams one output item per call and completes once.
+    stream_par = {"messages": [{"role": "user",
+                                "content": "Weather in Paris and London, two calls in one turn."}],
+                  "max_tokens": 64, "stream": True, "seed": 5, "parallel_tool_calls": True,
+                  "tool_choice": {"type": "function", "function": {"name": "get_weather"}},
+                  "tools": [{"type": "function", "function": {
+                      "name": "get_weather", "parameters": {"type": "object", "properties": {
+                          "city": {"type": "string", "enum": ["Paris", "London"]}}}}}]}
+    r = post("/v1/chat/completions", stream_par, stream=True)
+    ids, idxs, args = set(), set(), []
+    for d in sse_data(r):
+        if d == "[DONE]":
+            continue
+        o = json.loads(d)
+        for tc in (o.get("choices") or [{}])[0].get("delta", {}).get("tool_calls") or []:
+            if "id" in tc:
+                ids.add(tc["id"])
+                idxs.add(tc.get("index"))
+            fa = tc.get("function", {}).get("arguments")
+            if fa:
+                args.append(fa)
+    r = post("/v1/responses", dict(stream_par, input="Weather in Paris and London, "
+                                                     "two calls in one turn.",
+                                   max_output_tokens=64), stream=True)
+    pev = events(r)
+    check("chat-tool-parallel-stream", ids == {"call_1", "call_2"} and idxs == {0, 1}
+          and "".join(args).count("city") == 2, "%s %s %s" % (sorted(ids), sorted(idxs), args[:2]))
+    check("responses-tool-parallel-stream",
+          pev.count("response.output_item.added") == 2
+          and pev.count("response.output_item.done") == 2
+          and pev.count("response.completed") == 1, str(pev[:12]))
+
     # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
     # block arrives whole, while the control stream is cut at the leading fence and ends early.
     jstream = {"input": "Return one JSON object with key city, value Paris.",
