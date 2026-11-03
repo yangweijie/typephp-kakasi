@@ -1600,6 +1600,12 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **做法**：无需改码；smoke 断言 `tool_choice:"auto"` + tools 的流式仍产出自由文本（不因 F188 的解析收紧而误强制）。
 **验证**：`engine/api_smoke_f189.log`：**86/86 PASS**（`chat-tool-auto-stream`）。
 
+### F190 · 工具白名单作用域（历史消息里的 `name` 曾进入白名单）
+**缺口**：`api_tool_names` 以 `"name"` 切分**整个请求体**，历史消息中 assistant `tool_calls` 的函数名会被算进白名单，削弱“未声明名被拒”的契约（F52）。
+**修复**：先定位 `"tools"` 后的 `[`，用 `api_balance_square` 取出数组，只在数组内解析 `name`。
+**验证**：新增程序化自检 `TOOL-NAMES-SCOPE`（历史含 `ghost`、tools 声明 `real` → 白名单仅 `real`）；`engine/build_f190.log` 构建成功（`norun`）；`engine/run_f190.log`：**131 PASS / 0 FAIL / `RUN_EXIT=0`**（`TOOL-NAMES-SCOPE: PASS`，原 130 项无回退）；同一二进制活服务 `engine/api_smoke_f190.log`：**86/86 PASS、0 FAIL、`SMOKE_EXIT=0`**（含工具流式与 `tool_choice` none/auto 形状），服务日志 `Accept failed` **0 行**。
+**残留**：锚点取请求体中第一处字面 `"tools"`；若历史内容里出现转义 `\"tools\"`，锚点会前移，退化为"白名单为空"（保守失败，不会放行未声明名）。
+
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。

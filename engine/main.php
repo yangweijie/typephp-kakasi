@@ -4380,7 +4380,21 @@ function api_response_schema_multiple_unbounded(string $body): string
 function api_tool_names(string $body): array
 {
     $out = [];
-    $parts = explode("\"name\"", $body);
+    // Only the "tools" array declares what may be called; history messages also carry
+    // "name" fields inside tool_calls, and scanning the whole body would whitelist those.
+    $tp = strpos($body, "\"tools\"");
+    if ($tp === false) {
+        return $out;
+    }
+    $ob = strpos($body, "[", $tp);
+    if ($ob === false) {
+        return $out;
+    }
+    $arr = api_balance_square($body, $ob);
+    if ($arr == "") {
+        return $out;
+    }
+    $parts = explode("\"name\"", $arr);
     for ($i = 1; $i < count($parts); $i++) {
         $m = [];
         if (!preg_match('/^\s*:\s*"([A-Za-z0-9_\-]+)"/', $parts[$i], $m)) {
@@ -10574,6 +10588,16 @@ function main(): void
         echo "SCHEMA-ROOT-ONEOF-GRAMMAR: PASS (root oneOf branch chosen by const, grammar leaf filled)\n";
     } else {
         echo "SCHEMA-ROOT-ONEOF-GRAMMAR: FAIL det=[" . $rogDet . "] shape=" . $rogShape . "\n";
+    }
+
+    // Tool whitelist scoping: a function name in message history must not become callable.
+    $tnBody = '{"messages":[{"role":"assistant","tool_calls":[{"function":{"name":"ghost"}}]}],'
+        . '"tools":[{"type":"function","function":{"name":"real"}}]}';
+    $tn = api_tool_names($tnBody);
+    if (count($tn) == 1 && $tn[0] == "real") {
+        echo "TOOL-NAMES-SCOPE: PASS (history names excluded from the whitelist)\n";
+    } else {
+        echo "TOOL-NAMES-SCOPE: FAIL names=" . count($tn) . "\n";
     }
 
     // Detector scoping: a sibling property (count) or a nested object's leaf (n) must not leak
