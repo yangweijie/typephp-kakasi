@@ -7660,7 +7660,6 @@ function api_serve(int $port): void
                 $toolSkel = "";
                 $argCands = [];
                 $reqCands = 0;
-                $parReq = preg_match('/"parallel_tool_calls"\s*:\s*true/', $body) ? 1 : 0;
                 if ($toolChoice == "" && $tcRequired == 1 && count($toolNames) > 0) {
                     // Every candidate is written in the template's own form, and a parallel turn is
                     // simply a candidate with two blocks: the extractor then sees two calls instead of
@@ -7683,6 +7682,10 @@ function api_serve(int $port): void
                     for ($ra = 0; $ra < count($reqWire); $ra++) {
                         $reqSkels[] = $reqWire[$ra];
                     }
+                    // Greedy constrained decoding stops at the first candidate that is complete, so
+                    // a two-block turn only wins if the single-block ones are not on offer: that is
+                    // exactly what the caller asks for with parallel_tool_calls.
+                    $parReq = preg_match('/"parallel_tool_calls"\s*:\s*true/', $body) ? 1 : 0;
                     if ($parReq == 1 && count($reqWire) > 1) {
                         $reqSkels = [];
                     }
@@ -7706,33 +7709,11 @@ function api_serve(int $port): void
                     $argCands = api_schema_arg_candidates($body, $toolChoice);
                     if (count($argCands) > 0) {
                         $skels = [];
-                        if ($parReq == 1 && count($argCands) > 1) {
-                            // Two calls of the same function with different arguments is the usual
-                            // parallel case; single candidates are left out because a complete
-                            // candidate is where the greedy decode stops.
-                            $nmWire = [];
-                            for ($i = 0; $i < count($argCands); $i++) {
-                                $nmWire[] = api_tool_wire($toolChoice, $argCands[$i]);
-                            }
-                            for ($ia = 0; $ia < count($nmWire); $ia++) {
-                                for ($ib = 0; $ib < count($nmWire); $ib++) {
-                                    if ($ia == $ib) {
-                                        continue;
-                                    }
-                                    if (count($skels) >= 24) {
-                                        break;
-                                    }
-                                    $skels[] = $nmWire[$ia] . "\n" . $nmWire[$ib];
-                                }
-                            }
-                            $enumOut = api_constrained($ids, $skels, 192, $prefixCache);
-                        } else {
-                            for ($i = 0; $i < count($argCands); $i++) {
-                                $skels[] = "{\"name\":\"" . $toolChoice . "\",\"arguments\":\""
-                                         . api_esc($argCands[$i]) . "\"}";
-                            }
-                            $enumOut = api_constrained($ids, $skels, 96, $prefixCache);
+                        for ($i = 0; $i < count($argCands); $i++) {
+                            $skels[] = "{\"name\":\"" . $toolChoice . "\",\"arguments\":\""
+                                     . api_esc($argCands[$i]) . "\"}";
                         }
+                        $enumOut = api_constrained($ids, $skels, 96, $prefixCache);
                     } else {
                         $toolSkel = "{\"name\":\"" . $toolChoice . "\",\"arguments\":{}}";
                         $enumOut = api_constrained($ids, [$toolSkel], 64, $prefixCache);
