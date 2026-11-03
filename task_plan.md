@@ -3,7 +3,7 @@
 > 本计划基于需求文档 `specs/typephp-inference-framework/requirements.md`（v0.2，决策已闭合）。
 > 目的：为接手开发的其他软件/团队提供可执行的阶段化计划。需求已冻结，进入实现阶段。
 > 编写日期：2026-11-01　·　当前状态（F178 后）：**Phase 0 complete（GO）· Phase 1 功能面闭环 · Phase 2 主体完成 · Phase 3 已开工（单链投机 2.5× / SSD 前缀缓存 3.3× / OpenAI+Anthropic 四形状 API 含两种流式 + 工具调用含 Anthropic `tool_use` / models import-pull-list-rm 含目录式文件夹与 /v1/models / 并发连接正确性（含流式）/ 工具历史两种 API 形状闭环 F60–F68 / doctor / grammar-constrained 覆盖至 DEEP12·6 维数组·元素内混合叶子·元素内嵌套链·oneOf 分支含 grammar F109–F147·F152–F178）**。
-> 回归口径（每次改动都要过）：单二进制全项自检 + 跨后端 logit drift（f16 驻留 5.7e-6；**int8 驻留 1.6e-2**，断言阈值 0.05）+ `logp_parity.py` 的 window-0 判据（f32 0.00132 / f16 0.00130 nats）+ 起服务后 `api_smoke.py`（74 种 API 形状一次验完）。
+> 回归口径（每次改动都要过）：单二进制全项自检 + 跨后端 logit drift（f16 驻留 5.7e-6；**int8 驻留 1.6e-2**，断言阈值 0.05）+ `logp_parity.py` 的 window-0 判据（f32 0.00132 / f16 0.00130 nats）+ 起服务后 `api_smoke.py`（75 种 API 形状一次验完）。
 > **完成度审计**：`docs/audit-v0.2.md`（逐条 FR → 证据/缺口）。当前：FR-01/14/16 完全达成，FR-03 以 DPC++ 替代达成；FR-02/04/06/07/08/09/10/12/13/17/18 部分达成（缺口逐条列出）；FR-05/11/15 未做或本机不可验。**整体未完成**。
 > **下一步（按"缺口 × 可验证性"）**：① **grammar-constrained 解码**（**字符串/有符号整数/小数/嵌套 1–40 层（上限 64）/混合叶子/三类数组/2–7 维数组（7+ 通用 N 维构造器，F166）/对象数组元素内字符串数组+标量混合叶子（F157）/对象数组元素内整数数组（F161）/元素内二维数组（F163）/转义字符串片段白名单（F164）/元素内嵌套链 ≤12 层（F158）/oneOf 分支含 grammar（F159，含根级 F160）/顶层四类数组/数字·浮点·科学计数法·布尔 const·enum/有界·无界 `multipleOf`/排他边界/候选·根类型作用域/本地 `$ref`/`allOf`/属性级·根级 `oneOf`/元素内嵌对象已做 F109–F147·F152–F178**；剩外部 `$ref`（>64 层/>7 维收益递减暂缓）。下个增量先用 F158 的 Python 离线复刻法跑防误认领矩阵再重建）② FR-06 **树收益**（机制已通 F50，需多样草稿器）③ **per-session KV 并行**（快照+交替 F86/F94；**协作轮转公平性 PASS：8001 短流 0.28 s vs 长流 3.99 s，F95/F122；F157 复跑 PASS（僵死态 0.63 s TTFT）**；吞吐仍共享）④ SSD 缓存按前缀分桶 / 流式复用（F76 已修 bug、API 已启用全+部分命中）；并行多卡 split / 多分片 GGUF ⑤ **有条件时**（拿到 NVIDIA 机器/Linux CI）执行 **Phase 3-B 的 acpp ABI 探针**；⑥ ~~先构建验证 DEEP12~~ **已完成（F150/F151）**；~~重启后 par_gate 复测 8001~~ **已用替代路径收口（F157）**：WMI 僵死下显式 PATH 起新服务，`par_smoke` 7/7 + `fairness` PASS + `api_smoke` 8000 61/61 全绿（`par_gate.bat` 本体留待重启后一次性复测，非阻塞）。
 > **新增不变量（务必保持）**：所有设备队列必须是 `property::queue::in_order`；释放设备内存前必须排空；arena 只在层边界 `wait` 之后重置。
@@ -133,7 +133,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
   - ⛔ 多设备 split：已有"层区间切分"的 CPU+GPU offload（F30）作为雏形，**不是**并行多卡
 - [~] OpenAI / Anthropic 兼容 API 服务层 —— **四种形状并存（findings F35/F36/F37/F41）**：
   - ✅ `POST /v1/chat/completions`（含 **SSE**、多轮历史）、`POST /v1/messages`（Anthropic，含流式）、**`POST /v1/responses`（Responses 结构）**、**`GET /v1/models`（含模型库索引，F59）**、**`GET /` chat page**；**默认端口 8000、仅绑 loopback**
-  - ✅ 活服务回归：`python engine\tests\api_smoke.py 8000` 一次验完 74 种形状（四种 API 形状、两种流式、工具/工具流式/工具历史、json-schema 与流式、stop、maxlen、n、Responses 工具与 instructions）
+  - ✅ 活服务回归：`python engine\tests\api_smoke.py 8000` 一次验完 75 种形状（四种 API 形状、两种流式、工具/工具流式/工具历史、json-schema 与流式、stop、maxlen、n、Responses 工具与 instructions）
   - ✅ 纯 PHP 编排、C++ 只算；`serve.on` 哨兵启停，不影响自检；`API-UNIT`(8) + `STREAM-UNIT` 无需 socket 即可回归
   - ✅ **Anthropic 流式事件已补齐（findings F47）**：`message_start → content_block_start → content_block_delta×N → content_block_stop → message_delta → message_stop`，curl 实测 7 个 `event:` 行、内容分块 `"Pacific"`/`" Ocean"`；超时映射为 `stop_reason:"max_tokens"`
   - 剩余：~~约束解码~~ ✅ **enum/const 约束解码（F51）**、~~工具调用~~ ✅ **工具调用（F52）**：`tool_choice` 走约束骨架（保证合法）、仅 `tools` 走解析+白名单（未声明名被拒），curl 实测 `finish_reason:"tool_calls"`、~~并发连接正确性~~ ✅ **并发正确（F53）**：修掉"未读完请求体就关连接 → RST"，冷/热 4 并发 `4/4`、8 并发 `8/8` 内容全对（`engine/tests/load_test.py`）。

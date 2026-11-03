@@ -986,6 +986,26 @@ def main():
         a7ok = False
     check("chat-json-schema-array7", a7ok, a7content)
 
+    # Seven-level integer array through the generic integer builder (F178).
+    i7schema = {"type": "integer"}
+    for _ in range(7):
+        i7schema = {"type": "array", "items": i7schema}
+    arr7i_body = {"messages": [{"role": "user", "content": "Pick a number."}],
+                  "max_tokens": 64,
+                  "response_format": {"type": "json_schema", "json_schema": {
+                      "name": "nums7", "schema": {"type": "object",
+                                                  "properties": {"m": i7schema}}}}}
+    r = post("/v1/chat/completions", arr7i_body)
+    i7content = r["choices"][0]["message"]["content"]
+    try:
+        i7val = json.loads(i7content)["m"]
+        for _ in range(7):
+            i7val = i7val[0]
+        i7ok = isinstance(i7val, int) and not isinstance(i7val, bool)
+    except Exception:
+        i7ok = False
+    check("chat-json-schema-array7-int", i7ok, i7content)
+
     # Twenty-level object chain through the live path (the closer token budget is sized by
     # depth; a fixed budget used to truncate 20-level closes).
     deep_leaf = {"type": "object",
