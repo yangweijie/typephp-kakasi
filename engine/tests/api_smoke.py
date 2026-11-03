@@ -211,6 +211,23 @@ def main():
           and all(t["function"]["name"] == "get_weather" for t in nt)
           and len(set(t["id"] for t in nt)) == 2, str(nt)[:200])
 
+    # The same parallel turn on the Anthropic outlet must fan out into two tool_use blocks
+    # (measured live: Paris and London, stop_reason tool_use) - the fan-out is F196's, the
+    # two-block candidates are F201's, and neither was previously proven on this outlet.
+    r = post("/v1/messages", {"messages": [{"role": "user",
+                                            "content": "Weather in Paris and London, "
+                                                       "two calls in one turn."}],
+                              "max_tokens": 64, "seed": 5, "parallel_tool_calls": True,
+                              "tool_choice": {"type": "any", "name": "get_weather"},
+                              "tools": [{"name": "get_weather", "input_schema": {
+                                  "type": "object", "properties": {
+                                      "city": {"type": "string",
+                                               "enum": ["Paris", "London"]}}}}]})
+    ab = r.get("content") or []
+    acities = sorted(str(x.get("input", {}).get("city")) for x in ab if x.get("type") == "tool_use")
+    check("anth-tool-named-parallel", len(ab) == 2 and acities == ["London", "Paris"]
+          and r.get("stop_reason") == "tool_use", "%s %s" % (str(ab)[:120], r.get("stop_reason")))
+
     # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
     # block arrives whole, while the control stream is cut at the leading fence and ends early.
     jstream = {"input": "Return one JSON object with key city, value Paris.",
