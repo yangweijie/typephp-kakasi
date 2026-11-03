@@ -506,6 +506,7 @@
 - **F171（Anthropic 流式结构化输出）已验证**：抽出 `api_schema_token_value`（完整 schema 分发链），Messages 流式在自由循环前先约束解码、再按事件序列整段回放；`engine/build_f171.log` 成功、`engine/run_f171.log` **128 PASS / 0 FAIL**；`api_smoke.py` 扩到 **70 形状**（新增 `anth-json-schema-string-stream`、`anth-json-schema-array-obj-arr2d-stream`），`api_smoke_f171c.log` **70/70 PASS**。
 - **F170（DEEP40，嵌套上限 64）已验证**：两处下钻 32→64、检测窗口 2000→8000、三处强制前缀预算按深度放大（`dims*8+64` / `keys*8+64`）；`engine/build_f170.log` 成功；`engine/run_f170.log`：**128 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP40: PASS`（DEEP12/20 未回退）；同一二进制活服务 `engine/api_smoke_f170b.log` **67/67 PASS**。
 - **F169 扩展验证**：`api_smoke.py` 扩到 **68 形状**，新增平坦字符串 `anth-json-schema-string`；`engine/api_smoke_f171.log` **68/68 PASS**。
+- **F176 二进制 8001 复测**：`par_smoke_f176.log` **7/7**、`fairness_f176.log` **PASS**（0.35 s vs 5.50 s）、`Accept failed` **0 行**。
 - **F170 二进制 8001 复测**：`par_smoke_f170.log` **7/7**、`fairness_f170.log` **PASS**（0.28 s vs 4.90 s）、`Accept failed` **0 行**。
 - **F169 二进制 8001 复测**：`par_smoke_f169.log` **7/7**、`fairness_f169.log` **PASS**（短流 0.31 s vs 长流 4.98 s）、`Accept failed` **0 行**。
 - **F169（Anthropic `output_format`）已验证**：请求体提取后把 `output_format.schema` 翻译为 `"json_schema":{"schema":…}`，复用全部 grammar 与 Messages 响应形状；`engine/build_f169.log` 成功、`engine/run_f169.log` **127 PASS / 0 FAIL**；`api_smoke.py` 扩到 **67 形状**（新增 `anth-json-schema-array-obj-arr2d`），`engine/api_smoke_f169.log` **67/67 PASS**。
