@@ -144,6 +144,27 @@ def main():
            and "chat.completion.chunk" not in r),
           "%s %s" % (rev[:4], rstream))
 
+    # Responses streaming + json_schema: the schema exit must also use typed events.
+    r = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 64,
+                               "stream": True,
+                               "text": {"format": {"type": "json_schema", "name": "city", "schema": {
+                                   "type": "object",
+                                   "properties": {"city": {"type": "string"}}}}}}, stream=True)
+    rev2 = events(r)
+    rjtext = ""
+    for d in sse_data(r):
+        o = json.loads(d)
+        if o.get("type") == "response.output_text.delta":
+            rjtext = rjtext + o.get("delta", "")
+    try:
+        rjok = isinstance(json.loads(rjtext)["city"], str)
+    except Exception:
+        rjok = False
+    check("responses-stream-json-schema",
+          rjok and "response.created" in rev2 and "response.completed" in rev2
+          and "chat.completion.chunk" not in r,
+          "%s %s" % (rev2[:4], rjtext))
+
     # Element 2-D array through the Responses exit (same grammar, third dispatch site).
     r2d_schema = {"type": "object", "properties": {"items": {
         "type": "array", "items": {"type": "object", "properties": {

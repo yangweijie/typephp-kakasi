@@ -496,8 +496,9 @@
 
 | 05:10 | F159 oneOf 分支含 grammar：一次全绿 | — | 形状 `{"item":{"oneOf":[book/cd 两支…]}}`；**分支选择 = api_constrained 多候选约束解码**（const 首属性互异 → 分叉点模型选支），分支识别用 `api_constrain_loop` 契约（选中序列恰为一个候选完整 ids）+ `tok_encode` 尾比对；三边界核实：F142 展平器对无 enum 分支 no-op、F143 候选路径对 grammar 分支弃权、**平铺嵌套检测器会误认领**（lookahead 穿过 `[`）→ 新检测器排在 nested 前。Python 8 用例（含 5 防误认领）先行 ALL PASS → 实现 → 重建全量自检 `engine/build_f159.log`：**121 PASS / 0 FAIL**、`RUN_EXIT=0`、`SCHEMA-ONEOF-GRAMMAR: PASS`（本次模型选 book 支、title 空串——合法，如实记录）；`api_smoke.py 8000` **61/61**；服务已停（F159） |
 
-## 当前未决（2026-11-03 03:25 本地）
+## 当前未决（2026-11-03 03:32 本地）
 
+- **F175（Responses 流式 schema 出口）已验证**：`$sJOut` 出口按 `$wantResponses` 输出 typed events；`engine/build_f175.log` 成功、`api_smoke_f175.log` **72/72 PASS**（新增 `responses-stream-json-schema`）。工具调用流式出口仍为 Chat 形状。
 - **F174（Responses 流式事件）已验证（纯文本路径）**：`api_resp_start/delta/done` + 单槽 SSE 文本循环按 `$wantResponses` 输出 typed events；`engine/build_f174.log` 成功、`api_smoke_f174.log` **71/71 PASS**（新增 `responses-stream`）。schema/工具流式出口仍为 Chat 形状（已记录）。
 - **F173（已知缺口，部分修复）**：`/v1/responses` + `stream:true` 仍返回 Chat `object:"chat.completion.chunk"` + `[DONE]`，需覆盖文本/schema/工具三出口的事件映射；细节与修复方案见 findings F173。
 - **F172（Anthropic 流式 schema 分块回放）已验证**：16 字符/delta 循环替代整段单 delta；`engine/build_f172.log` 成功、`engine/run_f172.log` **128 PASS / 0 FAIL**、`api_smoke_f172.log` **70/70 PASS**（arr2d 流式额外断言 delta ≥ 2）。

@@ -6926,24 +6926,34 @@ function api_serve(int $port): void
                             fclose($c);
                             continue;
                         }
-                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                 . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                 . "\"delta\":{\"content\":\"" . api_esc($sJson) . "\"},"
-                                 . "\"finish_reason\":null}]}\n\n");
-                        fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                 . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                 . "\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n");
-                        if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                        if ($wantResponses) {
                             $sjTok = count(explode(",", $sJOut)) - $promptN;
                             if ($sjTok < 0) {
                                 $sjTok = 0;
                             }
+                            fwrite($c, api_resp_start($modelId));
+                            fwrite($c, api_resp_delta($sJson));
+                            fwrite($c, api_resp_done($sJson, $sjTok, $modelId, $promptN));
+                        } else {
                             fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                     . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
-                                     . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $sjTok
-                                     . ",\"total_tokens\":" . ($promptN + $sjTok) . "}}\n\n");
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{\"content\":\"" . api_esc($sJson) . "\"},"
+                                     . "\"finish_reason\":null}]}\n\n");
+                            fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n");
+                            if (preg_match('/"include_usage"\s*:\s*true/', $body) == 1) {
+                                $sjTok = count(explode(",", $sJOut)) - $promptN;
+                                if ($sjTok < 0) {
+                                    $sjTok = 0;
+                                }
+                                fwrite($c, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                         . "\"model\":\"" . $modelId . "\",\"choices\":[],\"usage\":{"
+                                         . "\"prompt_tokens\":" . $promptN . ",\"completion_tokens\":" . $sjTok
+                                         . ",\"total_tokens\":" . ($promptN + $sjTok) . "}}\n\n");
+                            }
+                            fwrite($c, "data: [DONE]\n\n");
                         }
-                        fwrite($c, "data: [DONE]\n\n");
                         echo "SESSION stream json=ok reason=complete\n";
                         fclose($c);
                         continue;
