@@ -496,8 +496,9 @@
 
 | 05:10 | F159 oneOf 分支含 grammar：一次全绿 | — | 形状 `{"item":{"oneOf":[book/cd 两支…]}}`；**分支选择 = api_constrained 多候选约束解码**（const 首属性互异 → 分叉点模型选支），分支识别用 `api_constrain_loop` 契约（选中序列恰为一个候选完整 ids）+ `tok_encode` 尾比对；三边界核实：F142 展平器对无 enum 分支 no-op、F143 候选路径对 grammar 分支弃权、**平铺嵌套检测器会误认领**（lookahead 穿过 `[`）→ 新检测器排在 nested 前。Python 8 用例（含 5 防误认领）先行 ALL PASS → 实现 → 重建全量自检 `engine/build_f159.log`：**121 PASS / 0 FAIL**、`RUN_EXIT=0`、`SCHEMA-ONEOF-GRAMMAR: PASS`（本次模型选 book 支、title 空串——合法，如实记录）；`api_smoke.py 8000` **61/61**；服务已停（F159） |
 
-## 当前未决（2026-11-03 02:32 本地）
+## 当前未决（2026-11-03 02:38 本地）
 
+- **下一增量（已设计待实施）DEEP40**：① `api_response_schema_nested_object` 与 `api_response_schema_array_object_nested` 的 `$depth < 32` → `< 64`；② 对象链检测窗口 `substr($schema, $ip, 2000)` → `8000`；③ `api_nested_object_value` / `api_array_object_nested_value` 的强制前缀预算 `api_constrained($ids, [$pre], 64, …)` → `count($keys) * 8 + 64`（40 层前缀超过固定 64 token 会被截断）；④ 新增 `SCHEMA-DEEP40`（40 键：a–z + a0–a13，程序化 body/path/正则）。判据：全量自检 **128 PASS / 0 FAIL / `RUN_EXIT=0`**（DEEP20/DEEP12 不得回退），随后 `api_smoke.py` 67/67。
 - **F169 二进制 8001 复测**：`par_smoke_f169.log` **7/7**、`fairness_f169.log` **PASS**（短流 0.31 s vs 长流 4.98 s）、`Accept failed` **0 行**。
 - **F169（Anthropic `output_format`）已验证**：请求体提取后把 `output_format.schema` 翻译为 `"json_schema":{"schema":…}`，复用全部 grammar 与 Messages 响应形状；`engine/build_f169.log` 成功、`engine/run_f169.log` **127 PASS / 0 FAIL**；`api_smoke.py` 扩到 **67 形状**（新增 `anth-json-schema-array-obj-arr2d`），`engine/api_smoke_f169.log` **67/67 PASS**。
 - **F168（接线 bug）已修复并验证**：顶层 2-D 检测器会抢占元素内 2-D 数组（活服务输出缺 `items` 包裹；自检直调检测器所以未暴露）。三入口在顶层 arr2 之前先检测元素级 ARR2D；`engine/build_f168.log` 成功、`engine/run_f168.log` **127 PASS / 0 FAIL**；`api_smoke.py` 扩到 **66 形状**（三出口 2-D 元素数组 + 20 层嵌套生产路径），`engine/api_smoke_f168e.log` **66/66 PASS**。
