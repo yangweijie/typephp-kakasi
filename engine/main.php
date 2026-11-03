@@ -111,6 +111,20 @@ function api_stop_cut(string $text, array $stops): int
     return $cut;
 }
 
+// `json_object` is spelled differently per outlet: OpenAI `response_format`, Responses `text.format`.
+// The short form is quoted, so `response_format` and Anthropic's `output_format` cannot be claimed
+// by it - each spelling gets its own match.
+function api_json_object_requested(string $body): int
+{
+    if (preg_match('/"response_format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/', $body) == 1) {
+        return 1;
+    }
+    if (preg_match('/"format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/', $body) == 1) {
+        return 1;
+    }
+    return 0;
+}
+
 // Structural JSON check for `response_format: json_object`. This is VALIDATION, not constrained
 // decoding: the model is free to emit anything, the caller retries once if the shape is broken.
 // A tiny scanner is enough - braces/brackets must balance outside string literals, and the
@@ -5937,7 +5951,9 @@ Connection: close
                 if (count($stopsV) > 1) {
                     $bad = 1;   // one stop sequence is supported in parallel mode
                 }
-                $stopV = count($stopsV) > 0 ? $stopsV[0] : "";
+                // Structured output owns the shape in the parallel slots as well: json_object drops
+                // the stop sequence rather than cutting the block mid-stream.
+                $stopV = (count($stopsV) > 0 && api_json_object_requested($body) == 0) ? $stopsV[0] : "";
                 $schemaCands = api_response_schema_candidates($body);
                 $slot = -1;
                 if ($bad == 0) {
@@ -7196,6 +7212,9 @@ function api_serve(int $port): void
                             fwrite($c, api_resp_start($modelId));
                         }
                         $stops = api_stop_list($body);
+                        // Structured output owns the shape: under json_object the stream ignores `stop`,
+                        // the same contract the non-stream path already has.
+                        $jsonObj = api_json_object_requested($body);
                         $maxStop = 0;
                         for ($si = 0; $si < count($stops); $si++) {
                             if (strlen($stops[$si]) > $maxStop) {
@@ -7215,7 +7234,7 @@ function api_serve(int $port): void
                             }
                             $piece = api_text("" . $tid);
                             $emit = $piece;
-                            if (count($stops) > 0) {
+                            if (count($stops) > 0 && $jsonObj == 0) {
                                 // Hold back (maxStop-1) chars so a stop spanning chunks never leaks.
                                 $hold = $hold . $piece;
                                 $cutAt = api_stop_cut($hold, $stops);
@@ -7291,12 +7310,7 @@ function api_serve(int $port): void
                 // JSON-object mode (FR-08.2 / FR-09.1). Validation, not constrained decoding:
                 // the model is free to emit anything, so a broken shape earns exactly one retry
                 // and the outcome is logged rather than hidden.
-                $jsonMode = preg_match('/"response_format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/', $body) ? 1 : 0;
-                if ($jsonMode == 0) {
-                    // Responses spells the same request as `text.format`; without it the outlet skipped
-                    // validation entirely and returned fenced code text (F184).
-                    $jsonMode = preg_match('/"format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/', $body) ? 1 : 0;
-                }
+                $jsonMode = api_json_object_requested($body);
                 // Structured outputs: a finite json_schema becomes a constrained object set.
                 $schemaCands = api_response_schema_candidates($body);
                 if (count($schemaCands) > 0) {
@@ -10603,6 +10617,19 @@ function main(): void
         echo "TOOL-NAMES-SCOPE: PASS (history names excluded from the whitelist)\n";
     } else {
         echo "TOOL-NAMES-SCOPE: FAIL names=" . count($tn) . "\n";
+    }
+
+    // json_object spellings: OpenAI `response_format` and Responses `text.format` must both reach
+    // the validate+retry path, while json_schema and another outlet's key must not be claimed.
+    $joOk = api_json_object_requested('{"response_format":{"type":"json_object"}}') == 1
+        && api_json_object_requested('{"text":{"format":{"type":"json_object"}}}') == 1
+        && api_json_object_requested('{"output_format":{"type":"json_object"}}') == 0
+        && api_json_object_requested('{"text":{"format":{"type":"json_schema","schema":{}}}}') == 0
+        && api_json_object_requested('{"messages":[]}') == 0;
+    if ($joOk) {
+        echo "JSON-OBJECT-DETECT: PASS (both spellings claimed, json_schema and other keys are not)\n";
+    } else {
+        echo "JSON-OBJECT-DETECT: FAIL\n";
     }
 
     // Detector scoping: a sibling property (count) or a nested object's leaf (n) must not leak

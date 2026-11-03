@@ -145,6 +145,26 @@ def main():
           and (rcut == "" or robj.count("```") == 2 or ("```" not in robj and "```" not in rcut)),
           "json_object=%r control=%r" % (robj[:60], rcut[:60]))
 
+    # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
+    # block arrives whole, while the control stream is cut at the leading fence and ends early.
+    jstream = {"input": "Return one JSON object with key city, value Paris.",
+               "max_output_tokens": 48, "seed": 7, "stream": True, "stop": ["```"]}
+    r = post("/v1/responses", dict(jstream, text={"format": {"type": "json_object"}}), stream=True)
+    sobj = ""
+    for d in sse_data(r):
+        o = json.loads(d)
+        if o.get("type") == "response.output_text.delta":
+            sobj = sobj + o.get("delta", "")
+    r = post("/v1/responses", dict(jstream), stream=True)
+    scut = ""
+    for d in sse_data(r):
+        o = json.loads(d)
+        if o.get("type") == "response.output_text.delta":
+            scut = scut + o.get("delta", "")
+    check("responses-json-object-stream", "{" in sobj and "}" in sobj and sobj.count("```") != 1
+          and len(sobj) >= len(scut) and (scut == "" or "```" not in scut),
+          "json_object_stream=%r control_stream=%r" % (sobj[:60], scut[:60]))
+
     # Responses streaming must emit the typed event sequence, not Chat chunks.
     r = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 8,
                                "stream": True}, stream=True)

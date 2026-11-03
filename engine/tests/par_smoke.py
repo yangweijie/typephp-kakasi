@@ -56,6 +56,15 @@ def main():
                    for d in sse(raw) if d != "[DONE]")
     check("oai-stop", text == "P", text)
 
+    # json_object owns the shape in the parallel slots too: the stop sequence is dropped, so this
+    # reply is not cut to "P" the way the identical request above is.
+    raw = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                        "max_tokens": 16, "stream": True, "stop": "ari",
+                                        "response_format": {"type": "json_object"}})
+    jtext = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                    for d in sse(raw) if d != "[DONE]")
+    check("oai-json-object-keeps-stream", jtext != "" and jtext != "P", jtext)
+
     raw = post("/v1/messages", {"messages": [{"role": "user", "content": "The capital of France is"}],
                                 "max_tokens": 6, "stream": True})
     ev = events(raw)

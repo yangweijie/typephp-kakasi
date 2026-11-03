@@ -1573,6 +1573,13 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **验证**：`engine/build_f179b.log` 构建成功；`engine/run_f179b.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**，`SCHEMA-DEEP80 plan=[k0/…/k79|city:s,count:i]: PASS`（DEEP40/20/12 未回退）。
 **限制**：129 层以上仍被截断；单链、每层唯一属性。
 
+### F193 · `json_object` 贯通流式与并行槽（并收掉 F191 的流式残留）
+**做法**：把两处内联正则抽成单点判定 `api_json_object_requested()`（同时认领 OpenAI `response_format` 与 Responses `text.format` 两种拼写；带引号的 `"format"` 使 `"response_format"`/`"output_format"` 不会被短式误认领）；非流式改为复用该函数；流式在 stop 应用处加 `$jsonObj == 0` 门（`engine/main.php:7232` 一带），并行槽把同一判定并入 `$stopV`（`engine/main.php:5954` 一带）——结构化输出自己决定形状，`stop` 应当被丢弃而不是把块咬断。
+**程序化守卫**：自检 `JSON-OBJECT-DETECT` 断言两种拼写为 1、`json_schema` 与 `output_format` 与无 `response_format` 三种为 0（不依赖模型）。
+**判据（实测，非代理）**：成对**流式**探针——带 `text.format:json_object` + `stop:["```"]` 时流出 26 个 `response.output_text.delta`、围栏块完整（```` ```json … ``` ````）；同请求去掉 `text.format` 得到 **0 个 delta**（首块围栏即被裁，流提前结束）。8001 侧 `par_smoke` 新增 `oai-json-object-keeps-stream`，同文件既有的 `oai-stop` 仍裁成 `"P"` ⇒ 门作用域正确、没有把 stop 全局废掉。
+**回归**：`engine/build_f193.log`、`engine/build_f193b.log`（0 error）；`engine/run_f193b.log` **132 PASS / 0 FAIL / `RUN_EXIT=0`**；`engine/api_smoke_f193c.log` **88/88 PASS、`SMOKE_EXIT=0`**；`engine/par_smoke_f193.log` **8/8** + `engine/fairness_f193.log` PASS（短流 0.27 s vs 长流 4.75 s）；两个服务日志 `Accept failed` 均 0 行，门禁后 `serve*.on` 已清除。
+**未实测**：并行槽是否也服务 `/v1/responses`（本轮只以 chat 流式取证）；Anthropic 流式的 `$astops` 分支未并入该判定（Anthropic 无 `json_object` 拼写，其结构化输出走 `output_format`→`json_schema` 约束解码）。
+
 ### F192 · `responses-json-object` 常驻守卫（第 87 个 API 形状）
 **做法**：`engine/main.php` 零改动；在 `engine/tests/api_smoke.py` 的 Responses 段成对发同一请求（同 prompt、同 `seed:7`、同 `"stop":["```"]`），一侧带 `text.format:{"type":"json_object"}`、一侧不带，断言带侧文本含 `{`/`}`、围栏不成半截、长度不小于对照侧，且对照侧确实被裁（`rcut == ""`）或两侧都无围栏。
 **为什么这样断言**：F191 的成对活探针实测 `text.format` 侧保留完整围栏块 ```` ```json { "city": "Paris" } ``` ````，对照侧被 `stop` 裁成空串——即 `jsonMode` 生效的外部可观察面。首版守卫只写 `robj.count("```") != 1 and len(robj) >= len(rcut)`，用回归态的合成人输入一验就发现**回归时两侧同为空串仍判 PASS**（`0 >= 0`），补上"必须含花括号"与"对照侧确实被裁"两支后才有判别力。
@@ -1584,7 +1591,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **修复**：`$jsonMode == 0` 时再匹配一次 `/"format"\s*:\s*\{\s*"type"\s*:\s*"json_object"/`。用带引号的 `"format"` 而非裸 `format`，因此 `"response_format"`（`_` 前缀）与 Anthropic `"output_format"` 都不会被误认领；`json_schema` 分支不受影响。
 **判定性证据（活服务成对探针）**：同一 prompt、同一 `"stop":["```"]`，带 `text.format:json_object` 时围栏整体保留（`output_tokens=15`，说明 `stop` 裁剪被跳过 ⇒ `jsonMode=1`）；去掉 `text.format` 的对照组被 `stop` 裁成空串（`output_tokens=14`）⇒ 新分支确已生效，而非"看起来一样"。
 **回归**：`engine/build_f191.log`（`BUILD_EXIT=0`）；`engine/api_smoke_f191.log` **86/86 PASS、0 FAIL、`SMOKE_EXIT=0`**；`engine/run_f191.log` **131 PASS / 0 FAIL / `RUN_EXIT=0`**（注：首次误用 `engine` 目录相对路径调 `scripts\run-kakasi-selftest.bat`，报"系统找不到指定的路径"且日志缺失，改在仓库根重跑后才有效）。
-**未闭合**：F184 的"裸输出率"问题仍在——该模型对 `json_object` 仍先给围栏，校验重试后若两次都围栏则按契约原样返回；`/v1/responses` 流式路径与 `json_object` 的 `stream_options` 语义仍未接。
+**未闭合**：F184 的"裸输出率"问题仍在——该模型对 `json_object` 仍先给围栏，校验重试后若两次都围栏则按契约原样返回；`/v1/responses` 流式路径**已由 F193 接入**（同一判定 + `stop` 丢弃，成对流式探针取证），`stream_options` 语义仍未接。
 
 ### F184 · `/v1/responses` 的 `text.format.type=json_object` 未接入校验重试（已知缺口，未修）
 **实测**：`{"text":{"format":{"type":"json_object"}}}` 返回代码围栏文本 ```` ```json … ``` ````；Chat 对照组同样返回围栏文本（其 `json_object` 设计为校验+一次重试，模型两次都围栏则原样返回）。Responses 出口完全没有 `json_object` 分支（只识别 `json_schema` 的 `text.format`）。
