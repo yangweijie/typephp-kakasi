@@ -4573,6 +4573,15 @@ function api_anthropic_tool_blocks(string $joined): string
     return $out;
 }
 
+// One call written the way the chat template writes it: the JSON object inside its own block.
+// A parallel turn only parses as several calls when each block is delimited, because two bare
+// objects back to back are not valid JSON as a whole.
+function api_tool_wire(string $name, string $args): string
+{
+    return "<tool_call>" . "\n{\"name\":\"" . api_esc($name)
+         . "\",\"arguments\":" . $args . "}\n" . "</tool_call>";
+}
+
 // A Responses tool call is a function_call output item; a parallel turn is several items, each
 // with its own item id and call id.
 function api_responses_call_items(string $joined): string
@@ -7652,22 +7661,39 @@ function api_serve(int $port): void
                 $argCands = [];
                 $reqCands = 0;
                 if ($toolChoice == "" && $tcRequired == 1 && count($toolNames) > 0) {
-                    // "required" names no function, so every declared tool is a candidate - and each
-                    // one still owes its real arguments: an empty object is not executable (F194a).
+                    // Every candidate is written in the template's own form, and a parallel turn is
+                    // simply a candidate with two blocks: the extractor then sees two calls instead of
+                    // being asked to recover one from a skeleton prefix.
                     $reqSkels = [];
+                    $reqWire = [];
                     for ($ri = 0; $ri < count($toolNames); $ri++) {
                         $reqArgs = api_schema_arg_candidates($body, $toolNames[$ri]);
                         if (count($reqArgs) > 0) {
-                            for ($rj = 0; $rj < count($reqArgs); $rj++) {
-                                $reqSkels[] = "{\"name\":\"" . $toolNames[$ri] . "\",\"arguments\":\""
-                                          . api_esc($reqArgs[$rj]) . "\"}";
-                            }
+                            $reqWire[] = api_tool_wire($toolNames[$ri], $reqArgs[0]);
                             $reqCands = 1;
                         } else {
-                            $reqSkels[] = "{\"name\":\"" . $toolNames[$ri] . "\",\"arguments\":{}}";
+                            $reqWire[] = api_tool_wire($toolNames[$ri], "{}");
                         }
                     }
-                    $enumOut = api_constrained($ids, $reqSkels, 96, $prefixCache);
+                    for ($ra = 0; $ra < count($reqWire); $ra++) {
+                        $reqSkels[] = $reqWire[$ra];
+                    }
+                    // Greedy constrained decoding stops at the first candidate that is complete, so
+                    // a two-block turn only wins if the single-block ones are not on offer: that is
+                    // exactly what the caller asks for with parallel_tool_calls.
+                    $parReq = preg_match('/"parallel_tool_calls"\s*:\s*true/', $body) ? 1 : 0;
+                    if ($parReq == 1 && count($reqWire) > 1) {
+                        $reqSkels = [];
+                    }
+                    for ($ra = 0; $ra < count($reqWire); $ra++) {
+                        for ($rb = 0; $rb < count($reqWire); $rb++) {
+                            if ($ra == $rb) {
+                                continue;
+                            }
+                            $reqSkels[] = $reqWire[$ra] . "\n" . $reqWire[$rb];
+                        }
+                    }
+                    $enumOut = api_constrained($ids, $reqSkels, 192, $prefixCache);
                 }
                 if ($toolChoice != "") {
                     // Flat enum/const properties give real arguments; otherwise the object stays {}.
@@ -7768,7 +7794,8 @@ function api_serve(int $port): void
                     if ($toolJson == "" && count($toolNames) > 0 && $tcNone == 0) {
                         $toolJson = api_tool_calls_json($text, $toolNames);
                     }
-                    if ($toolJson == "" && $tcRequired == 1 && count($toolNames) > 0) {
+                    if ($toolJson == "" && $tcRequired == 1 && count($toolNames) > 0
+                        && strpos($text, "<tool_call>") === false) {
                         // The constrained decode picked one skeleton; its decoded text can lose a
                         // trailing char, so rebuild the call from the skeleton it matched.
                         $reqSkels = [];

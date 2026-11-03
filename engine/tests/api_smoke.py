@@ -159,6 +159,26 @@ def main():
     check("chat-tool-required-args", bool(tc) and rargs.get("city") in ("Paris", "London"),
           str([[t["function"]["name"] for t in tc], rargs]))
 
+    # F199: parallel_tool_calls is the caller's ask for more than one call; without it the forced
+    # choice stays single. Both calls must carry their own id and their own arguments.
+    par = {"messages": [{"role": "user", "content": "Call both get_weather and get_time for Paris."}],
+           "max_tokens": 256, "seed": 3, "tool_choice": "required", "parallel_tool_calls": True,
+           "tools": [{"type": "function", "function": {
+               "name": "get_weather", "parameters": {"type": "object", "properties": {
+                   "city": {"type": "string", "enum": ["Paris", "London"]}}}}},
+               {"type": "function", "function": {
+                   "name": "get_time", "parameters": {"type": "object", "properties": {
+                       "city": {"type": "string", "enum": ["Paris", "London"]}}}}}]}
+    r = post("/v1/chat/completions", par)
+    pt = r["choices"][0]["message"].get("tool_calls") or []
+    r = post("/v1/chat/completions", {k: v for k, v in par.items() if k != "parallel_tool_calls"})
+    st = r["choices"][0]["message"].get("tool_calls") or []
+    names = set(t["function"]["name"] for t in pt)
+    check("chat-tool-parallel-calls", len(pt) == 2 and len(set(t["id"] for t in pt)) == 2
+          and len(names) == 2 and all(json.loads(t["function"]["arguments"]).get("city")
+                                      in ("Paris", "London") for t in pt) and len(st) == 1,
+          "parallel=%d single=%d %s" % (len(pt), len(st), str(pt)[:160]))
+
     # The same contract must hold on the stream: under json_object the stream ignores `stop`, so the
     # block arrives whole, while the control stream is cut at the leading fence and ends early.
     jstream = {"input": "Return one JSON object with key city, value Paris.",
