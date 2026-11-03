@@ -1581,6 +1581,14 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **所以并行生成的改动面比预想小，而且形状要求明确**：候选骨架里加**多调用**条目即可，由现成的复数提取器拆成多项。但**必须用带块标签的 wire 形式**——两个裸 JSON 直接相接时 `api_json_ok(整段)` 不成立、复数扫描器又找不到块标签，会整段判空；带标签时每块各自闭合，F195/F196 的解析与扇出立刻可用。骨架预算需 96→约 192（两块 ≈ 74 token）。
 **实验本身已回滚**：两条 `echo` 与 `build_f197.log` 所在的探针版本不入主干——`git checkout engine/main.php` 回到 F196 提交态（`e4a178a`），主干无新增日志噪声。
 
+### F200 · 并行调用的参数按工具各取所需（候选叉乘 + 上限）
+**问题**：F199 的成对候选每个工具只用**第一个**参数候选，所以 "get_weather 用 Paris、get_time 用 London" 两句里的两个城市被答成同一个（两项都是 Paris）。
+**做法**：required 候选改为**逐工具枚举全部参数候选**生成 wire 单块，成对候选是这个 wire 列表的有序叉乘；每步解码都要扫全部候选，故对成对候选数量设 **24** 的上限（不是让它按平方长）。
+**活服务实测**：`parallel_tool_calls:true` + "Call get_weather for Paris and get_time for London in one turn." ⇒ `get_weather={"city":"Paris"}` 与 `get_time={"city":"London"}`（40 token，两项 id 各异）；模型从叉乘里选对了语义配对，**不是我们把顺序硬编进去**。
+**常驻守卫**：新增 `chat-tool-parallel-args`（断言两个函数名各自的 city），与 F199 的 `chat-tool-parallel-calls`（数量/id/名/枚举合法/缺省单项）成对覆盖"数量"和"内容"两件事。
+**回归**：`engine/build_f200.log`（0 error）、`engine/run_f200.log` **134 PASS / 0 FAIL / `RUN_EXIT=0`**、`engine/api_smoke_f200.log` **91/91**、`engine/par_smoke_f200.log` **8/8**、`engine/fairness_f200.log` PASS（短流 0.47 s vs 长流 7.8 s；本轮长流比昨天 4.95 s 慢，属同机波动，判据只看相对关系），服务日志 `Accept failed` 0 行，`serve*.on` 已清。
+**仍未接**：点名 `tool_choice:{name}` 的并行（仍单块候选）、流式 `index`/`output_index` 递增、>2 并行的候选组合（24 上限会先截断）、自由 `tools` 下模型自发多块（本轮 `$text` 仍是 `Paris` 散文）。
+
 ### F199 · 并行工具调用真正打通（`parallel_tool_calls` 开关 + 统一 wire 形态）
 **为什么 F198 失败而这次成功**：`api_constrain_loop` 在**任一候选完整匹配**时就结束（`engine/main.php:285` 的 `$done = 1`），所以只要单调用候选还在列表里，贪心解码永远先收一条 ⇒ 并行"看起来实现了却从不出现"。这次的解法不是改解码器（那会动所有语法路径的保证），而是**按调用方的意图换候选集**：`parallel_tool_calls:true` 时**只放两块串联的候选**，缺省仍放单块。
 **统一形态**：required 的候选一律用 `api_tool_wire()` 写成模板自己的带块标签形式（一个语法、一处提取），并把兜底分支加条件 `strpos($text, 开标签) === false`——F198 那次"参数变空"正是兜底用 `$reqSkels[0]` 顶替不可解析的带标签文本造成的静默错答。
