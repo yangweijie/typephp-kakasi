@@ -1149,6 +1149,17 @@ def main():
     ntool = any(ch["choices"][0]["delta"].get("tool_calls") for ch in nchunks)
     check("chat-tool-none-stream", ntext != "" and not ntool, "%r tool=%s" % (ntext[:80], ntool))
 
+    # tool_choice "auto" must not be mistaken for a named call either: free text is allowed.
+    raw = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                        "max_tokens": 16, "stream": True, "tool_choice": "auto",
+                                        "tools": [{"type": "function", "function": {
+                                            "name": "get_weather", "parameters": {
+                                                "type": "object", "properties": {
+                                                    "city": {"type": "string"}}}}}]}, stream=True)
+    achunks = [json.loads(d) for d in sse_data(raw) if d != "[DONE]"]
+    atext = "".join((ch["choices"][0]["delta"].get("content") or "") for ch in achunks)
+    check("chat-tool-auto-stream", atext != "", atext[:80])
+
     # Responses streaming honours stop: the cut text ends at "P".
     raw = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 16,
                                  "stream": True, "stop": ["ari"]}, stream=True)

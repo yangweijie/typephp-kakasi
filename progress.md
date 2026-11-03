@@ -498,6 +498,7 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
+- **F189（`tool_choice:"auto"` 负例）已验证**：流式 + tools 仍自由文本；`api_smoke_f189.log` **86/86 PASS**（零改码）。
 - **F188（`tool_choice:"none"` 误判修复）已验证**：`api_tool_choice` 在全 body 找 `name`，字符串 none 时误命中 tools 数组；改为字符串直接返回空、对象用平衡块限定。`engine/build_f188.log` 成功、`engine/run_f188.log` **130 PASS / 0 FAIL**、`api_smoke_f188.log` **85/85 PASS**（新增 `chat-tool-none-stream`、`responses-stream-stop`）。
 - **F187（seed 可复现 smoke）已验证**：同 seed 两次 Chat 文本一致；`api_smoke_f187.log` **83/83 PASS**（零改码）。
 - **F186（客户端中途断开 smoke）已验证**：原始 socket 读首批字节后关闭，随后普通请求仍返回 “Paris”；`api_smoke_f186.log` **82/82 PASS**（零改码）。

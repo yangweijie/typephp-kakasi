@@ -1596,6 +1596,10 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **修复**：字符串形式（`"none"/"auto"/"required"/"any"`）直接返回空；对象形式用 `api_balance_block` 限定在 `{…}` 内再取 `name`。
 **验证**：`engine/build_f188.log` 构建成功；`engine/api_smoke_f188.log`：**85/85 PASS**（`chat-tool-none-stream` 纯文本、`responses-stream-stop` 截断到 "P"）；全量自检 `engine/run_f188.log`：**130 PASS / 0 FAIL / `RUN_EXIT=0`**。
 
+### F189 · `tool_choice:"auto"` 流式负例覆盖
+**做法**：无需改码；smoke 断言 `tool_choice:"auto"` + tools 的流式仍产出自由文本（不因 F188 的解析收紧而误强制）。
+**验证**：`engine/api_smoke_f189.log`：**86/86 PASS**（`chat-tool-auto-stream`）。
+
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖
 **做法**：无需改码（翻译先于候选/合并预处理）；新增 smoke `anth-json-schema-const`（`{"color":{"const":"red"}}` → 有限候选路径）与 `anth-json-schema-allof`（根级 `allOf` 成员 properties 合并后检测）。
 **验证**：`engine/api_smoke_f180.log`：**77/77 PASS**，两条新用例均 PASS。
