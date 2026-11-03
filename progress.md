@@ -617,3 +617,4 @@
 - **已测量成立**：冷启动修复效果 `first_len` 0→3909、137 PASS / 0 FAIL、`RUN_EXIT=0`（`engine/run_f226.log`，对应 `1e19d99`）。
 - **下一轮三步（严格按序，一次只跑一个引擎进程）**：①`rm -rf engine/build/gen/cache/ast` 后 `scripts\build-kakasi-nosetvars.bat norun`（增量构建会**不吃新码**，必须清这个缓存）；②`scripts\run-kakasi-selftest.bat engine\run_f228.log`，要求 **137 PASS / 0 FAIL**、`SCHEMA-DEEP200-RETRY first_len>0`、`SCHEMA-DEEP200: PASS (... first attempt)`，并记录总时长是否从 ~12 min 回落到 ~9 min（回落＝收窄生效）；③门禁：`scripts\serve.bat` 起 8000 跑 `engine/tests/api_smoke.py`，停服后再起 8001 跑 `engine/tests/par_smoke.py` + `engine/tests/fairness_test.py`。
 - **未闭合的根因（比绕行更该修的地方）**：`src/model_sycl.cc:1323` 冷路径 prefill 不产出 logits；`src/model_sycl.cc:1496` `g_sess_len += 1` 早于 `r.empty()` 判定（失败步仍推进会话长度）。F226 的 re-prefill 是**可用的功能修复**，但真正消除代价要在 native 侧修这两处（需一次完整 SYCL 重编，别和 PHP 侧改动混在同一轮）。
+- **交接警告（停车时）**：后台链 `b8jc38uyc`（`run_f227.log`，验 `1e19d99`+首调判据）在预算耗尽时仍在跑。**续跑前先确认它已结束**（`grep RUN_EXIT engine/run_f227.log`），否则运行中的 exe 会锁文件导致重建失败；要重建就先停该任务或等其完成再取判据。
