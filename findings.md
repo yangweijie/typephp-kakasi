@@ -1604,6 +1604,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **缺口**：`api_tool_names` 以 `"name"` 切分**整个请求体**，历史消息中 assistant `tool_calls` 的函数名会被算进白名单，削弱“未声明名被拒”的契约（F52）。
 **修复**：先定位 `"tools"` 后的 `[`，用 `api_balance_square` 取出数组，只在数组内解析 `name`。
 **验证**：新增程序化自检 `TOOL-NAMES-SCOPE`（历史含 `ghost`、tools 声明 `real` → 白名单仅 `real`）；`engine/build_f190.log` 构建成功（`norun`）；`engine/run_f190.log`：**131 PASS / 0 FAIL / `RUN_EXIT=0`**（`TOOL-NAMES-SCOPE: PASS`，原 130 项无回退）；同一二进制活服务 `engine/api_smoke_f190.log`：**86/86 PASS、0 FAIL、`SMOKE_EXIT=0`**（含工具流式与 `tool_choice` none/auto 形状），服务日志 `Accept failed` **0 行**。
+**8001 回归（同二进制）**：`engine/par_smoke_f190.log` **7/7 PASS**、`engine/fairness_f190.log` **PASS**（短流 0.29 s vs 长流 4.87 s），并行槽服务日志 `Accept failed` **0 行**；服务已由 `serve.par.on` 哨兵显式 PATH 直起并在门禁后停止（无残留 `serve*.on`）。
 **残留**：锚点取请求体中第一处字面 `"tools"`；若历史内容里出现转义 `\"tools\"`，锚点会前移，退化为"白名单为空"（保守失败，不会放行未声明名）。
 
 ### F180 · Anthropic `output_format` 的 `const` / `allOf` 覆盖

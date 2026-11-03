@@ -498,7 +498,7 @@
 
 ## 当前未决（2026-11-03 03:50 本地）
 
-- **F190（工具白名单作用域）已验证**：`api_tool_names` 只在 `tools` 数组内解析；`engine/build_f190.log` 成功、`engine/run_f190.log` **131 PASS / 0 FAIL / `RUN_EXIT=0`**（新增 `TOOL-NAMES-SCOPE: PASS`）、`engine/api_smoke_f190.log` **86/86 PASS**（服务日志 `Accept failed` 0 行）。
+- **F190（工具白名单作用域）已验证**：`api_tool_names` 只在 `tools` 数组内解析；`engine/build_f190.log` 成功、`engine/run_f190.log` **131 PASS / 0 FAIL / `RUN_EXIT=0`**（新增 `TOOL-NAMES-SCOPE: PASS`）、`engine/api_smoke_f190.log` **86/86 PASS**；同二进制 8001 门禁 `par_smoke_f190.log` **7/7** + `fairness_f190.log` PASS（0.29 s vs 4.87 s）、`Accept failed` 0 行。
 - **F189（`tool_choice:"auto"` 负例）已验证**：流式 + tools 仍自由文本；`api_smoke_f189.log` **86/86 PASS**（零改码）。
 - **F188（`tool_choice:"none"` 误判修复）已验证**：`api_tool_choice` 在全 body 找 `name`，字符串 none 时误命中 tools 数组；改为字符串直接返回空、对象用平衡块限定。`engine/build_f188.log` 成功、`engine/run_f188.log` **130 PASS / 0 FAIL**、`api_smoke_f188.log` **85/85 PASS**（新增 `chat-tool-none-stream`、`responses-stream-stop`）。
 - **F187（seed 可复现 smoke）已验证**：同 seed 两次 Chat 文本一致；`api_smoke_f187.log` **83/83 PASS**（零改码）。
