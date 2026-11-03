@@ -1517,7 +1517,7 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 **现象**：扩展 smoke 新增 `chat-json-schema-array-obj-arr2d` 后失败，返回 `{"m":[["Red, Blue,"]]}` —— 缺少 `items` 包裹与元素对象。自检直接调用检测器/构造器，因此 F163 自检通过但**活服务 dispatch 从未走到 ARR2D**。
 **根因**：非流式/SSE/Responses 三条链都先算顶层 `api_response_schema_array2_string`，其守卫是 `$scArr4 == "" && $scArr3 == ""`；该检测器在 schema 中全局搜索 `"m":{array of array}`，抢在元素级检测器之前认领。
 **修复**：三个入口在调用顶层 arr2 之前先调用 `api_response_schema_array_object_array2`；元素级命中时 `$scArr2` 保持空串，后续元素块再正式接管。
-**验证**：`engine/build_f168.log` 构建成功；`engine/run_f168.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**（`SCHEMA-ARR2` 未回退）；扩展 `api_smoke.py`（61→**63** 形状）后 `engine/api_smoke_f168.log`：**63/63 PASS、`SMOKE_EXIT=0`**，`chat-json-schema-array-obj-arr2d` 与 `chat-json-schema-array7` 均 PASS。
+**验证**：`engine/build_f168.log` 构建成功；`engine/run_f168.log`：**127 PASS / 0 FAIL / `RUN_EXIT=0`**（`SCHEMA-ARR2` 未回退）；扩展 `api_smoke.py`（61→**64** 形状）后 `engine/api_smoke_f168c.log`：**64/64 PASS、`SMOKE_EXIT=0`**，`chat-json-schema-array-obj-arr2d`、`chat-json-schema-array7`、`responses-json-schema-array-obj-arr2d` 均 PASS。
 
 ## Technical Decisions（与 task_plan.md "Decisions Made" 同步）
 | 决策 | 结论 |

@@ -129,6 +129,27 @@ def main():
         rok = False
     check("responses-json-schema-string", rok, rtext)
 
+    # Element 2-D array through the Responses exit (same grammar, third dispatch site).
+    r2d_schema = {"type": "object", "properties": {"items": {
+        "type": "array", "items": {"type": "object", "properties": {
+            "m": {"type": "array",
+                  "items": {"type": "array", "items": {"type": "string"}}}}}}}}
+    r = post("/v1/responses", {"input": "List two records, each with a list of lists of colors.",
+                               "max_output_tokens": 64,
+                               "text": {"format": {"type": "json_schema", "name": "rows",
+                                                   "schema": r2d_schema}}})
+    r2text = r["output"][0]["content"][0]["text"]
+    try:
+        r2val = json.loads(r2text)["items"]
+        r2ok = (isinstance(r2val, list) and 1 <= len(r2val) <= 2
+                and all(isinstance(e, dict) and set(e.keys()) == {"m"}
+                        and isinstance(e["m"], list) and len(e["m"]) >= 1
+                        and all(isinstance(inner, list) for inner in e["m"])
+                        for e in r2val))
+    except Exception:
+        r2ok = False
+    check("responses-json-schema-array-obj-arr2d", r2ok, r2text)
+
     # n > 1 returns independent choices (sampled with seed+i), and usage counts every choice.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Tell me a short sentence about cats."}],
                                       "max_tokens": 10, "n": 2, "temperature": 1.0, "seed": 7})
