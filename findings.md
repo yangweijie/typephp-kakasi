@@ -1906,3 +1906,7 @@ F226 的重启对所有 `api_constrained` 生效 ⇒ EOS 正常终止也要白�
 
 ### F231 · 新增活服务门 `chat-json-schema-deep40-first-call` 的**离线复刻核对**（防误认领，F158 手法）
 在 Python 里按测试同样的构造顺序建 40 层包装（`for i in range(40): deep={"k%d"%i: deep}`）并生成期望 JSON：结果 **outermost_key == ['k39']**，且自外向内 `for i in range(39,-1,-1): cur = cur["k%d"%i]` 落回 `{"city":"Paris","count":4000}` 完全相等。⇒ 测试里的下行遍历与 schema 构造顺序自洽：**这条门只有在引擎真的不给完整体时才会红**，不会因我的断言写错而假红。（对照：自检侧 DEEP40/DEEP80 用的也是"k 越大越外层"的同一顺序。）**该门尚未跑过**（引擎被自检占着），跑之前只能算"写法已核"。
+
+### F232 · **`caf1bd6` 收窄版已用整条自检验证**（原"未测量"撤销）：137 PASS / 0 FAIL、`SCHEMA-DEEP200` 按**首调**判据通过
+`engine/run_f228.log`（构建自 `engine/build_f228.log`，源码含收窄、**不含探针**）788 行：`SCHEMA-DEEP200-RETRY first_len=3909 second_len=3887`、`SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the first attempt)`、**137 PASS / 0 FAIL**、`==RUN_EXIT=0==`。⇒ 把重启限定在"allowed 单 id"并没有削弱修复：冷启动首调仍拿到完整 3909 字符体。**仍未测量的一项**：收窄究竟省下多少自检时间（缺一条同一二进制的秒表基线；`run_f229` 正在给收窄版的秒表数，但**没有**未收窄版的秒表对照 ⇒ 只能报绝对值，不能报"省了多少"，除非再跑一次对照）。
+**探针状态的诚实说明**：F229 探针在链式任务开始构建**之前**已被 `git revert 82cc910` 撤下（为避免把 `g_sess_len` 顺序修复混进探针轮），所以 `run_f229` 里**不会出现** `F229-PROBE`；那不是"没再发生冷启动拒绝"的证据。根因仍是 F228 的两条分支之一，未测。
