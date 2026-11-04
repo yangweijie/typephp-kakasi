@@ -2339,3 +2339,11 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 **结论**：继续追这一条需要把整条 dispatch 分段打点（至少 6–8 个断点），成本远超"多属性对象项"这一窄特性；**本轮到此为止**。
 **处置**：探针回退，重建后 8000 复验 **112 PASS** ⇒ HEAD 保持 F297 基线。
 **下次的判据**：不是继续加探针，而是先用**离线复刻**（把同一 schema 喂给各个 `api_response_schema_*` 函数并打印返回值）在 PHP 侧跑一遍——那不需要重建二进制，一轮就能定位认领者。
+
+### F301 · **F284 第 1 步落地**：`model_token_prob(id, temp)` 暴露当前位置的 token 概率（过完整梯子）
+实现（`ceaf8c6`）：
+- `model_sycl.cc`：`token_prob(id, temp)` 对 `g_last_logits` 做 max-shift 的 softmax；`temp<=0` 退化为 one-hot（argmax 为 1，其余 0）；越界或空 logits 返回 -1。
+- `model.cc`：声明 + `php_model_token_prob` 包装（`php::Float`）。
+- **关键坑**：光加 `php_model_*` 包装还不够——PHP 侧函数名由 **`engine/src/model.stub.php`** 声明；漏了这一行，自检直接 `Fatal error: function 'model_token_prob' is undefined`（`RUN_EXIT=255`，整套在 72 PASS 处中止）。补上 `function model_token_prob(int $id, float $temp): float {}` 后才可用。**这条要进 tpc 清单：新增 native 函数 = 包装 + stub 声明，缺一不可。**
+**实测**：自检新增 `PROB-API: PASS (p_top=0.096618251791564 p_other=8.6552506963073E-8)` ⇒ 是**真实概率分布**且 argmax 最高；全套 **140 PASS / 0 FAIL**（`SUITE_SECS=734`）；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**意义**：确定性草稿（prompt-lookup）的接受概率 `p(draft)` 现在可由 PHP 计算，F284 第 2 步（接受-拒绝）有了落地基础；残差重采样仍需第 3 步的分布采样接口。
