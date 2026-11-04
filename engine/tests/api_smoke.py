@@ -162,6 +162,31 @@ def main():
         ec = None
     check("chat-json-schema-extref", ec in ("Paris", "London"), str(ext)[:120])
 
+    # F226: a long forced nested assembly must arrive complete on the FIRST served request. The
+    # cold-session defect (findings F208-F225) showed up as empty text on attempt one and a correct
+    # body only on an identical retry, so grading a retry here would prove nothing.
+    deep = {"type": "object", "properties": {"city": {"type": "string"},
+                                             "count": {"type": "integer"}}}
+    for i in range(40):
+        deep = {"type": "object", "properties": {"k%d" % i: deep}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1500, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deep", "schema": deep, "strict": True}}})
+    dtxt = r["choices"][0]["message"]["content"]
+    dleaf = None
+    try:
+        dcur = json.loads(dtxt)
+        for i in range(39, -1, -1):
+            dcur = dcur["k%d" % i]
+        dleaf = dcur
+    except Exception:
+        dleaf = None
+    check("chat-json-schema-deep40-first-call",
+          isinstance(dleaf, dict) and dleaf.get("city") in ("Paris", "London")
+          and isinstance(dleaf.get("count"), int),
+          "len=%d text=%r" % (len(dtxt), dtxt[:60]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
