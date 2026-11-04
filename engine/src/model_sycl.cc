@@ -1205,14 +1205,32 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             q2.memcpy(dSin2, stab.data(), sizeof(float) * stab.size());
             q2.wait_and_throw();
             if (g_kv2.backend != g_split_backend || g_kv2.cap < pos + T) {
-                g_kv2.free_all();
+                // Same hazard as ensure_kv (F265): freeing first would discard the rows the
+                // second device already holds, and attention over them would read garbage.
+                const int keep2 = (g_kv2.backend == g_split_backend && (int) g_kv2.k.size() == L)
+                                  ? std::min(pos, g_kv2.cap) : 0;
                 const int cap2 = std::max(pos + T, KV_MIN_CAP);
-                g_kv2.q = &q2; g_kv2.backend = g_split_backend; g_kv2.cap = cap2;
-                g_kv2.dkv = DKV; g_kv2.len = 0; g_kv2.f16 = g_kv.f16;
                 const size_t b2 = (size_t) cap2 * (size_t) DKV * g_kv2.elem();
+                std::vector<char*> nk2;
+                std::vector<char*> nv2;
                 for (int l = 0; l < L; ++l) {
-                    g_kv2.k.push_back(sycl::malloc_device<char>(b2, q2));
-                    g_kv2.v.push_back(sycl::malloc_device<char>(b2, q2));
+                    nk2.push_back(sycl::malloc_device<char>(b2, q2));
+                    nv2.push_back(sycl::malloc_device<char>(b2, q2));
+                }
+                if (keep2 > 0) {
+                    const size_t kb = (size_t) keep2 * (size_t) DKV * g_kv2.elem();
+                    for (int l = 0; l < L; ++l) {
+                        q2.memcpy(nk2[l], g_kv2.k[l], kb);
+                        q2.memcpy(nv2[l], g_kv2.v[l], kb);
+                    }
+                    q2.wait_and_throw();
+                }
+                g_kv2.free_all();
+                g_kv2.q = &q2; g_kv2.backend = g_split_backend; g_kv2.cap = cap2;
+                g_kv2.dkv = DKV; g_kv2.len = keep2; g_kv2.f16 = g_kv.f16;
+                for (int l = 0; l < L; ++l) {
+                    g_kv2.k.push_back(nk2[l]);
+                    g_kv2.v.push_back(nv2[l]);
                 }
             }
         }
