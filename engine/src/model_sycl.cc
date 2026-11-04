@@ -1493,8 +1493,10 @@ int session_next_allowed(int backend, const std::vector<int>& allowed) {
     const int eos = (int) gguf::meta_num("tokenizer.ggml.eos_token_id");
     if (eos > 0 && best == eos) return -1;
     const std::vector<double> r = prefill_top1(backend, std::vector<int>{best}, -1, g_sess_len);
-    g_sess_len += 1;
     if (r.empty()) return -1;
+    // Only a step that actually produced KV rows may advance the position: incrementing first
+    // would leave a phantom row that every later write and every KV snapshot inherits.
+    g_sess_len += 1;
     return best;
 }
 
