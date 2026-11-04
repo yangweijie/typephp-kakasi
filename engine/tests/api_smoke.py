@@ -191,6 +191,32 @@ def main():
           and len(dleaf.get("city")) > 0 and isinstance(dleaf.get("count"), int),
           "len=%d closes=%d tail=%r" % (len(dtxt), dtxt.count("}"), dtxt[-40:]))
 
+    # F238: the same 40 levels with an ENUM leaf must keep every level AND honour the enum. The
+    # defect was that pass-1's enum regex claimed the deep leaf and answered a flat
+    # {"city":"Paris"}; this shape is the guard against that regression.
+    deepE = {"type": "object", "properties": {"city": {"type": "string",
+                                                       "enum": ["Paris", "London"]},
+                                              "count": {"type": "integer"}}}
+    for i in range(40):
+        deepE = {"type": "object", "properties": {"k%d" % i: deepE}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1500, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepe", "schema": deepE, "strict": True}}})
+    etxt = r["choices"][0]["message"]["content"]
+    eleaf = None
+    try:
+        ecur = json.loads(etxt)
+        for i in range(39, -1, -1):
+            ecur = ecur["k%d" % i]
+        eleaf = ecur
+    except Exception:
+        eleaf = None
+    check("chat-json-schema-deep40-enum-leaf",
+          isinstance(eleaf, dict) and eleaf.get("city") in ("Paris", "London")
+          and isinstance(eleaf.get("count"), int),
+          "len=%d closes=%d tail=%r" % (len(etxt), etxt.count("}"), etxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

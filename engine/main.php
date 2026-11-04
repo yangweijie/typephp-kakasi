@@ -5273,6 +5273,12 @@ function api_schema_candidates(string $tail): array
         return $out;
     }
     $tail = $block;
+    // Object-valued properties mean this is a NESTED plan. Without this gate, pass 1's enum regex
+    // reaches into the deepest leaf and emits a flat object, silently dropping every intermediate
+    // level (findings F238: 40-level schema with an enum leaf answered {"city":"Paris"}).
+    if (preg_match('/"type"\s*:\s*"object"/', $tail) == 1) {
+        return $out;
+    }
     // Pass 1: enum / const values (always strings).
     $pm = [];
     $n = preg_match_all('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"(?:enum|const)"\s*:\s*'
