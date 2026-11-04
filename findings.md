@@ -2277,3 +2277,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 实现（`23e51a0`）：planner 对 `items.type` 为 integer/number 的两花括号叶分别记 `an`/`af`；builder 把数组分支泛化——字符串项走原有 charset 循环，数字项用 `api_number_fill(allowFrac, 4)` 续解；**终止符（`,` 或 `]`）由同一步 `model_session_next_allowed` 选出**，因此数字项之间**不再额外插入引号或逗号**（字符串项才需要重开引号）。
 **实测**：8000 **107 PASS**（含新门 `chat-json-schema-deep40-int-array-leaf`：40 层 + `nums` 为非空整数列表 + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=736`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS` ⇒ 与字符串数组共用分支后**没有破坏既有形状**。
 **仍未支持**：**对象数组叶**（`items.type=object`，嵌套内）、混合类型枚举、含元字符 pattern、`minimum/maximum/multipleOf`。
+
+### F291 · 布尔数组叶（`ab:`）已支持并过完整梯子——标量数组族收口
+实现（`2ed8be1`）：planner 识别 `items.type=boolean` → `ab`；builder 在共享数组分支里用 `api_constrained_continue(["true","false"],4)` 逐项解码。
+**实测**：8000 **108 PASS**（含新门 `chat-json-schema-deep40-bool-array-leaf`：40 层 + `flags` 为非空的布尔列表 + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=735`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+⇒ 字符串/整数/小数/布尔数组现在都能作为**嵌套对象内的叶子**装配；对象数组叶仍未支持（需在数组项内再走一遍对象装配）。
