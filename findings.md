@@ -2117,3 +2117,10 @@ g_sess_len += 1;
 ⇒ 所以 F157 里"树与链 accepted 都是 5/5"**不是**"树只会单命中"，而是：**重复文本里同一 trigram 的每次出现后面跟的 token 完全一样** ⇒ B 条分支**内容相同**，验证能接受的仍只有一条。"更多命中"并不带来**不同**的候选。
 **结论（对 FR-06.2 的影响）**：真正缺的不是"多命中"，而是**多样化的来源**——①n-gram 频次表取 top-k 不同后继；②上一轮 `prefill_tops` 的次优 token 作备选分支；③对同一位置做温度/惩罚采样。`task_plan.md` 末尾的方案第 1 条（收集所有匹配）**已在树里实现**，应按本条修正为"从同一上下文取**不同**后继"。
 **状态**：分析更正，未改代码；F157 的实测结论（无收益）仍然成立，只是原因换了。
+
+### F263 · **HEAD 过完整梯子**（8000 + 自检 138 + 8001），F238 修复、`SESSION-POS` 守卫、反斜杠拒绝三者在同一二进制上全绿
+- 8000（`b46va91uc` / `api_smoke_f261.log`）：`SMOKE_EXIT=0`、`API SMOKE: PASS`、**99 PASS 行**；
+- 8001：`PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0`、`FAIRNESS: PASS`；
+- 自检（`b5bbqj9x7` / `run_f250.log`）：**138 PASS / 0 FAIL**、`SESSION-POS: PASS`、`first_len=3909`。
+**同源证据**：`b46va91uc` 开跑前核过 exe（`exe_age=1857s`）**新于** `main.php`（2500s）与 `model_sycl.cc`（6094s），且其后只有文档提交 ⇒ 这一轮测的就是 HEAD 的代码。
+**仍不算完成**：`g_sess_len` 修复无判别性覆盖（F261 论证不可由 PHP 构造，属 native 单测范畴）；数字枚举仅保结构（F258）；native `no logits computed` 根因未证；FR-06.2 及 KV 吞吐/分片/多卡/FR-05 未开始。
