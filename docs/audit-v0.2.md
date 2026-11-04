@@ -120,3 +120,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **嵌套 plan 的取值约束扩面**：字符串枚举（`e:`）、数字枚举（`en:`）、`const`（两种）、**纯字面量 `pattern` 交替式**均受约束并通过完整梯子；新增门 `deep40-enum-num` / `deep40-const-leaf` / `deep40-pattern-leaf`，8000 门禁达 **102 个 PASS 行**。
 - **当前基线**：139 项自检 / 102 形状 8000 / 8001 `par_smoke` 9/9 + `fairness` PASS，全部在同一 HEAD（`8a4cc86` 之前一个源码提交 `152a648`）上取得；`first_len == second_len == 3887`。
 - **仍回退旧路径**：含元字符的 `pattern`、`minimum/maximum/multipleOf`、混合类型枚举；**未开始**：采样验证（F273 的 FR-06 前置）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（需第二块设备）、GGUF 分片、FR-05。
+
+## 审计增补（F285–F289，2026-11-04 16:49）——"形状缺陷"一族已收口
+**问题类别**：装配出的 JSON **缺键**（不是取值错），因为 planner 只认识部分叶子形状。
+- **F285 布尔叶**：`api_top_leaves` 只认 string/integer/number ⇒ `{"type":"boolean"}` 的键被静默丢弃。修：`b:` 叶（`true`/`false` 两字面量）。
+- **F288 叶子上限**：嵌套检测器 `api_top_leaves($block,3)` ⇒ 四属性对象只装配三个。修：上限 6；**实测未扰动既有用例**（139 项自检全绿）。
+- **F289 字符串数组叶**：数组值对象有 **两个** `{`（自身 + items），连叶子判断都进不去。修：识别 `items.type=string` → `a:` 叶，按"逐项字符串 + 逗号/`]` 终止"续解。
+- **新增门**：`deep40-bool-leaf`、`deep40-mixed-leaves`（三种类型同层，逐键断言）、`deep40-four-leaves`、`deep40-array-leaf` ⇒ 8000 门禁 **106 个 PASS 行**。
+**当前基线**：自检 **139 PASS / 0 FAIL**、8000 **106 PASS**、8001 `par_smoke` 9/9 + `fairness` PASS（同一构建）。
+**仍在的缺口**：数字数组叶 / 对象数组叶（嵌套内无对应 plan 类型）、混合类型枚举、含元字符的 `pattern`、`minimum/maximum/multipleOf`；以及大项：**采样验证**（F273/F284，FR-06 的前置）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（本机不可执行）、GGUF 分片、FR-05。
