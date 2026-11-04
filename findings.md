@@ -2347,3 +2347,12 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 - **关键坑**：光加 `php_model_*` 包装还不够——PHP 侧函数名由 **`engine/src/model.stub.php`** 声明；漏了这一行，自检直接 `Fatal error: function 'model_token_prob' is undefined`（`RUN_EXIT=255`，整套在 72 PASS 处中止）。补上 `function model_token_prob(int $id, float $temp): float {}` 后才可用。**这条要进 tpc 清单：新增 native 函数 = 包装 + stub 声明，缺一不可。**
 **实测**：自检新增 `PROB-API: PASS (p_top=0.096618251791564 p_other=8.6552506963073E-8)` ⇒ 是**真实概率分布**且 argmax 最高；全套 **140 PASS / 0 FAIL**（`SUITE_SECS=734`）；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **意义**：确定性草稿（prompt-lookup）的接受概率 `p(draft)` 现在可由 PHP 计算，F284 第 2 步（接受-拒绝）有了落地基础；残差重采样仍需第 3 步的分布采样接口。
+
+### F302 · **F284 第 2/3 步落地**：`model_rand01()` 与 `model_sample_excluding(id,temp)`（过完整梯子）
+实现（`9b14398`）：
+- `rand01()`：复用引擎既有的 **splitmix64**（`next_u64_unit(g_sess_rng)`），与采样同源 ⇒ 同 seed 可复现。
+- `sample_excluding(id,temp)`：对温度缩放后的分布做 max-shift softmax 累加采样，**排除指定 id**——这正是"确定性草稿（q 为点质量）"情形下的残差 `(p-q)+` 重采样。`temp<=0` 返回 -1（贪心无残差概念）。
+- 两个都补了 `model.cc` 包装与 **`model.stub.php` 声明**（F301 的教训）。
+- **编译坑**：`next_u64_unit` 定义在文件后部，直接调用报 `use of undeclared identifier`；需在其前加**前向声明**（已加）。
+**实测**：自检新增 `SAMPLE-API: PASS (u1=0.133 u2=0.205 x=451)`（两个均匀数落在 [0,1)，残差采样结果 ≠ 被排除的 top id）；全套 **141 PASS / 0 FAIL**；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**FR-06 剩余**：现在三件原语齐了（p(x)、u、残差采样），**下一步是 PHP 侧的采样验证循环**（草稿→按 p 接受→拒绝时用残差重采样），并以"同温度下 tree-on/off 的吞吐"为判据。
