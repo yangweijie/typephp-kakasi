@@ -2230,3 +2230,13 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 `b1t73a2tb`：先 `rm -rf engine/build/gen engine/build/obj`（**连 C++ 目标文件一起清**）→ `BUILD=0 / LINK=0 / exe_age=2s` → 自检 **139 PASS / 0 FAIL**（`SUITE_SECS=739`、`SESSION-GROW: PASS`、`first_len=3887 second_len=3887`）→ 8000 **102 PASS / `SMOKE_EXIT=0`** → 8001 `PAR_EXIT=0 PASS=9` → `FAIRNESS: PASS`。
 ⇒ 本会话所有修复（KV 根修、`SESSION-GROW` 守卫、`e:`/`en:`/`const`/纯字面量 `pattern`、`SESSION-POS`、反斜杠拒绝、去重、split 同构修复）**都不是增量构建的假象**：它们在一个完全重建的二进制上同样全部通过。
 **这是目前最强的基线**：HEAD `f176341`（源码提交 `152a648`）对应的干净构建 = 139 / 102 / 9 + fairness。后续任何回归都可以拿这条作为对照。
+
+### F284 · 采样验证的**落地规格**（F273 的前置；本轮不实施，原因见末段）
+**目标**：让多分支/多草稿在**非贪心**下真正产生收益，同时保证 temperature=0 时与现状逐位一致（既有 139 项自检即回归门）。
+**缺口**：验证器现在只拿 **top-1**（`prefill_tops` 把 argmax 存进 `g_step_top1`），没有逐位置的完整分布，因此无法做 `min(1, p/q)` 接受-拒绝，也无法从残差重采样。
+**四步（每步可独立验证）**：
+1. **暴露分布**：新增 `spec_verify_probs(backend, draft_ids, pos, temp)` → 每个草稿位返回 softmax(logits/T) 的**稀疏 top-N**（N≈32）与归一化常数；`T=0` 时走现有 argmax 路径（保持逐位一致）。判据：`sum≈1`、`argmax` 与 `prefill_tops` 一致、`T→0` 时熵→0。
+2. **接受-拒绝**：草稿来自确定性查找（q 是点质量）⇒ 接受概率＝`p(x_draft)`；不通过就以 `u < p` 采样（用现有 RNG，勿新开随机源，保证 seed 可复现）。判据：**同 seed 两次运行逐位相同**；`T=0` 时退化为"只有 argmax 能被接受"。
+3. **残差重采样**：拒绝后从 `(p - q)+` 归一化采样（q 为点质量时即"排除该 token 的 p"）。判据：统计接受率随 `T` 单调上升（同 prompt 扫 T=0/0.7/1.0）。
+4. **吞吐判据**：`tree-on/off` 与 `bins=1/k` 的 wall 对比（F45 形式），**只在 T>0 时有意义**；T=0 的结论已由 F273 证明恒为 0，不再重复测。
+**为什么不本轮做**：新增分布面 + 拒绝采样 + 残差重采样，至少需要一次完整 SYCL 重建 + 一轮 139 项自检 + 两级门禁（约 25–30 分钟真实时间），当前窗口不够；半做完会留下**不可验证的概率边界代码**，比留一份可执行规格更糟。
