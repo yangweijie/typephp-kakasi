@@ -2178,3 +2178,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 **关键数字（同轮同机）**：`SPEC-AMB chain=501.99 ms drafts=15 accepted=5 verifies=5` vs **`tree=524.88 ms drafts=21 accepted=5 verifies=5`** ⇒ 去重后**树仍比链慢 4.6%**，接受数完全相同。
 **解释**：去重确实让 bins 里不再全是同一条路径（drafts 从"重复堆叠"变成 21 个不同节点），但**可接受的分支仍只有一条**——验证器只接受模型自身的 argmax 路径，重复文本里"另一个不同续写"就是错的。⇒ **多分支本身不产生收益**，这正是 F262 的结论；FR-06.2 剩下的杠杆只有**换来源**：n-gram 频次 top-k、或用 `prefill_tops` 的次优 token 作首步分支（更可能命中模型第二选择，从而被接受）。
 **处置**：去重保留（它让 bins 有意义、且零回归），但**不得**据此宣称"树收益"；下一步按 F262 的第 1/2 条换来源，并仍用 tree-on/off 的 wall 对比作判据。
+
+### F272 · 去重版过完整梯子（与 F271 的负收益结论并存）
+`bdem37j6f`（同一 exe，源码 mtime 早于 exe）：8000 **100 PASS / `SMOKE_EXIT=0` / `API SMOKE: PASS`**；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0`、`FAIRNESS: PASS`；加上 `run_f270.log` 的 **138 PASS / 0 FAIL** ⇒ 去重改动本身**无回归**。
+⇒ 当前 HEAD 的完整状态：冷启动根修 + F238 字符串枚举 + F258 数字枚举 + `SESSION-POS` + 反斜杠拒绝 + 分支去重，**138 项自检 / 100 形状 8000 / 8001 全绿**。
+**未获收益的部分**：树 vs 链仍是 525 ms vs 502 ms（F271）；真正的收益要等"换来源"（n-gram 频次 / 次优 token），属下一轮。
