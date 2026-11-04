@@ -2757,7 +2757,9 @@ function api_response_schema_nested_object(string $body): string
         if ($block == "") {
             return "";
         }
-        $plan = api_top_leaves($block, 3);
+        // Six, not three: with a cap of three a nested object carrying four or more properties
+        // silently lost the extra leaves (same shape defect class as F285).
+        $plan = api_top_leaves($block, 6);
         if ($plan != "") {
             return $path . "|" . $plan;
         }

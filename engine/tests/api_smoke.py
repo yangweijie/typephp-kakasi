@@ -338,6 +338,33 @@ def main():
           "keys=%r tail=%r" % (sorted(mleaf.keys()) if isinstance(mleaf, dict) else None,
                                mtxt[-40:]))
 
+    # F288: four leaves at one level used to lose one silently (the planner's cap was three).
+    deepF = {"type": "object", "properties": {"city": {"type": "string"},
+                                              "count": {"type": "integer"},
+                                              "flag": {"type": "boolean"},
+                                              "note": {"type": "string"}}}
+    for i in range(40):
+        deepF = {"type": "object", "properties": {"k%d" % i: deepF}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepf", "schema": deepF, "strict": True}}})
+    ftxt = r["choices"][0]["message"]["content"]
+    fleaf = None
+    try:
+        fcur = json.loads(ftxt)
+        for i in range(39, -1, -1):
+            fcur = fcur["k%d" % i]
+        fleaf = fcur
+    except Exception:
+        fleaf = None
+    check("chat-json-schema-deep40-four-leaves",
+          isinstance(fleaf, dict) and isinstance(fleaf.get("city"), str)
+          and isinstance(fleaf.get("count"), int) and isinstance(fleaf.get("flag"), bool)
+          and isinstance(fleaf.get("note"), str),
+          "keys=%r tail=%r" % (sorted(fleaf.keys()) if isinstance(fleaf, dict) else None,
+                               ftxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
