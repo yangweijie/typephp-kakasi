@@ -687,3 +687,8 @@
 - **Round 2 `b8u8njq8t`**（排队中，等 Round 1 的 `VERIFY_F241_DONE`）：先 `Stop-Process` 清孤儿 → 清 AST → 重建（含 `235bc45` 的 `g_sess_len` 顺序修复）→ **核 `BUILD_EXIT=0` / `LINK_FAIL=0` / exe mtime 变新** → 自检 + 两级门禁。日志前缀：`*_f242.log`。
 - **判读**：R1 红 + R2 红 ⇒ F243 成立，走 F244；R1 红 + R2 绿 ⇒ 幻影 KV 行是成因，F243 归因要改写；R1 绿 ⇒ 撤 F243。**两轮都必须各自 137 PASS / 0 FAIL + par 9/9 + fairness PASS**，否则按回归处理，不许当"修复成功"。
 - **红线**：Round 2 构建完成之前**不要改源码**（否则它编进不该编的改动，决策表作废）。
+
+## 双轮验证结果（已到，替换先前的预测表）
+- **Round 1 `b71htt0fl`（只含 `f3c029a`，F253 证明进码）**：137 PASS / 0 FAIL、`SUITE_SECS=693`、`first_len=3909`（首调）；8000 唯一失败 `chat-json-schema-deep40-enum-leaf len=5 closes=0 tail='Paris'`；8001 par 9/9 + fairness PASS。⇒ **F243 预言成立**：`f3c029a` 只是把"扁平对象"换成"裸枚举值"，**未修复 F238**（F254）。
+- **Round 2 `b8u8njq8t`（+ `235bc45` 顺序修复）**：新二进制（`BUILD_EXIT=0/LINK_FAIL=0/exe_age=1s`）、137 PASS / 0 FAIL、`SUITE_SECS=674`、`first_len=3909`、par 9/9 + fairness PASS、同样只剩 enum-leaf 那条红。⇒ **顺序修复无回归**，但其行为**没有被直接断言**（缺"失败步不占格"的专门用例）——不得写成"已验证修复"（F255）。
+- **下一步（唯一）**：按 **F244** 四步实现枚举叶：①plan 语法加 `e:<v1|v2…>`；②`api_top_leaves` 识别 `enum` 生成 `e` 叶；③`api_nested_object_value` 增加 `e` 分支（用枚举字面量的 token 序列作候选集）；④收窄 `main.php:2629` 的一刀切拒绝。判据＝`chat-json-schema-deep40-enum-leaf` 由红转绿，且两轮各自的 137 PASS + par 9/9 + fairness 不变。**每轮只含这一个改动**。
