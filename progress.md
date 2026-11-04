@@ -692,3 +692,9 @@
 - **Round 1 `b71htt0fl`（只含 `f3c029a`，F253 证明进码）**：137 PASS / 0 FAIL、`SUITE_SECS=693`、`first_len=3909`（首调）；8000 唯一失败 `chat-json-schema-deep40-enum-leaf len=5 closes=0 tail='Paris'`；8001 par 9/9 + fairness PASS。⇒ **F243 预言成立**：`f3c029a` 只是把"扁平对象"换成"裸枚举值"，**未修复 F238**（F254）。
 - **Round 2 `b8u8njq8t`（+ `235bc45` 顺序修复）**：新二进制（`BUILD_EXIT=0/LINK_FAIL=0/exe_age=1s`）、137 PASS / 0 FAIL、`SUITE_SECS=674`、`first_len=3909`、par 9/9 + fairness PASS、同样只剩 enum-leaf 那条红。⇒ **顺序修复无回归**，但其行为**没有被直接断言**（缺"失败步不占格"的专门用例）——不得写成"已验证修复"（F255）。
 - **下一步（唯一）**：按 **F244** 四步实现枚举叶：①plan 语法加 `e:<v1|v2…>`；②`api_top_leaves` 识别 `enum` 生成 `e` 叶；③`api_nested_object_value` 增加 `e` 分支（用枚举字面量的 token 序列作候选集）；④收窄 `main.php:2629` 的一刀切拒绝。判据＝`chat-json-schema-deep40-enum-leaf` 由红转绿，且两轮各自的 137 PASS + par 9/9 + fairness 不变。**每轮只含这一个改动**。
+
+## F238 已修复（2026-11-04 11:30，覆盖上表"未修"行）
+- **改动 `3e7cfd8`**：`api_top_leaves` 产出 `key:e:v1~v2` 枚举叶；`api_object_head` 对 `e` 补开引号；`api_nested_object_value` 新增 `e` 分支（枚举候选交给受限解码）；全 body 枚举分支加"`"properties"` 计数 <2"前置；嵌套检测器拒绝表去掉 `enum`。
+- **实测**：`engine/api_smoke_f249.log` **`API SMOKE: PASS` / `SMOKE_EXIT=0` / 99 PASS 行**（98 形状 + 汇总，与预测一致）；单请求体 `…"k0":{"city":"Paris","count":1000}}}}…`（40 层 + 枚举生效）。
+- **踩坑**：初版用 `|` 分隔枚举值 → 与 `path|plan` 冲突，plan 被截成 `city:e:Paris`（n=1）且 `count:i` 丢失；改 `~` 后 n=2。
+- **进行中**：`b0i2o29tr`（该二进制全套自检 + 8001 门禁）、`b5bbqj9x7`（再加 `SESSION-POS` 断言，闭 F255 的"行为未直接断言"缺口）。**两者结果未到之前，F238 只算"8000 门禁已验证"，全套梯子未完成。**
