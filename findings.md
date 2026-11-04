@@ -2017,3 +2017,9 @@ g_sess_len += 1;
 - 现象：`python -c "…"` 用**双引号**包整段文本，文本里的反引号被 bash 当命令替换执行，留下 `command not found` 并把两个文件名替换成空串（`progress.md` 里出现"上一次全绿  是 98 行"）。提交后我**没有相信 HANDOFF_EXPECTATION_FIXED 的回显**，用 `git show`/`sed` 复查才发现损坏。
 - 修正：改用 Edit 工具（不经 shell）补回 `engine/api_smoke_f237c.log` 与 `chat-json-schema-deep40-enum-leaf`（提交 `e39c8cd` 之后的修复）。
 - **规程**：写含反引号/`$` 的中文文档一律用 Edit/Write 工具；非要用 shell 时只允许 **单引号 heredoc**（`cat >> f <<'EOF'`）。**改完必须把那一行读回来**，不能只看命令退出码——这与本项目"链式 exit 0 不等于跑过"是同一个坑的两个方向。
+
+### F248 · 链式验证大概率**再次链接失败**，以及一次到位的补救（写清楚，免得下轮误读 run_f240）
+**机理**：`bdlditj5k` 的脚本顺序是"等 `run_f239` 出 `RUN_EXIT` → revert 探针 → 立刻重建"。自测进程**刚退出**时，Windows 对 `build\kakasi_engine_sycl.exe` 的文件句柄可能还没释放 ⇒ 链接又会 `LNK1104 / SYCL_LINK_FAILED`（F245 同一个坑，只是这次撞的是"刚跑完的自测"而不是"刚停的服务器"）。
+**判读规则（先做这一步，再看任何结果）**：`grep -c SYCL_LINK_FAILED engine/build_f240.log` 为 1（或 exe mtime 仍停在 12:27）⇒ **`run_f240` 与 `*_f240` 门禁全部作废**：它们测的是没有 `f3c029a` 的旧二进制，既不能算修复通过，也不能算回归。
+**补救（一条命令，确认无引擎进程后再跑）**：`rm -rf engine/build/gen/cache/ast && cmd //c "scripts\build-kakasi-nosetvars.bat norun" > engine/build_f241.log 2>&1; grep -c SYCL_LINK_FAILED engine/build_f241.log` —— 期望 `0` 且 exe mtime 变新，然后 `run_f241` 自检 + `api_smoke`（判据见 F243/`progress.md`：enum-leaf 预期仍红，全绿 99 行则说明 2629 判读有误）。
+**根上的改进（值得单独一个小改动）**：构建脚本应当**在链接失败时以非零码退出**并把 `SYCL_LINK_FAILED` 打成显式失败，而不是让上层 `cmd //c` 看起来"跑完了"；否则每条链式任务都可能悄悄用旧 exe 得出假绿/假红。
