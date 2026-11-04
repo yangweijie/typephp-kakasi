@@ -9668,6 +9668,28 @@ function main(): void
         echo "SESSION-POS: FAIL neg=" . $spNeg . " before=" . $spBefore . " after=" . $spAfter . "\n";
     }
 
+    // SESSION-GROW: crossing KV_MIN_CAP (512) must not lose earlier rows. Before F265 the cache
+    // was freed before reallocating, so the first growth left rows 0..511 uninitialized and the
+    // next constrained step returned -1 with "no logits computed". This test would have failed
+    // on that code and passes only if the rows survive.
+    model_session_start(0, "785,6722,315");
+    $growIds = gguf_charset_ids("abcdefghijklmnopqrstuvwxyz ");
+    $growSteps = 0;
+    $growErr = "";
+    for ($gi = 0; $gi < 530; $gi++) {
+        $gnx = model_session_next_allowed(0, $growIds);
+        if ($gnx < 0) {
+            $growErr = model_last_error();
+            break;
+        }
+        $growSteps = $growSteps + 1;
+    }
+    if ($growSteps == 530 && $growErr == "") {
+        echo "SESSION-GROW: PASS (" . $growSteps . " steps past the 512-row boundary)\n";
+    } else {
+        echo "SESSION-GROW: FAIL steps=" . $growSteps . " err=[" . $growErr . "]\n";
+    }
+
     // Speculative decoding (KFlash-style accept/reject, prompt-lookup drafter): drafting and
     // batched verification must not change the output. The text repeats, so the lookup hits.
     $specTxt = "";
