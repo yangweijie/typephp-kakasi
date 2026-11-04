@@ -2272,3 +2272,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 修法（`fbe08d0`）：识别 `"items":{"type":"string"` 的两花括号叶 → plan 记 `key:a`；builder 新增 `a` 分支——先续解 `["`，再复用"逐项字符串 + 逗号/右括号终止"的循环（与顶层数组构造器同一套 token 语法），最后补 `]`。
 **实测**：8000 **106 PASS**（含新门 `chat-json-schema-deep40-array-leaf`：40 层 + `tags` 是字符串列表 + `city` 是字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=737`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS` ⇒ **放宽 planner 的叶子门没有破坏既有数组/对象检测器**。
 **仍未支持**：数字数组叶、对象数组叶（这两类仍由顶层检测器承担；嵌套内尚无对应 plan 类型）、混合类型枚举、含元字符的 pattern、`minimum/maximum/multipleOf`。
+
+### F290 · 嵌套"数字数组"叶已支持（`an:` 整数 / `af:` 小数）并过完整梯子
+实现（`23e51a0`）：planner 对 `items.type` 为 integer/number 的两花括号叶分别记 `an`/`af`；builder 把数组分支泛化——字符串项走原有 charset 循环，数字项用 `api_number_fill(allowFrac, 4)` 续解；**终止符（`,` 或 `]`）由同一步 `model_session_next_allowed` 选出**，因此数字项之间**不再额外插入引号或逗号**（字符串项才需要重开引号）。
+**实测**：8000 **107 PASS**（含新门 `chat-json-schema-deep40-int-array-leaf`：40 层 + `nums` 为非空整数列表 + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=736`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS` ⇒ 与字符串数组共用分支后**没有破坏既有形状**。
+**仍未支持**：**对象数组叶**（`items.type=object`，嵌套内）、混合类型枚举、含元字符 pattern、`minimum/maximum/multipleOf`。
