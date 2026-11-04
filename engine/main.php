@@ -2483,6 +2483,9 @@ function api_top_leaves(string $block, int $maxN): string
             } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"number"/', $val) == 1) {
                 $arrOk = 1;
                 $arrTy = "af";
+            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"boolean"/', $val) == 1) {
+                $arrOk = 1;
+                $arrTy = "ab";
             }
         }
         if (substr_count($val, "{") == 1 || $arrOk == 1) {
@@ -2708,7 +2711,7 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
             if ($bb != "") {
                 $s = $s . "," . $bb;
             }
-        } else if ($ty == "a" || $ty == "an" || $ty == "af") {
+        } else if ($ty == "a" || $ty == "an" || $ty == "af" || $ty == "ab") {
             // Nested array leaf (F286 for strings, F290 for numbers). The separator already
             // emitted "key":, so this only has to produce [items] using continuations.
             $commaIds = api_punct_ids(",");
@@ -2746,6 +2749,12 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
                             $s = $s . "," . $acq;
                         }
                     }
+                } else if ($ty == "ab") {
+                    $abool = api_constrained_continue(["true", "false"], 4);
+                    if ($abool == "") {
+                        break;
+                    }
+                    $s = $s . "," . $abool;
                 } else {
                     $anum = api_number_fill($ty == "af" ? 1 : 0, 4);
                     if ($anum == "") {

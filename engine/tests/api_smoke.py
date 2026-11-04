@@ -419,6 +419,33 @@ def main():
           "keys=%r tail=%r" % (sorted(n2leaf.keys()) if isinstance(n2leaf, dict) else None,
                                n2txt[-40:]))
 
+    # F291: boolean arrays complete the scalar-array family.
+    deepB2 = {"type": "object", "properties": {"flags": {"type": "array",
+                                                         "items": {"type": "boolean"}},
+                                               "city": {"type": "string"}}}
+    for i in range(40):
+        deepB2 = {"type": "object", "properties": {"k%d" % i: deepB2}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepb2", "schema": deepB2, "strict": True}}})
+    b2txt = r["choices"][0]["message"]["content"]
+    b2leaf = None
+    try:
+        b2cur = json.loads(b2txt)
+        for i in range(39, -1, -1):
+            b2cur = b2cur["k%d" % i]
+        b2leaf = b2cur
+    except Exception:
+        b2leaf = None
+    check("chat-json-schema-deep40-bool-array-leaf",
+          isinstance(b2leaf, dict) and isinstance(b2leaf.get("flags"), list)
+          and len(b2leaf.get("flags", [])) > 0
+          and all(isinstance(x, bool) for x in b2leaf.get("flags", []))
+          and isinstance(b2leaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(b2leaf.keys()) if isinstance(b2leaf, dict) else None,
+                               b2txt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
