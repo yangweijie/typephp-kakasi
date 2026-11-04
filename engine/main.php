@@ -2487,7 +2487,7 @@ function api_top_leaves(string $block, int $maxN): string
                     for ($ej = 0; $ej < count($evs); $ej++) {
                         $one = $evs[$ej];
                         if ($one == "" || strpos($one, "~") !== false || strpos($one, "\"") !== false
-                            || strpos($one, ",") !== false) {
+                            || strpos($one, ",") !== false || strpos($one, "\\") !== false) {
                             $evc = "";
                             break;
                         }
