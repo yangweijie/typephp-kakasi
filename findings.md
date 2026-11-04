@@ -2389,3 +2389,11 @@ for step in 0..N:
 **实测**：`SPEC-SAMPLE: PASS (acc=9 rej=15 diff=15 reproducible)`；自检 **143 PASS / 0 FAIL**（`SUITE_SECS=805`）；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **意义**：F273 指出的"贪心验证下多分支收益恒为 0"的前提**已被解除**——现在存在一个产生**非贪心**结果（15/24 处偏离 argmax）且**可复现**的采样解码路径。
 **仍未做**：把它接到 C++ 的草稿/验证循环里（用 `spec_*` 路径产生多个草稿并批量验证），并以 **tree-on/off 的 wall 对比**衡量 FR-06 的真实收益。
+
+### F306 · **采样验证的经济性实测**：接受机制只贵 **1.7%**/token（`SPEC-COST`）
+做法：同一 prompt、各 24 步，分别测"纯贪心（peek→next_allowed）"与"采样验证（peek→token_prob→rand01→必要时残差→next_allowed）"的 wall。
+**实测**：`SPEC-COST: PASS greedy_ms=444.87 sampling_ms=452.61 ratio=1.0174` ⇒ **接受判定+采样只增加 1.7% 的每 token 成本**。
+**意义（对 FR-06 的定量前提）**：投机解码只要能**多接受 ≥1 个 token**，其收益就远超这套机制的开销；此前"贪心验证下收益恒为 0"（F273）与"多分支只会更慢"（F271）的僵局，现在有了可结算的账：
+- 每步开销 ≈ 1.7% × 单步时间；
+- 每当一步草稿被接受（本机抽样下 acc=9/24 ≈ 37.5%），就省下一次前向。
+**下一步（唯一能出收益的一步）**：把 `SPEC-SAMPLE` 的循环接进 C++ `spec_*` 路径（多草稿 + 一次批量验证），判据＝**同温度下 tree-on/off 的 wall 对比**。
