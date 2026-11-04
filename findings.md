@@ -2012,3 +2012,8 @@ g_sess_len += 1;
 2. **手工抢跑 revert 更糟**：链自己的 `git revert` 会与我先做的 revert 冲突，git 可能留下 sequencer/冲突标记；冲突标记进了 `main.php` 就是**编译期语法错误**，整轮验证作废。**⇒ 要撤探针只能由链自己撤。**
 3. 判活只能用便宜且非 WMI 的手段：日志 mtime 年龄、`netstat -ano -p tcp` 里有没有 LISTENING、以及**构建后必查 exe mtime 是否变新 + 日志里有没有 `SYCL_LINK_FAILED`**（F245 的教训）。`tasklist`/`taskkill` 在这台机器上会挂，不要用。
 **下一轮（链完成之后）的正确顺序**：先确认 `build_f240.log` 无链接失败且 exe 变新 ⇒ 读 `run_f240`（期望 137 PASS）与 `api_smoke_f240`（期望 98 形状；`chat-json-schema-deep40-enum-leaf` 按 F243 预测**仍应红**）⇒ 若如预测，则这时才做 F244 的实现，单独一轮。
+
+### F247 · 自我纠错：用 shell 写含反引号的文档会把文件名吃掉（已修复）**
+- 现象：`python -c "…"` 用**双引号**包整段文本，文本里的反引号被 bash 当命令替换执行，留下 `command not found` 并把两个文件名替换成空串（`progress.md` 里出现"上一次全绿  是 98 行"）。提交后我**没有相信 HANDOFF_EXPECTATION_FIXED 的回显**，用 `git show`/`sed` 复查才发现损坏。
+- 修正：改用 Edit 工具（不经 shell）补回 `engine/api_smoke_f237c.log` 与 `chat-json-schema-deep40-enum-leaf`（提交 `e39c8cd` 之后的修复）。
+- **规程**：写含反引号/`$` 的中文文档一律用 Edit/Write 工具；非要用 shell 时只允许 **单引号 heredoc**（`cat >> f <<'EOF'`）。**改完必须把那一行读回来**，不能只看命令退出码——这与本项目"链式 exit 0 不等于跑过"是同一个坑的两个方向。
