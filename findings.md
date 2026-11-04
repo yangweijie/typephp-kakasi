@@ -2246,3 +2246,10 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 修法（`5128584`）：plan 新增 `b` 类型；builder 用 `api_constrained_continue(["true","false"], 4)` 两个 JSON 字面量做候选（不加引号，与 `i`/`n`/`en` 一致）。
 **实测**：8000 **103 PASS**（含新门 `chat-json-schema-deep40-bool-leaf`：40 层 + `flag` 为 `bool` + `city` 为字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=741`、`SESSION-GROW: PASS`、`first_len=3887 second_len=3887`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **教训**：这是"**形状**缺陷而非取值缺陷"——只断言取值会漏掉整类问题；每类叶子都应有"键存在 + 类型正确 + 取值合法"三段断言。
+
+### F286 · 同类"形状"缺陷（已定位，**未修**）：嵌套对象里的**数组属性**同样会被丢弃
+`api_top_leaves` 只把"值对象恰好含一个 `{`、且 `type` ∈ string|integer|number|boolean"的叶子写进 plan；`{"type":"array","items":{...}}` 这类叶子**不匹配** ⇒ 与 F285 的布尔叶同一机制，装配结果缺键。
+**范围界定**：这是"**嵌套对象内有数组属性**"的场景；顶层数组、数组套对象、对象数组已分别由 `api_response_schema_array_*` / `api_response_schema_array_object_*` 等检测器承担（F109–F166 系列），**不受影响**。
+**修法方向**（比布尔复杂，需单独一轮）：plan 增加数组叶（如 `key:a:<元素类型>`），builder 复用既有数组构造逻辑（`api_array_string_value` 等）按元素类型装配；或在上游把"嵌套对象含数组属性"改路由到对象-数组检测器。
+**判据**：新增门 `chat-json-schema-deep40-array-leaf`——40 层 + 数组键存在、是列表、元素类型正确。
+**为什么本轮不修**：数组叶要同时处理元素类型、长度预算与闭合，改动面比布尔大一个量级；本轮预算只够"发现 + 定位"，硬做会留下未经完整梯子的语法分支。
