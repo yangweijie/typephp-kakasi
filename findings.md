@@ -2091,3 +2091,10 @@ g_sess_len += 1;
 - 行为与修复前一致（修复前这类 schema 会被扁平枚举分支吃掉，输出也不是完整的嵌套对象）；现在至少**结构正确**，只是取值自由。
 - 若要闭合：给 plan 加 `en`（数字枚举）类型，builder 用**不带引号**的字面量序列做候选；需要一条新门 `chat-json-schema-deep40-enum-num` 才能算验证。
 - 当前门 `chat-json-schema-deep40-enum-leaf` 只覆盖字符串枚举，**不覆盖**本条。
+
+### F259 · **F238 完整梯子已绿**（8000 + 全套自检 + 8001），修复可以收口
+`b0i2o29tr`（二进制＝`3e7cfd8` 的 F238 修复，不含守卫与转义拒绝，见 progress 的轮次映射）：
+- `SUITE_SECS=698`、**137 PASS / 0 FAIL**、`SCHEMA-DEEP200-RETRY first_len=3909`、`SCHEMA-DEEP200: PASS (… first attempt)`；
+- `PAR_EXIT=0 PASS=9`；`FAIR_EXIT=0`、`FAIRNESS: PASS`（短流显著早于长流结束）。
+配合此前 `engine/api_smoke_f249.log`（`API SMOKE: PASS`、`SMOKE_EXIT=0`、**99 PASS 行**），**F238（字符串枚举叶丢嵌套）在三级门禁上全部通过**，且冷启动修复与 137 项自检未回退。
+**仍不算完成的部分**（写作"未覆盖"，不并入本结论）：数字枚举叶只保结构不保取值（F258）；`g_sess_len` 顺序修复缺判别性用例（F257）；`b5bbqj9x7` 对 HEAD（含 `SESSION-POS` 与反斜杠拒绝）的复跑尚未出结果。
