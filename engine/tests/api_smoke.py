@@ -217,6 +217,30 @@ def main():
           and isinstance(eleaf.get("count"), int),
           "len=%d closes=%d tail=%r" % (len(etxt), etxt.count("}"), etxt[-40:]))
 
+    # F258: the same shape with a NUMERIC enum leaf. Structure must survive and the value must
+    # come from the listed set; an unconstrained integer would pass the structural part only.
+    deepN = {"type": "object", "properties": {"n": {"type": "integer", "enum": [1000, 2000]},
+                                              "city": {"type": "string"}}}
+    for i in range(40):
+        deepN = {"type": "object", "properties": {"k%d" % i: deepN}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1500, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepn", "schema": deepN, "strict": True}}})
+    ntxt = r["choices"][0]["message"]["content"]
+    nleaf = None
+    try:
+        ncur = json.loads(ntxt)
+        for i in range(39, -1, -1):
+            ncur = ncur["k%d" % i]
+        nleaf = ncur
+    except Exception:
+        nleaf = None
+    check("chat-json-schema-deep40-enum-num",
+          isinstance(nleaf, dict) and nleaf.get("n") in (1000, 2000)
+          and isinstance(nleaf.get("city"), str),
+          "len=%d closes=%d tail=%r" % (len(ntxt), ntxt.count("}"), ntxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

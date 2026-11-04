@@ -2478,10 +2478,11 @@ function api_top_leaves(string $block, int $maxN): string
                 } else if ($m[1] == "integer") {
                     $mk = "i";
                 }
-                // A string enum leaf carries its allowed values in the plan (key:e:v1|v2) so the
-                // builder can decode from the finite set instead of a free-form charset.
+                // A string enum leaf carries its allowed values in the plan (key:e:v1~v2) so the
+                // builder can decode from the finite set instead of a free-form charset. Numeric
+                // enums use en: with unquoted literals (findings F258).
                 $me = [];
-                if ($mk == "s" && preg_match('/"enum"\s*:\s*\[([^\]]*)\]/', $val, $me) == 1) {
+                if (preg_match('/"enum"\s*:\s*\[([^\]]*)\]/', $val, $me) == 1) {
                     $evs = api_list($me[1]);
                     $evc = "";
                     for ($ej = 0; $ej < count($evs); $ej++) {
@@ -2491,10 +2492,14 @@ function api_top_leaves(string $block, int $maxN): string
                             $evc = "";
                             break;
                         }
+                        if ($mk != "s" && preg_match('/^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/', $one) != 1) {
+                            $evc = "";
+                            break;
+                        }
                         $evc = $evc == "" ? $one : $evc . "~" . $one;
                     }
                     if ($evc != "") {
-                        $mk = "e:" . $evc;
+                        $mk = ($mk == "s" ? "e:" : "en:") . $evc;
                     }
                 }
                 $out = $out == "" ? $key . ":" . $mk : $out . "," . $key . ":" . $mk;
@@ -2626,6 +2631,25 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
             }
             if (count($ecands) > 0) {
                 $eb = api_constrained_continue($ecands, 8);
+                if ($eb != "") {
+                    $s = $s . "," . $eb;
+                }
+            }
+        } else if ($ty == "en") {
+            // Numeric enum: the literals are already valid JSON numbers, so no quote is added
+            // either by the separator or in the candidates (findings F258).
+            $ev = count($kv) > 2 ? $kv[2] : "";
+            $ecands = [];
+            if ($ev != "") {
+                $eparts = explode("~", $ev);
+                for ($ei = 0; $ei < count($eparts); $ei++) {
+                    if ($eparts[$ei] != "") {
+                        $ecands[] = $eparts[$ei];
+                    }
+                }
+            }
+            if (count($ecands) > 0) {
+                $eb = api_constrained_continue($ecands, 6);
                 if ($eb != "") {
                     $s = $s . "," . $eb;
                 }
