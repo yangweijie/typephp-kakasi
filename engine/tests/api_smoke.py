@@ -392,6 +392,33 @@ def main():
           "keys=%r tail=%r" % (sorted(aleaf.keys()) if isinstance(aleaf, dict) else None,
                                atxt[-40:]))
 
+    # F290: integer arrays inside a nested object are leaves too, and their items must be numbers.
+    deepN2 = {"type": "object", "properties": {"nums": {"type": "array",
+                                                        "items": {"type": "integer"}},
+                                               "city": {"type": "string"}}}
+    for i in range(40):
+        deepN2 = {"type": "object", "properties": {"k%d" % i: deepN2}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepn2", "schema": deepN2, "strict": True}}})
+    n2txt = r["choices"][0]["message"]["content"]
+    n2leaf = None
+    try:
+        n2cur = json.loads(n2txt)
+        for i in range(39, -1, -1):
+            n2cur = n2cur["k%d" % i]
+        n2leaf = n2cur
+    except Exception:
+        n2leaf = None
+    check("chat-json-schema-deep40-int-array-leaf",
+          isinstance(n2leaf, dict) and isinstance(n2leaf.get("nums"), list)
+          and len(n2leaf.get("nums", [])) > 0
+          and all(isinstance(x, int) and not isinstance(x, bool) for x in n2leaf.get("nums", []))
+          and isinstance(n2leaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(n2leaf.keys()) if isinstance(n2leaf, dict) else None,
+                               n2txt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

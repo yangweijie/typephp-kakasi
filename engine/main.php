@@ -2472,14 +2472,23 @@ function api_top_leaves(string $block, int $maxN): string
         // A leaf holding an array of strings has exactly one extra brace (its items object), so
         // it is a leaf too - without this the key was dropped (F286).
         $arrOk = 0;
-        if (substr_count($val, "{") == 2
-            && preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val) == 1) {
-            $arrOk = 1;
+        $arrTy = "";
+        if (substr_count($val, "{") == 2) {
+            if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val) == 1) {
+                $arrOk = 1;
+                $arrTy = "a";
+            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"integer"/', $val) == 1) {
+                $arrOk = 1;
+                $arrTy = "an";
+            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"number"/', $val) == 1) {
+                $arrOk = 1;
+                $arrTy = "af";
+            }
         }
         if (substr_count($val, "{") == 1 || $arrOk == 1) {
             $m = [];
             if ($arrOk == 1) {
-                $out = $out == "" ? $key . ":a" : $out . "," . $key . ":a";
+                $out = $out == "" ? $key . ":" . $arrTy : $out . "," . $key . ":" . $arrTy;
                 $count++;
             } else if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1) {
                 $mk = "s";
@@ -2699,43 +2708,50 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
             if ($bb != "") {
                 $s = $s . "," . $bb;
             }
-        } else if ($ty == "a") {
-            // Nested array of strings (F286). The separator already emitted "key":, so this only
-            // has to produce ["…","…"] using the same item/terminator grammar as the top-level
-            // array builder, driven through continuations on the live session.
+        } else if ($ty == "a" || $ty == "an" || $ty == "af") {
+            // Nested array leaf (F286 for strings, F290 for numbers). The separator already
+            // emitted "key":, so this only has to produce [items] using continuations.
             $commaIds = api_punct_ids(",");
             $bracketIds = api_punct_ids("]");
-            $aop = api_constrained_continue(["[\""], 8);
+            $aop = api_constrained_continue([$ty == "a" ? "[\"" : "["], 8);
             if ($aop == "" || $commaIds == "" || $bracketIds == "") {
                 return "";
             }
             $s = $s . "," . $aop;
             $itemsDone = 0;
             for ($it = 0; $it < 3; $it++) {
-                if ($it > 0) {
+                if ($it > 0 && $ty == "a") {
                     $aop2 = api_constrained_continue(["\""], 4);
                     if ($aop2 == "") {
                         break;
                     }
                     $s = $s . "," . $aop2;
                 }
-                $aclosed = 0;
-                for ($d = 0; $d < $maxSteps; $d++) {
-                    $anx = model_session_next_allowed(0, $stepIds);
-                    if ($anx < 0) {
+                if ($ty == "a") {
+                    $aclosed = 0;
+                    for ($d = 0; $d < $maxSteps; $d++) {
+                        $anx = model_session_next_allowed(0, $stepIds);
+                        if ($anx < 0) {
+                            break;
+                        }
+                        $s = $s . "," . $anx;
+                        if (strpos($q, "," . $anx . ",") !== false) {
+                            $aclosed = 1;
+                            break;
+                        }
+                    }
+                    if ($aclosed == 0) {
+                        $acq = api_constrained_continue(["\""], 4);
+                        if ($acq != "") {
+                            $s = $s . "," . $acq;
+                        }
+                    }
+                } else {
+                    $anum = api_number_fill($ty == "af" ? 1 : 0, 4);
+                    if ($anum == "") {
                         break;
                     }
-                    $s = $s . "," . $anx;
-                    if (strpos($q, "," . $anx . ",") !== false) {
-                        $aclosed = 1;
-                        break;
-                    }
-                }
-                if ($aclosed == 0) {
-                    $acq = api_constrained_continue(["\""], 4);
-                    if ($acq != "") {
-                        $s = $s . "," . $acq;
-                    }
+                    $s = $s . "," . $anum;
                 }
                 $endIds = $commaIds . "," . $bracketIds;
                 $anx2 = model_session_next_allowed(0, $it < 2 ? $endIds : $bracketIds);
