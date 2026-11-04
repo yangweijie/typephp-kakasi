@@ -2220,3 +2220,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 实现（`f87a1ac`）：planner 在无 `enum` 时接受 `"const"`——字符串 const → `e:<v>`，数字 const → `en:<v>`（同样做分隔符/引号/反斜杠校验）；`api_response_schema_nested_object` 的拒绝表移除 `const`（保留 `pattern/minimum/maximum/multipleOf`）。
 **实测**：8000 **101 PASS**（含新门 `chat-json-schema-deep40-const-leaf`，断言 40 层结构 + `city == "Paris"` + `count` 为整数）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`，`SESSION-GROW: PASS`，`first_len=3887 second_len=3887`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **仍未支持**：`pattern`/`minimum`/`maximum`/`multipleOf`（仍回退扁平路径）、混合类型枚举。
+
+### F282 · 纯字面量 `pattern` 交替式进嵌套 plan 并过完整梯子（含元字符 pattern 仍回退）
+实现（`152a648`）：planner 在 enum/const 都不命中时，若 `pattern` 形如 `^?字面量(|字面量)*$`（仅字母数字空格 `_.-|`），按 `~` 连接生成 `e:`；检测器只在 pattern **含真正元字符**时拒绝该 schema（`minimum/maximum/multipleOf` 仍拒绝）。
+**实测**：8000 **102 PASS**（含新门 `chat-json-schema-deep40-pattern-leaf`：40 层 + `city ∈ {Paris,London}` + `count` 整数）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=735`、`SESSION-GROW: PASS`、`first_len=3887 second_len=3887`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**覆盖现状**：嵌套 plan 现在支持 `enum`（字符串/数字）、`const`（字符串/数字）、纯字面量 `pattern`；**仍回退**：含元字符的 pattern、`minimum/maximum/multipleOf`、混合类型枚举。
