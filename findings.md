@@ -2215,3 +2215,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 `bcmy9vk9x`：8000 **100 PASS / `SMOKE_EXIT=0`**、8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`；配 `run_f278.log` **139 PASS / 0 FAIL**（含新增判别性守卫）。
 **当前基线（HEAD）**：139 项自检 / 100 形状 8000 / 8001 全绿；KV 根修（F265）+ `SESSION-GROW` 判别守卫（F279）+ F238 字符串枚举 + F258 数字枚举 + `SESSION-POS` 不变量守卫 + 反斜杠拒绝 + 分支去重（负收益，F271）+ split 同构修复（F276，单设备范围）。
 **下一步（按价值）**：①**采样验证**（F273 已证贪心 argmax 下多分支收益恒为 0，这是 FR-06 的前置）；②per-session KV 并行吞吐；③SSD 前缀分桶；④GGUF 分片；⑤混合枚举与 `const/pattern` 的嵌套支持；⑥多卡 split（需第二块设备）。
+
+### F281 · `const` 叶进嵌套 plan 并过完整梯子（字符串与数字两种都支持）
+实现（`f87a1ac`）：planner 在无 `enum` 时接受 `"const"`——字符串 const → `e:<v>`，数字 const → `en:<v>`（同样做分隔符/引号/反斜杠校验）；`api_response_schema_nested_object` 的拒绝表移除 `const`（保留 `pattern/minimum/maximum/multipleOf`）。
+**实测**：8000 **101 PASS**（含新门 `chat-json-schema-deep40-const-leaf`，断言 40 层结构 + `city == "Paris"` + `count` 为整数）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`，`SESSION-GROW: PASS`，`first_len=3887 second_len=3887`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**仍未支持**：`pattern`/`minimum`/`maximum`/`multipleOf`（仍回退扁平路径）、混合类型枚举。
