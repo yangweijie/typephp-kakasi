@@ -641,3 +641,4 @@
 - 8001 门禁 `par_smoke_f231.log`：PASS=NA；`fairness_f231.log` 末行=NA
 - 结论：**门禁在停车时刻仍未取到结果 ⇒ 记为"未跑"**，不得用旧日志顶替；续跑第一步就是读这三个文件并如实记账。
 - **末次读数（12:31）**：`run_f229` PASS=90 / FAIL=0、尚无 `RUN_EXIT`（收窄版第二次全量自检仍在跑，与 `run_f228` 的 137 PASS 同版源码）；三个门禁日志 **unrun**（`api_smoke_f231`/`par_smoke_f231`/`fairness_f231` 均不存在）。⇒ 停车时 F226/F227 的验收仍只到自测层，**不得**把旧 `api_smoke_f2xx.log` 当作本轮门禁证据。链式任务 `b92wbrol6` 会在 `run_f229` 出 `RUN_EXIT` 后自动依次跑 8000/8001，续跑第一步是读那三个文件。
+- **12:39 更新（覆盖上一条停车读数）**：`run_f229`（收窄版**第二次全量自检，链式任务带秒表**）**137 PASS / 0 FAIL、`RUN_EXIT=0`、`SCHEMA-DEEP200: PASS (… first attempt)`、`first_len=3909 second_len=3887`** ⇒ 收窄版可重复性成立（两遍同源码各 137 PASS）。链式任务 `bd7o2dv9y` 随后被停，但其**自检步骤已完成**；门禁作业 `b92wbrol6` 已起跑：`engine/serve_f231.log` 正在写（8000 服务已拉起），`api_smoke_f231.log` 尚未落盘 ⇒ 门禁**进行中**，续跑先读 `api_smoke_f231.log`（期望 97 PASS）、再读 `par_smoke_f231.log`/`fairness_f231.log`。**秒表数只在链式任务的输出文件里**（`SELFTEST_F229_SECS`），仍无"未收窄版"对照，故不得报省时数。
