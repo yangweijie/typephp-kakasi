@@ -2397,3 +2397,5 @@ for step in 0..N:
 - 每步开销 ≈ 1.7% × 单步时间；
 - 每当一步草稿被接受（本机抽样下 acc=9/24 ≈ 37.5%），就省下一次前向。
 **下一步（唯一能出收益的一步）**：把 `SPEC-SAMPLE` 的循环接进 C++ `spec_*` 路径（多草稿 + 一次批量验证），判据＝**同温度下 tree-on/off 的 wall 对比**。
+
+**F306 补（梯子确认）**：`bcb7fckz7`：8000 **112 PASS** / `SMOKE_EXIT=0`、8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`；配 `run_f306.log` 的 **144 PASS / 0 FAIL** ⇒ 该测量与 `SPEC-SAMPLE` 一起过完整梯子。**当前基线：144 项自检 / 112 形状 / 8001 全绿。**
