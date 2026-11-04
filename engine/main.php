@@ -9630,6 +9630,19 @@ function main(): void
             . "] q=[" . $seqQ . "/" . $refQ . "]\n";
     }
 
+    // SESSION-POS: a refused constrained step must not advance the session position. A negative
+    // id can never be chosen, so next_allowed returns -1; the length must stay where it was
+    // (findings F242/F255 - the increment used to run before the empty-result check).
+    model_session_start(0, "785,6722,315");
+    $spBefore = model_session_len();
+    $spNeg = model_session_next_allowed(0, "-1");
+    $spAfter = model_session_len();
+    if ($spNeg < 0 && $spAfter == $spBefore) {
+        echo "SESSION-POS: PASS (refused step left the position at " . $spBefore . ")\n";
+    } else {
+        echo "SESSION-POS: FAIL neg=" . $spNeg . " before=" . $spBefore . " after=" . $spAfter . "\n";
+    }
+
     // Speculative decoding (KFlash-style accept/reject, prompt-lookup drafter): drafting and
     // batched verification must not change the output. The text repeats, so the lookup hits.
     $specTxt = "";
