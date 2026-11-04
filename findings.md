@@ -2072,3 +2072,12 @@ g_sess_len += 1;
 **结论**：把 `g_sess_len += 1` 挪到 `r.empty()` 之后**没有引入任何回归**，冷启动修复与三级门禁全部保持；与 Round 1 相比唯一变化是自检耗时 693 s → 674 s（**都是绝对值，无可比基线，不构成提速结论**）。
 **诚实边界**：本轮只证明"没坏"，**没有**直接断言那条缺陷本身（要断言"失败步不再占一格"需要一条专门用例：制造一次 `next_allowed` 返回 -1，然后比较 `model_session_len()` 与真实 KV 行数——目前没有这样的用例）。⇒ 这条修复的状态应写为**"无回归通过，行为未直接断言"**，不得写成"已验证修复"。
 **冷启动的四轮证据链**至此完整：`run_f228`/`run_f229`/`run_f239`/`run_f241`/`run_f242` 全部 137 PASS / 0 FAIL 且 `first_len=3909`（`f241`/`f242` 还是**首调判据** + 完整两级门禁）。
+
+### F256 · **F238 已修复**：枚举叶进入嵌套 plan（`e:` 类型），8000 门禁首次全绿（99 PASS、`SMOKE_EXIT=0`）
+**改动（四处，全在 `main.php`）**：
+1. `api_top_leaves`：字符串枚举叶生成 `key:e:v1~v2`（值含 `~ " ,` 时整体放弃，退回 `s`，避免破坏 plan 语法）。
+2. `api_object_head`：`e` 与 `s` 同样补开引号（否则首叶输出 `"city":Paris"`）。← **这是实测抓到的真 bug**
+3. `api_nested_object_value`：新增 `e` 分支——把 `v~` 候选（每个值补收尾引号）交给 `api_constrained_continue`，让贪心受限解码在**枚举集内**取值。
+4. 分派与检测：全 body 枚举分支加 `"properties"` 计数 <2 的前置（嵌套 schema 不再被它抢走）；`api_response_schema_nested_object` 的拒绝表去掉 `enum`（保留 const/pattern/min/max/multipleOf）。← **没有这一步，前面的都白做**（请求会落到 7616 的裸枚举正则，输出只剩 `Paris`，F254）
+**踩坑记录（值得进记忆）**：初版用 `|` 分隔枚举值，**与 `path|plan` 的分隔符冲突** ⇒ 探测输出显示 plan 被截成 `city:e:Paris`（n=1）、`count:i` 丢失；改用 `~` 后 n=2、结构完整。
+**实测**：`engine/api_smoke_f249.log` **`API SMOKE: PASS`、`SMOKE_EXIT=0`、PASS 行 99**（＝98 形状 + 汇总，与预测一致）；单请求体为 `…"k0":{"city":"Paris","count":1000}}}}…`（40 层 + 枚举生效）。**全套自检与 8001 门禁正在 `b0i2o29tr` 复跑**（预期 137 PASS / 0 FAIL、par 9/9、fairness PASS）。

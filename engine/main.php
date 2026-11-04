@@ -2420,7 +2420,7 @@ function api_object_head(string $plan): string
     $items = explode(",", $plan);
     $kv = explode(":", $items[0]);
     $h = "{\"" . $kv[0] . "\":";
-    if ($kv[1] == "s") {
+    if ($kv[1] == "s" || $kv[1] == "e") {
         $h = $h . "\"";
     }
     return $h;
@@ -2477,6 +2477,25 @@ function api_top_leaves(string $block, int $maxN): string
                     $mk = "n";
                 } else if ($m[1] == "integer") {
                     $mk = "i";
+                }
+                // A string enum leaf carries its allowed values in the plan (key:e:v1|v2) so the
+                // builder can decode from the finite set instead of a free-form charset.
+                $me = [];
+                if ($mk == "s" && preg_match('/"enum"\s*:\s*\[([^\]]*)\]/', $val, $me) == 1) {
+                    $evs = api_list($me[1]);
+                    $evc = "";
+                    for ($ej = 0; $ej < count($evs); $ej++) {
+                        $one = $evs[$ej];
+                        if ($one == "" || strpos($one, "~") !== false || strpos($one, "\"") !== false
+                            || strpos($one, ",") !== false) {
+                            $evc = "";
+                            break;
+                        }
+                        $evc = $evc == "" ? $one : $evc . "~" . $one;
+                    }
+                    if ($evc != "") {
+                        $mk = "e:" . $evc;
+                    }
                 }
                 $out = $out == "" ? $key . ":" . $mk : $out . "," . $key . ":" . $mk;
                 $count++;
@@ -2558,13 +2577,13 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
     $q = "," . $quoteIds . ",";
     for ($k = 0; $k < count($items); $k++) {
         $kv = explode(":", $items[$k]);
-        if (count($kv) != 2) {
+        if (count($kv) < 2) {
             return "";
         }
         $ty = $kv[1];
         if ($k > 0) {
             $sep = ",\"" . $kv[0] . "\":";
-            if ($ty == "s") {
+            if ($ty == "s" || $ty == "e") {
                 $sep = $sep . "\"";
             }
             $sp = api_constrained_continue([$sep], 32);
@@ -2590,6 +2609,25 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
                 $cq = api_constrained_continue(["\""], 4);
                 if ($cq != "") {
                     $s = $s . "," . $cq;
+                }
+            }
+        } else if ($ty == "e") {
+            // The separator already opened the quote, so each candidate is "value\"": let the
+            // greedy constrained loop pick the enum member instead of free-form characters.
+            $ev = count($kv) > 2 ? $kv[2] : "";
+            $ecands = [];
+            if ($ev != "") {
+                $eparts = explode("~", $ev);
+                for ($ei = 0; $ei < count($eparts); $ei++) {
+                    if ($eparts[$ei] != "") {
+                        $ecands[] = $eparts[$ei] . "\"";
+                    }
+                }
+            }
+            if (count($ecands) > 0) {
+                $eb = api_constrained_continue($ecands, 8);
+                if ($eb != "") {
+                    $s = $s . "," . $eb;
                 }
             }
         } else {
@@ -2625,7 +2663,9 @@ function api_response_schema_nested_object(string $body): string
     if (api_schema_is_object($schema) != 1) {
         return "";
     }
-    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+    // String enums are expressible as e: leaves in the plan (F244), so they no longer disqualify
+    // a nested schema; only constraints the plan cannot carry still do.
+    if (preg_match('/"(const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
         return "";
     }
     $pm = [];
@@ -7617,9 +7657,12 @@ function api_serve(int $port): void
                 }
                 // enum/const constraint (non-streaming): decode only inside the listed answers.
                 $enumOut = "";
+                // A schema with more than one "properties" block nests objects; the bare-enum
+                // branch below would answer only the enum literal and drop every level (F254).
+                $enumFlat = substr_count($body, "\"properties\"") < 2 ? 1 : 0;
                 if (count($schemaCands) > 0) {
                     $enumOut = api_constrained($ids, $schemaCands, 128, $prefixCache);
-                } else if (preg_match('/"enum"\s*:\s*\[(.*?)\]/s', $body, $em)) {
+                } else if ($enumFlat == 1 && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', $body, $em)) {
                     $evals = api_list($em[1]);
                     if (count($evals) > 0) {
                         $enumOut = api_constrained($ids, $evals, 24, $prefixCache);
