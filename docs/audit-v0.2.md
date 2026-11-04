@@ -107,3 +107,10 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **HEAD 自检 138 PASS / 0 FAIL**（`b5bbqj9x7`，多出 `SESSION-POS`）；但该轮**未跑** 8000/8001 ⇒ 若要在审计里写"HEAD 过完整梯子"，还需一次带门禁的复跑（进行中：`b46va91uc`，二进制与 HEAD 同源：exe 更新于 `5cec283`，其后只有文档提交）。
 - **覆盖更正（F261）**：`g_sess_len` 顺序修复**不可由 PHP 判别**——`prefill_top1` 的所有空返回都是基础设施故障，容量不足会被 `ensure_kv` 按需扩容 ⇒ 状态写为"代码推理正确 + 无回归"，不留"待补测试"的假待办。
 - **分析更正（F262）**：树草稿器**已实现多命中**（`spec_tree_generate` 收 B 条），F157"树无收益"的正确解释是**重复文本的同 trigram 后继相同**（分支同源）；FR-06.2 因此改为"取**不同**后继"（n-gram 频次 top-k / 次优 token），并要求测试语料本身能表达多样性。
+
+## 审计增补（F265–F269，2026-11-04 13:15）——三处缺陷在根因层闭合
+- **冷启动首调长约束返回空（F208 起）→ 根因闭合**：真因是 KV 扩容时 `free_all()` 先丢旧行、新缓冲未初始化 ⇒ 跨过 `KV_MIN_CAP=512` 后注意力读到垃圾、**整行 logits NaN**（探针实测 `nonfinite=allsize=151936`，`sesslen=515`）。修法：扩容时 `memcpy` 保留 `keep_rows=pos` 行（`0796977`）。**验证**：干净构建（无探针）**138 PASS / 0 FAIL**、`first_len=3887 second_len=3887`（首次与后续**完全一致**，修复前 3909/3887）、8000 **99 PASS**、8001 par 9/9 + fairness PASS（`b3ne5mjjj`）。F226 的 re-prefill 兜底保留但已不触发。
+- **F238 枚举叶丢嵌套 → 已修并过全梯**（字符串枚举 `e:`，`3e7cfd8`）。
+- **F258 数字枚举只保结构 → 已修并过全梯**（数字枚举 `en:`，`81e5ff6`）：8000 **100 PASS**（含新门 `chat-json-schema-deep40-enum-num`）、自检 138 PASS、8001 全绿（`b2t03yrlx`）。
+- **覆盖与边界的诚实标注**：`g_sess_len` 顺序修复不可由 PHP 判别（F261，容量按需扩容、空返回皆为基础设施故障）；混合类型枚举回退无约束；`const/pattern/min|max|multipleOf` 仍走扁平路径；**split 路径 `g_kv2` 扩容同样"先 free 再分配"（本机不可验，多卡实验路径）**。
+- **未开始**：FR-06.2 多样草稿器（F262 已更正方案）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片、FR-05。
