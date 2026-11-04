@@ -129,3 +129,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **新增门**：`deep40-bool-leaf`、`deep40-mixed-leaves`（三种类型同层，逐键断言）、`deep40-four-leaves`、`deep40-array-leaf` ⇒ 8000 门禁 **106 个 PASS 行**。
 **当前基线**：自检 **139 PASS / 0 FAIL**、8000 **106 PASS**、8001 `par_smoke` 9/9 + `fairness` PASS（同一构建）。
 **仍在的缺口**：数字数组叶 / 对象数组叶（嵌套内无对应 plan 类型）、混合类型枚举、含元字符的 `pattern`、`minimum/maximum/multipleOf`；以及大项：**采样验证**（F273/F284，FR-06 的前置）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（本机不可执行）、GGUF 分片、FR-05。
+
+## 审计增补（F290–F294，2026-11-04 18:35）——叶子形状覆盖继续扩面
+- **F290 数字数组叶**（`an:` 整数 / `af:` 小数）：`api_number_fill` 逐项续解，终止符（`,`/`]`）由同一步选出；8000 107 PASS。
+- **F291 布尔数组叶**（`ab:`）：`true|false` 逐项；8000 108 PASS ⇒ **字符串/整数/小数/布尔数组**均可作为嵌套叶。
+- **F292 可空联合叶**（`["string","null"]` 等）：此前整叶被丢弃（只匹配纯 `"type":"string"`）；8000 109 PASS。
+- **F293 联合类型叶**（任意含标量成员的 `type` 数组）：输出任一成员即合法，取捕获到的第一个标量；8000 110 PASS。
+- **F294 数组项的联合类型**（`items.type` 为数组）：与纯形式同处理（进行中，判据 `deep40-union-array-leaf`）。
+**基线（F293 完成时）**：自检 **139 PASS / 0 FAIL**、8000 **110 PASS**、8001 `par_smoke` 9/9 + `fairness` PASS。
+**仍未覆盖**：对象数组叶（嵌套内）、`pattern` 含元字符、`minimum/maximum/multipleOf`、以及无标量成员的联合（如 `["object","array"]`）。
