@@ -1979,3 +1979,11 @@ g_sess_len += 1;
 2. `g_sess_len` 的真实用途是**写位置**：`session_next_allowed` 用 `prefill_top1(backend,{best},-1,g_sess_len)`（`model_sycl.cc:1495`）；把 `+= 1` 挪到 `if (r.empty()) return -1;` **之后**，失败步就不再"占一格空行"——下次调用写在同一位置，是**覆盖**而不是留空洞，方向严格更安全。
 3. **KV 快照会把它一起带走**：`s.len = g_sess_len`（保存）与 `g_sess_len = s.len`（恢复，1561）。所以现在的 bug 会把**虚增的长度固化进 parked session**，跨会话恢复时错误会被放大——这也是为什么这条值得单独一轮修，而不是当作无伤大雅的清理。
 **判据**：单独一轮只改这两行 ⇒ 清 `build/gen/cache/ast` 全量重建 ⇒ `run_f2xx` 需仍 **137 PASS / 0 FAIL** 且 `SCHEMA-DEEP200-RETRY first_len>0`，再过 8000/8001。**不与 F233 探针轮、不与 F238 验证轮混跑**（否则 F240/F238 的归因会被冲掉）。
+
+### F243 · **自我否证：`f3c029a` 多半修不好 F238**（写在实际结果之前，免得事后把红门当噪声）
+链式读码：`api_response_schema_nested_object` 在 `main.php:2629` 有一道**一刀切的拒绝**——schema 里出现 `enum|const|pattern|minimum|maximum|multipleOf` 任一即 `return "";`。
+⇒ 对"40 层 + 枚举叶"的请求，`f3c029a` 让候选提取器放手之后，**嵌套检测器并不会接手**：请求会继续落到 `main.php:7616` 的全 body 枚举正则，**照样输出扁平** `{"city":"Paris"}`。也就是说我那条门大概率**仍红**，而 `f3c029a` 至多是"归属规则写对了"（嵌套 plan 不该由候选器认领），**不构成 F238 的修复**。
+**真正的最小修复需要两件事之一**（都还没做）：
+ A. 让嵌套 plan 支持枚举叶：`api_top_leaves` 产出 `e:` 类型，`api_nested_object_value` 在 `e:` 步用**枚举 id 集**驱动 `model_session_next_allowed`（而不是现在只有 `s:`/数字）；
+ B. 或把 2629 的一刀切拒绝**收窄**为"仅当**顶层属性本身**是 enum/const/pattern/数值约束时拒绝"，允许**深层**枚举叶进入嵌套装配（配合 A 才能同时满足结构与取值）。
+**判据不变**：`chat-json-schema-deep40-enum-leaf` 走满 40 层**且** `city ∈ {Paris,London}`。**若 `run_f240`/`api_smoke_f240` 里它仍红，就照实写"F238 未修复、f3c029a 只是归属修正"**，并把 A 作为下一步；不得为了让门禁好看而放松断言。
