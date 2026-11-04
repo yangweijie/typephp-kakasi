@@ -2374,3 +2374,10 @@ for step in 0..N:
 ```
 **判据**：①同 seed 两次运行逐位一致；②同 seed 下**不是**纯贪心（至少一处与 argmax 不同）；③同温度下 tree-on/off 的 wall 对比（FR-06 的收益判据）。
 **状态**：设计结论，未实现；`peek` 未提交。
+
+### F304 · `model_peek_argmax()` 落地并过完整梯子 —— **FR-06 采样验证的四件原语齐备**
+实现（`2fb47e3`）：`peek_argmax()` 只对 `g_last_logits` 求 argmax，**不 prefill、不动 `g_sess_len`**；`model.cc` 包装 + `model.stub.php` 声明（F301 教训）。
+**实测**：`PEEK-API: PASS (id=279 len=533 unchanged)` —— 连续两次同一 id、会话长度不变（证明非推进）；全套 **142 PASS / 0 FAIL**；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**四件原语**：`token_prob(id,temp)`｜`rand01()`｜`sample_excluding(id,temp)`｜`peek_argmax()`。
+⇒ F303 的循环伪代码现在**完全可写**：`d=peek_argmax(); p=token_prob(d,temp); if rand01()<p then next_allowed(d) else next_allowed(sample_excluding(d,temp))`。
+**下一轮的判据**：同 seed 两次逐位一致；且同 seed 下**不是**纯贪心（至少一处 ≠ argmax）；再以 tree-on/off 的 wall 对比衡量 FR-06 的收益。
