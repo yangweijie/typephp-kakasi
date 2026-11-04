@@ -2240,3 +2240,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 3. **残差重采样**：拒绝后从 `(p - q)+` 归一化采样（q 为点质量时即"排除该 token 的 p"）。判据：统计接受率随 `T` 单调上升（同 prompt 扫 T=0/0.7/1.0）。
 4. **吞吐判据**：`tree-on/off` 与 `bins=1/k` 的 wall 对比（F45 形式），**只在 T>0 时有意义**；T=0 的结论已由 F273 证明恒为 0，不再重复测。
 **为什么不本轮做**：新增分布面 + 拒绝采样 + 残差重采样，至少需要一次完整 SYCL 重建 + 一轮 139 项自检 + 两级门禁（约 25–30 分钟真实时间），当前窗口不够；半做完会留下**不可验证的概率边界代码**，比留一份可执行规格更糟。
+
+### F285 · **布尔叶缺陷修复并过完整梯子**（此前嵌套 schema 的 boolean 属性会被**静默丢弃**）
+根因：`api_top_leaves` 的类型正则只有 `string|integer|number`，`{"type":"boolean"}` 的叶子**根本不进 plan** ⇒ 装配出的对象缺这个键（违反 schema 的 `required`/形状），而此前的门只看结构与枚举值，没覆盖布尔。
+修法（`5128584`）：plan 新增 `b` 类型；builder 用 `api_constrained_continue(["true","false"], 4)` 两个 JSON 字面量做候选（不加引号，与 `i`/`n`/`en` 一致）。
+**实测**：8000 **103 PASS**（含新门 `chat-json-schema-deep40-bool-leaf`：40 层 + `flag` 为 `bool` + `city` 为字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=741`、`SESSION-GROW: PASS`、`first_len=3887 second_len=3887`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**教训**：这是"**形状**缺陷而非取值缺陷"——只断言取值会漏掉整类问题；每类叶子都应有"键存在 + 类型正确 + 取值合法"三段断言。
