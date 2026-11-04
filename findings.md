@@ -2381,3 +2381,11 @@ for step in 0..N:
 **四件原语**：`token_prob(id,temp)`｜`rand01()`｜`sample_excluding(id,temp)`｜`peek_argmax()`。
 ⇒ F303 的循环伪代码现在**完全可写**：`d=peek_argmax(); p=token_prob(d,temp); if rand01()<p then next_allowed(d) else next_allowed(sample_excluding(d,temp))`。
 **下一轮的判据**：同 seed 两次逐位一致；且同 seed 下**不是**纯贪心（至少一处 ≠ argmax）；再以 tree-on/off 的 wall 对比衡量 FR-06 的收益。
+
+### F305 · **FR-06 的采样验证循环落地并过完整梯子**：`SPEC-SAMPLE` acc=9 rej=15 diff=15、同 seed 可复现
+实现（自检内，用 F304 的四件原语）：从短 prompt 起 24 步，每步
+`d = peek_argmax()` → `p = token_prob(d, 1.0)` → `rand01() < p` **接受**（记为 acc）否则 `x = sample_excluding(d, 1.0)` **残差重采样**（rej），然后用 `session_next_allowed(0, x)` 提交；统计与贪心不同的位置数。
+再从同一 seed（`model_session_start` 会把 RNG 重置为 12345）重跑一遍，序列必须逐位相同。
+**实测**：`SPEC-SAMPLE: PASS (acc=9 rej=15 diff=15 reproducible)`；自检 **143 PASS / 0 FAIL**（`SUITE_SECS=805`）；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**意义**：F273 指出的"贪心验证下多分支收益恒为 0"的前提**已被解除**——现在存在一个产生**非贪心**结果（15/24 处偏离 argmax）且**可复现**的采样解码路径。
+**仍未做**：把它接到 C++ 的草稿/验证循环里（用 `spec_*` 路径产生多个草稿并批量验证），并以 **tree-on/off 的 wall 对比**衡量 FR-06 的真实收益。
