@@ -524,6 +524,37 @@ def main():
           "keys=%r tail=%r" % (sorted(u3leaf.keys()) if isinstance(u3leaf, dict) else None,
                                u3txt[-40:]))
 
+    # F296: arrays of single-string-property objects ([{"name":"…"}]) inside a nested object.
+    # Routing and assembly were verified separately: the root array-object detector must decline
+    # (more than two properties blocks) and the planner must see the four-brace value.
+    deepO = {"type": "object", "properties": {"entries": {"type": "array", "items": {
+                                                  "type": "object",
+                                                  "properties": {"name": {"type": "string"}}}},
+                                              "city": {"type": "string"}}}
+    for i in range(40):
+        deepO = {"type": "object", "properties": {"k%d" % i: deepO}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepo", "schema": deepO, "strict": True}}})
+    otxt = r["choices"][0]["message"]["content"]
+    oleaf = None
+    try:
+        ocur = json.loads(otxt)
+        for i in range(39, -1, -1):
+            ocur = ocur["k%d" % i]
+        oleaf = ocur
+    except Exception:
+        oleaf = None
+    check("chat-json-schema-deep40-object-array-leaf",
+          isinstance(oleaf, dict) and isinstance(oleaf.get("entries"), list)
+          and len(oleaf.get("entries", [])) > 0
+          and all(isinstance(x, dict) and isinstance(x.get("name"), str)
+                  for x in oleaf.get("entries", []))
+          and isinstance(oleaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(oleaf.keys()) if isinstance(oleaf, dict) else None,
+                               otxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

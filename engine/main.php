@@ -2492,6 +2492,16 @@ function api_top_leaves(string $block, int $maxN): string
                 $arrTy = "ab";
             }
         }
+        // Object arrays carry exactly three braces (the value, its items object and that
+        // object's properties). The exact count matters: an ancestor's subtree also contains
+        // "items", and matching it would put the array under the wrong key (F296 round B).
+        if ($arrOk == 0 && substr_count($val, "{") == 4) {
+            $mo2 = [];
+            if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{\s*"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val, $mo2) == 1) {
+                $arrOk = 1;
+                $arrTy = "ao:" . $mo2[1];
+            }
+        }
         if (substr_count($val, "{") == 1 || $arrOk == 1) {
             $m = [];
             if ($arrOk == 1) {
@@ -2719,26 +2729,29 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
             if ($bb != "") {
                 $s = $s . "," . $bb;
             }
-        } else if ($ty == "a" || $ty == "an" || $ty == "af" || $ty == "ab") {
+        } else if ($ty == "a" || $ty == "an" || $ty == "af" || $ty == "ab" || $ty == "ao") {
             // Nested array leaf (F286 for strings, F290 for numbers). The separator already
             // emitted "key":, so this only has to produce [items] using continuations.
             $commaIds = api_punct_ids(",");
             $bracketIds = api_punct_ids("]");
-            $aop = api_constrained_continue([$ty == "a" ? "[\"" : "["], 8);
+            $aopen = $ty == "a" ? "[\"" : "[";
+            if ($ty == "ao") { $aopen = "[{\"" . (count($kv) > 2 ? $kv[2] : "") . "\":\""; }
+            $aop = api_constrained_continue([$aopen], 16);
             if ($aop == "" || $commaIds == "" || $bracketIds == "") {
                 return "";
             }
             $s = $s . "," . $aop;
             $itemsDone = 0;
             for ($it = 0; $it < 3; $it++) {
-                if ($it > 0 && $ty == "a") {
-                    $aop2 = api_constrained_continue(["\""], 4);
+                if ($it > 0 && ($ty == "a" || $ty == "ao")) {
+                    $aopen2 = $ty == "a" ? "\"" : ",{\"" . (count($kv) > 2 ? $kv[2] : "") . "\":\"";
+                    $aop2 = api_constrained_continue([$aopen2], 16);
                     if ($aop2 == "") {
                         break;
                     }
                     $s = $s . "," . $aop2;
                 }
-                if ($ty == "a") {
+                if ($ty == "a" || $ty == "ao") {
                     $aclosed = 0;
                     for ($d = 0; $d < $maxSteps; $d++) {
                         $anx = model_session_next_allowed(0, $stepIds);
@@ -2755,6 +2768,13 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
                         $acq = api_constrained_continue(["\""], 4);
                         if ($acq != "") {
                             $s = $s . "," . $acq;
+                        }
+                    }
+                    if ($ty == "ao") {
+                        // Close the item's object before the array terminator picks , or ].
+                        $aoclose = api_constrained_continue(["}"], 4);
+                        if ($aoclose != "") {
+                            $s = $s . "," . $aoclose;
                         }
                     }
                 } else if ($ty == "ab") {
