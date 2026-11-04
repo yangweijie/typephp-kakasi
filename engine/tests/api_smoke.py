@@ -312,6 +312,32 @@ def main():
           and isinstance(bleaf.get("city"), str),
           "len=%d closes=%d tail=%r" % (len(btxt), btxt.count("}"), btxt[-40:]))
 
+    # F285 lesson: shape defects (a leaf silently missing) must be caught per key, not just by
+    # type-checking one leaf. This shape carries three different leaf types at one level.
+    deepM = {"type": "object", "properties": {"city": {"type": "string"},
+                                              "count": {"type": "integer"},
+                                              "flag": {"type": "boolean"}}}
+    for i in range(40):
+        deepM = {"type": "object", "properties": {"k%d" % i: deepM}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1600, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepm", "schema": deepM, "strict": True}}})
+    mtxt = r["choices"][0]["message"]["content"]
+    mleaf = None
+    try:
+        mcur = json.loads(mtxt)
+        for i in range(39, -1, -1):
+            mcur = mcur["k%d" % i]
+        mleaf = mcur
+    except Exception:
+        mleaf = None
+    check("chat-json-schema-deep40-mixed-leaves",
+          isinstance(mleaf, dict) and isinstance(mleaf.get("city"), str)
+          and isinstance(mleaf.get("count"), int) and isinstance(mleaf.get("flag"), bool),
+          "keys=%r tail=%r" % (sorted(mleaf.keys()) if isinstance(mleaf, dict) else None,
+                               mtxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
