@@ -2356,3 +2356,21 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 - **编译坑**：`next_u64_unit` 定义在文件后部，直接调用报 `use of undeclared identifier`；需在其前加**前向声明**（已加）。
 **实测**：自检新增 `SAMPLE-API: PASS (u1=0.133 u2=0.205 x=451)`（两个均匀数落在 [0,1)，残差采样结果 ≠ 被排除的 top id）；全套 **141 PASS / 0 FAIL**；8000 **112 PASS** / `SMOKE_EXIT=0`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **FR-06 剩余**：现在三件原语齐了（p(x)、u、残差采样），**下一步是 PHP 侧的采样验证循环**（草稿→按 p 接受→拒绝时用残差重采样），并以"同温度下 tree-on/off 的吞吐"为判据。
+
+### F303 · 采样验证循环的**缺失原语**：需要"看一眼 argmax 但不推进"（`peek`）
+三件原语（`token_prob` / `rand01` / `sample_excluding`）齐了，但**还差一个**才能写出正确的循环：
+- 现有 `model_session_next_allowed(0, allowed)` **会推进会话**（内部 `prefill_top1` + `g_sess_len += 1`）；
+- 而采样验证要求"先看草稿 token 的概率，决定接受/拒绝，**再**决定推进谁"——若先调用 next_allowed，位置已经被草稿消耗，拒绝后无法回退。
+⇒ 需要新增 **`model_peek_argmax()`**：只对 `g_last_logits` 求 argmax 并返回，**不推进、不改会话**。实现只需几行（与 `sample_next` 的 argmax 部分同构）。
+**循环伪代码（下一轮照此落地）**：
+```
+model_session_start(prompt)
+for step in 0..N:
+    d = model_peek_argmax()
+    p = model_token_prob(d, temp)
+    if model_rand01() < p:  model_session_next_allowed(0, d)        // 接受草稿
+    else:                   x = model_sample_excluding(d, temp)
+                            model_session_next_allowed(0, x)        // 残差重采样
+```
+**判据**：①同 seed 两次运行逐位一致；②同 seed 下**不是**纯贪心（至少一处与 argmax 不同）；③同温度下 tree-on/off 的 wall 对比（FR-06 的收益判据）。
+**状态**：设计结论，未实现；`peek` 未提交。
