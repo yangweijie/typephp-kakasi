@@ -2510,6 +2510,23 @@ function api_top_leaves(string $block, int $maxN): string
                 } else if (preg_match('/"const"\s*:\s*(-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)/', $val, $mc) == 1
                            && $mk != "s") {
                     $mk = "en:" . $mc[1];
+                } else if ($mk == "s" && preg_match('/"pattern"\s*:\s*"\^?([A-Za-z0-9 _.\-|]+)\$?"/', $val, $mp) == 1) {
+                    // A plain-literal alternation ("Paris|London") is a finite set; anything with
+                    // real regex metacharacters falls through untouched (F282).
+                    $evc = "";
+                    $pparts = explode("|", $mp[1]);
+                    for ($pj = 0; $pj < count($pparts); $pj++) {
+                        $one = $pparts[$pj];
+                        if ($one == "" || strpos($one, "~") !== false || strpos($one, "\"") !== false
+                            || strpos($one, ",") !== false || strpos($one, "\\") !== false) {
+                            $evc = "";
+                            break;
+                        }
+                        $evc = $evc == "" ? $one : $evc . "~" . $one;
+                    }
+                    if ($evc != "") {
+                        $mk = "e:" . $evc;
+                    }
                 }
                 $out = $out == "" ? $key . ":" . $mk : $out . "," . $key . ":" . $mk;
                 $count++;
@@ -2696,9 +2713,14 @@ function api_response_schema_nested_object(string $body): string
     if (api_schema_is_object($schema) != 1) {
         return "";
     }
-    // String enums/consts are expressible as e: leaves in the plan (F244/F258), so they no longer
-    // disqualify a nested schema; only constraints the plan cannot carry still do.
-    if (preg_match('/"(pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+    // String enums/consts/plain-literal patterns are expressible as e: leaves (F244/F258/F281/
+    // F282); patterns with real metacharacters and numeric bounds still disqualify the schema.
+    $mpat = [];
+    if (preg_match('/"pattern"\s*:\s*"([^"]*)"/', $schema, $mpat) == 1
+        && preg_match('/^\^?[A-Za-z0-9 _.\-|]+\$?$/', $mpat[1]) != 1) {
+        return "";
+    }
+    if (preg_match('/"(minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
         return "";
     }
     $pm = [];

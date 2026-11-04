@@ -264,6 +264,30 @@ def main():
           and isinstance(cleaf.get("count"), int),
           "len=%d closes=%d tail=%r" % (len(ctxt), ctxt.count("}"), ctxt[-40:]))
 
+    # F282: a plain-literal pattern alternation behaves as a finite set, so the same nesting and
+    # value-pinning rules apply; metacharacter patterns are out of scope and must not be claimed.
+    deepP = {"type": "object", "properties": {"city": {"type": "string", "pattern": "Paris|London"},
+                                              "count": {"type": "integer"}}}
+    for i in range(40):
+        deepP = {"type": "object", "properties": {"k%d" % i: deepP}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1500, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepp", "schema": deepP, "strict": True}}})
+    ptxt = r["choices"][0]["message"]["content"]
+    pleaf = None
+    try:
+        pcur = json.loads(ptxt)
+        for i in range(39, -1, -1):
+            pcur = pcur["k%d" % i]
+        pleaf = pcur
+    except Exception:
+        pleaf = None
+    check("chat-json-schema-deep40-pattern-leaf",
+          isinstance(pleaf, dict) and pleaf.get("city") in ("Paris", "London")
+          and isinstance(pleaf.get("count"), int),
+          "len=%d closes=%d tail=%r" % (len(ptxt), ptxt.count("}"), ptxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
