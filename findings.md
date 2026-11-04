@@ -2299,3 +2299,7 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 **实测**：8000 **111 PASS**（含新门 `chat-json-schema-deep40-union-array-leaf`：40 层 + `aliases` 为非空列表、元素为字符串或 null + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **当前基线**：**139 项自检 / 111 形状 8000 / 8001 全绿**。
 **仍未支持**：对象数组叶（嵌套内）、无标量成员的联合（`["object","array"]`）、含元字符 `pattern`、`minimum/maximum/multipleOf`。
+
+### F295 · **HEAD 从零重建的完整梯子全绿**（F290–F294 的全部改动均非增量假象）
+`b6xf8u37r`：`rm -rf engine/build/gen engine/build/obj`（含 C++ 目标文件）→ `BUILD_OK`（`exe_age=4s`）→ 自检 **139 PASS / 0 FAIL**（`SUITE_SECS=736`）→ 8000 **111 PASS** / `SMOKE_EXIT=0` → 8001 `PAR_EXIT=0 PASS=9` → `FAIRNESS: PASS`。
+**当前最强基线（HEAD `fdaf25a` 的源码状态）**：139 / 111 / 9 + fairness，全部在完全重建的二进制上取得。
