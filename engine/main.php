@@ -9862,7 +9862,17 @@ function main(): void
     $pTopProb = model_token_prob($pTopId, 1.0);
     $pOtherId = $pTopId > 0 ? (($pTopId + 1) % 1000) : 0;
     $pOther = model_token_prob($pOtherId, 1.0);
+    $pU1 = model_rand01();
+    $pU2 = model_rand01();
+    $pX = model_sample_excluding($pTopId, 1.0);
     if ($pTopId >= 0 && $pTopProb > 0.0 && $pTopProb <= 1.0 && $pOther >= 0.0 && $pOther <= $pTopProb) {
+        if ($pU1 >= 0.0 && $pU1 < 1.0 && $pU2 >= 0.0 && $pU2 < 1.0 && $pX >= 0 && $pX != $pTopId) {
+            echo "SAMPLE-API: PASS (u1=" . $pU1 . " u2=" . $pU2 . " x=" . $pX . ")
+";
+        } else {
+            echo "SAMPLE-API: FAIL u1=" . $pU1 . " u2=" . $pU2 . " x=" . $pX . " top=" . $pTopId . "
+";
+        }
         echo "PROB-API: PASS (p_top=" . $pTopProb . " p_other=" . $pOther . ")
 ";
     } else {

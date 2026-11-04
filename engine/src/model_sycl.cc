@@ -864,6 +864,34 @@ double logsumexp() { return g_logsumexp; }
 // Probability of one token id under the current logits at the given temperature. This is the
 // surface speculative sampling needs (F284 step 1): a deterministic drafter's acceptance test is
 // p(draft), and the residual resample needs the same normaliser.
+double next_u64_unit(uint64_t& s);   // defined below; declared for rand01/sample_excluding
+
+// Uniform draw in [0,1) from the session RNG - the acceptance draw of speculative sampling
+// (F284 step 2). Same splitmix64 source as sampling, so a seed makes runs reproducible.
+double rand01() { return next_u64_unit(g_sess_rng); }
+
+// Sample from the temperature-scaled distribution with one id excluded. For a deterministic
+// drafter (q is a point mass on `exclude`) this is exactly the residual (p-q)+ resample (F284
+// step 3), so acceptance plus this draw is an exact sampler for the target distribution.
+int sample_excluding(int exclude, double temp) {
+    const int n = (int) g_last_logits.size();
+    if (n == 0 || temp <= 0.0) return -1;
+    double mx = -1e300;
+    for (int i = 0; i < n; ++i) if (i != exclude) mx = std::max(mx, (double) g_last_logits[(size_t) i]);
+    if (mx == -1e300) return -1;
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i) if (i != exclude) sum += std::exp(((double) g_last_logits[(size_t) i] - mx) / temp);
+    if (!(sum > 0.0)) return -1;
+    double u = next_u64_unit(g_sess_rng) * sum;
+    for (int i = 0; i < n; ++i) {
+        if (i == exclude) continue;
+        u -= std::exp(((double) g_last_logits[(size_t) i] - mx) / temp);
+        if (u <= 0.0) return i;
+    }
+    for (int i = n - 1; i >= 0; --i) if (i != exclude) return i;
+    return -1;
+}
+
 double token_prob(int id, double temp) {
     const int n = (int) g_last_logits.size();
     if (n == 0 || id < 0 || id >= n) return -1.0;
