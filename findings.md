@@ -2320,3 +2320,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 **实测**：单请求 `LEAF ['entries','city']`、`entries=[{"name":"Paris, France"}]`、JSON 合法；8000 **112 PASS**（含新门 `deep40-object-array-leaf`）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **教训固化**：形状类改动**先证路由、再动装配**；花括号计数这类判别量必须**先打印出来核对**（3 vs 4 差一个就静默漏项）。
 **仍不支持**：多属性对象项（当前仅单字符串属性）、数组项内的嵌套对象。
+
+### F298 · 对象数组的**多属性项**：尝试被另一个检测器挡住，已回退（单属性版本保留）
+做法：planner 用 `api_top_leaves($val,3)` 提取 items.properties 里的字符串属性名，拼成 `ao:k1~k2`；builder 按 `~` 拆名逐个装配。**结果：`entries` 键整体消失**（只剩 `city`），而单属性版本（F297，已过完整梯子）在同一条请求路径上是正常的。
+⇒ 差异只在"项的属性数"，最合理的解释是**另一个检测器**（`api_response_schema_array_object_nested` 一类）把双属性对象数组认领走了——与 F296 的"宽分支抢先"同因，但这次抢它的是兄弟检测器，不是根级那个。
+**处置**：改动未提交，已 `git checkout` 回退；重建后 8000 复验 **112 PASS** ⇒ HEAD 保持 F297 的已验证状态。
+**下次**：先加一个"哪个检测器认领了这条请求"的一次性探针（把候选检测器返回值打印出来），**再**动 plan 语法；否则又会在"改装配"和"改路由"之间来回。
