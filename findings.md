@@ -1958,3 +1958,7 @@ g_sess_len += 1;
 ### F238 · 新缺陷（已取证，未修）：**嵌套对象 schema 的叶子带 `enum` 时，服务侧丢掉全部嵌套**，只回扁平 `{"city":"Paris"}`
 ** repro**：同一 40 层 schema，仅把叶子 `city` 从 `{"type":"string"}` 改成 `{"type":"string","enum":["Paris","London"]}` ⇒ 响应从**完整的 41 对花括号**变成 **`{"city":"Paris"}`（16 字符，`finish_reason=stop`）**。⇒ 枚举叶把请求路由到了**扁平枚举/单键分支**，`api_nested_object_value` 没拿到 path（`engine/main.php` 的候选服务入口在 5086 / 6342 / 7395 / 7755 四处都调它，说明分派在更上游的检测顺序里）。
 **修法方向**：检测顺序里"嵌套对象 plan"**必须优先于**裸枚举分支（或枚举叶在嵌套 plan 里当 `e:` 类型而非升级为顶层枚举）；判据现成——把这条 repro 固化成第二道门 `chat-json-schema-deep40-enum-leaf`（断言走完 40 层且 `city in {Paris,London}`），**先让它红着**，修好后转绿。**状态：缺陷已复现，未修，未入门禁。**
+
+### F238 补 · 机制定位（未修）：`api_response_schema_candidates` 在**顶层**吃掉任何带 enum 的 body，嵌套层被丢弃
+`engine/main.php:7610-7619`：请求先过 `api_response_schema_candidates($body)`，**只要它返回非空**就走 `api_constrained($ids, $schemaCands, 128)`；否则才轮到 `/"enum"\s*:\s*\[/` 全 body 正则；再否则才进"一层嵌套优先"的分支（注释在 7622）。40 层 schema 的叶子带 enum 时，候选提取器给出的就是**扁平** `{"city":"Paris"}` 形状 ⇒ 直接命中第一分支，`api_response_schema_nested_object`/`api_nested_object_value` **根本没机会参与**，所以嵌套整体消失（实测 16 字符、`finish_reason=stop`）。
+**为什么本轮不修**：候选提取器是多个既有 enum 门（`main.php:9125/9174/10593/10615/10696` 等自检与门用例）的共同上游，改它的认领条件＝同时动一堆验收面；剩下的回合跑不完"改→全量重建→137 项自测→8000/8001 门禁"这条梯子。**贸然改并把门禁跑绿也不等于安全**——这些门用例覆盖了本地没重跑的分支。**正确的下一步**：把认领条件收紧成"body 里不存在更深的嵌套 plan"（例如先算 `$sNest`/深度检测，或要求 enum 出现在**顶层 properties 的直接值**且对象只有一层），并**先**把 `chat-json-schema-deep40-enum-leaf` 作为**已知红门**加入，修好转绿；这条门就是判据。
