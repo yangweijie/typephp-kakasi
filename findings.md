@@ -1903,3 +1903,6 @@ F226 的重启对所有 `api_constrained` 生效 ⇒ EOS 正常终止也要白�
 ### F230 · F226 的 re-prefill 恢复**不会污染前缀缓存**（读代码核过，非实测）
 担心点：`api_constrained` 在解码循环**之后**才 `model_cache_store(0, $ids, $pcPathC)`；若我把会话用 `model_session_start(0, prompt+chosen)` 重启过，存进去的 KV 是否还是 prompt 的那一段？
 读 `src/model_sycl.cc:1345-1372`：`cache_store` 取的长度是 **`n = ids.size()`**（写入头里也是 `n`），即**只序列化前 n 行 KV**，与 `g_sess_len` 无关；而 re-prefill 只往位置 ≥ n 写新行，因果注意力下前 n 行的 K/V 不随后续 token 改变 ⇒ 缓存内容仍严格是 prompt 的 KV，键仍是同一串 prompt ids。⇒ **恢复路径与缓存层正交，无正确性风险**。（另注：`ids.size() > g_kv.cap` 时 store 直接失败并报 `nothing to save (prefill first)`，与本轮改动无关。）
+
+### F231 · 新增活服务门 `chat-json-schema-deep40-first-call` 的**离线复刻核对**（防误认领，F158 手法）
+在 Python 里按测试同样的构造顺序建 40 层包装（`for i in range(40): deep={"k%d"%i: deep}`）并生成期望 JSON：结果 **outermost_key == ['k39']**，且自外向内 `for i in range(39,-1,-1): cur = cur["k%d"%i]` 落回 `{"city":"Paris","count":4000}` 完全相等。⇒ 测试里的下行遍历与 schema 构造顺序自洽：**这条门只有在引擎真的不给完整体时才会红**，不会因我的断言写错而假红。（对照：自检侧 DEEP40/DEEP80 用的也是"k 越大越外层"的同一顺序。）**该门尚未跑过**（引擎被自检占着），跑之前只能算"写法已核"。
