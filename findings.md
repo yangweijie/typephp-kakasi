@@ -1891,3 +1891,11 @@ Anthropic 的 `tool_result.content` 既可以是字符串，也可以是 `[{"typ
 ### F227 · 重启收窄为"单 id 强制字面量"步（**未验证**，下一次开工先跑这条）
 F226 的重启对所有 `api_constrained` 生效 ⇒ EOS 正常终止也要白付一次 prefill（自检 9→12 min）。现在加一条门：`strpos($allowed, ",") !== false` 即**候选集多于一个 id** 时不重启——只有文法完全确定的步（恰好 1 个 id）被拒才是冷启动缺陷，其余拒绝是模型自己的选择，按原样 break。深案例的前缀调用 `vals=[$pre]` 是单候选 ⇒ 每步 allowed 恰为 1 个 id，**修复路径不受影响**。
 **待跑**：清 `build/gen/cache/ast` 全量重建 ⇒ ①`engine/run_f*.log` 需仍 137 PASS / 0 FAIL 且 `SCHEMA-DEEP200-RETRY first_len>0`、并观察总时长是否回落；②8000 `engine/tests/api_smoke.py`、③8001 `par_smoke.py` + `fairness_test.py`（一次只跑一个引擎进程）。注意 `run_f227.log` 验的是**上一版**（未收窄）二进制的 `SCHEMA-DEEP200` 首调判据，二者不要混为一条证据。
+
+### F228 · `no logits computed` 的**两条可达路径**（代码分析，尚未实测）：`rows==0` 或 **整行 NaN**
+读 `src/model_sycl.cc:1246-1328`：`const int nOut = std::max(1, std::min(g_head_rows, T))` ⇒ **nOut 恒 ≥1**，外层 `for (r = 0; r < nOut; ++r)` 必定执行一次 `r == nOut-1`；因此 `if (bestId < 0) { g_err = "no logits computed"; return {}; }`（1323）只有两种可达方式：
+1. `rows = (int) gguf::tensor_ne(eIdx, 1)`（1259）**为 0** ⇒ 内层 chunk 循环不执行、`row` 空、`rbestId` 保持 -1；但 `eIdx` 在 1015-1016 已校验存在，词表维度是元数据，冷/热应当一致 ⇒ 可能性低。
+2. **该行 logits 全是 NaN** ⇒ `if (v > rbest)` 对 NaN 恒为假 ⇒ `rbest/rbestId` 都不更新 ⇒ `bestId` 仍 -1。
+**为什么 2 更值得怀疑**：它天然是"冷"的——第一次走这段代码时读到**未初始化/未就位**的 device 内存（`Dev dLogits(&q, rows)` 分配不清零，arena 槽位复用），产生 NaN；同一进程再来一次时页面已就位，就正常了。这与 F224/F225 的观测自洽：拒绝发生在会话长度仅 516（**不是容量**）、且**第二次同参数调用能走满 893**。
+**下一轮的判别探针（一次 SYCL 重建，别和 PHP 改动混轮）**：在 1323 的分支里把可比较的量写进 `g_err`，例如 `rows / T / nOut / 非有限值计数`（`int nonfinite = 0; for (float v : row) if (!(v == v)) ++nonfinite;`），自检里用 `model_last_error()` 直接打印。若 `nonfinite==rows` ⇒ 坐实 NaN，修法是把 `dLogits` 分配清零或让 `rbestId` 用有限值判定；若 `rows==0` ⇒ 查 `tensor_ne` 的冷路径。
+**顺带（已记录未修）**：`session_next_allowed` 里 `g_sess_len += 1`（1496）写在 `if (r.empty()) return -1;`（1497）**之前** ⇒ 失败步仍推进会话长度，状态与真实 KV 脱钩。
