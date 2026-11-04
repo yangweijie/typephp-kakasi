@@ -1996,3 +1996,12 @@ g_sess_len += 1;
 4. **解锁 2629**：`api_response_schema_nested_object` 目前对 `enum|const|pattern|minimum|maximum|multipleOf` **一律 `return "";`**；收窄为"**顶层直接值**含 `pattern/minimum/maximum/multipleOf/const` 才拒"，允许**字符串枚举**进入 plan（`e` 分支）。
 **判据（已入库，会先红）**：`chat-json-schema-deep40-enum-leaf` —— 40 层结构走完 **且** `city ∈ {Paris,London}`。**回归要求**：137 项自检 + 8000（98 形状）+ 8001 全跑；`api_top_leaves` 的现有用例（纯 `s/i/n` 叶子）必须逐条不变，因为它们走的是同一函数。
 **为什么这轮不做**：剩余额度不足以覆盖"三函数改动 + 全量重建 + 自测 + 两级门禁"；半做完就停车会把仓库留在**未验证且可能红**的状态，比留一份可执行的规格更糟。
+
+### F245 · **探针轮实际没跑成**：SYCL 链接失败（exe 被我几分钟前的 8000 门禁服务器占着）⇒ `run_f239` 测的是旧二进制，`probe=0` **不携带任何信息**
+`engine/build_f239.log` 末尾三行是硬证据：`LINK : fatal error LNK1104: cannot open file 'build\kakasi_engine_sycl.exe'`、`icx: error: unable to remove file: permission denied`、`SYCL_LINK_FAILED`。exe 的 mtime 仍停在 12:27（`f228` 那次成功构建），**没有**被探针版覆盖。
+**成因**：我在 09:47-09:50 用 `serve.on` 起了 8000 门禁服务器，`kill $SRV` 之后进程退出不为零耗时；09:51:39 立刻启动重建，Windows 下**运行中的 exe 不能被覆写** ⇒ 链接阶段失败。现在 `netstat` 无 LISTENING、`ls engine/*.on` 为空，占用已解除（但 `run_f239` 仍在跑旧 exe）。
+**推论（必须这样读）**：
+1. `run_f239.log` 里 `F229-PROBE` 计数为 0 ⇒ **不是**"冷启动拒绝消失了"的证据，而是**二进制里根本没有探针**（与 F221/F231 的"产物 grep 无效、只有打印才算证据"同源，这次是反向坑：**没打印也不等于没编译进去**）。
+2. 当前 **HEAD（含探针 `468cb58`）≠ 磁盘 exe（无探针）**。链式任务接下来 `git revert 468cb58` + 重建会同时消掉这个错位——但**前提是链接成功**。
+**规程补一条（覆盖旧构建直觉）**：每次重建后**先看 exe 的 mtime 是否变新**，再跑任何测量；只要 mtime 没动，就当作"没换二进制"，本轮全部结果作废。链式任务里这条要写成 `python -c` 打印 mtime 或直接 `grep SYCL_LINK_FAILED`。
+**下一步（按价值排序）**：①等链式任务的 `run_f240`+两级门禁出结果（验 `f3c029a`，价值高于探针）；②若要探针轮，**重跑前先确认没有引擎进程**（`netstat` 无 LISTENING + 新建一条 `SYCL_LINK_FAILED` 检查），且不与其它改动混轮；③F238 的真修按 F244 的四步做。
