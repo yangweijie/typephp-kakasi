@@ -2225,3 +2225,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 实现（`152a648`）：planner 在 enum/const 都不命中时，若 `pattern` 形如 `^?字面量(|字面量)*$`（仅字母数字空格 `_.-|`），按 `~` 连接生成 `e:`；检测器只在 pattern **含真正元字符**时拒绝该 schema（`minimum/maximum/multipleOf` 仍拒绝）。
 **实测**：8000 **102 PASS**（含新门 `chat-json-schema-deep40-pattern-leaf`：40 层 + `city ∈ {Paris,London}` + `count` 整数）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=735`、`SESSION-GROW: PASS`、`first_len=3887 second_len=3887`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **覆盖现状**：嵌套 plan 现在支持 `enum`（字符串/数字）、`const`（字符串/数字）、纯字面量 `pattern`；**仍回退**：含元字符的 pattern、`minimum/maximum/multipleOf`、混合类型枚举。
+
+### F283 · **从零重建的完整梯子全绿**（排除增量构建残留的可能）
+`b1t73a2tb`：先 `rm -rf engine/build/gen engine/build/obj`（**连 C++ 目标文件一起清**）→ `BUILD=0 / LINK=0 / exe_age=2s` → 自检 **139 PASS / 0 FAIL**（`SUITE_SECS=739`、`SESSION-GROW: PASS`、`first_len=3887 second_len=3887`）→ 8000 **102 PASS / `SMOKE_EXIT=0`** → 8001 `PAR_EXIT=0 PASS=9` → `FAIRNESS: PASS`。
+⇒ 本会话所有修复（KV 根修、`SESSION-GROW` 守卫、`e:`/`en:`/`const`/纯字面量 `pattern`、`SESSION-POS`、反斜杠拒绝、去重、split 同构修复）**都不是增量构建的假象**：它们在一个完全重建的二进制上同样全部通过。
+**这是目前最强的基线**：HEAD `f176341`（源码提交 `152a648`）对应的干净构建 = 139 / 102 / 9 + fairness。后续任何回归都可以拿这条作为对照。
