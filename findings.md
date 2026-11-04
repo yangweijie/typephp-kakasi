@@ -2031,3 +2031,9 @@ g_sess_len += 1;
 2. **第一次拿到干净的秒表数**：收窄版（`caf1bd6`，无探针）整轮自测 **673 s ≈ 11.2 min**。**仍然不得**由此推出"收窄省了多少"——没有未收窄版的同机秒表对照（此前 9→12 min 的说法已在 F227/`progress.md` 撤回，这次只报绝对值）。
 3. **`probe` 空 = 二进制里没探针**（`LNK1104` 在案），再次证明"没打印"既不能证明也不能否证；根因两分支**仍未证**，下一轮重建时必须**先看 exe mtime 变没变**（F245/F248 规程）。
 **链的现状**：`run_f239` 已结束 ⇒ `bdlditj5k` 现在会去 revert 探针并重建；**但 83 秒的 BUILD_EXIT=1 说明锁窗口是真实存在的**，它的重建同样要先过"mtime 变新 + 无 SYCL_LINK_FAILED"这道检查，否则 `f240` 全部作废。
+
+### F250 · **F248 预言应验**：`build_f240` 同样 `SYCL_LINK_FAILED`（`BUILD_EXIT=1`，exe 仍 12:27）⇒ `run_f240` 与 `*_f240` 门禁**测的还是旧二进制，全部无效**
+链 `bdlditj5k` 实测：`REVERT_EXIT=0 probes_left=0`（源码已干净、`f3c029a` 的门还在）、`BUILD_EXIT=1`、`engine/build_f240.log` 里 `SYCL_LINK_FAILED` 计数 **1**、`kakasi_engine_sycl.exe` mtime **仍是 12:27**，而 `run_f240.log` 已在跑（读到 62 PASS）。
+**判读（照此执行）**：`run_f240` 即便最后显示 137 PASS / 0 FAIL、`api_smoke_f240.log` 即便 99 行全绿，**也不能算 `f3c029a` 通过验证**——二进制里根本没有那条改动。它的唯一价值又是一遍旧二进制的重复（与 `run_f228/f229/f239` 同型）。
+**为什么会重复踩**：链在上一遍自测进程**刚退出**时立刻链接，Windows 句柄释放有窗口（83 s 的那次 `BUILD_EXIT=1` 是同一原因）。**规程升级**：链式脚本必须在重建**之前**等到"exe 可写"（例如先 `mv exe exe.bak && mv back` 试锁，或 sleep 30 s 再建），并**在重建之后**断言 mtime 变新，否则不许进入测量阶段。
+**下一步唯一有效的做法**：确认无引擎进程（`netstat` 无 LISTENING、自测已退出、**不要用 taskkill**）→ `rm -rf engine/build/gen/cache/ast` 重建 → **先看 exe mtime 变新 + 无 SYCL_LINK_FAILED** → 才跑 `run_f241` 自检与两级门禁验 `f3c029a`；之后再单独做 F244 的枚举叶修复。
