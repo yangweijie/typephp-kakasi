@@ -2172,3 +2172,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 `b2t03yrlx`：自检 **138 PASS / 0 FAIL**（`SUITE_SECS=690`、`first_len=3887 second_len=3887`）；8000 **100 PASS**、`SMOKE_EXIT=0`、`API SMOKE: PASS`；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0`、`FAIRNESS: PASS`。
 ⇒ 嵌套 schema 的**字符串枚举（`e:`）与数字枚举（`en:`）现在都受取值约束**，且结构完整；KV 根修、`SESSION-POS`、反斜杠拒绝同轮全绿。
 **剩余边界**：混合类型枚举回退为无约束；`const/pattern/min|max|multipleOf` 仍走扁平路径；split 路径 `g_kv2` 扩容仍是"先 free 再分配"（F265 记录，多卡实验路径，本机不可验）。
+
+### F271 · 分支去重：**无回归、但也没有收益**（负结果，如实记录）
+`bbso095ot`（`2c0f63d`）：`BUILD=0 / LINK=0`、自检 **138 PASS / 0 FAIL**（`SUITE_SECS=680`），SPEC 全绿且逐位一致（`SPEC-TREE: PASS`、`SPEC-AMB: PASS`、`SPEC-CONSTRAIN: PASS`、`SPEC-ADAPT: PASS`、`SPEC-NEG: PASS`）。
+**关键数字（同轮同机）**：`SPEC-AMB chain=501.99 ms drafts=15 accepted=5 verifies=5` vs **`tree=524.88 ms drafts=21 accepted=5 verifies=5`** ⇒ 去重后**树仍比链慢 4.6%**，接受数完全相同。
+**解释**：去重确实让 bins 里不再全是同一条路径（drafts 从"重复堆叠"变成 21 个不同节点），但**可接受的分支仍只有一条**——验证器只接受模型自身的 argmax 路径，重复文本里"另一个不同续写"就是错的。⇒ **多分支本身不产生收益**，这正是 F262 的结论；FR-06.2 剩下的杠杆只有**换来源**：n-gram 频次 top-k、或用 `prefill_tops` 的次优 token 作首步分支（更可能命中模型第二选择，从而被接受）。
+**处置**：去重保留（它让 bins 有意义、且零回归），但**不得**据此宣称"树收益"；下一步按 F262 的第 1/2 条换来源，并仍用 tree-on/off 的 wall 对比作判据。
