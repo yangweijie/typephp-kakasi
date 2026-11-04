@@ -3115,6 +3115,12 @@ function api_response_schema_array_object(string $body): string
     if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
         return "";
     }
+    // A root-level array of objects has at most two "properties" blocks (the root's and the
+    // item's). More than that means the array sits inside a deeper nested object, which the
+    // nested assembler must own (F296 routing, verified before touching assembly).
+    if (substr_count($schema, "\"properties\"") > 2) {
+        return "";
+    }
     $pm = [];
     if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
         . '"items"\s*:\s*\{\s*"type"\s*:\s*"object"/s', $schema, $pm) != 1) {
