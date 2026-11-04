@@ -1320,7 +1320,14 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             g_expect_rank = rank;
             g_expect_id = expect_id;
         }
-        if (bestId < 0) { g_err = "no logits computed"; return {}; }
+        if (bestId < 0) {
+            int nonfinite = 0;
+            for (float v : all) { if (!(v == v)) ++nonfinite; }
+            g_err = "no logits computed rows=" + std::to_string(rows) + " T=" + std::to_string(T)
+                  + " nOut=" + std::to_string(nOut) + " allsize=" + std::to_string((int) all.size())
+                  + " nonfinite=" + std::to_string(nonfinite);
+            return {};
+        }
         g_top = best;
         g_second = second;
         mark_stage();  // stage 2: final norm + tied lm_head chunks + host logit reduce
