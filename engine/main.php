@@ -2474,16 +2474,20 @@ function api_top_leaves(string $block, int $maxN): string
         $arrOk = 0;
         $arrTy = "";
         if (substr_count($val, "{") == 2) {
-            if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val) == 1) {
+            if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val) == 1
+                || preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*\[[^\]]*"string"[^\]]*\]/', $val) == 1) {
                 $arrOk = 1;
                 $arrTy = "a";
-            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"integer"/', $val) == 1) {
+            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"integer"/', $val) == 1
+                       || preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*\[[^\]]*"integer"[^\]]*\]/', $val) == 1) {
                 $arrOk = 1;
                 $arrTy = "an";
-            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"number"/', $val) == 1) {
+            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"number"/', $val) == 1
+                       || preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*\[[^\]]*"number"[^\]]*\]/', $val) == 1) {
                 $arrOk = 1;
                 $arrTy = "af";
-            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"boolean"/', $val) == 1) {
+            } else if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"boolean"/', $val) == 1
+                       || preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*\[[^\]]*"boolean"[^\]]*\]/', $val) == 1) {
                 $arrOk = 1;
                 $arrTy = "ab";
             }

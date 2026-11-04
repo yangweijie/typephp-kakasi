@@ -497,6 +497,33 @@ def main():
           "keys=%r tail=%r" % (sorted(u2leaf.keys()) if isinstance(u2leaf, dict) else None,
                                u2txt[-40:]))
 
+    # F294: union items inside an array leaf (["string","null"]) behave like the plain form.
+    deepU3 = {"type": "object", "properties": {"aliases": {"type": "array",
+                                                           "items": {"type": ["string", "null"]}},
+                                               "city": {"type": "string"}}}
+    for i in range(40):
+        deepU3 = {"type": "object", "properties": {"k%d" % i: deepU3}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepu3", "schema": deepU3, "strict": True}}})
+    u3txt = r["choices"][0]["message"]["content"]
+    u3leaf = None
+    try:
+        u3cur = json.loads(u3txt)
+        for i in range(39, -1, -1):
+            u3cur = u3cur["k%d" % i]
+        u3leaf = u3cur
+    except Exception:
+        u3leaf = None
+    check("chat-json-schema-deep40-union-array-leaf",
+          isinstance(u3leaf, dict) and isinstance(u3leaf.get("aliases"), list)
+          and len(u3leaf.get("aliases", [])) > 0
+          and all(x is None or isinstance(x, str) for x in u3leaf.get("aliases", []))
+          and isinstance(u3leaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(u3leaf.keys()) if isinstance(u3leaf, dict) else None,
+                               u3txt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
