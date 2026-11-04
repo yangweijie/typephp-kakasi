@@ -2293,3 +2293,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 原理：联合类型只要输出**其中任一成员**即合法，因此取正则捕获到的第一个标量成员决定叶子种类（string > integer > number > boolean 的捕获顺序）。修法把 F292 的"仅 nullable"正则放宽为 `\[\s*[^\]]*"(string|integer|number|boolean)"[^\]]*\]`（`3618d5b`）。
 **实测**：8000 **110 PASS**（含新门 `chat-json-schema-deep40-union-leaf`：40 层 + `uid` ∈ {str, int} + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **边界**：联合里若**没有任何**标量成员（如 `["object","array"]`）仍回退旧路径；数组项的联合类型（`items.type` 为数组）尚未支持。
+
+### F294 · 数组项的**联合类型**（`items.type` 为数组）已支持，并过完整梯子
+修法（`1cb8a97`）：planner 的四种数组元素识别各加一条联合正则（`"items":{"type":[ … "string" … ]}` 等），与 F293 同一"任一成员合法"逻辑。
+**实测**：8000 **111 PASS**（含新门 `chat-json-schema-deep40-union-array-leaf`：40 层 + `aliases` 为非空列表、元素为字符串或 null + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**当前基线**：**139 项自检 / 111 形状 8000 / 8001 全绿**。
+**仍未支持**：对象数组叶（嵌套内）、无标量成员的联合（`["object","array"]`）、含元字符 `pattern`、`minimum/maximum/multipleOf`。
