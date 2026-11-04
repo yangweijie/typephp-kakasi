@@ -2066,3 +2066,9 @@ g_sess_len += 1;
 **判读**：修复前是扁平对象 `{"city":"Paris"}`（`closes=1`）；修复后变成**裸枚举值 `Paris`**（`closes=0`）——正是 F243 描述的通道：`api_schema_candidates` 被我的门挡住后返回空 ⇒ 请求落到 `main.php:7616` 的全 body `/"enum"\s*:\s*\[/` 分支 ⇒ `api_constrained($ids,["Paris"])` 只解出枚举字面量，**整个 40 层结构丢失**。
 ⇒ **`f3c029a` 只是把"错误归属"换成"另一个错误归属"，不构成修复**（F243 的预测得到实证，无需撤稿）。**F244 的四步仍是唯一出路**，而且第 4 步（收窄 2629 的一刀切拒绝）必须做，否则嵌套检测器永远不接手。
 **回归面无异常**：137 PASS、par 9/9、fairness PASS、0 `Accept failed` ⇒ 这条门只影响"嵌套 + 枚举叶"这一类，与 F241 的静态界定一致。
+
+### F255 · **Round 2 判决：`235bc45`（`g_sess_len` 顺序修复）通过无回归验证**；F238 状态未变（预期）
+`b8u8njq8t`：`BUILD_EXIT=0 / LINK_FAIL=0 / exe_age=1s`（新二进制）⇒ `SUITE_SECS=674`、**137 PASS / 0 FAIL**、`SCHEMA-DEEP200-RETRY first_len=3909`；`SMOKE_EXIT=1` 仍**只有** `chat-json-schema-deep40-enum-leaf len=5 closes=0 tail='Paris'`；`PAR_EXIT=0 PASS=9`；`FAIR_EXIT=0 FAIRNESS: PASS`。
+**结论**：把 `g_sess_len += 1` 挪到 `r.empty()` 之后**没有引入任何回归**，冷启动修复与三级门禁全部保持；与 Round 1 相比唯一变化是自检耗时 693 s → 674 s（**都是绝对值，无可比基线，不构成提速结论**）。
+**诚实边界**：本轮只证明"没坏"，**没有**直接断言那条缺陷本身（要断言"失败步不再占一格"需要一条专门用例：制造一次 `next_allowed` 返回 -1，然后比较 `model_session_len()` 与真实 KV 行数——目前没有这样的用例）。⇒ 这条修复的状态应写为**"无回归通过，行为未直接断言"**，不得写成"已验证修复"。
+**冷启动的四轮证据链**至此完整：`run_f228`/`run_f229`/`run_f239`/`run_f241`/`run_f242` 全部 137 PASS / 0 FAIL 且 `first_len=3909`（`f241`/`f242` 还是**首调判据** + 完整两级门禁）。
