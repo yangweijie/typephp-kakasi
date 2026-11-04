@@ -2303,3 +2303,12 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 ### F295 · **HEAD 从零重建的完整梯子全绿**（F290–F294 的全部改动均非增量假象）
 `b6xf8u37r`：`rm -rf engine/build/gen engine/build/obj`（含 C++ 目标文件）→ `BUILD_OK`（`exe_age=4s`）→ 自检 **139 PASS / 0 FAIL**（`SUITE_SECS=736`）→ 8000 **111 PASS** / `SMOKE_EXIT=0` → 8001 `PAR_EXIT=0 PASS=9` → `FAIRNESS: PASS`。
 **当前最强基线（HEAD `fdaf25a` 的源码状态）**：139 / 111 / 9 + fairness，全部在完全重建的二进制上取得。
+
+### F296 · 对象数组叶：**尝试三轮未成，已整体回退**（负结果 + 三个具体路障）
+**目标**：让 `{"entries":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}}}}}` 作为嵌套对象里的叶子被完整装配。
+**三轮事实**：
+1. 加了 `ao:<key>` plan 类型与装配分支后，输出变成**裸数组** `[{"name":"…"}]}`（外层对象与键全丢）⇒ 根因是 `api_response_schema_array_object` 的匹配正则在**整份 schema 任意位置**找 `"array"+"items":"object"`，深层数组被它抢先认领。
+2. 给该检测器加"`"properties"` 出现次数 > 2 就不认领"的门后，结构回来了但**缺 `entries` 键**（只剩 city）⇒ 因为 `api_top_leaves` 的数组识别仍被 `substr_count($val,"{") == 2` 限定，而对象数组的值有 **3 个** `{`。
+3. 把对象数组识别移出两花括号门后，输出为 `…"k38":[{"name":"…"}]}}`——**JSON 仍不合法**（`keys=None`），说明 `ao` 分支与路径/闭合预算之间还有一处不一致，未在两轮内定位。
+**处置**：三个提交全部 `git revert`，重建后 8000 复验 **111 PASS** ⇒ HEAD 回到 F295 的已验证基线；**不留半成品语法**。
+**下次的正确打法**：①先只做"检测器优先级 + planner 识别"（不加 `ao` 装配），让请求**落到嵌套装配但不输出该键**，用结构断言确认路由正确；②再单独加 `ao` 装配；③每一步都跑 40 层门。**一次只动路由、一次只动装配**——本轮把两者混在一起，才需要三轮仍未收敛。
