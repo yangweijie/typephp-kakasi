@@ -2288,3 +2288,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 修法（`ed56234`）：类型匹配加一条联合分支 `"type"\s*:\s*\[\s*"(string|integer|number|boolean)"\s*,\s*"null"\s*\]`，两种写法都写进同一个 `$m[1]`，后续逻辑不变（生成字符串/数字/布尔值都满足该联合，属合法输出）。
 **实测**：8000 **109 PASS**（含新门 `chat-json-schema-deep40-nullable-leaf`：40 层 + `nick` 键存在且为字符串或 null + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=736`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **仍不支持**：对象数组叶（数组项内再装配对象）、混合类型枚举、含元字符 pattern、`minimum/maximum/multipleOf`；`["string","integer"]` 这类**非 null 联合**仍未处理（会落回旧路径）。
+
+### F293 · **联合类型叶子**（任意含标量成员的 `type` 数组）现在可用，并过完整梯子
+原理：联合类型只要输出**其中任一成员**即合法，因此取正则捕获到的第一个标量成员决定叶子种类（string > integer > number > boolean 的捕获顺序）。修法把 F292 的"仅 nullable"正则放宽为 `\[\s*[^\]]*"(string|integer|number|boolean)"[^\]]*\]`（`3618d5b`）。
+**实测**：8000 **110 PASS**（含新门 `chat-json-schema-deep40-union-leaf`：40 层 + `uid` ∈ {str, int} + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=734`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**边界**：联合里若**没有任何**标量成员（如 `["object","array"]`）仍回退旧路径；数组项的联合类型（`items.type` 为数组）尚未支持。
