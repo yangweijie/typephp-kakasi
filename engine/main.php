@@ -2497,15 +2497,6 @@ function api_top_leaves(string $block, int $maxN): string
                 $arrTy = "ao:" . $mo[1];
             }
         }
-        // Object arrays carry three braces (the value, its items object and that object's
-        // properties), so they are recognised outside the two-brace gate above (F296).
-        if ($arrOk == 0) {
-            $mo2 = [];
-            if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{\s*"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val, $mo2) == 1) {
-                $arrOk = 1;
-                $arrTy = "ao:" . $mo2[1];
-            }
-        }
         if (substr_count($val, "{") == 1 || $arrOk == 1) {
             $m = [];
             if ($arrOk == 1) {
