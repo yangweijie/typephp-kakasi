@@ -2043,3 +2043,13 @@ g_sess_len += 1;
 **关键读法**：F250 已证 `build_f240` 是 `BUILD_EXIT=1 / SYCL_LINK_FAILED`，exe 停在 12:27 ⇒ **`f3c029a` 不在这轮二进制里**。因此这条红**只**能得出两件事：① **缺陷本身可稳定复现**（40 层 + 枚举叶 ⇒ 输出退化成 `closes=1` 的扁平对象，和 F238/F243 描述的形状完全一致）；② 门的判据工作正常（它确实抓住了扁平输出）。**不能**得出"`f3c029a` 不够"——那一判定要等有真实新 exe 的那一轮（F243 的预测届时才算被检验）。
 **同样有效但价值有限**：`run_f240` 的 137 PASS 与两级门禁绿，都是**旧二进制**的第 5 遍复现（同 `run_f228/f229/f239`），只能说明修复行为稳定，不构成对 `f3c029a` 的验证。
 **停车时状态**：HEAD 干净（探针已由链自身 revert，`REVERT_EXIT=0 / probes_left=0`），下一步就是 `progress.md` 里那条 START HERE：**先证明 exe 换了**，再谈 f241 的验证与 F244 修复。
+
+### F252 · 反复 `SYCL_LINK_FAILED` 的真因：**遗留的引擎进程**（不是句柄释放时序，F248 的猜测作废一半）
+**诊断三步（这次一次定位）**：
+1. `mv exe exe.tmp && mv back` **成功** ⇒ Windows 允许**改名**，但链接器要做的是**替换/删除**，运行中的映像会拒绝 ⇒ 光看"能 mv"会误判成"没锁"。
+2. 无服务器、无哨兵、无自测在跑时仍然 `LNK1104` ⇒ 说明有别的东西持有它。
+3. 用 .NET 列进程（**不要 tasklist/WMI，会挂**）：
+   `powershell -NoProfile -Command 'Get-Process | Where-Object {$_.ProcessName -like "*kakasi*"} | Select-Object Id,ProcessName,StartTime'`
+   ⇒ 实测抓到一个**孤儿** `kakasi_engine_sycl`（PID 748988）。`Stop-Process -Id … -Force` 之后立刻 `BUILD_EXIT=0 / LINK_FAIL=0 / exe age=1s`。
+**规程（替换 F248 的"等一下就好"）**：每次重建**之前**先跑上面那条 `Get-Process` 过滤；**有残留就先 `Stop-Process -Force`**，再清 AST 重建。重建后仍然要核 exe mtime 变新 + `SYCL_LINK_FAILED` 计数 0。只靠"sleep 30 s"不够——孤儿进程可以活几十分钟（本次那只是上一轮门禁/自测链留下的）。
+**顺带澄清**：之前把 `run_f239`/`run_f240` 归因为"上一遍刚退出的句柄窗口"只对了一半；真正的持有者是这个孤儿。两轮的产物**仍然作废**（二进制没换），判读结论不变。
