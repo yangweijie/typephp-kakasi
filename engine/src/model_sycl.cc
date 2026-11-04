@@ -338,15 +338,34 @@ namespace {
     // Allocate (or grow) the per-layer cache. The prefill path and the prefix-cache loader must
     // agree on this layout exactly, so it lives in one place. Element width follows g_kv.f16,
     // so switching KV precision drops the old cache and rebuilds it at the new width.
-    bool ensure_kv(int backend, sycl::queue& q, int need_rows, int dkv, int layers) {
+    // `keep_rows` rows already written are copied into the new buffers: freeing first used to
+    // discard them, so the first growth past KV_MIN_CAP left rows 0..511 uninitialized and every
+    // later attention over them produced NaN logits (findings F265).
+    bool ensure_kv(int backend, sycl::queue& q, int need_rows, int dkv, int layers, int keep_rows = 0) {
         if (g_kv.backend == backend && g_kv.cap >= need_rows) return true;
-        g_kv.free_all();
+        if (keep_rows > g_kv.cap) keep_rows = g_kv.cap;
         const int cap = std::max(need_rows, KV_MIN_CAP);
-        g_kv.q = &q; g_kv.backend = backend; g_kv.cap = cap; g_kv.dkv = dkv; g_kv.len = 0;
         const size_t bytes = (size_t) cap * (size_t) dkv * g_kv.elem();
+        std::vector<char*> nk;
+        std::vector<char*> nv;
         for (int l = 0; l < layers; ++l) {
-            g_kv.k.push_back(sycl::malloc_device<char>(bytes, q));
-            g_kv.v.push_back(sycl::malloc_device<char>(bytes, q));
+            nk.push_back(sycl::malloc_device<char>(bytes, q));
+            nv.push_back(sycl::malloc_device<char>(bytes, q));
+            if (!nk.back() || !nv.back()) return false;
+        }
+        if (keep_rows > 0 && (int) g_kv.k.size() == layers) {
+            const size_t keep = (size_t) keep_rows * (size_t) dkv * g_kv.elem();
+            for (int l = 0; l < layers; ++l) {
+                q.memcpy(nk[l], g_kv.k[l], keep);
+                q.memcpy(nv[l], g_kv.v[l], keep);
+            }
+            q.wait_and_throw();
+        }
+        g_kv.free_all();
+        g_kv.q = &q; g_kv.backend = backend; g_kv.cap = cap; g_kv.dkv = dkv; g_kv.len = keep_rows;
+        for (int l = 0; l < layers; ++l) {
+            g_kv.k.push_back(nk[l]);
+            g_kv.v.push_back(nv[l]);
         }
         return true;
     }
@@ -1016,7 +1035,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
     if (eIdx < 0 || HD > 128) { g_err = "no token_embd.weight or head too wide"; return {}; }
 
     // (Re)allocate the cache when the backend changes or the sequence outgrows it.
-    if (!ensure_kv(backend, q, pos + T, DKV, L)) return {};
+    if (!ensure_kv(backend, q, pos + T, DKV, L, pos)) return {};
 
     try {
         // Long-lived: live across every layer, so they own their memory instead of using the
