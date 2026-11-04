@@ -2494,9 +2494,10 @@ function api_top_leaves(string $block, int $maxN): string
                 $out = $out == "" ? $key . ":" . $arrTy : $out . "," . $key . ":" . $arrTy;
                 $count++;
             } else if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1
-                       || preg_match('/"type"\s*:\s*\[\s*"(string|integer|number|boolean)"\s*,\s*"null"\s*\]/', $val, $m) == 1) {
-                // The second form is a nullable union (["string","null"]), which strict OpenAI
-                // schemas use pervasively; without it the leaf was dropped entirely (F292).
+                       || preg_match('/"type"\s*:\s*\[[^\]]*"(string|integer|number|boolean)"[^\]]*\]/', $val, $m) == 1) {
+                // The second form is a union type (["string","null"], ["string","integer"], …).
+                // Emitting ANY member of the union is schema-valid, so the first recognised member
+                // decides the leaf kind; without this the leaf was dropped entirely (F292).
                 $mk = "s";
                 if ($m[1] == "number") {
                     $mk = "n";

@@ -472,6 +472,31 @@ def main():
           "keys=%r tail=%r" % (sorted(uleaf.keys()) if isinstance(uleaf, dict) else None,
                                utxt[-40:]))
 
+    # F293: non-null unions are valid too - emitting any member satisfies the schema.
+    deepU2 = {"type": "object", "properties": {"uid": {"type": ["string", "integer"]},
+                                               "city": {"type": "string"}}}
+    for i in range(40):
+        deepU2 = {"type": "object", "properties": {"k%d" % i: deepU2}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepu2", "schema": deepU2, "strict": True}}})
+    u2txt = r["choices"][0]["message"]["content"]
+    u2leaf = None
+    try:
+        u2cur = json.loads(u2txt)
+        for i in range(39, -1, -1):
+            u2cur = u2cur["k%d" % i]
+        u2leaf = u2cur
+    except Exception:
+        u2leaf = None
+    check("chat-json-schema-deep40-union-leaf",
+          isinstance(u2leaf, dict) and "uid" in u2leaf
+          and isinstance(u2leaf.get("uid"), (str, int))
+          and isinstance(u2leaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(u2leaf.keys()) if isinstance(u2leaf, dict) else None,
+                               u2txt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
