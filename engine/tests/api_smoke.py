@@ -365,6 +365,33 @@ def main():
           "keys=%r tail=%r" % (sorted(fleaf.keys()) if isinstance(fleaf, dict) else None,
                                ftxt[-40:]))
 
+    # F286: an array-of-strings property inside a nested object is a leaf too; it used to be
+    # dropped entirely because the planner only recognised scalar leaves.
+    deepA = {"type": "object", "properties": {"tags": {"type": "array",
+                                                       "items": {"type": "string"}},
+                                              "city": {"type": "string"}}}
+    for i in range(40):
+        deepA = {"type": "object", "properties": {"k%d" % i: deepA}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepa", "schema": deepA, "strict": True}}})
+    atxt = r["choices"][0]["message"]["content"]
+    aleaf = None
+    try:
+        acur = json.loads(atxt)
+        for i in range(39, -1, -1):
+            acur = acur["k%d" % i]
+        aleaf = acur
+    except Exception:
+        aleaf = None
+    check("chat-json-schema-deep40-array-leaf",
+          isinstance(aleaf, dict) and isinstance(aleaf.get("tags"), list)
+          and all(isinstance(x, str) for x in aleaf.get("tags", []))
+          and isinstance(aleaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(aleaf.keys()) if isinstance(aleaf, dict) else None,
+                               atxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

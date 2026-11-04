@@ -2469,9 +2469,19 @@ function api_top_leaves(string $block, int $maxN): string
             break;
         }
         // Depth-1 leaves are flat objects: a nested object has more than its own opening brace.
-        if (substr_count($val, "{") == 1) {
+        // A leaf holding an array of strings has exactly one extra brace (its items object), so
+        // it is a leaf too - without this the key was dropped (F286).
+        $arrOk = 0;
+        if (substr_count($val, "{") == 2
+            && preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val) == 1) {
+            $arrOk = 1;
+        }
+        if (substr_count($val, "{") == 1 || $arrOk == 1) {
             $m = [];
-            if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1) {
+            if ($arrOk == 1) {
+                $out = $out == "" ? $key . ":a" : $out . "," . $key . ":a";
+                $count++;
+            } else if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1) {
                 $mk = "s";
                 if ($m[1] == "number") {
                     $mk = "n";
@@ -2688,6 +2698,61 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
             $bb = api_constrained_continue(["true", "false"], 4);
             if ($bb != "") {
                 $s = $s . "," . $bb;
+            }
+        } else if ($ty == "a") {
+            // Nested array of strings (F286). The separator already emitted "key":, so this only
+            // has to produce ["…","…"] using the same item/terminator grammar as the top-level
+            // array builder, driven through continuations on the live session.
+            $commaIds = api_punct_ids(",");
+            $bracketIds = api_punct_ids("]");
+            $aop = api_constrained_continue(["[\""], 8);
+            if ($aop == "" || $commaIds == "" || $bracketIds == "") {
+                return "";
+            }
+            $s = $s . "," . $aop;
+            $itemsDone = 0;
+            for ($it = 0; $it < 3; $it++) {
+                if ($it > 0) {
+                    $aop2 = api_constrained_continue(["\""], 4);
+                    if ($aop2 == "") {
+                        break;
+                    }
+                    $s = $s . "," . $aop2;
+                }
+                $aclosed = 0;
+                for ($d = 0; $d < $maxSteps; $d++) {
+                    $anx = model_session_next_allowed(0, $stepIds);
+                    if ($anx < 0) {
+                        break;
+                    }
+                    $s = $s . "," . $anx;
+                    if (strpos($q, "," . $anx . ",") !== false) {
+                        $aclosed = 1;
+                        break;
+                    }
+                }
+                if ($aclosed == 0) {
+                    $acq = api_constrained_continue(["\""], 4);
+                    if ($acq != "") {
+                        $s = $s . "," . $acq;
+                    }
+                }
+                $endIds = $commaIds . "," . $bracketIds;
+                $anx2 = model_session_next_allowed(0, $it < 2 ? $endIds : $bracketIds);
+                if ($anx2 < 0) {
+                    break;
+                }
+                $s = $s . "," . $anx2;
+                if (strpos("," . $commaIds . ",", "," . $anx2 . ",") === false) {
+                    $itemsDone = 1;   // "]"
+                    break;
+                }
+            }
+            if ($itemsDone == 0) {
+                $acl = api_constrained_continue(["]"], 4);
+                if ($acl != "") {
+                    $s = $s . "," . $acl;
+                }
             }
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 4);
