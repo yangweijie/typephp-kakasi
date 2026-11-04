@@ -1758,6 +1758,14 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
                 if (f + (size_t) D > n) continue;      // need a full-depth path
                 std::vector<int> br;
                 for (int j = 0; j < D; ++j) br.push_back(out[f + (size_t) j]);
+                // Repetitive text has the same continuation after every occurrence of the tail
+                // trigram, so pushing duplicates would spend every bin on one path (F157/F262).
+                // Keep scanning for distinct continuations instead.
+                bool dup = false;
+                for (size_t bi = 0; bi < branches.size(); ++bi) {
+                    if (branches[bi] == br) { dup = true; break; }
+                }
+                if (dup) continue;
                 branches.push_back(std::move(br));
             }
         }
