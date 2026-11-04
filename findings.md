@@ -2098,3 +2098,8 @@ g_sess_len += 1;
 - `PAR_EXIT=0 PASS=9`；`FAIR_EXIT=0`、`FAIRNESS: PASS`（短流显著早于长流结束）。
 配合此前 `engine/api_smoke_f249.log`（`API SMOKE: PASS`、`SMOKE_EXIT=0`、**99 PASS 行**），**F238（字符串枚举叶丢嵌套）在三级门禁上全部通过**，且冷启动修复与 137 项自检未回退。
 **仍不算完成的部分**（写作"未覆盖"，不并入本结论）：数字枚举叶只保结构不保取值（F258）；`g_sess_len` 顺序修复缺判别性用例（F257）；`b5bbqj9x7` 对 HEAD（含 `SESSION-POS` 与反斜杠拒绝）的复跑尚未出结果。
+
+### F260 · HEAD 复跑：138 PASS / 0 FAIL（新增 `SESSION-POS` 通过），F238 修复与守卫在**同一二进制**上都成立
+`b5bbqj9x7`：`BUILD=0 / LINK=0`（新 exe）⇒ `SUITE_SECS=676`、**138 PASS / 0 FAIL**（137 + `SESSION-POS`）、`SESSION-POS: PASS (refused step left the position at 3)`、`SCHEMA-DEEP200-RETRY first_len=3909`。
+⇒ HEAD（F238 修复 + 反斜杠枚举拒绝 + `SESSION-POS`）自检全绿；与 F259 的 137 项相比只多这一条，**无回归**。
+**仍然守住的两条边界**：①`SESSION-POS` 只是不变量守卫，**不判别** `g_sess_len` 顺序修复（F257）；②本轮**没有**跑 8000/8001（上一轮 `b0i2o29tr` 跑的是不含守卫的二进制）⇒ 若要把"HEAD 过完整梯子"写进审计，仍需一次带门禁的复跑。
