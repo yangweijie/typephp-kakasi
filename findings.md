@@ -2081,3 +2081,7 @@ g_sess_len += 1;
 4. 分派与检测：全 body 枚举分支加 `"properties"` 计数 <2 的前置（嵌套 schema 不再被它抢走）；`api_response_schema_nested_object` 的拒绝表去掉 `enum`（保留 const/pattern/min/max/multipleOf）。← **没有这一步，前面的都白做**（请求会落到 7616 的裸枚举正则，输出只剩 `Paris`，F254）
 **踩坑记录（值得进记忆）**：初版用 `|` 分隔枚举值，**与 `path|plan` 的分隔符冲突** ⇒ 探测输出显示 plan 被截成 `city:e:Paris`（n=1）、`count:i` 丢失；改用 `~` 后 n=2、结构完整。
 **实测**：`engine/api_smoke_f249.log` **`API SMOKE: PASS`、`SMOKE_EXIT=0`、PASS 行 99**（＝98 形状 + 汇总，与预测一致）；单请求体为 `…"k0":{"city":"Paris","count":1000}}}}…`（40 层 + 枚举生效）。**全套自检与 8001 门禁正在 `b0i2o29tr` 复跑**（预期 137 PASS / 0 FAIL、par 9/9、fairness PASS）。
+
+### F257 · 自我否证：`SESSION-POS` **不能**判别 `g_sess_len` 顺序修复（已在注释里标明）
+读 `src/model_sycl.cc:1483-1498`：`session_next_allowed` 的出口顺序是 ①`g_last_logits`/allowed 空 ②所有 id 越界（`best < 0`）③eos ④`prefill_top1` 返回空（这才是 `g_sess_len += 1` 曾提前的地方）。我写的 `model_session_next_allowed(0, "-1")` 命中的是**②**，它在自增**之前**返回 ⇒ **改前改后都过**，没有判别力。
+**结论**：`bd3f643` 加的那条只能算**不变量守卫**（防止将来的拒绝路径偷偷推进位置），**不能**用来宣称"顺序修复已验证"；F255 的"行为未直接断言"缺口**仍然存在**。要真正判别，需要一个能让 `prefill_top1` 返回空的构造（例如把会话推到超出 KV 容量的位置），本机不易稳定构造 ⇒ 记为**未覆盖**，不得含糊成"已测"。

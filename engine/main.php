@@ -9630,9 +9630,10 @@ function main(): void
             . "] q=[" . $seqQ . "/" . $refQ . "]\n";
     }
 
-    // SESSION-POS: a refused constrained step must not advance the session position. A negative
-    // id can never be chosen, so next_allowed returns -1; the length must stay where it was
-    // (findings F242/F255 - the increment used to run before the empty-result check).
+    // SESSION-POS: invariant guard, NOT a discriminating test for the ordering fix, and it says so.
+    // A negative allowed id exits at "no allowed id is in range", which sits BEFORE prefill_top1,
+    // so this passes with or without the g_sess_len ordering change (findings F257). Its job is to
+    // keep any future refusal path from silently advancing the position.
     model_session_start(0, "785,6722,315");
     $spBefore = model_session_len();
     $spNeg = model_session_next_allowed(0, "-1");
