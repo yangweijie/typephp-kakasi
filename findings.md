@@ -2023,3 +2023,11 @@ g_sess_len += 1;
 **判读规则（先做这一步，再看任何结果）**：`grep -c SYCL_LINK_FAILED engine/build_f240.log` 为 1（或 exe mtime 仍停在 12:27）⇒ **`run_f240` 与 `*_f240` 门禁全部作废**：它们测的是没有 `f3c029a` 的旧二进制，既不能算修复通过，也不能算回归。
 **补救（一条命令，确认无引擎进程后再跑）**：`rm -rf engine/build/gen/cache/ast && cmd //c "scripts\build-kakasi-nosetvars.bat norun" > engine/build_f241.log 2>&1; grep -c SYCL_LINK_FAILED engine/build_f241.log` —— 期望 `0` 且 exe mtime 变新，然后 `run_f241` 自检 + `api_smoke`（判据见 F243/`progress.md`：enum-leaf 预期仍红，全绿 99 行则说明 2629 判读有误）。
 **根上的改进（值得单独一个小改动）**：构建脚本应当**在链接失败时以非零码退出**并把 `SYCL_LINK_FAILED` 打成显式失败，而不是让上层 `cmd //c` 看起来"跑完了"；否则每条链式任务都可能悄悄用旧 exe 得出假绿/假红。
+
+### F249 · 探针轮收尾数据：`BUILD_EXIT=1`（链接失败，F245 预言成立）、**收窄版自检秒表 = 673 s**、同一旧 exe **第三次** 137 PASS/0 FAIL
+`bbijoaylz` 输出：`BUILD_EXIT=1 secs=83`、`SUITE_SECS=673`、`=== probe lines ===`（**空**），`engine/run_f239.log` 最终 **137 PASS / 0 FAIL**、`SCHEMA-DEEP200-RETRY first_len=3909 second_len=3887`、`SCHEMA-DEEP200: PASS (… first attempt)`。
+**三条可复用的结论**：
+1. **修复的可重复性再加一遍**：同一二进制现在有三遍全绿自测（`run_f228`/`run_f229`/`run_f239`），首调判据每次都过 ⇒ F226 的效果不是偶发。
+2. **第一次拿到干净的秒表数**：收窄版（`caf1bd6`，无探针）整轮自测 **673 s ≈ 11.2 min**。**仍然不得**由此推出"收窄省了多少"——没有未收窄版的同机秒表对照（此前 9→12 min 的说法已在 F227/`progress.md` 撤回，这次只报绝对值）。
+3. **`probe` 空 = 二进制里没探针**（`LNK1104` 在案），再次证明"没打印"既不能证明也不能否证；根因两分支**仍未证**，下一轮重建时必须**先看 exe mtime 变没变**（F245/F248 规程）。
+**链的现状**：`run_f239` 已结束 ⇒ `bdlditj5k` 现在会去 revert 探针并重建；**但 83 秒的 BUILD_EXIT=1 说明锁窗口是真实存在的**，它的重建同样要先过"mtime 变新 + 无 SYCL_LINK_FAILED"这道检查，否则 `f240` 全部作废。
