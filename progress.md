@@ -674,3 +674,10 @@
 **结论**：目标**未完成**。已闭合的是"约束解码正确性 + 冷启动首调 + 工具并行"三块并有可复跑证据；仍欠 4 个具体缺陷/优化与 5 个大项。
 - **链活性检查（10:03，已自我更正）**：`engine/run_f239.log` **已 382 秒没有写入**，停在 701 行（最后一条是 `SCHEMA-DEEP80: PASS`，即正卡在 DEEP200 用例里），链输出文件仍为 0 字节 ⇒ `bdlditj5k` 在等一个**可能还要几分钟**（也可能明显偏慢）的自测，而这一遍跑的是**旧 exe**（F245），产出只是"又一遍旧二进制的重复"。**结论：不要排队等它。** 下轮直接按 F248 补救自己走一遍：确认 `netstat` 无 LISTENING 且没有自测进程占着 exe（**不要用 taskkill，这台机器会挂**），`rm -rf engine/build/gen/cache/ast` 后重建，并**核对 exe mtime 必须变新**、`build_f24x.log` 里 `SYCL_LINK_FAILED` 计数为 0，再跑自检与两级门禁。若链稍后才完成，它的 `f240` 结果一律按"链接是否成功"重新判读，不得默认有效。
 - **停车瞬间读数（10:05，原样记录）**：链已推进到 `REVERT_EXIT=0 / probes_left=0`（源码回到无探针状态，`f3c029a` 的门仍在），并已开始写 `engine/build_f240.log`。⚠ 但 **exe 仍是 12:27**，且上一轮同样的窗口以 `BUILD_EXIT=1 / SYCL_LINK_FAILED` 收场 ⇒ **`run_f240` 与 `*_f240` 门禁在证明"exe mtime 变新 + `grep -c SYCL_LINK_FAILED engine/build_f240.log`=0"之前一律视为无效**。工作树：`git status` 干净（仅遗留未跟踪的 `engine/gates_f201.txt`），哨兵 0 个。
+
+## ▶ 下一轮从这里开始（停车时唯一有效指令）
+1. **跳过 `run_f240` / `api_smoke_f240` / `par_smoke_f240` / `fairness_f240`**：它们跑的是 12:27 的旧 exe（F250：`BUILD_EXIT=1` + `SYCL_LINK_FAILED`），无论红绿都不构成证据。
+2. 确认没有引擎进程（`netstat -ano -p tcp | grep LISTENING` 为空；**别用 taskkill**），然后 `rm -rf engine/build/gen/cache/ast && cmd //c "scripts\build-kakasi-nosetvars.bat norun" > engine/build_f241.log 2>&1`。
+3. **先验证二进制真的换了**：`engine/build/kakasi_engine_sycl.exe` 的 mtime 必须新于本轮开始时刻，且 `grep -c SYCL_LINK_FAILED engine/build_f241.log` = 0。不满足就再等 30 s 重试一次，别带着旧 exe 去测量。
+4. 满足后才跑：`scripts\run-kakasi-selftest.bat engine\run_f241.log`（期望 137 PASS / 0 FAIL、`SCHEMA-DEEP200-RETRY first_len>0`），再 8000 `python engine/tests/api_smoke.py`（`chat-json-schema-deep40-enum-leaf` 按 F243 预测**仍应红**），最后 8001 门禁。
+5. 之后才是 F244 的枚举叶修复（单独一轮）；`g_sess_len += 1` 顺序修复（F234/F242）再单独一轮。
