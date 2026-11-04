@@ -138,3 +138,10 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **F294 数组项的联合类型**（`items.type` 为数组）：与纯形式同处理（进行中，判据 `deep40-union-array-leaf`）。
 **基线（F293 完成时）**：自检 **139 PASS / 0 FAIL**、8000 **110 PASS**、8001 `par_smoke` 9/9 + `fairness` PASS。
 **仍未覆盖**：对象数组叶（嵌套内）、`pattern` 含元字符、`minimum/maximum/multipleOf`、以及无标量成员的联合（如 `["object","array"]`）。
+
+## 审计增补（F295–F297，2026-11-04 20:20）
+- **F295**：HEAD 从零重建（清 `build/gen` + `build/obj`）后完整梯子全绿：自检 139 / 8000 111 / 8001 9/9 + fairness。
+- **F296/F297 对象数组叶**：先证路由、再动装配。路由靠"`"properties"` 出现 >2 次则根级数组-对象检测器让位"；装配靠 `ao:` 叶，**关键判别量是 4 个花括号**（值 + items + properties + 属性 type 对象），首版误用 3 导致静默漏项。最终 8000 **112 PASS**、自检 139、8001 全绿。
+- **当前基线（HEAD 源码）**：**139 项自检 / 112 形状 8000 / 8001 9/9 + fairness**，均在 `73fa748` 的构建上取得。
+- **仍未支持**：多属性对象项、数组项内的嵌套对象、无标量成员的联合、含元字符 `pattern`、`minimum/maximum/multipleOf`。
+- **大项未动**：采样验证（F284，FR-06 前置）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（需第二设备）、GGUF 分片、FR-05。
