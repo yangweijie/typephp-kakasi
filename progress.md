@@ -717,3 +717,10 @@
 - **本轮闭合**：KV 根修（NaN 整行）、布尔叶、叶子上限 3→6、字符串数组叶、`const`、纯字面量 `pattern`、数字枚举、分支去重（负收益）、split 同构修复。
 - **下一步（按价值）**：①**采样验证**（F284 四步规格；F273 已证贪心 argmax 下多分支收益恒为 0）；②嵌套**数字数组**叶（`api_number_fill` 可组合，planner+builder+门，一轮完整梯子）；③对象数组叶；④per-session KV 并行吞吐；⑤SSD 前缀分桶；⑥GGUF 分片；⑦FR-05。多卡 split 本机不可执行。
 - **红线提醒**：构建与测量之间用 `&&`；重建前 `Get-Process` 清孤儿；测量前先证 exe mtime 变新；探针"没打印"必须先证明探针在二进制里（池序号 → `main.cc` 引用）。
+
+## ▶ 续跑从这里开始（2026-11-04 23:31 更新，覆盖 F240 时期的旧指引）
+- **当前基线（HEAD `dc90ad6`，二进制与源码同源）**：自检 **144 PASS / 0 FAIL**、8000 **112 形状**、8001 `par_smoke` 9/9 + `fairness` PASS。基线日志：`run_f306.log` / `api_smoke_f306.log` / `par_smoke_f306.log` / `fairness_f306.log`。
+- **已具备的 FR-06 原语**：`model_token_prob(id,temp)`、`model_rand01()`、`model_sample_excluding(id,temp)`、`model_peek_argmax()`；自检内已验证 `SPEC-SAMPLE`（acc=9 rej=15 diff=15 可复现）与 `SPEC-COST`（接受机制仅贵 1.7%/token）。
+- **唯一下一步（能出真实收益）**：把 `SPEC-SAMPLE` 的循环接进 C++ `spec_*` 路径（多草稿 + 一次批量验证），判据是**同温度 tree-on/off 的 wall 对比**；实现时记住 F273（贪心验证下多分支恒无收益）与 F284（四步规格）。
+- **其余未闭合**：多属性对象项（阻塞于上游 dispatch 归属未定位，F298–F300）、`g_sess_len` 覆盖缺口（F261）、含元字符 pattern / `minimum·maximum·multipleOf`、per-session KV 并行吞吐、SSD 前缀分桶、GGUF 分片、多卡 split（需第二设备）、FR-05。
+- **护栏**：单引擎进程；构建与测量之间用 `&&`；重建前清孤儿并核 exe mtime；新增 native 函数必须同时改 `php_model_*` 包装与 `model.stub.php`。
