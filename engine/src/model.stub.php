@@ -16,6 +16,7 @@ function model_logsumexp(): float {}
 function model_token_prob(int $id, float $temp): float {}
 function model_rand01(): float {}
 function model_sample_excluding(int $exclude, float $temp): int {}
+function model_peek_argmax(): int {}
 
 function model_expect_rank(): int {}
 

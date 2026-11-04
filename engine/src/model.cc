@@ -20,6 +20,7 @@ double logsumexp();
 double token_prob(int id, double temp);
 double rand01();
 int sample_excluding(int exclude, double temp);
+int peek_argmax();
 int expect_rank();
 int trace_count();
 double trace_at(int i);
@@ -83,6 +84,7 @@ php::Float php_model_logsumexp() { return php::Float(model::logsumexp()); }
 php::Float php_model_token_prob(php::Int id, php::Float temp) { return php::Float(model::token_prob((int) id, (double) temp)); }
 php::Float php_model_rand01() { return php::Float(model::rand01()); }
 php::Int php_model_sample_excluding(php::Int exclude, php::Float temp) { return php::Int(model::sample_excluding((int) exclude, (double) temp)); }
+php::Int php_model_peek_argmax() { return php::Int(model::peek_argmax()); }
 php::Int php_model_expect_rank() { return php::Int(model::expect_rank()); }
 php::Float php_model_gen_prefill_ms() { return php::Float(model::gen_prefill_ms()); }
 php::Float php_model_gen_step_ms() { return php::Float(model::gen_step_ms()); }

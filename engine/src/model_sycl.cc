@@ -866,6 +866,17 @@ double logsumexp() { return g_logsumexp; }
 // p(draft), and the residual resample needs the same normaliser.
 double next_u64_unit(uint64_t& s);   // defined below; declared for rand01/sample_excluding
 
+// Argmax of the current logits WITHOUT advancing the session (F303). Speculative sampling must
+// decide accept/reject before it knows which token to commit, so the peek has to be free of side
+// effects: it neither prefills nor touches g_sess_len.
+int peek_argmax() {
+    const int n = (int) g_last_logits.size();
+    if (n == 0) return -1;
+    int best = 0;
+    for (int i = 1; i < n; ++i) if (g_last_logits[(size_t) i] > g_last_logits[(size_t) best]) best = i;
+    return best;
+}
+
 // Uniform draw in [0,1) from the session RNG - the acceptance draw of speculative sampling
 // (F284 step 2). Same splitmix64 source as sampling, so a seed makes runs reproducible.
 double rand01() { return next_u64_unit(g_sess_rng); }

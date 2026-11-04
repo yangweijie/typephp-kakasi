@@ -9865,9 +9865,20 @@ function main(): void
     $pU1 = model_rand01();
     $pU2 = model_rand01();
     $pX = model_sample_excluding($pTopId, 1.0);
+    $pkLen0 = model_session_len();
+    $pk1 = model_peek_argmax();
+    $pk2 = model_peek_argmax();
+    $pkLen1 = model_session_len();
     if ($pTopId >= 0 && $pTopProb > 0.0 && $pTopProb <= 1.0 && $pOther >= 0.0 && $pOther <= $pTopProb) {
         if ($pU1 >= 0.0 && $pU1 < 1.0 && $pU2 >= 0.0 && $pU2 < 1.0 && $pX >= 0 && $pX != $pTopId) {
-            echo "SAMPLE-API: PASS (u1=" . $pU1 . " u2=" . $pU2 . " x=" . $pX . ")
+            if ($pk1 >= 0 && $pk1 == $pk2 && $pk1 == $pTopId && $pkLen0 == $pkLen1) {
+            echo "PEEK-API: PASS (id=" . $pk1 . " len=" . $pkLen0 . " unchanged)
+";
+        } else {
+            echo "PEEK-API: FAIL id=" . $pk1 . "/" . $pk2 . " top=" . $pTopId . " len=" . $pkLen0 . "->" . $pkLen1 . "
+";
+        }
+        echo "SAMPLE-API: PASS (u1=" . $pU1 . " u2=" . $pU2 . " x=" . $pX . ")
 ";
         } else {
             echo "SAMPLE-API: FAIL u1=" . $pU1 . " u2=" . $pU2 . " x=" . $pX . " top=" . $pTopId . "
