@@ -1910,3 +1910,11 @@ F226 的重启对所有 `api_constrained` 生效 ⇒ EOS 正常终止也要白�
 ### F232 · **`caf1bd6` 收窄版已用整条自检验证**（原"未测量"撤销）：137 PASS / 0 FAIL、`SCHEMA-DEEP200` 按**首调**判据通过
 `engine/run_f228.log`（构建自 `engine/build_f228.log`，源码含收窄、**不含探针**）788 行：`SCHEMA-DEEP200-RETRY first_len=3909 second_len=3887`、`SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the first attempt)`、**137 PASS / 0 FAIL**、`==RUN_EXIT=0==`。⇒ 把重启限定在"allowed 单 id"并没有削弱修复：冷启动首调仍拿到完整 3909 字符体。**仍未测量的一项**：收窄究竟省下多少自检时间（缺一条同一二进制的秒表基线；`run_f229` 正在给收窄版的秒表数，但**没有**未收窄版的秒表对照 ⇒ 只能报绝对值，不能报"省了多少"，除非再跑一次对照）。
 **探针状态的诚实说明**：F229 探针在链式任务开始构建**之前**已被 `git revert 82cc910` 撤下（为避免把 `g_sess_len` 顺序修复混进探针轮），所以 `run_f229` 里**不会出现** `F229-PROBE`；那不是"没再发生冷启动拒绝"的证据。根因仍是 F228 的两条分支之一，未测。
+
+### F233 · 探针轮的操作说明（下轮照此执行，勿与别改动混在同一构建）
+**目的**：判定 `no logits computed`（`engine/src/model_sycl.cc:1323`）属于 F228 的哪条分支——`rows==0` 还是**整行 NaN**（NaN 让 `if (v > rbest)` 恒假 ⇒ `bestId` 保持 -1，这正好解释"只有第一次会坏"）。
+**已写好的改动（在 `82cc910` 里，可 `git revert 8afcf73` 复原）**：
+1. `model_sycl.cc:1323` 把 `g_err` 写成 `"no logits computed rows=… T=… nOut=… allsize=… nonfinite=…"`（`nonfinite` 用 `if (!(v == v))` 计数）。
+2. `main.php` 的 `api_constrain_loop` 在 `$nx < 0` 且 `maxSteps > 1000` 时 echo `F229-PROBE d=… err=[model_last_error()] sesslen=model_session_len()`，**放在 re-prefill 之前**，这样修复照常生效、自检仍绿，而诊断信息被打印出来。
+**执行顺序**：`git revert --no-edit 8afcf73` → **只**构建 PHP 侧不需要动 C++？（不对：`g_err` 在 C++ 里，必须一次完整重建）⇒ `rm -rf engine/build/gen/cache/ast` + `scripts\build-kakasi-nosetvars.bat norun`（SYCL 重建耗时，见记忆"构建停在 model.cc 属正常"）→ `scripts\run-kakasi-selftest.bat engine\run_f2xx.log` → **判读**：`F229-PROBE` 行里 `nonfinite==allsize` ⇒ NaN 分支（修法：查 `dLogits`/`gemm` 输入为何未就位，勿只把 `Dev` 清零掩盖）；`allsize==0` 或 `rows==0` ⇒ 元数据/词表分支。
+**红线**：这一轮**不要**同时改 `g_sess_len += 1` 的顺序（`:1496`）——那是一条会改变行为的修复，混进来就无法归因；单独一轮。判据仍是 `SCHEMA-DEEP200-RETRY first_len>0` 且 **137 PASS / 0 FAIL**，另需 8000/8001 门禁复跑。
