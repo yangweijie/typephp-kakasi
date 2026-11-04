@@ -2161,3 +2161,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 - 8001：`PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0`、`FAIRNESS: PASS`。
 ⇒ **冷启动缺陷（F208 起）在根因层修复并通过三级门禁**，且修复版下 F238 的 enum-leaf 门、`SESSION-POS` 守卫、反斜杠拒绝全部同轮通过。
 **下一个真问题**：数字枚举只保结构（F258）；split 路径 `g_kv2` 扩容同样"先 free 再分配"（F265 末尾记录，多卡实验路径）；FR-06.2 的多样草稿器尚未动。
+
+### F268 · **F258 已闭合**：嵌套 plan 的数字枚举现在**受取值约束**（`en:` 类型），8000 门禁 100 PASS
+实现（`81e5ff6`）：planner 对 `integer|number` 且带 `enum` 的叶子产出 `key:en:v1~v2`（值必须是纯数字字面量，含 `~ , " \` 或非数字则整体放弃、退回无约束 `i`/`n`）；builder 新增 `en` 分支——候选是**不带引号**的字面量，交给 `api_constrained_continue`；分隔符不加引号（与 `i` 一致）。
+**实测**（`b2t03yrlx`）：`BUILD=0 / LINK=0`、`SMOKE_EXIT=0`、`API SMOKE: PASS`、**PASS 行 100**（原 99 + 新门 `chat-json-schema-deep40-enum-num`）；该门要求 40 层结构完整 **且** `n ∈ {1000, 2000}`、`city` 为字符串。
+**边界仍在**：混合类型枚举（如 `[1,"a"]`）会因值不是纯数字而退回无约束（安全但不受限）；`const`/`pattern`/`min|max|multipleOf` 仍使嵌套检测器拒绝该 schema（走既有扁平路径）。
+**进行中**：全套自检与 8001 门禁（同一作业的后半段）。
