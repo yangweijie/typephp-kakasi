@@ -152,3 +152,10 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **离线复刻探针未生效**：插入的 `DET-PROBE` 代码最终不在源码里（`src=0`），自检跑的是基线（139 PASS / 0 FAIL）——这一轮没有产生新信息，已如实记为**未执行**而非"探针沉默"。
 - **当前基线（HEAD `dacbe58`，源码 = `73fa748`）**：自检 **139 PASS / 0 FAIL**、8000 **112 形状**、8001 `par_smoke` 9/9 + `fairness` PASS。
 - **下一步建议**：多属性对象项暂缓——需要先给整条 dispatch 分段打点或做真正的离线复刻；**更高价值的是采样验证（F284）**，它是 FR-06 的前置（F273 已证贪心验证下多分支收益恒为 0）。
+
+## 审计增补（F301–F306，2026-11-04 23:31）——FR-06 的前置条件已被**实测解除**
+- **四件采样原语落地**（F301/F302/F304，均过完整梯子）：`model_token_prob(id,temp)`、`model_rand01()`、`model_sample_excluding(id,temp)`（残差）、`model_peek_argmax()`（**不推进会话**）。
+- **采样验证循环**（F305）：`SPEC-SAMPLE: PASS (acc=9 rej=15 diff=15 reproducible)` ⇒ 得到**非贪心且可复现**的解码路径；F273 的"贪心验证下多分支收益恒为 0"前提不再成立。
+- **经济性实测**（F306）：24 步 wall 对比 **greedy 444.87 ms / sampling 452.61 ms，ratio 1.017** ⇒ 接受判定+残差采样只贵 **1.7%/token**，任何被接受的草稿都是净收益。
+- **当前基线**：自检 **144 PASS / 0 FAIL**、8000 **112 形状**、8001 `par_smoke` 9/9 + `fairness` PASS（同一构建）。
+- **仍缺口**：把采样循环接进 C++ `spec_*`（多草稿 + 一次批量验证）并测 **同温度 tree-on/off wall**；多属性对象项（阻塞于上游 dispatch 归属未定位）；per-session KV 并行吞吐；SSD 前缀分桶；GGUF 分片；多卡 split（需第二设备）；FR-05。
