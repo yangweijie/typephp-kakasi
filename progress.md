@@ -681,3 +681,9 @@
 3. **先验证二进制真的换了**：`engine/build/kakasi_engine_sycl.exe` 的 mtime 必须新于本轮开始时刻，且 `grep -c SYCL_LINK_FAILED engine/build_f241.log` = 0。不满足就再等 30 s 重试一次，别带着旧 exe 去测量。
 4. 满足后才跑：`scripts\run-kakasi-selftest.bat engine\run_f241.log`（期望 137 PASS / 0 FAIL、`SCHEMA-DEEP200-RETRY first_len>0`），再 8000 `python engine/tests/api_smoke.py`（`chat-json-schema-deep40-enum-leaf` 按 F243 预测**仍应红**），最后 8001 门禁。
 5. 之后才是 F244 的枚举叶修复（单独一轮）；`g_sess_len += 1` 顺序修复（F234/F242）再单独一轮。
+
+## 双轮验证的决策表与 job 对应（2026-11-04 10:32）
+- **Round 1 `b71htt0fl`**：二进制**只含** `f3c029a`（F253 已用池序号 `[1844]` 证明进了码）⇒ 它的 `chat-json-schema-deep40-enum-leaf` 结果**唯一地**决定 F243 预言对不对。日志前缀：`run_f241.log` / `api_smoke_f241.log` / `par_smoke_f241.log` / `fairness_f241.log`。
+- **Round 2 `b8u8njq8t`**（排队中，等 Round 1 的 `VERIFY_F241_DONE`）：先 `Stop-Process` 清孤儿 → 清 AST → 重建（含 `235bc45` 的 `g_sess_len` 顺序修复）→ **核 `BUILD_EXIT=0` / `LINK_FAIL=0` / exe mtime 变新** → 自检 + 两级门禁。日志前缀：`*_f242.log`。
+- **判读**：R1 红 + R2 红 ⇒ F243 成立，走 F244；R1 红 + R2 绿 ⇒ 幻影 KV 行是成因，F243 归因要改写；R1 绿 ⇒ 撤 F243。**两轮都必须各自 137 PASS / 0 FAIL + par 9/9 + fairness PASS**，否则按回归处理，不许当"修复成功"。
+- **红线**：Round 2 构建完成之前**不要改源码**（否则它编进不该编的改动，决策表作废）。
