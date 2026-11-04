@@ -1918,3 +1918,18 @@ F226 的重启对所有 `api_constrained` 生效 ⇒ EOS 正常终止也要白�
 2. `main.php` 的 `api_constrain_loop` 在 `$nx < 0` 且 `maxSteps > 1000` 时 echo `F229-PROBE d=… err=[model_last_error()] sesslen=model_session_len()`，**放在 re-prefill 之前**，这样修复照常生效、自检仍绿，而诊断信息被打印出来。
 **执行顺序**：`git revert --no-edit 8afcf73` → **只**构建 PHP 侧不需要动 C++？（不对：`g_err` 在 C++ 里，必须一次完整重建）⇒ `rm -rf engine/build/gen/cache/ast` + `scripts\build-kakasi-nosetvars.bat norun`（SYCL 重建耗时，见记忆"构建停在 model.cc 属正常"）→ `scripts\run-kakasi-selftest.bat engine\run_f2xx.log` → **判读**：`F229-PROBE` 行里 `nonfinite==allsize` ⇒ NaN 分支（修法：查 `dLogits`/`gemm` 输入为何未就位，勿只把 `Dev` 清零掩盖）；`allsize==0` 或 `rows==0` ⇒ 元数据/词表分支。
 **红线**：这一轮**不要**同时改 `g_sess_len += 1` 的顺序（`:1496`）——那是一条会改变行为的修复，混进来就无法归因；单独一轮。判据仍是 `SCHEMA-DEEP200-RETRY first_len>0` 且 **137 PASS / 0 FAIL**，另需 8000/8001 门禁复跑。
+
+### F234 · `g_sess_len` 顺序缺陷的**待执行改动**（写下来以免丢，但**故意不在门禁轮之前应用**）
+`engine/src/model_sycl.cc:1495-1497` 现在是：
+```
+const std::vector<double> r = prefill_top1(backend, std::vector<int>{best}, -1, g_sess_len);
+g_sess_len += 1;
+if (r.empty()) return -1;
+```
+失败路径（`r.empty()`）**已经**把会话长度加了一格 ⇒ 会话长度比真实 KV 行数多 1，之后任何"在同一会话继续"的步骤都会往空一格的位置写。正确写法是把自增挪到成功之后：
+```
+const std::vector<double> r = prefill_top1(backend, std::vector<int>{best}, -1, g_sess_len);
+if (r.empty()) return -1;
+g_sess_len += 1;
+```
+**为什么本轮不做**：磁盘 exe 目前与 HEAD 同源，门禁轮（8000/8001）就要用这个 exe；现在改源码会让 `progress.md` 交接快照里"exe == HEAD"失效，门禁结论就得重算。**顺序**：门禁跑完并记录 ⇒ 单独一轮只改这两行 ⇒ 完整 SYCL 重建 ⇒ 自检须仍 137 PASS / 0 FAIL 且 `SCHEMA-DEEP200-RETRY first_len>0`，再补 8000/8001。**不要**与 F233 的探针轮合并（两条改动同轮 ⇒ 无法归因）。
