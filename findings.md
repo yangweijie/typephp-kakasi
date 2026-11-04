@@ -2333,3 +2333,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 ⇒ F298 的"兄弟检测器抢先"得到直接证据，但**具体是哪一个**尚未定位——需要在每个检测器的返回值处逐项打点，属另一轮工作。
 **处置**：探针已 `git checkout` 回退；重建后 8000 复验 **112 PASS** ⇒ HEAD 保持 F297 的已验证状态。
 **留给下次的判据**：打印 `$sArr2/$sArr3/$sArrObjArr/$sArrObjNest/$sNest` 五个候选的返回值（一次请求即可），**先确认谁抢了**，再决定是给该检测器加"`"properties"` 计数"门，还是让嵌套路径优先。
+
+### F300 · 多属性对象数组：候选检测器那段**同样没执行**（第二次探针沉默）⇒ 请求在更上游就被处理
+在 `$sNest = api_response_schema_nested_object($body)` 之后打 `F300-PROBE`（打印 `$sArr2/$sArr3/$sArrObj/$sArrObjNest/$sNest`），仅当 schema 名含 `deepo/deepe`。**`grep -c F300-PROBE serve_f300.log` 仍为 0** ⇒ 连候选赋值所在的分支都没进：该请求在上游某个分支（`$sArr4/$sArr3/$sArr2` 的更早派生，或流式/工具分支）就被消费完了。
+**结论**：继续追这一条需要把整条 dispatch 分段打点（至少 6–8 个断点），成本远超"多属性对象项"这一窄特性；**本轮到此为止**。
+**处置**：探针回退，重建后 8000 复验 **112 PASS** ⇒ HEAD 保持 F297 基线。
+**下次的判据**：不是继续加探针，而是先用**离线复刻**（把同一 schema 喂给各个 `api_response_schema_*` 函数并打印返回值）在 PHP 侧跑一遍——那不需要重建二进制，一轮就能定位认领者。
