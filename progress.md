@@ -656,3 +656,19 @@
 - **⚠ 后台链的中断 hazard**：它在门禁阶段会创建 `engine/serve.on`、`engine/serve.par.on` 并"用后即删"。**若链被打断，哨兵可能残留**，而哨兵存在时下一次自测会变成服务器并挂住（本项目已踩过）。⇒ **续跑第一步：`ls engine/*.on`，有就删。**
 - **根因仍未证**：探针测到结果之前，`no logits computed` 依旧是 F228 的两条分支之一（`rows==0` / 整行 NaN）；`g_sess_len += 1` 早于 `r.empty()` 判定（`model_sycl.cc:1496`）仍未修，改动文本在 F234。
 - **未开始的大项**：FR-06.2 多样草稿器（可执行方案已写进 task_plan 末尾）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片、FR-05。
+
+## 完成度审计（2026-11-04，把目标拆成可核对的条目 ⇒ 证据文件 ⇒ 状态）
+| 目标条目 | 证据（仓库内） | 状态 |
+|---|---|---|
+| FR-01 tpc+SYCL 单二进制、双后端 | `engine/build_f228.log`、`run_f228.log` 137 PASS | **达成** |
+| FR-03 SYCL 后端（以 DPC++ 代 acpp） | 各 `run_f2xx.log` 的 SYCL 用例 + `docs/audit-v0.2.md` | **替代达成** |
+| 语法约束 JSON（含嵌套≤256、外部 $ref、oneOf/allOf、多维数组） | `run_f228.log` SCHEMA-* 全绿；`api_smoke_f237c.log` 97 形状 | **达成** |
+| 冷启动首调长约束返回空（F208→F226） | `run_f228.log`/`run_f229.log`：137 PASS/0 FAIL、`first_len=3909`、**首调判据** PASS | **功能达成并过全梯门禁** |
+| 上述修复在 8000/8001 的活服务验证 | `api_smoke_f237c.log`（SMOKE_EXIT=0）、`par_smoke_f232.log` 9/9、`fairness_f232.log` PASS | **达成**（注：跑的是修复版；`f3c029a` 的复验仍排队） |
+| 并行工具调用（生成/扇出/流式/点名） | `run_f2xx.log` TOOL-CALLS-*、`api_smoke` 对应形状 | **达成** |
+| F238 枚举叶丢嵌套（结构退化扁平） | 缺陷复现记录 `findings.md` F238/F243；修复 `f3c029a` **未验证**；真修见 F244 规格 | **未修** |
+| 冷路径 `no logits computed` 根因 | F228 两分支；探针轮因 `SYCL_LINK_FAILED`（F245）**未取到数据** | **未证** |
+| `g_sess_len += 1` 早于空判（:1496） | 改动文本 F234、影响面 F242 | **未落地** |
+| FR-06 树收益需多样草稿器 | F235（只取首个后缀命中 ⇒ 分支同源）、方案 `task_plan.md` 末段 | **未实施** |
+| per-session KV 并行吞吐 / SSD 前缀分桶 / 多卡 split / GGUF 分片 / FR-05 | 无 | **未开始** |
+**结论**：目标**未完成**。已闭合的是"约束解码正确性 + 冷启动首调 + 工具并行"三块并有可复跑证据；仍欠 4 个具体缺陷/优化与 5 个大项。
