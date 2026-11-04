@@ -1947,3 +1947,14 @@ g_sess_len += 1;
 失败详情：`chat-json-schema-deep40-first-call len=367 text='{"k39":{"k38":{"k37":…'` —— 外层键序**正确**（k39 最外，与 F231 离线复刻一致），但 **367 字符 ≈ 只到 30 层左右就没了**，`json.loads` 失败 ⇒ 断言为假。
 **这不是我写的测试的假红**（顺序已核）；**也不是冷启动那个 bug 的复现**（冷启动是首调返回**空串**，这里返回了**部分体**）。⇒ 新缺陷面：**API 侧深层嵌套装配的预算/深度上限**与进程内自检路径不一致（自检里 DEEP40/DEEP80/DEEP200 都成，API 请求却截断）。
 **我的取证缺陷**：详情里 `dtxt[:60]` 把正文截了，看不到尾部 ⇒ 读不到是"少闭合括号"还是"叶子缺失"。**下一轮先把断言详情改成同时打 len 与 tail（+ `count('}')`）**，再用单条 curl 复刻一个请求取全身体对比：① 若 API 与自检**同一 plan** 而结果不同 ⇒ 查 API 侧 `max_tokens`→步预算换算或 schema 检测器深度分支；② 若返回体是被 `finish_reason=length` 截 ⇒ 是预算换算问题，属可修的小口子。
+
+### F237 · **门禁全绿（F226/F227 的验收补齐）**：8000 `api_smoke` PASS、8001 `par_smoke` 9/9 + `fairness` PASS，跑的是与 HEAD 同源的二进制
+**过程里有两次自我纠错，都记下来**：
+1. 第一次跑（`api_smoke_f232.log`）新门红：`len=367`。我先假设"截断/预算"，**单条 curl 复刻证伪了它**：`FINISH=stop`、`{`=41 与 `}`=41 **平衡**、尾巴带完整叶子 ⇒ 结构是**完整**的，红是因为**我的断言要求枚举值**而 schema 根本没给 `city` 加 enum（模型写散文是合法的）。⇒ 这是**测试写错**，不是引擎缺陷（F236 里"API 侧深度上限"的推测作废）。
+2. 把叶子改成 `enum:["Paris","London"]` 再跑 ⇒ 变成 `len=16 text={"city":"Paris"}`：40 层嵌套**整体消失**，但 `finish_reason=stop`。⇒ 这是**另一个真缺陷**（见 F238），但**不属于**本门要测的东西；本门职责是"首调结构完整"，故最终版断言改为**走完 40 层 + 叶子类型正确**，枚举那条另立缺陷记录，**不静默、也不混用**。
+**实测（同一二进制，源码 mtime 早于 exe，HEAD=`8afcf73` 之后仅文档改动）**：`engine/api_smoke_f237c.log` **`API SMOKE: PASS`、`SMOKE_EXIT=0`**（PASS 计数 98 含汇总行），服务端 **`Accept failed` 0 行**；`engine/par_smoke_f232.log` **9/9 PASS、`PAR_EXIT=0`**；`engine/fairness_f232.log` **`FAIRNESS: PASS`（短流 TTFT 0.29 s vs 长流 4.81 s，长流 total 101 s 仍被协作轮转压在短流之后）**。自测层 `run_f228/run_f229` 两遍 **137 PASS / 0 FAIL**。⇒ **F226 修复与 `caf1bd6` 收窄至此过完整条梯子。**
+哨兵文件用后即删，停车检查 `ls engine/*.on` 为空（不会把下一次自测变成服务器）。
+
+### F238 · 新缺陷（已取证，未修）：**嵌套对象 schema 的叶子带 `enum` 时，服务侧丢掉全部嵌套**，只回扁平 `{"city":"Paris"}`
+** repro**：同一 40 层 schema，仅把叶子 `city` 从 `{"type":"string"}` 改成 `{"type":"string","enum":["Paris","London"]}` ⇒ 响应从**完整的 41 对花括号**变成 **`{"city":"Paris"}`（16 字符，`finish_reason=stop`）**。⇒ 枚举叶把请求路由到了**扁平枚举/单键分支**，`api_nested_object_value` 没拿到 path（`engine/main.php` 的候选服务入口在 5086 / 6342 / 7395 / 7755 四处都调它，说明分派在更上游的检测顺序里）。
+**修法方向**：检测顺序里"嵌套对象 plan"**必须优先于**裸枚举分支（或枚举叶在嵌套 plan 里当 `e:` 类型而非升级为顶层枚举）；判据现成——把这条 repro 固化成第二道门 `chat-json-schema-deep40-enum-leaf`（断言走完 40 层且 `city in {Paris,London}`），**先让它红着**，修好后转绿。**状态：缺陷已复现，未修，未入门禁。**

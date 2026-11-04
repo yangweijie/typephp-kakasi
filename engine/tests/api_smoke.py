@@ -165,6 +165,10 @@ def main():
     # F226: a long forced nested assembly must arrive complete on the FIRST served request. The
     # cold-session defect (findings F208-F225) showed up as empty text on attempt one and a correct
     # body only on an identical retry, so grading a retry here would prove nothing.
+    # F237: the leaf is deliberately NOT enum-constrained. With "enum":["Paris","London"] on the
+    # leaf the served path returned a FLAT {"city":"Paris"} and dropped all 40 levels (findings
+    # F238) - a separate routing defect. This shape's job is structural completeness on attempt one,
+    # so it asserts the walk + leaf types and leaves the enum case filed, not asserted here.
     deep = {"type": "object", "properties": {"city": {"type": "string"},
                                              "count": {"type": "integer"}}}
     for i in range(40):
@@ -183,9 +187,9 @@ def main():
     except Exception:
         dleaf = None
     check("chat-json-schema-deep40-first-call",
-          isinstance(dleaf, dict) and dleaf.get("city") in ("Paris", "London")
-          and isinstance(dleaf.get("count"), int),
-          "len=%d text=%r" % (len(dtxt), dtxt[:60]))
+          isinstance(dleaf, dict) and isinstance(dleaf.get("city"), str)
+          and len(dleaf.get("city")) > 0 and isinstance(dleaf.get("count"), int),
+          "len=%d closes=%d tail=%r" % (len(dtxt), dtxt.count("}"), dtxt[-40:]))
 
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
