@@ -2053,3 +2053,10 @@ g_sess_len += 1;
    ⇒ 实测抓到一个**孤儿** `kakasi_engine_sycl`（PID 748988）。`Stop-Process -Id … -Force` 之后立刻 `BUILD_EXIT=0 / LINK_FAIL=0 / exe age=1s`。
 **规程（替换 F248 的"等一下就好"）**：每次重建**之前**先跑上面那条 `Get-Process` 过滤；**有残留就先 `Stop-Process -Force`**，再清 AST 重建。重建后仍然要核 exe mtime 变新 + `SYCL_LINK_FAILED` 计数 0。只靠"sleep 30 s"不够——孤儿进程可以活几十分钟（本次那只是上一轮门禁/自测链留下的）。
 **顺带澄清**：之前把 `run_f239`/`run_f240` 归因为"上一遍刚退出的句柄窗口"只对了一半；真正的持有者是这个孤儿。两轮的产物**仍然作废**（二进制没换），判读结论不变。
+
+### F253 · 本轮二进制**确实包含** `f3c029a`（用池序号法核过，不是靠 mtime 或文本 grep）
+做法（F221 的正向用法）：先在**字面量池**里找到门用的正则，再回 `main.cc` 查它被引用：
+- `engine/build/gen/extension-kakasi_engine.cc:1979` ⇒ `ZEND_STRL("/\"type\"\s*:\s*\"object\"/") ... // [1844]`，**正是**我在 `api_schema_candidates` 里加的那条门；
+- `engine/build/gen/main.cc` 里 `1844` 出现 **1 次**，上下文是 `php::call(..., php::VarList{get_str(1844), tail})` ⇒ 生成代码**调用**了这条正则。
+⇒ 与 `BUILD_EXIT=0 / LINK_FAIL=0 / exe age=1s` 三条一起，构成本轮"测的就是含着 `f3c029a` 的新二进制"的完整证据链（前几轮正是缺这一环才会被旧 exe 骗过）。
+**规程定型**：以后声明"某改动进了二进制"，用 **池序号 → `main.cc` 引用计数**这一对，而不是 grep 文本（文本在池里可能残留旧串，见 F219/F221）。
