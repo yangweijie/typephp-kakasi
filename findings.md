@@ -2005,3 +2005,10 @@ g_sess_len += 1;
 2. 当前 **HEAD（含探针 `468cb58`）≠ 磁盘 exe（无探针）**。链式任务接下来 `git revert 468cb58` + 重建会同时消掉这个错位——但**前提是链接成功**。
 **规程补一条（覆盖旧构建直觉）**：每次重建后**先看 exe 的 mtime 是否变新**，再跑任何测量；只要 mtime 没动，就当作"没换二进制"，本轮全部结果作废。链式任务里这条要写成 `python -c` 打印 mtime 或直接 `grep SYCL_LINK_FAILED`。
 **下一步（按价值排序）**：①等链式任务的 `run_f240`+两级门禁出结果（验 `f3c029a`，价值高于探针）；②若要探针轮，**重跑前先确认没有引擎进程**（`netstat` 无 LISTENING + 新建一条 `SYCL_LINK_FAILED` 检查），且不与其它改动混轮；③F238 的真修按 F244 的四步做。
+
+### F246 · 排队链在场时的**编辑纪律**（本轮据此决定"不写代码"）
+链式任务 `bdlditj5k` 的关键三步是：`git revert 468cb58` → `rm -rf build/gen/cache/ast` + 重建 → 跑 `run_f240` 与两级门禁。推论：
+1. **构建吃的是当前工作树**，所以只要链还在排队，**任何**对 `engine/main.php`/`src/*.cc` 的改动（哪怕是未提交、或在别的分支上把 HEAD 切过去）都会被编进 `run_f240` ⇒ 那一轮就不再是"`f3c029a` 的单独验证"。**⇒ 本轮不做 F244 的实现，尽管规格已写全。**
+2. **手工抢跑 revert 更糟**：链自己的 `git revert` 会与我先做的 revert 冲突，git 可能留下 sequencer/冲突标记；冲突标记进了 `main.php` 就是**编译期语法错误**，整轮验证作废。**⇒ 要撤探针只能由链自己撤。**
+3. 判活只能用便宜且非 WMI 的手段：日志 mtime 年龄、`netstat -ano -p tcp` 里有没有 LISTENING、以及**构建后必查 exe mtime 是否变新 + 日志里有没有 `SYCL_LINK_FAILED`**（F245 的教训）。`tasklist`/`taskkill` 在这台机器上会挂，不要用。
+**下一轮（链完成之后）的正确顺序**：先确认 `build_f240.log` 无链接失败且 exe 变新 ⇒ 读 `run_f240`（期望 137 PASS）与 `api_smoke_f240`（期望 98 形状；`chat-json-schema-deep40-enum-leaf` 按 F243 预测**仍应红**）⇒ 若如预测，则这时才做 F244 的实现，单独一轮。
