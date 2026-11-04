@@ -2205,3 +2205,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 `b10wiayyj`：8000 **100 PASS / `SMOKE_EXIT=0`**、8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`；配 `run_f275.log` 的 **138 PASS / 0 FAIL** ⇒ `c6bc9f4` 在单设备范围过完整梯子（`splitActive` 本机恒假，见 F276 的边界）。
 **本轮会话的最终 HEAD 状态**：KV 根修（F265/F266）+ F238 字符串枚举 + F258 数字枚举（`en:`）+ `SESSION-POS` 守卫 + 反斜杠拒绝 + 分支去重（F271 负收益）+ split 路径同构修复（F276）——**138 项自检 / 100 形状 8000 / 8001 全绿**。
 **明确未完成**：FR-06 需先做**采样验证**（F273 证明贪心 argmax 下多分支收益恒为 0）；per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（本机无第二设备）、GGUF 分片、FR-05 均未开始；混合类型枚举与 `const/pattern/min|max` 仍回退到旧路径。
+
+### F279 · `SESSION-GROW` 通过：KV 根修现在有**判别性**回归守卫（补上 F257 缺的那一类）
+`b7x9nelpz`：自检 **139 PASS / 0 FAIL**，新增行 `SESSION-GROW: PASS (530 steps past the 512-row boundary)`；`SCHEMA-DEEP200-RETRY first_len=3887 second_len=3887` 不变。
+**为什么它判别**：测试从 3 token 的 prompt 起，连续 530 次 `model_session_next_allowed`，位置在 ~509 处**跨过 512**——旧实现恰在此处 `free_all()` 丢弃 0..511 行、下一步返回 `-1 ("no logits computed")`（F265 的探针实测 `sesslen=515` 时整行 NaN）⇒ **旧代码会在这里 FAIL**。这就是 F257 里"缺一条能对着旧代码失败的用例"所指的那条（针对 `g_sess_len` 顺序修复仍不可判别，但**针对根因已可判别**）。
+**成本**：530 次单 token 前向，整套自检时长仍在一轮约 11–13 min 的范围内（本轮见 `SUITE` 计时）。
