@@ -2266,3 +2266,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 **未完成**：本轮**未跑** 8001 `par_smoke`/`fairness`（预算耗尽）⇒ 这条改动目前是"8000 + 自检"两级绿，补跑前不得写成"过完整梯子"。
 
 **F288 补（同上条，更正"未完成"）**：8001 已补跑——`b9wj6i8q4`：`PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。⇒ 叶子上限 3→6 的改动**已过完整梯子**：自检 139 PASS / 0 FAIL、8000 **105 PASS**、8001 全绿。上一条中"未跑 8001"作废。
+
+### F289 · **F286 已闭合**：嵌套对象里的"字符串数组"叶现在会被装配（不再丢键），并过完整梯子
+两处根因：①planner 的门是 `substr_count($val,"{") == 1`，而数组叶的值对象含 **2 个** `{`（自身 + items）⇒ 根本不进叶子判断；②即使进来了，类型正则也只认 string/integer/number/boolean。
+修法（`fbe08d0`）：识别 `"items":{"type":"string"` 的两花括号叶 → plan 记 `key:a`；builder 新增 `a` 分支——先续解 `["`，再复用"逐项字符串 + 逗号/右括号终止"的循环（与顶层数组构造器同一套 token 语法），最后补 `]`。
+**实测**：8000 **106 PASS**（含新门 `chat-json-schema-deep40-array-leaf`：40 层 + `tags` 是字符串列表 + `city` 是字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=737`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS` ⇒ **放宽 planner 的叶子门没有破坏既有数组/对象检测器**。
+**仍未支持**：数字数组叶、对象数组叶（这两类仍由顶层检测器承担；嵌套内尚无对应 plan 类型）、混合类型枚举、含元字符的 pattern、`minimum/maximum/multipleOf`。
