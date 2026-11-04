@@ -446,6 +446,32 @@ def main():
           "keys=%r tail=%r" % (sorted(b2leaf.keys()) if isinstance(b2leaf, dict) else None,
                                b2txt[-40:]))
 
+    # F292: nullable unions (["string","null"]) are the common strict-schema form; the leaf used
+    # to be dropped because the planner only matched a plain "type":"string".
+    deepU = {"type": "object", "properties": {"nick": {"type": ["string", "null"]},
+                                              "city": {"type": "string"}}}
+    for i in range(40):
+        deepU = {"type": "object", "properties": {"k%d" % i: deepU}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1700, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepu", "schema": deepU, "strict": True}}})
+    utxt = r["choices"][0]["message"]["content"]
+    uleaf = None
+    try:
+        ucur = json.loads(utxt)
+        for i in range(39, -1, -1):
+            ucur = ucur["k%d" % i]
+        uleaf = ucur
+    except Exception:
+        uleaf = None
+    check("chat-json-schema-deep40-nullable-leaf",
+          isinstance(uleaf, dict) and "nick" in uleaf
+          and (uleaf.get("nick") is None or isinstance(uleaf.get("nick"), str))
+          and isinstance(uleaf.get("city"), str),
+          "keys=%r tail=%r" % (sorted(uleaf.keys()) if isinstance(uleaf, dict) else None,
+                               utxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
