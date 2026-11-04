@@ -642,3 +642,10 @@
 - 结论：**门禁在停车时刻仍未取到结果 ⇒ 记为"未跑"**，不得用旧日志顶替；续跑第一步就是读这三个文件并如实记账。
 - **末次读数（12:31）**：`run_f229` PASS=90 / FAIL=0、尚无 `RUN_EXIT`（收窄版第二次全量自检仍在跑，与 `run_f228` 的 137 PASS 同版源码）；三个门禁日志 **unrun**（`api_smoke_f231`/`par_smoke_f231`/`fairness_f231` 均不存在）。⇒ 停车时 F226/F227 的验收仍只到自测层，**不得**把旧 `api_smoke_f2xx.log` 当作本轮门禁证据。链式任务 `b92wbrol6` 会在 `run_f229` 出 `RUN_EXIT` 后自动依次跑 8000/8001，续跑第一步是读那三个文件。
 - **12:39 更新（覆盖上一条停车读数）**：`run_f229`（收窄版**第二次全量自检，链式任务带秒表**）**137 PASS / 0 FAIL、`RUN_EXIT=0`、`SCHEMA-DEEP200: PASS (… first attempt)`、`first_len=3909 second_len=3887`** ⇒ 收窄版可重复性成立（两遍同源码各 137 PASS）。链式任务 `bd7o2dv9y` 随后被停，但其**自检步骤已完成**；门禁作业 `b92wbrol6` 已起跑：`engine/serve_f231.log` 正在写（8000 服务已拉起），`api_smoke_f231.log` 尚未落盘 ⇒ 门禁**进行中**，续跑先读 `api_smoke_f231.log`（期望 97 PASS）、再读 `par_smoke_f231.log`/`fairness_f231.log`。**秒表数只在链式任务的输出文件里**（`SELFTEST_F229_SECS`），仍无"未收窄版"对照，故不得报省时数。
+
+## 门禁轮真实结果（勿当作产品缺陷读）
+- 后台作业 `b92wbrol6` 外壳退出 0，但**三个门禁脚本一个都没跑成**：`SMOKE_EXIT=2 / PAR_EXIT=2 / FAIR_EXIT=2`，python 报 `can't open file ...typephp-kakasi\testsairness_test.py` ⇒ 脚本在 `engine/tests/` 下，而命令里 `cd engine` 对后续 python 段**未生效**（`&` 分组把 cd 吞掉了）。**PASS=0 不是 0 分通过，是没跑**。
+- 有价值的正面证据：`engine/serve_f231.log` 打出 **`API_LISTEN 8000`** ⇒ 收窄版二进制在 8000 上正常起服（服务本身没炸）。
+- **已清理的自造危险**：作业把 `engine/serve.on` 留在了原地（它的 `rm` 也在错位的 cwd 里执行），而哨兵文件在 `engine/` 时**下一次自测会变成服务器并挂住**；已删 `engine/serve.on`、`engine/serve.par.on` 与本轮五个空/无效日志（全是本会话自造产物）。现在 `ls engine/*.on` 为空。
+- **正确的重跑写法**（在仓库根一条命令里不要依赖 `cd engine` 的作用域，直接给相对路径）：`(cd engine && touch serve.on && ./build/kakasi_engine_sycl.exe > serve_f232.log 2>&1 &) ; 等 8000 LISTENING ; python engine/tests/api_smoke.py 8000`（脚本自己默认 8000，但显式传更稳）→ 之后 `rm engine/serve.on`；8001 同理用 `engine/serve.par.on` + `python engine/tests/par_smoke.py 8001` / `fairness_test.py 8001`。期望 **97 PASS**（含 `chat-json-schema-deep40-first-call`）。
+- 因此 F226/F227 的验收**仍停在自测层**（137 PASS 两遍），8000/8001 门禁＝未跑，不得写成已通过。
