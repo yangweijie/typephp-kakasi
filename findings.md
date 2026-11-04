@@ -2200,3 +2200,8 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 `c6bc9f4`：`g_kv2` 扩容改为"先按 `keep2=min(pos, cap)` 拷旧行 → 再释放 → 挂新缓冲"，`g_kv2.len = keep2`（与 F265 的 `ensure_kv` 同构）。
 **实测**（`b2xn5m687`，链式命令按 F274 用 `&&`）：`BUILD_OK`、无 `SYCL_LINK_FAILED`；自检 **138 PASS / 0 FAIL**、`first_len=3887 second_len=3887` ⇒ 单设备路径无回归。
 **诚实边界**：`splitActive` 在本机**恒为假**（需要两块设备），所以这段代码**只被编译、未被执行**。它的正确性依据是"与已验证的 `ensure_kv` 修复同构 + 编译通过 + 不触及单设备路径"，不等于"多卡已验证"。若将来拿到双卡机器，判据是：长会话跨过 512 行后 logits 不含 NaN、且与不 split 的逐位一致。
+
+### F277 · split 修复的梯子已补全（单设备范围内全绿）；本轮会话状态汇总
+`b10wiayyj`：8000 **100 PASS / `SMOKE_EXIT=0`**、8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`；配 `run_f275.log` 的 **138 PASS / 0 FAIL** ⇒ `c6bc9f4` 在单设备范围过完整梯子（`splitActive` 本机恒假，见 F276 的边界）。
+**本轮会话的最终 HEAD 状态**：KV 根修（F265/F266）+ F238 字符串枚举 + F258 数字枚举（`en:`）+ `SESSION-POS` 守卫 + 反斜杠拒绝 + 分支去重（F271 负收益）+ split 路径同构修复（F276）——**138 项自检 / 100 形状 8000 / 8001 全绿**。
+**明确未完成**：FR-06 需先做**采样验证**（F273 证明贪心 argmax 下多分支收益恒为 0）；per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（本机无第二设备）、GGUF 分片、FR-05 均未开始；混合类型枚举与 `const/pattern/min|max` 仍回退到旧路径。
