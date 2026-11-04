@@ -2131,3 +2131,19 @@ g_sess_len += 1;
 - `nonfinite == allsize` ⇒ 冷路径 logits **整行 NaN**（模型/内存未就位），修法在数值侧（初始化与就位），不是容量；
 - `allsize == 0` 或错误文本含 rows=0 ⇒ 词表/元数据分支。
 **注意**：本轮 HEAD 含探针（`549458a` 的 revert 又把它加回来了），属**诊断态**；拿到数据后必须再 revert 探针并复跑梯子，不能把含探针的构建当发布状态。
+
+### F265 · **冷启动 NaN 的真根因找到了**：KV 扩容时 `free_all()` 先把旧行丢掉，新缓冲未初始化 ⇒ 注意力读到垃圾
+探针实测（探针已由池序号 `[1843]`→`main.cc` 证明在二进制里，见 F264）：
+`F229-PROBE d=502 err=[no logits computed rows=151936 T=1 nOut=1 allsize=151936 nonfinite=151936] sesslen=515`
+⇒ **整行 151936 个 logits 全是 NaN**（不是 `rows==0`，也不是容量拒绝）；触发点 `sesslen=515` 恰好越过 `KV_MIN_CAP = 512`（`model_sycl.cc:67`）。
+**代码机制**（`model_sycl.cc:344-356` 旧实现）：`ensure_kv` 在需要更多行时是
+```
+g_kv.free_all();                 // ← 已写入的 0..511 行全部丢弃
+cap = max(need_rows, KV_MIN_CAP);
+g_kv.len = 0;
+for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device 不清零）
+```
+注意力随后对**未初始化**的 K/V 行做 max/sum/加权 ⇒ 全 NaN。**这解释了三件事**：①为什么只在"会话第一次超过 512 行"时坏；②为什么同一调用第二次就好（cap 已够，走 `return true` 早退，不再丢数据）；③为什么增加重试（F210）无效——重试时状态已被破坏。
+**修复（已提交）**：扩容时先按 `keep_rows`（调用方传 `pos`）把旧行 `q.memcpy` 到新缓冲，再 `free_all` 并挂上新缓冲；`g_kv.len = keep_rows`。守卫：只有旧缓冲存在且层数一致时才拷贝。
+**验证进行中**（`b672qcig9`）：**保留探针做阳性对照**——探针确定在二进制里，若修复生效，`F229-PROBE` 应当**一次都不打印**；同时要求 137/138 PASS、`first_len=3909`。
+**未修的同类隐患**：split 路径的 `g_kv2` 扩容（`1183-1200` 附近）也是先 `free_all` 再分配、不拷贝——多卡 split 属 Phase 3 实验路径，单独记待办。
