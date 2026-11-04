@@ -2282,3 +2282,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 实现（`2ed8be1`）：planner 识别 `items.type=boolean` → `ab`；builder 在共享数组分支里用 `api_constrained_continue(["true","false"],4)` 逐项解码。
 **实测**：8000 **108 PASS**（含新门 `chat-json-schema-deep40-bool-array-leaf`：40 层 + `flags` 为非空的布尔列表 + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=735`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 ⇒ 字符串/整数/小数/布尔数组现在都能作为**嵌套对象内的叶子**装配；对象数组叶仍未支持（需在数组项内再走一遍对象装配）。
+
+### F292 · **可空联合类型叶子**（`["string","null"]` 等）不再被丢弃，并过完整梯子
+根因：planner 的类型判断是 `"type"\s*:\s*"(string|integer|number|boolean)"`，而严格模式 schema 里 `"type":["string","null"]` 极常见——**整个叶子被忽略**，对象缺键（与布尔叶同类的形状缺陷）。
+修法（`ed56234`）：类型匹配加一条联合分支 `"type"\s*:\s*\[\s*"(string|integer|number|boolean)"\s*,\s*"null"\s*\]`，两种写法都写进同一个 `$m[1]`，后续逻辑不变（生成字符串/数字/布尔值都满足该联合，属合法输出）。
+**实测**：8000 **109 PASS**（含新门 `chat-json-schema-deep40-nullable-leaf`：40 层 + `nick` 键存在且为字符串或 null + `city` 字符串）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=736`）；8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**仍不支持**：对象数组叶（数组项内再装配对象）、混合类型枚举、含元字符 pattern、`minimum/maximum/multipleOf`；`["string","integer"]` 这类**非 null 联合**仍未处理（会落回旧路径）。
