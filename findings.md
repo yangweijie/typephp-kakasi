@@ -2258,3 +2258,9 @@ for l: malloc_device(...)        // ← 新缓冲未初始化（malloc_device �
 新增 `chat-json-schema-deep40-mixed-leaves`：40 层嵌套的同一层同时含 `string`/`integer`/`boolean` 三个叶子，断言**每个键都存在且类型正确**（不是只查一个）。8000 **104 PASS**。
 实测：自检 **139 PASS / 0 FAIL**（`SUITE_SECS=735`）、8001 `PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
 **为什么值得**：F285 暴露的是"整类叶子被静默丢弃"的形状缺陷——单类型门会漏；这条把"键存在性 + 三类型"一起钉住，后续再有人往 `api_top_leaves` 加类型时可作回归基线。
+
+### F288 · 嵌套 plan 的叶子上限 3 → 6：**四个及以上属性不再丢键**（同类形状缺陷）
+`api_response_schema_nested_object` 里 `api_top_leaves($block, 3)` 会**静默截断**——嵌套对象有 4 个属性时只装配 3 个，缺的那个键无任何报错（与 F285 的布尔叶同属"形状缺陷"）。
+改动（`6c3373e`）：上限提到 6；预算侧无影响（prefix 预算按路径深度、closer 预算按 `count($keys)`、每个叶子独立 4–8 步）。
+**实测**：8000 **105 PASS**（含新门 `chat-json-schema-deep40-four-leaves`：40 层 + 四键齐备且类型正确，**未出现其它形状回归**）；自检 **139 PASS / 0 FAIL**（`SUITE_SECS=739`）⇒ 放宽检测器的认领范围**没有**破坏既有用例。
+**未完成**：本轮**未跑** 8001 `par_smoke`/`fairness`（预算耗尽）⇒ 这条改动目前是"8000 + 自检"两级绿，补跑前不得写成"过完整梯子"。
