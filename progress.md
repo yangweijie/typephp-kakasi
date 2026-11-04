@@ -627,3 +627,10 @@
 - **代码核对（非实测）**：F230 re-prefill 不污染前缀缓存（`cache_store` 只序列化前 `ids.size()` 行）；F231 新活服务门 `chat-json-schema-deep40-first-call` 的遍历顺序经 Python 离线复刻核实（外层是 `k39`）。
 - **进行中（后台链 `b92wbrol6`）**：等 `run_f229` 秒表数 → 8000 `serve.on` 起服跑 `api_smoke.py` → 停服 → 8001 `serve.par.on` 跑 `par_smoke.py`/`fairness_test.py`。哨兵文件用后即删（防 serve.on 竞态把自测变成服务）。
 - **明确不作结论**：收窄"省了多少时间"无对照基线；`run_f229` 不含 `F229-PROBE`（探针在构建前已 revert），故其无输出**不是**冷启动拒绝消失的证据；native 根因仍停在 F228 两条分支。
+
+## 交接快照（2026-11-04 04:29，预算将尽）
+- **HEAD = `da16ae1`**；工作树干净（`engine/gates_f201.txt` 为遗留临时件，未纳入）。**磁盘 exe == HEAD 源码**（`build_f228` 那次构建，探针已在 `8afcf73` revert 掉），所以**门禁可以直接跑，不需要重建**。
+- **已绿**：`run_f228.log` 137 PASS / 0 FAIL、`SCHEMA-DEEP200` 按**首调**判据 PASS、`first_len=3909`（= `caf1bd6` 收窄版复验，提交 `637dfec`）。
+- **在跑的后台链**：`bd7o2dv9y`（构建完正在跑 `run_f229.log`，带秒表）→ 之后 `b92wbrol6` 会等 `run_f229` 的 `RUN_EXIT`，再依次跑 8000 `api_smoke.py`（**期望 97 PASS**，新增 `chat-json-schema-deep40-first-call`）→ 删 `serve.on` → 8001 `par_smoke.py 8001` + `fairness_test.py 8001` → 删 `serve.par.on`。产物名固定：`engine/api_smoke_f231.log`、`engine/par_smoke_f231.log`、`engine/fairness_f231.log`、`engine/serve_f231.log`、`engine/serve_par_f231.log`。
+- **续跑者要做的判断**：① 上面三个 f231 日志出现后，把 PASS/FAIL 与 `Accept failed` 行数记进 findings（**没出现就写未跑，别沿用旧日志**）；② `run_f229` 只有绝对秒数，**没有未收窄对照**，不得据此报"省了多少"；③ 根因轮按 **F233** 的步骤做（先 `git revert --no-edit 8afcf73` 复原探针，单独一轮，别和 `:1496` 的顺序修复混在一起）。
+- **仍未开始的大项**：FR-06 多样草稿器（树收益的瓶颈在草稿器，F157/F218 侧的实测已写明）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片、FR-05。
