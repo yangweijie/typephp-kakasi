@@ -114,3 +114,9 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **F258 数字枚举只保结构 → 已修并过全梯**（数字枚举 `en:`，`81e5ff6`）：8000 **100 PASS**（含新门 `chat-json-schema-deep40-enum-num`）、自检 138 PASS、8001 全绿（`b2t03yrlx`）。
 - **覆盖与边界的诚实标注**：`g_sess_len` 顺序修复不可由 PHP 判别（F261，容量按需扩容、空返回皆为基础设施故障）；混合类型枚举回退无约束；`const/pattern/min|max|multipleOf` 仍走扁平路径；**split 路径 `g_kv2` 扩容同样"先 free 再分配"（本机不可验，多卡实验路径）**。
 - **未开始**：FR-06.2 多样草稿器（F262 已更正方案）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片、FR-05。
+
+## 审计增补（F279–F282，2026-11-04 15:00）
+- **判别性回归守卫（F279）**：新增 `SESSION-GROW`——从 3 token 起点连做 530 次受限步，跨过 `KV_MIN_CAP=512`；旧实现在此返回 `-1 (no logits computed)`，故该用例**能对着旧代码失败**。自检总数 **139**。
+- **嵌套 plan 的取值约束扩面**：字符串枚举（`e:`）、数字枚举（`en:`）、`const`（两种）、**纯字面量 `pattern` 交替式**均受约束并通过完整梯子；新增门 `deep40-enum-num` / `deep40-const-leaf` / `deep40-pattern-leaf`，8000 门禁达 **102 个 PASS 行**。
+- **当前基线**：139 项自检 / 102 形状 8000 / 8001 `par_smoke` 9/9 + `fairness` PASS，全部在同一 HEAD（`8a4cc86` 之前一个源码提交 `152a648`）上取得；`first_len == second_len == 3887`。
+- **仍回退旧路径**：含元字符的 `pattern`、`minimum/maximum/multipleOf`、混合类型枚举；**未开始**：采样验证（F273 的 FR-06 前置）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split（需第二块设备）、GGUF 分片、FR-05。
