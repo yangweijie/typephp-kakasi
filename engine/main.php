@@ -9891,6 +9891,63 @@ function main(): void
 ";
     }
 
+    // SPEC-SAMPLE (F303/F304): speculative sampling with a deterministic drafter. The peeked
+    // argmax is accepted with probability p; on rejection a residual sample is committed. Two
+    // runs from the same seed must match exactly, and the result must differ from plain greedy.
+    model_session_start(0, "785,6722,315");
+    $ssSeqA = "";
+    $ssDiffA = 0;
+    $ssAccA = 0;
+    $ssRejA = 0;
+    for ($ssi = 0; $ssi < 24; $ssi++) {
+        $ssd = model_peek_argmax();
+        if ($ssd < 0) {
+            break;
+        }
+        $ssp = model_token_prob($ssd, 1.0);
+        $ssx = $ssd;
+        if (model_rand01() < $ssp) {
+            $ssAccA = $ssAccA + 1;
+        } else {
+            $ssRejA = $ssRejA + 1;
+            $ssx = model_sample_excluding($ssd, 1.0);
+        }
+        $ssGot = model_session_next_allowed(0, "" . $ssx);
+        if ($ssGot < 0) {
+            break;
+        }
+        if ($ssGot != $ssd) {
+            $ssDiffA = $ssDiffA + 1;
+        }
+        $ssSeqA = $ssSeqA == "" ? "" . $ssGot : $ssSeqA . "," . $ssGot;
+    }
+    model_session_start(0, "785,6722,315");
+    $ssSeqB = "";
+    for ($ssi = 0; $ssi < 24; $ssi++) {
+        $ssd = model_peek_argmax();
+        if ($ssd < 0) {
+            break;
+        }
+        $ssp = model_token_prob($ssd, 1.0);
+        $ssx = $ssd;
+        if (!(model_rand01() < $ssp)) {
+            $ssx = model_sample_excluding($ssd, 1.0);
+        }
+        $ssGot = model_session_next_allowed(0, "" . $ssx);
+        if ($ssGot < 0) {
+            break;
+        }
+        $ssSeqB = $ssSeqB == "" ? "" . $ssGot : $ssSeqB . "," . $ssGot;
+    }
+    if ($ssSeqA != "" && $ssSeqA == $ssSeqB && $ssDiffA > 0) {
+        echo "SPEC-SAMPLE: PASS (acc=" . $ssAccA . " rej=" . $ssRejA . " diff=" . $ssDiffA . " reproducible)
+";
+    } else {
+        echo "SPEC-SAMPLE: FAIL acc=" . $ssAccA . " rej=" . $ssRejA . " diff=" . $ssDiffA
+            . " same=" . ($ssSeqA == $ssSeqB ? 1 : 0) . "
+";
+    }
+
     // Speculative decoding (KFlash-style accept/reject, prompt-lookup drafter): drafting and
     // batched verification must not change the output. The text repeats, so the lookup hits.
     $specTxt = "";
