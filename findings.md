@@ -2060,3 +2060,9 @@ g_sess_len += 1;
 - `engine/build/gen/main.cc` 里 `1844` 出现 **1 次**，上下文是 `php::call(..., php::VarList{get_str(1844), tail})` ⇒ 生成代码**调用**了这条正则。
 ⇒ 与 `BUILD_EXIT=0 / LINK_FAIL=0 / exe age=1s` 三条一起，构成本轮"测的就是含着 `f3c029a` 的新二进制"的完整证据链（前几轮正是缺这一环才会被旧 exe 骗过）。
 **规程定型**：以后声明"某改动进了二进制"，用 **池序号 → `main.cc` 引用计数**这一对，而不是 grep 文本（文本在池里可能残留旧串，见 F219/F221）。
+
+### F254 · **Round 1 判决（`f3c029a` 单独在二进制里，F253 已证）：F243 预言成立，缺陷仍未修，且失败形态变了**
+`b71htt0fl`：`SUITE_SECS=693`、**137 PASS / 0 FAIL**、`SCHEMA-DEEP200: PASS (… first attempt)`、`first_len=3909`；`SMOKE_EXIT=1`，**唯一失败** `chat-json-schema-deep40-enum-leaf len=5 closes=0 tail='Paris'`；`PAR_EXIT=0 PASS=9`、`FAIR_EXIT=0 FAIRNESS: PASS`。
+**判读**：修复前是扁平对象 `{"city":"Paris"}`（`closes=1`）；修复后变成**裸枚举值 `Paris`**（`closes=0`）——正是 F243 描述的通道：`api_schema_candidates` 被我的门挡住后返回空 ⇒ 请求落到 `main.php:7616` 的全 body `/"enum"\s*:\s*\[/` 分支 ⇒ `api_constrained($ids,["Paris"])` 只解出枚举字面量，**整个 40 层结构丢失**。
+⇒ **`f3c029a` 只是把"错误归属"换成"另一个错误归属"，不构成修复**（F243 的预测得到实证，无需撤稿）。**F244 的四步仍是唯一出路**，而且第 4 步（收窄 2629 的一刀切拒绝）必须做，否则嵌套检测器永远不接手。
+**回归面无异常**：137 PASS、par 9/9、fairness PASS、0 `Accept failed` ⇒ 这条门只影响"嵌套 + 枚举叶"这一类，与 F241 的静态界定一致。
