@@ -649,3 +649,10 @@
 - **已清理的自造危险**：作业把 `engine/serve.on` 留在了原地（它的 `rm` 也在错位的 cwd 里执行），而哨兵文件在 `engine/` 时**下一次自测会变成服务器并挂住**；已删 `engine/serve.on`、`engine/serve.par.on` 与本轮五个空/无效日志（全是本会话自造产物）。现在 `ls engine/*.on` 为空。
 - **正确的重跑写法**（在仓库根一条命令里不要依赖 `cd engine` 的作用域，直接给相对路径）：`(cd engine && touch serve.on && ./build/kakasi_engine_sycl.exe > serve_f232.log 2>&1 &) ; 等 8000 LISTENING ; python engine/tests/api_smoke.py 8000`（脚本自己默认 8000，但显式传更稳）→ 之后 `rm engine/serve.on`；8001 同理用 `engine/serve.par.on` + `python engine/tests/par_smoke.py 8001` / `fairness_test.py 8001`。期望 **97 PASS**（含 `chat-json-schema-deep40-first-call`）。
 - 因此 F226/F227 的验收**仍停在自测层**（137 PASS 两遍），8000/8001 门禁＝未跑，不得写成已通过。
+
+## 交接（2026-11-04 09:54，F236–F240）
+- **梯子已绿一次**：8000 `engine/api_smoke_f237c.log` `API SMOKE: PASS / SMOKE_EXIT=0`（98 个 PASS 行含汇总），8001 `par_smoke_f232.log` 9/9、`fairness_f232.log` PASS（短 0.29 s vs 长 4.81 s），自测 `run_f228/run_f229` 两遍 137 PASS / 0 FAIL ⇒ **F226 修复 + `caf1bd6` 收窄过完整梯子**（提交 `31758d7`）。
+- **F238 修复已提交但未验证**：`f3c029a`（`api_schema_candidates` 不再认领"属性块里有 object 值"的 schema）+ 新门 `chat-json-schema-deep40-enum-leaf`。**验证由后台链 `bdlditj5k` 执行**：读 `run_f239` 的 `F229-PROBE`（`nonfinite` vs `allsize`，定根因分支）→ `git revert 468cb58` 撤探针 → 清 AST 重建 → `run_f240` 自检 → 8000/8001 门禁。**期望**：`run_f240` 137 PASS / 0 FAIL、`api_smoke_f240.log` 98 形状全绿（含 enum-leaf 那条由红转绿）、`par_smoke` 9/9、`fairness` PASS。**任何一项没到就照实写未达，不得拿 f237 的绿顶替 f240。**
+- **⚠ 后台链的中断 hazard**：它在门禁阶段会创建 `engine/serve.on`、`engine/serve.par.on` 并"用后即删"。**若链被打断，哨兵可能残留**，而哨兵存在时下一次自测会变成服务器并挂住（本项目已踩过）。⇒ **续跑第一步：`ls engine/*.on`，有就删。**
+- **根因仍未证**：探针测到结果之前，`no logits computed` 依旧是 F228 的两条分支之一（`rows==0` / 整行 NaN）；`g_sess_len += 1` 早于 `r.empty()` 判定（`model_sycl.cc:1496`）仍未修，改动文本在 F234。
+- **未开始的大项**：FR-06.2 多样草稿器（可执行方案已写进 task_plan 末尾）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片、FR-05。
