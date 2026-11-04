@@ -81,3 +81,10 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 6. FR-05/11/13/15 属 V1+/V2 或本机不可验，保持"未做"标注即可。⛔
 7. 剩余可做：grammar-constrained 的指数/`multipleOf`、3 维数组、`$ref/allOf`；多分片 GGUF 合并、多样草稿器（DFlash/DFlash2/DSpark/LiLiCorr）、per-session KV 真并行、条件性 UNIKERN 决策。
 
+
+## 状态更新（2026-11-04，覆盖 F190–F228；只列有仓库内证据的项）
+
+- **收尾顺序第 7 条（grammar-constrained 余项）已闭合**：外部 `$ref` 由调用方提供的 `schema_registry` 解析（不碰网络/文件系统，故无路径穿越）⇒ 见 findings F207；嵌套上限 128→**256**（F208，检测侧 200 层实测 `plan=ok`）。
+- **工具面**：`tool_choice:"none"/"auto"/"required"` 与作用域（F188/F189/F190/F194a）、**并行工具调用**生成侧 + chat/Anthropic/Responses 三出口与**流式 fan-out**（F195–F206，含点名 `tool_choice`+`parallel_tool_calls`）；`json_object` 在 Chat/Responses 与流式路径的 stop 交互（F191–F193）。
+- **冷启动功能缺陷已定位并功能修复**（audit 原文未覆盖，属新增发现）：会话内第一条长强制解码返回空。根因链 F224（前缀在第 502 步被截断，热态走满 893）→ F225（`g_err=no logits computed`，拒绝时会话仅 516 ⇒ **不是容量**）→ F226（`api_constrain_loop` 用"已消费 ids 重新 prefill"恢复；`SCHEMA-DEEP200-RETRY first_len` 0→3909，`engine/run_f226.log` 137 PASS / 0 FAIL / `RUN_EXIT=0`）→ **判据收紧为首调计分**（`engine/run_f227.log` 790 行 `RUN_EXIT=0`、137 PASS / 0 FAIL、`SCHEMA-DEEP200: PASS (… first attempt)`）。
+- **仍未闭合（诚实标注，不得当作已完成）**：① native 根因未证——F228 代码分析把 `no logits computed` 收缩到 `rows==0` 或**整行 NaN** 两条，探针已写但未构建未测；② `session_next_allowed` 里 `g_sess_len += 1` 早于 `r.empty()` 判定（`src/model_sycl.cc:1496`）未修；③ F227 的"重启只在单 id 强制步"收窄**尚未跑过门禁**；④ **8000 `api_smoke.py` 与 8001 `par_smoke.py`/`fairness_test.py` 未在修复后的二进制上复跑**——audit 的活服务门禁因此对 F226/F227 属未验证；⑤ FR-05/11/13/15 仍按原标注"未做"，FR-06 树收益的多样草稿器、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片合并均未开始。
