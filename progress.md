@@ -634,3 +634,9 @@
 - **在跑的后台链**：`bd7o2dv9y`（构建完正在跑 `run_f229.log`，带秒表）→ 之后 `b92wbrol6` 会等 `run_f229` 的 `RUN_EXIT`，再依次跑 8000 `api_smoke.py`（**期望 97 PASS**，新增 `chat-json-schema-deep40-first-call`）→ 删 `serve.on` → 8001 `par_smoke.py 8001` + `fairness_test.py 8001` → 删 `serve.par.on`。产物名固定：`engine/api_smoke_f231.log`、`engine/par_smoke_f231.log`、`engine/fairness_f231.log`、`engine/serve_f231.log`、`engine/serve_par_f231.log`。
 - **续跑者要做的判断**：① 上面三个 f231 日志出现后，把 PASS/FAIL 与 `Accept failed` 行数记进 findings（**没出现就写未跑，别沿用旧日志**）；② `run_f229` 只有绝对秒数，**没有未收窄对照**，不得据此报"省了多少"；③ 根因轮按 **F233** 的步骤做（先 `git revert --no-edit 8afcf73` 复原探针，单独一轮，别和 `:1496` 的顺序修复混在一起）。
 - **仍未开始的大项**：FR-06 多样草稿器（树收益的瓶颈在草稿器，F157/F218 侧的实测已写明）、per-session KV 并行吞吐、SSD 前缀分桶、多卡 split、GGUF 分片、FR-05。
+
+## 停车读数（2026-11-04 04:31，实测值原样记录）
+- `run_f229`：RUN_EXIT 行=0，PASS=89（收窄版**秒表时长由链式任务打印**，本行只记当前状态）
+- 8000 门禁 `api_smoke_f231.log`：PASS=NA
+- 8001 门禁 `par_smoke_f231.log`：PASS=NA；`fairness_f231.log` 末行=NA
+- 结论：**门禁在停车时刻仍未取到结果 ⇒ 记为"未跑"**，不得用旧日志顶替；续跑第一步就是读这三个文件并如实记账。
