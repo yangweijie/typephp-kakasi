@@ -9948,6 +9948,53 @@ function main(): void
 ";
     }
 
+    // SPEC-COST (FR-06 economics): what does the acceptance machinery cost per token versus plain
+    // greedy? Speculative decoding has to save more than this overhead to pay off, so the number
+    // is measured rather than assumed.
+    $scT0 = microtime(true);
+    model_session_start(0, "785,6722,315");
+    $scG = 0;
+    for ($sci = 0; $sci < 24; $sci++) {
+        $scd = model_peek_argmax();
+        if ($scd < 0) {
+            break;
+        }
+        $scg = model_session_next_allowed(0, "" . $scd);
+        if ($scg < 0) {
+            break;
+        }
+        $scG = $scG + 1;
+    }
+    $scGreedyMs = (microtime(true) - $scT0) * 1000.0;
+    $scT1 = microtime(true);
+    model_session_start(0, "785,6722,315");
+    $scS = 0;
+    for ($sci = 0; $sci < 24; $sci++) {
+        $scd = model_peek_argmax();
+        if ($scd < 0) {
+            break;
+        }
+        $scp = model_token_prob($scd, 1.0);
+        $scx = $scd;
+        if (!(model_rand01() < $scp)) {
+            $scx = model_sample_excluding($scd, 1.0);
+        }
+        $scg = model_session_next_allowed(0, "" . $scx);
+        if ($scg < 0) {
+            break;
+        }
+        $scS = $scS + 1;
+    }
+    $scSampMs = (microtime(true) - $scT1) * 1000.0;
+    if ($scG > 0 && $scS > 0 && $scGreedyMs > 0.0) {
+        echo "SPEC-COST: PASS greedy_ms=" . $scGreedyMs . " sampling_ms=" . $scSampMs
+            . " ratio=" . ($scSampMs / $scGreedyMs) . "
+";
+    } else {
+        echo "SPEC-COST: FAIL greedy_ms=" . $scGreedyMs . " sampling_ms=" . $scSampMs . "
+";
+    }
+
     // Speculative decoding (KFlash-style accept/reject, prompt-lookup drafter): drafting and
     // batched verification must not change the output. The text repeats, so the lookup hits.
     $specTxt = "";
