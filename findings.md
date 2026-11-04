@@ -1899,3 +1899,7 @@ F226 的重启对所有 `api_constrained` 生效 ⇒ EOS 正常终止也要白�
 **为什么 2 更值得怀疑**：它天然是"冷"的——第一次走这段代码时读到**未初始化/未就位**的 device 内存（`Dev dLogits(&q, rows)` 分配不清零，arena 槽位复用），产生 NaN；同一进程再来一次时页面已就位，就正常了。这与 F224/F225 的观测自洽：拒绝发生在会话长度仅 516（**不是容量**）、且**第二次同参数调用能走满 893**。
 **下一轮的判别探针（一次 SYCL 重建，别和 PHP 改动混轮）**：在 1323 的分支里把可比较的量写进 `g_err`，例如 `rows / T / nOut / 非有限值计数`（`int nonfinite = 0; for (float v : row) if (!(v == v)) ++nonfinite;`），自检里用 `model_last_error()` 直接打印。若 `nonfinite==rows` ⇒ 坐实 NaN，修法是把 `dLogits` 分配清零或让 `rbestId` 用有限值判定；若 `rows==0` ⇒ 查 `tensor_ne` 的冷路径。
 **顺带（已记录未修）**：`session_next_allowed` 里 `g_sess_len += 1`（1496）写在 `if (r.empty()) return -1;`（1497）**之前** ⇒ 失败步仍推进会话长度，状态与真实 KV 脱钩。
+
+### F230 · F226 的 re-prefill 恢复**不会污染前缀缓存**（读代码核过，非实测）
+担心点：`api_constrained` 在解码循环**之后**才 `model_cache_store(0, $ids, $pcPathC)`；若我把会话用 `model_session_start(0, prompt+chosen)` 重启过，存进去的 KV 是否还是 prompt 的那一段？
+读 `src/model_sycl.cc:1345-1372`：`cache_store` 取的长度是 **`n = ids.size()`**（写入头里也是 `n`），即**只序列化前 n 行 KV**，与 `g_sess_len` 无关；而 re-prefill 只往位置 ≥ n 写新行，因果注意力下前 n 行的 K/V 不随后续 token 改变 ⇒ 缓存内容仍严格是 prompt 的 KV，键仍是同一串 prompt ids。⇒ **恢复路径与缓存层正交，无正确性风险**。（另注：`ids.size() > g_kv.cap` 时 store 直接失败并报 `nothing to save (prefill first)`，与本轮改动无关。）
