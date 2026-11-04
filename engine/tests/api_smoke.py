@@ -288,6 +288,30 @@ def main():
           and isinstance(pleaf.get("count"), int),
           "len=%d closes=%d tail=%r" % (len(ptxt), ptxt.count("}"), ptxt[-40:]))
 
+    # F285: a boolean leaf must survive the plan too. It used to be dropped silently, so the
+    # object came back without the key (shape violation, not a value violation).
+    deepB = {"type": "object", "properties": {"flag": {"type": "boolean"},
+                                              "city": {"type": "string"}}}
+    for i in range(40):
+        deepB = {"type": "object", "properties": {"k%d" % i: deepB}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1500, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepb", "schema": deepB, "strict": True}}})
+    btxt = r["choices"][0]["message"]["content"]
+    bleaf = None
+    try:
+        bcur = json.loads(btxt)
+        for i in range(39, -1, -1):
+            bcur = bcur["k%d" % i]
+        bleaf = bcur
+    except Exception:
+        bleaf = None
+    check("chat-json-schema-deep40-bool-leaf",
+          isinstance(bleaf, dict) and isinstance(bleaf.get("flag"), bool)
+          and isinstance(bleaf.get("city"), str),
+          "len=%d closes=%d tail=%r" % (len(btxt), btxt.count("}"), btxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

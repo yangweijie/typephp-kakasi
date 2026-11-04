@@ -2471,12 +2471,14 @@ function api_top_leaves(string $block, int $maxN): string
         // Depth-1 leaves are flat objects: a nested object has more than its own opening brace.
         if (substr_count($val, "{") == 1) {
             $m = [];
-            if (preg_match('/"type"\s*:\s*"(string|integer|number)"/', $val, $m) == 1) {
+            if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1) {
                 $mk = "s";
                 if ($m[1] == "number") {
                     $mk = "n";
                 } else if ($m[1] == "integer") {
                     $mk = "i";
+                } else if ($m[1] == "boolean") {
+                    $mk = "b";
                 }
                 // A string enum leaf carries its allowed values in the plan (key:e:v1~v2) so the
                 // builder can decode from the finite set instead of a free-form charset. Numeric
@@ -2679,6 +2681,13 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
                 if ($eb != "") {
                     $s = $s . "," . $eb;
                 }
+            }
+        } else if ($ty == "b") {
+            // JSON booleans are the two literals below; without this branch a boolean leaf was
+            // dropped from the plan entirely and the object came back missing its key (F285).
+            $bb = api_constrained_continue(["true", "false"], 4);
+            if ($bb != "") {
+                $s = $s . "," . $bb;
             }
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 4);
