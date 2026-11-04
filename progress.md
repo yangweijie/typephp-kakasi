@@ -621,3 +621,9 @@
 - **F227 判据已到（2026-11-04）**：`engine/run_f227.log`（`1e19d99`＋首调判据那版二进制）790 行 **`RUN_EXIT=0`**、**137 PASS / 0 FAIL**、`SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the first attempt)`、`SCHEMA-DEEP200-RETRY first_len=3909 second_len=3887` ⇒ **收紧后的"首调非空"判据本身为绿**（不再是重试计分）。仍未闭合：`caf1bd6` 收窄未构建/未测、8000/8001 门禁未跑、native 根因 `model_sycl.cc:1323`/`:1496` 未修。
 - **计量更正（自查）**：前文"自检 9 min → 12 min"是我从**回合时间戳**倒推的估数，不是测量值（违反"估计数不当测量"）。`run_f227.log` 实测：命令发出（120121 s）到 `RUN_EXIT` 落地约 **8 min 量级**，但其中含构建；**没有一条干净的秒表数**。⇒ 下一轮（`caf1bd6` 收窄版）跑自检时**在同一条命令里打点**：`date +%s` → 跑 `run-kakasi-selftest.bat` → `date +%s`，把纯自检秒数写进 findings；在此之前"收窄省下多少时间"只能记为**未测量**。
 - **门禁跑法（已核对脚本，未执行）**：`engine/tests/par_smoke.py [port]`、`engine/tests/fairness_test.py [port] [long_tokens]` 都接受端口参数 ⇒ 8001 门禁不需要改代码。**但 `scripts/serve-par.bat` 里 `call setvars.bat`**，而本机 WMI 僵死时 setvars 会挂（这正是 `run-kakasi-selftest.bat` 改成显式列 PATH 的原因）⇒ 起 8001 要用显式 PATH 那条路（照 `run-kakasi-selftest.bat` 的 ONEAPI/TPC/PATH 三行 + `cd engine` + `build\kakasi_engine_sycl.exe --port 8001`），别直接用 `serve-par.bat`。顺序仍是：**先** 8000 `api_smoke.py`（含新 `chat-json-schema-deep40-first-call`）→ **停服** → 再起 8001 跑 `par_smoke.py 8001` + `fairness_test.py 8001`，全程一次一个引擎进程。
+
+## 本轮验证台账（2026-11-04，F228–F232）
+- **已测量**：`caf1bd6` 收窄版自检 `engine/run_f228.log` **137 PASS / 0 FAIL / `RUN_EXIT=0`**、`SCHEMA-DEEP200: PASS (… first attempt)`、`first_len=3909`（提交 `637dfec`）。⇒ 冷启动修复在"重启只作用于单 id 强制步"下**仍然成立**。
+- **代码核对（非实测）**：F230 re-prefill 不污染前缀缓存（`cache_store` 只序列化前 `ids.size()` 行）；F231 新活服务门 `chat-json-schema-deep40-first-call` 的遍历顺序经 Python 离线复刻核实（外层是 `k39`）。
+- **进行中（后台链 `b92wbrol6`）**：等 `run_f229` 秒表数 → 8000 `serve.on` 起服跑 `api_smoke.py` → 停服 → 8001 `serve.par.on` 跑 `par_smoke.py`/`fairness_test.py`。哨兵文件用后即删（防 serve.on 竞态把自测变成服务）。
+- **明确不作结论**：收窄"省了多少时间"无对照基线；`run_f229` 不含 `F229-PROBE`（探针在构建前已 revert），故其无输出**不是**冷启动拒绝消失的证据；native 根因仍停在 F228 两条分支。
