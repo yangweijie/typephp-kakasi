@@ -860,6 +860,25 @@ double top_logit() { return g_top; }
 double second_logit() { return g_second; }
 double expect_logit() { return g_expect_logit; }
 double logsumexp() { return g_logsumexp; }
+
+// Probability of one token id under the current logits at the given temperature. This is the
+// surface speculative sampling needs (F284 step 1): a deterministic drafter's acceptance test is
+// p(draft), and the residual resample needs the same normaliser.
+double token_prob(int id, double temp) {
+    const int n = (int) g_last_logits.size();
+    if (n == 0 || id < 0 || id >= n) return -1.0;
+    if (temp <= 0.0) {
+        int best = 0;
+        for (int i = 1; i < n; ++i) if (g_last_logits[(size_t) i] > g_last_logits[(size_t) best]) best = i;
+        return best == id ? 1.0 : 0.0;
+    }
+    double mx = -1e300;
+    for (int i = 0; i < n; ++i) mx = std::max(mx, (double) g_last_logits[(size_t) i]);
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i) sum += std::exp(((double) g_last_logits[(size_t) i] - mx) / temp);
+    if (!(sum > 0.0)) return -1.0;
+    return std::exp(((double) g_last_logits[(size_t) id] - mx) / temp) / sum;
+}
 int expect_rank() { return g_expect_rank; }
 int trace_count() { return (int) g_trace.size(); }
 double trace_at(int i) { return (i >= 0 && i < (int) g_trace.size()) ? g_trace[(size_t) i] : 0.0; }

@@ -17,6 +17,7 @@ double top_logit();
 double second_logit();
 double expect_logit();
 double logsumexp();
+double token_prob(int id, double temp);
 int expect_rank();
 int trace_count();
 double trace_at(int i);
@@ -77,6 +78,7 @@ php::Float php_model_top_logit() { return php::Float(model::top_logit()); }
 php::Float php_model_second_logit() { return php::Float(model::second_logit()); }
 php::Float php_model_expect_logit() { return php::Float(model::expect_logit()); }
 php::Float php_model_logsumexp() { return php::Float(model::logsumexp()); }
+php::Float php_model_token_prob(php::Int id, php::Float temp) { return php::Float(model::token_prob((int) id, (double) temp)); }
 php::Int php_model_expect_rank() { return php::Int(model::expect_rank()); }
 php::Float php_model_gen_prefill_ms() { return php::Float(model::gen_prefill_ms()); }
 php::Float php_model_gen_step_ms() { return php::Float(model::gen_step_ms()); }

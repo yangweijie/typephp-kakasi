@@ -9856,6 +9856,20 @@ function main(): void
         echo "SESSION-GROW: FAIL steps=" . $growSteps . " err=[" . $growErr . "]\n";
     }
 
+    // PROB-API (F284 step 1): model_token_prob must be a valid probability and must rank the
+    // model's own argmax highest - the primitive sampling verification needs.
+    $pTopId = model_prefill(0, "785,6722,315", -1);
+    $pTopProb = model_token_prob($pTopId, 1.0);
+    $pOtherId = $pTopId > 0 ? (($pTopId + 1) % 1000) : 0;
+    $pOther = model_token_prob($pOtherId, 1.0);
+    if ($pTopId >= 0 && $pTopProb > 0.0 && $pTopProb <= 1.0 && $pOther >= 0.0 && $pOther <= $pTopProb) {
+        echo "PROB-API: PASS (p_top=" . $pTopProb . " p_other=" . $pOther . ")
+";
+    } else {
+        echo "PROB-API: FAIL top=" . $pTopId . " p=" . $pTopProb . " other=" . $pOther . "
+";
+    }
+
     // Speculative decoding (KFlash-style accept/reject, prompt-lookup drafter): drafting and
     // batched verification must not change the output. The text repeats, so the lookup hits.
     $specTxt = "";
