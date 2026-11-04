@@ -241,6 +241,29 @@ def main():
           and isinstance(nleaf.get("city"), str),
           "len=%d closes=%d tail=%r" % (len(ntxt), ntxt.count("}"), ntxt[-40:]))
 
+    # F281: a `const` leaf is a one-value enum and must behave the same way.
+    deepC = {"type": "object", "properties": {"city": {"type": "string", "const": "Paris"},
+                                              "count": {"type": "integer"}}}
+    for i in range(40):
+        deepC = {"type": "object", "properties": {"k%d" % i: deepC}}
+    r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
+                                      "max_tokens": 1500, "seed": 5,
+                                      "response_format": {"type": "json_schema", "json_schema": {
+                                          "name": "deepc", "schema": deepC, "strict": True}}})
+    ctxt = r["choices"][0]["message"]["content"]
+    cleaf = None
+    try:
+        ccur = json.loads(ctxt)
+        for i in range(39, -1, -1):
+            ccur = ccur["k%d" % i]
+        cleaf = ccur
+    except Exception:
+        cleaf = None
+    check("chat-json-schema-deep40-const-leaf",
+          isinstance(cleaf, dict) and cleaf.get("city") == "Paris"
+          and isinstance(cleaf.get("count"), int),
+          "len=%d closes=%d tail=%r" % (len(ctxt), ctxt.count("}"), ctxt[-40:]))
+
     # F194a: `tool_choice:"required"` names no function, but whichever call wins must still carry
     # real arguments - an empty object is not executable by the client.
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Weather in Paris?"}],

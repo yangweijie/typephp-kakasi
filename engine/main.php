@@ -2501,6 +2501,15 @@ function api_top_leaves(string $block, int $maxN): string
                     if ($evc != "") {
                         $mk = ($mk == "s" ? "e:" : "en:") . $evc;
                     }
+                } else if (preg_match('/"const"\s*:\s*"([^"]*)"/', $val, $mc) == 1 && $mk == "s") {
+                    $one = $mc[1];
+                    if ($one != "" && strpos($one, "~") === false && strpos($one, "\"") === false
+                        && strpos($one, ",") === false && strpos($one, "\\") === false) {
+                        $mk = "e:" . $one;
+                    }
+                } else if (preg_match('/"const"\s*:\s*(-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)/', $val, $mc) == 1
+                           && $mk != "s") {
+                    $mk = "en:" . $mc[1];
                 }
                 $out = $out == "" ? $key . ":" . $mk : $out . "," . $key . ":" . $mk;
                 $count++;
@@ -2687,9 +2696,9 @@ function api_response_schema_nested_object(string $body): string
     if (api_schema_is_object($schema) != 1) {
         return "";
     }
-    // String enums are expressible as e: leaves in the plan (F244), so they no longer disqualify
-    // a nested schema; only constraints the plan cannot carry still do.
-    if (preg_match('/"(const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+    // String enums/consts are expressible as e: leaves in the plan (F244/F258), so they no longer
+    // disqualify a nested schema; only constraints the plan cannot carry still do.
+    if (preg_match('/"(pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
         return "";
     }
     $pm = [];
