@@ -1987,3 +1987,12 @@ g_sess_len += 1;
  A. 让嵌套 plan 支持枚举叶：`api_top_leaves` 产出 `e:` 类型，`api_nested_object_value` 在 `e:` 步用**枚举 id 集**驱动 `model_session_next_allowed`（而不是现在只有 `s:`/数字）；
  B. 或把 2629 的一刀切拒绝**收窄**为"仅当**顶层属性本身**是 enum/const/pattern/数值约束时拒绝"，允许**深层**枚举叶进入嵌套装配（配合 A 才能同时满足结构与取值）。
 **判据不变**：`chat-json-schema-deep40-enum-leaf` 走满 40 层**且** `city ∈ {Paris,London}`。**若 `run_f240`/`api_smoke_f240` 里它仍红，就照实写"F238 未修复、f3c029a 只是归属修正"**，并把 A 作为下一步；不得为了让门禁好看而放松断言。
+
+### F244 · F238 选项 A 的**落地补丁规格**（三处改动，写全以免下轮重新定位；仍未实施）
+现状读码（可复查）：`api_top_leaves`（`main.php:2432`）把"值对象只含一个 `{`"的叶子映射成 `key:s|i|n`（2473-2483），**枚举信息被丢弃**；plan 字符串本身也没有地方放枚举值。`api_nested_object_value` 的叶子循环只认 `s`（charset+quote 逐步 `model_session_next_allowed`）与数字（`api_number_fill`）。⇒ 光改分派修不好 F238，必须让 plan 携带枚举集：
+1. **plan 语法扩一位**：`key:e:<v1|v2|v3>`（用 `|` 分隔值，避开 `:` 与 `,`；值含分隔符时先拒绝，别硬拼）。
+2. **planner**：`api_top_leaves` 在算出 `$val` 后，先查 `preg_match('/"enum"\s*:\s*\[([^\]]*)\]/', $val, $me)`；命中则用 `api_list($me[1])` 取值，未命中再走现有 `type` 分支。**注意**：值必须是字符串枚举（与 `api_json_ok`/`s` 路径一致），数字枚举留给后续。
+3. **builder**：`api_nested_object_value` 的 `ty == "e"` 分支＝`s` 分支的受限版——把候选集从 `charsetIds,quoteIds` 换成**枚举字面量的 token 序列**：每个候选 `tok_encode('"'.$v.'"')` 组成候选数组，调 `api_constrained_continue($cands, 4)`（多候选可行，`api_constrain_loop` 本就支持候选集），取回的 id 序列直接接到 `$s`。
+4. **解锁 2629**：`api_response_schema_nested_object` 目前对 `enum|const|pattern|minimum|maximum|multipleOf` **一律 `return "";`**；收窄为"**顶层直接值**含 `pattern/minimum/maximum/multipleOf/const` 才拒"，允许**字符串枚举**进入 plan（`e` 分支）。
+**判据（已入库，会先红）**：`chat-json-schema-deep40-enum-leaf` —— 40 层结构走完 **且** `city ∈ {Paris,London}`。**回归要求**：137 项自检 + 8000（98 形状）+ 8001 全跑；`api_top_leaves` 的现有用例（纯 `s/i/n` 叶子）必须逐条不变，因为它们走的是同一函数。
+**为什么这轮不做**：剩余额度不足以覆盖"三函数改动 + 全量重建 + 自测 + 两级门禁"；半做完就停车会把仓库留在**未验证且可能红**的状态，比留一份可执行的规格更糟。
