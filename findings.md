@@ -2124,3 +2124,10 @@ g_sess_len += 1;
 - 自检（`b5bbqj9x7` / `run_f250.log`）：**138 PASS / 0 FAIL**、`SESSION-POS: PASS`、`first_len=3909`。
 **同源证据**：`b46va91uc` 开跑前核过 exe（`exe_age=1857s`）**新于** `main.php`（2500s）与 `model_sycl.cc`（6094s），且其后只有文档提交 ⇒ 这一轮测的就是 HEAD 的代码。
 **仍不算完成**：`g_sess_len` 修复无判别性覆盖（F261 论证不可由 PHP 构造，属 native 单测范畴）；数字枚举仅保结构（F258）；native `no logits computed` 根因未证；FR-06.2 及 KV 吞吐/分片/多卡/FR-05 未开始。
+
+### F264 · 探针轮的前置控制已过（本轮输出可信）：`F229-PROBE` 在池 `[1843]` 且 `main.cc` 引用 1 次
+`build_f264.log`：`link_fail=0`、exe 变新（56 s）；池里 `ZEND_STRL("F229-PROBE d=")` 位于 **`// [1843]`**，`main.cc` 中 `get_str(1843)` 出现 **1 次** ⇒ 探针**确实编进了本次二进制**（这正是 F245/F250 两轮缺失的那道控制）。
+自检 `run_f264.log` 正在跑；判读规则不变：
+- `nonfinite == allsize` ⇒ 冷路径 logits **整行 NaN**（模型/内存未就位），修法在数值侧（初始化与就位），不是容量；
+- `allsize == 0` 或错误文本含 rows=0 ⇒ 词表/元数据分支。
+**注意**：本轮 HEAD 含探针（`549458a` 的 revert 又把它加回来了），属**诊断态**；拿到数据后必须再 revert 探针并复跑梯子，不能把含探针的构建当发布状态。
