@@ -101,3 +101,9 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 **已修复（8000 门禁验证）**：`3e7cfd8` 让枚举叶进入嵌套 plan（`e:` 类型）。三个耦合缺陷：①plan 的枚举值分隔符 `|` 与 `path|plan` 分隔符冲突，导致 plan 被截断（改用 `~`）；②`api_object_head` 只给 `s` 叶开引号，`e` 叶输出 `"city":Paris"`；③全 body 枚举分支抢在嵌套装配之前（加 "`"properties"` 计数 <2" 前置）。实测 `engine/api_smoke_f249.log`：`API SMOKE: PASS`、`SMOKE_EXIT=0`、**99 个 PASS 行**，40 层结构完整且 `city` 取值 ∈ {Paris, London}。
 **仍未完成的验证**：全套自检（137 项）与 8001 `par_smoke`/`fairness` 在修复版二进制上的复跑（作业 `b0i2o29tr`），以及带 `SESSION-POS` 守卫的重建轮（`b5bbqj9x7`）。**在这些数字到齐之前，本条只写"8000 门禁已验证"，不写"梯子全绿"。**
 **覆盖缺口（诚实标注）**：`g_sess_len` 顺序修复没有判别性测试——`SESSION-POS` 命中的拒绝出口在自增之前，改前改后都会过（F257）；要判别需构造能令 `prefill_top1` 返回空的近容量会话，尚未做。
+
+## 审计增补（F259–F262，2026-11-04 12:15）
+- **F238 已过完整梯子（可收口）**：修复版二进制上 8000 `API SMOKE: PASS`（99 PASS 行、`SMOKE_EXIT=0`）+ 自检 **137 PASS / 0 FAIL**（`SUITE_SECS=698`、`first_len=3909`、`SCHEMA-DEEP200` **首调**判据通过）+ 8001 `par_smoke` **9/9** + `fairness` **PASS**（`b0i2o29tr`）。
+- **HEAD 自检 138 PASS / 0 FAIL**（`b5bbqj9x7`，多出 `SESSION-POS`）；但该轮**未跑** 8000/8001 ⇒ 若要在审计里写"HEAD 过完整梯子"，还需一次带门禁的复跑（进行中：`b46va91uc`，二进制与 HEAD 同源：exe 更新于 `5cec283`，其后只有文档提交）。
+- **覆盖更正（F261）**：`g_sess_len` 顺序修复**不可由 PHP 判别**——`prefill_top1` 的所有空返回都是基础设施故障，容量不足会被 `ensure_kv` 按需扩容 ⇒ 状态写为"代码推理正确 + 无回归"，不留"待补测试"的假待办。
+- **分析更正（F262）**：树草稿器**已实现多命中**（`spec_tree_generate` 收 B 条），F157"树无收益"的正确解释是**重复文本的同 trigram 后继相同**（分支同源）；FR-06.2 因此改为"取**不同**后继"（n-gram 频次 top-k / 次优 token），并要求测试语料本身能表达多样性。
