@@ -48,6 +48,8 @@ void set_spec_fix(int on);
 int spec_fix_on();
 void set_spec_freq(int on);
 int spec_freq_on();
+void set_spec_multiwin(int on);
+int spec_multiwin_on();
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
@@ -157,6 +159,10 @@ php::Int php_model_spec_fix(php::Int on) {
 php::Int php_model_spec_freq(php::Int on) {
     model::set_spec_freq((int) on);
     return php::Int(model::spec_freq_on());
+}
+php::Int php_model_spec_multiwin(php::Int on) {
+    model::set_spec_multiwin((int) on);
+    return php::Int(model::spec_multiwin_on());
 }
 php::Str php_model_spec_tree(php::Int backend, php::Str tokens, php::Int n_new, php::Int bins,
                              php::Int depth) {

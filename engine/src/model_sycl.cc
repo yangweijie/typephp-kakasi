@@ -123,6 +123,7 @@ namespace {
     int g_spec_alt = 0;               // commits taken from a non-zero tree branch (F308 coverage)
     int g_spec_bmax = 0;              // widest branch list ever collected in this call (F313)
     int g_spec_freq = 1;              // FR-06.2: frequency-ranked draft branches (0 = recency order)
+    int g_spec_multiwin = 1;          // FR-06.2 step 2: widen the lookup window to fill B branches
     int g_spec_fix = 1;               // F315 control: 0 disables the depth-position + compaction
                                       // repair inside the SAME build, so the defect can be shown
                                       // behaviourally instead of argued.
@@ -2081,15 +2082,20 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
         const size_t n = out.size();
         const int room = g_kv.cap - pos;
         const int maxNodes = std::min(B * D, room > 0 ? room : 0);
-        if (drafting && maxNodes >= D && n >= (size_t) m + 1) {
-            for (size_t p = n - (size_t) m; p > 0 && (int) branches.size() < B; --p) {
+        // FR-06.2 step 2: the candidate SET is the ceiling (F318 measured max_branches=2), so the
+        // lookup window is widened when the strict trigram cannot fill B branches. A shorter
+        // window (m-1) matches more often and yields genuinely different continuations; a longer
+        // one is tried last because it is rarer but more precise.
+        auto collect = [&](int mm) {
+            if (mm <= 0 || n < (size_t) mm + 1) return;
+            for (size_t p = n - (size_t) mm; p > 0 && (int) branches.size() < B; --p) {
                 const size_t start = p - 1;
                 bool hit = true;
-                for (int j = 0; j < m; ++j) {
-                    if (out[start + (size_t) j] != out[n - (size_t) m + (size_t) j]) { hit = false; break; }
+                for (int j = 0; j < mm; ++j) {
+                    if (out[start + (size_t) j] != out[n - (size_t) mm + (size_t) j]) { hit = false; break; }
                 }
                 if (!hit) continue;
-                const size_t f = start + (size_t) m;
+                const size_t f = start + (size_t) mm;
                 if (f + (size_t) D > n) continue;
                 std::vector<int> br;
                 for (int j = 0; j < D; ++j) br.push_back(out[f + (size_t) j]);
@@ -2098,8 +2104,13 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                     if (branches[bi] == br) { dup = true; break; }
                 }
                 if (dup) continue;
-                branches.push_back(std::move(br));
+                branches.push_back(br);
             }
+        };
+        if (drafting && maxNodes >= D) {
+            collect(m);
+            if (g_spec_multiwin && (int) branches.size() < B) collect(m - 1);
+            if (g_spec_multiwin && (int) branches.size() < B) collect(m + 1);
         }
 
         if (g_spec_freq && drafting && !branches.empty()) {
@@ -2109,14 +2120,17 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
             // swaps on a strict comparison.
             std::vector<std::vector<int>> cands;
             std::vector<int> counts;
-            for (size_t p2 = n - (size_t) m; p2 > 0; --p2) {
+            for (int mw = 0; mw < (g_spec_multiwin ? 3 : 1); ++mw) {
+                const int mm = (mw == 0) ? m : (mw == 1 ? m - 1 : m + 1);
+                if (mm <= 0 || n < (size_t) mm + 1) continue;
+            for (size_t p2 = n - (size_t) mm; p2 > 0; --p2) {
                 const size_t start2 = p2 - 1;
                 bool hit2 = true;
-                for (int j2 = 0; j2 < m; ++j2) {
-                    if (out[start2 + (size_t) j2] != out[n - (size_t) m + (size_t) j2]) { hit2 = false; break; }
+                for (int j2 = 0; j2 < mm; ++j2) {
+                    if (out[start2 + (size_t) j2] != out[n - (size_t) mm + (size_t) j2]) { hit2 = false; break; }
                 }
                 if (!hit2) continue;
-                const size_t f2 = start2 + (size_t) m;
+                const size_t f2 = start2 + (size_t) mm;
                 if (f2 + (size_t) D > n) continue;
                 std::vector<int> br2;
                 for (int j2 = 0; j2 < D; ++j2) br2.push_back(out[f2 + (size_t) j2]);
@@ -2126,6 +2140,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                 }
                 if (at == cands.size()) { cands.push_back(br2); counts.push_back(0); }
                 counts[at] += 1;
+            }
             }
             if (!cands.empty()) {
                 std::vector<size_t> order(cands.size());
@@ -2284,6 +2299,8 @@ int spec_fix_on() { return g_spec_fix; }
 // cross-round machine drift that made SPEC-TREE-SWEEP unusable (F312).
 void set_spec_freq(int on) { g_spec_freq = on ? 1 : 0; }
 int spec_freq_on() { return g_spec_freq; }
+void set_spec_multiwin(int on) { g_spec_multiwin = on ? 1 : 0; }
+int spec_multiwin_on() { return g_spec_multiwin; }
 
 std::string spec_stats() {    char buf[220];
     std::snprintf(buf, sizeof(buf),

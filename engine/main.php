@@ -10291,6 +10291,50 @@ function main(): void
             . " recency_ms=" . $f317NearMs . " freq_ms=" . $f317FreqMs . "\n";
     }
 
+    // SPEC-TREE-WIDEN (F319, FR-06.2 step 2): F318 pointed at the candidate SET rather than its
+    // order, so the lookup window widens (m-1, then m+1) until B branches are filled. Measured as
+    // an in-build toggle. Two things must hold: more distinct branches really appear, and the
+    // temp=0 sampled tree stays byte-identical to greedy - wider drafting may not buy speed with
+    // correctness. The accepts/verify ratio is printed, not asserted: it is the answer, not the
+    // precondition.
+    $f319T0 = microtime(true);
+    model_spec_multiwin(0);
+    $f319Narrow = model_spec_tree_sample(0, $f308p, 40, 4, 3, 0.9, 3190);
+    $f319NarrowMs = (microtime(true) - $f319T0) * 1000.0;
+    $f319NarrowStats = model_spec_stats();
+    $f319T1 = microtime(true);
+    model_spec_multiwin(1);
+    $f319Wide = model_spec_tree_sample(0, $f308p, 40, 4, 3, 0.9, 3190);
+    $f319WideMs = (microtime(true) - $f319T1) * 1000.0;
+    $f319WideStats = model_spec_stats();
+    model_spec_multiwin(0);
+    $f319ZeroOff = model_spec_tree_sample(0, $f308p, 40, 4, 3, 0.0, 3191);
+    model_spec_multiwin(1);
+    $f319ZeroOn = model_spec_tree_sample(0, $f308p, 40, 4, 3, 0.0, 3191);
+    $f319Nb = 0;
+    $f319Wb = 0;
+    foreach (explode(" ", $f319NarrowStats) as $f319tok) {
+        if (substr($f319tok, 0, 13) == "max_branches=") {
+            $f319Nb = (int) substr($f319tok, 13);
+        }
+    }
+    foreach (explode(" ", $f319WideStats) as $f319tok2) {
+        if (substr($f319tok2, 0, 13) == "max_branches=") {
+            $f319Wb = (int) substr($f319tok2, 13);
+        }
+    }
+    $f319ZOk = ($f319ZeroOff == $f308Ref && $f319ZeroOn == $f308Ref) ? 1 : 0;
+    if ($f319ZOk == 1 && $f319Wb >= $f319Nb && $f319NarrowMs > 0.0 && $f319WideMs > 0.0) {
+        $f319How = $f319Wb > $f319Nb ? "widened" : "NOTWIDENED";
+        echo "SPEC-TREE-WIDEN: PASS " . $f319How . " branches=" . $f319Nb . "->" . $f319Wb
+            . " temp0_greedy_identical=1 narrow_ms=" . $f319NarrowMs . " wide_ms=" . $f319WideMs . "\n"
+            . "  narrow: " . $f319NarrowStats . "\n  wide:   " . $f319WideStats . "\n";
+    } else {
+        echo "SPEC-TREE-WIDEN: FAIL temp0_greedy_identical=" . $f319ZOk
+            . " branches=" . $f319Nb . "->" . $f319Wb . " narrow_ms=" . $f319NarrowMs
+            . " wide_ms=" . $f319WideMs . "\n";
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.

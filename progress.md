@@ -759,3 +759,8 @@
 - **FR-06 现有可宣称的东西**：采样验证的树 **1.34–1.36×**（七个独立样本）；`temp=0` 退化回贪心＝回归门；F308 的树位置/缓存缺陷＝已修且**同构建双向对照**复现过缺陷（`model_spec_fix`）；`spec_bins`/`spec_depth` 有活门禁；FR-06.2 步 1（频次排序）＝**已实现、已测量、结论为中性**（F318）。
 - **唯一下一步（换草稿来源，不再调排序）**：把 `max_branches` 从 2 抬上去——①同一三元组取 top-k 不同续写而非仅最近两条；②用模型自身根行的 top-k/`sample_excluding` 生成第二条起点分支。判据＝`SPEC-TREE-DIVERSITY` 同构建三段对比的 `accepted/verifies` 与 wall，`alt_branch` 须保持 COVERED。
 - **其余未闭合**：多属性对象项（上游 dispatch 归属未定位，F298–F300）；`pattern` 元字符 / `minimum·maximum·multipleOf` / 混合类型枚举；per-session KV 并行吞吐；SSD 前缀分桶；GGUF 分片；多卡 split（需第二设备）；FR-05 厂商插件（本机无可验硬件）。
+
+## ▶ 状态（F320，2026-11-05 05:36，覆盖 F318 那节的"下一步"）
+- **基线**：本次 HEAD；二进制与源码同源、全梯绿：自检 **150 PASS / 0 FAIL**（`run_f319.log`）、8000 **113/0**、8001 `par_smoke`/`fairness` 全 0。FR-06 收益 `SPEC-TREE-WALL` 八个独立样本 **1.3346×–1.3629×**。
+- **FR-06.2 已否证两条**：换排序（F318 中性）与加宽窗口（F320 中性且白算 3 节点）⇒ **上限在草稿源**，不在查找/排序策略。
+- **下一轮动作（按序）**：①`g_spec_multiwin` 默认翻成 0 并走一次梯子（一行改动＋验证它的白算）；②模型自举分支——用根行 top-k／`sample_excluding` 生成文本中未出现的起点，判据仍是同构建 A/B 的 `accepted/verifies` 与 `max_branches`，且 `temp=0` 必须继续逐 id 等于贪心、`alt_branch` 保持 COVERED；③之后才轮到 per-session KV 并行吞吐、SSD 前缀分桶、GGUF 分片、多卡 split（需第二设备）、FR-05（本机无可验硬件）。
