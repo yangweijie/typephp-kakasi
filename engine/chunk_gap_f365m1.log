@@ -1,0 +1,276 @@
+HEALTH_OK polls=1
+PROBE_EXIT temp=0.9 run=1 0
+ANALYZE_EXIT temp=0.9 run=1 0
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 24.7,
+  "median": 44.1,
+  "mean": 42.503,
+  "p90": 59.7,
+  "max": 64.4
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 24.612,
+  "median": 44.052,
+  "mean": 42.504,
+  "p90": 59.718,
+  "max": 64.686
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.236,
+  "median": -0.091,
+  "mean": -0.082,
+  "p90": 0.032,
+  "max": 0.078
+ },
+ "client_wall_ms": 2507.715,
+ "server_span_ms": 2507.7,
+ "lag_sum_ms": -4.94,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793900545.5048,
+ "first_client_ts": 1793900545.504753
+}
+PROBE_EXIT temp=0.9 run=2 0
+ANALYZE_EXIT temp=0.9 run=2 0
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 25.1,
+  "median": 45.6,
+  "mean": 42.58,
+  "p90": 56.0,
+  "max": 62.7
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 24.597,
+  "median": 45.64,
+  "mean": 42.581,
+  "p90": 56.024,
+  "max": 62.758
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.552,
+  "median": -0.097,
+  "mean": -0.094,
+  "p90": 0.001,
+  "max": 0.101
+ },
+ "client_wall_ms": 2512.265,
+ "server_span_ms": 2512.2,
+ "lag_sum_ms": -5.628,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793900548.3889,
+ "first_client_ts": 1793900548.388812
+}
+PROBE_EXIT temp=0.9 run=3 0
+ANALYZE_EXIT temp=0.9 run=3 0
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 23.9,
+  "median": 44.6,
+  "mean": 42.936,
+  "p90": 61.5,
+  "max": 64.8
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 23.878,
+  "median": 44.651,
+  "mean": 42.934,
+  "p90": 61.581,
+  "max": 64.807
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.229,
+  "median": -0.086,
+  "mean": -0.078,
+  "p90": 0.056,
+  "max": 0.084
+ },
+ "client_wall_ms": 2533.114,
+ "server_span_ms": 2533.2,
+ "lag_sum_ms": -4.698,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793900551.2949,
+ "first_client_ts": 1793900551.294792
+}
+PROBE_EXIT temp=0.0 run=4 0
+ANALYZE_EXIT temp=0.0 run=4 0
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 22.6,
+  "median": 34.3,
+  "mean": 38.127,
+  "p90": 48.1,
+  "max": 52.1
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 22.578,
+  "median": 34.403,
+  "mean": 38.126,
+  "p90": 48.122,
+  "max": 51.998
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.278,
+  "median": -0.086,
+  "mean": -0.076,
+  "p90": 0.042,
+  "max": 0.106
+ },
+ "client_wall_ms": 2249.431,
+ "server_span_ms": 2249.5,
+ "lag_sum_ms": -4.561,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793900554.2629,
+ "first_client_ts": 1793900554.262883
+}
+PROBE_EXIT temp=0.0 run=5 0
+ANALYZE_EXIT temp=0.0 run=5 0
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 24.7,
+  "median": 39.4,
+  "mean": 39.193,
+  "p90": 48.6,
+  "max": 57.4
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 24.837,
+  "median": 39.303,
+  "mean": 39.194,
+  "p90": 48.672,
+  "max": 57.24
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.303,
+  "median": -0.077,
+  "mean": -0.074,
+  "p90": 0.012,
+  "max": 0.09
+ },
+ "client_wall_ms": 2312.447,
+ "server_span_ms": 2312.4,
+ "lag_sum_ms": -4.426,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793900556.9068,
+ "first_client_ts": 1793900556.906651
+}
+PROBE_EXIT temp=0.0 run=6 0
+ANALYZE_EXIT temp=0.0 run=6 0
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 23.9,
+  "median": 33.9,
+  "mean": 38.156,
+  "p90": 48.4,
+  "max": 51.2
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 23.986,
+  "median": 33.977,
+  "mean": 38.154,
+  "p90": 48.263,
+  "max": 51.211
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.209,
+  "median": -0.073,
+  "mean": -0.07,
+  "p90": 0.047,
+  "max": 0.133
+ },
+ "client_wall_ms": 2251.094,
+ "server_span_ms": 2251.2,
+ "lag_sum_ms": -4.184,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793900559.6301,
+ "first_client_ts": 1793900559.630148
+}
+THRU_EXIT 0
+AB_EXIT 0
+{
+ "rows": 240,
+ "dropped_segments": 122,
+ "seg_engine_plus_writeA_ms": {
+  "n": 58,
+  "min": 30.5,
+  "median": 47.3,
+  "mean": 50.741,
+  "p90": 62.8,
+  "max": 67.6
+ },
+ "seg_writeB_ms": {
+  "n": 59,
+  "min": 0.2,
+  "median": 0.3,
+  "mean": 0.276,
+  "p90": 0.4,
+  "max": 0.6
+ },
+ "iteration_cadence_ms": {
+  "n": 58,
+  "min": 30.7,
+  "median": 47.6,
+  "mean": 51.017,
+  "p90": 63.2,
+  "max": 67.8
+ }
+}
+THROUGHPUT port=8001 tokens=60 streams=2 spec=off temp=0.9
+  scaling    : 1.582x (1.000 = no parallel gain, 2.000 = perfect)
+THROUGHPUT: PASS measured
+SENTINELS_LEFT=0
+CHUNK_GAP_DONE tag=f365m1

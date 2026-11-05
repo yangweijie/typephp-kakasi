@@ -1,0 +1,95 @@
+model: qwen2 layers=24 hidden=896
+gguf v3 tensors=290 kv=26 align=32 data_start=5947680 avail=391859712 sum_bytes=391859712 max_end=391859712 ACCOUNTING=PASS
+picked f32=0 q8_0=1 q5_0=5 q4_k=46 q6_k=10 of 290
+backends validated: 3/3
+  b0 deq_f32 PASS x3 (last=0)
+  b0 deq_q5 PASS x3 (last=0)
+  b0 deq_q4 PASS x3 (last=0)
+  b0 deq_q6 PASS x3 (last=0)
+  b0 gemm_q5 PASS x3 (last=7.5869787501731E-7)
+  b0 gemm_q4 PASS x3 (last=4.173769104429E-6)
+  b0 rms PASS x3 (last=5.9604644775391E-7)
+  b0 deq_q8_0(embd) EXACT (301.061 ms)
+  b1 deq_f32 PASS x3 (last=0)
+  b1 deq_q5 PASS x3 (last=0)
+  b1 deq_q4 PASS x3 (last=0)
+  b1 deq_q6 PASS x3 (last=0)
+  b1 gemm_q5 PASS x3 (last=7.5869787501731E-7)
+  b1 gemm_q4 PASS x3 (last=4.173769104429E-6)
+  b1 rms PASS x3 (last=1.1920928955078E-7)
+  b1 deq_q8_0(embd) EXACT (254.6628 ms)
+  b2 deq_f32 PASS x3 (last=0)
+  b2 deq_q5 PASS x3 (last=0)
+  b2 deq_q4 PASS x3 (last=0)
+  b2 deq_q6 PASS x3 (last=0)
+  b2 gemm_q5 PASS x3 (last=7.5869787501731E-7)
+  b2 gemm_q4 PASS x3 (last=4.173769104429E-6)
+  b2 rms PASS x3 (last=1.1920928955078E-7)
+  b2 deq_q8_0(embd) EXACT (221.3266 ms)
+OPS: PASS
+  b0 forward PASS top1=12095 logit=16.37774848938 (1941.4799213409 ms)
+  b1 forward PASS top1=12095 logit=16.36145401001 (3704.5140266418 ms)
+  backend-drift PASS |b1-b0| logit = 0.016294479370117
+FORWARD: PASS (oracle ' Paris')
+gen ids(11): 785,6722,315,9625,374,12095,13,1084,374,279,7772
+decoded: The capital of France is Paris. It is the largest
+GENERATE: PASS (step-1 matches oracle; n=11)
+perf: prefill=1089.0086 ms, decode steps=133.8965 ms
+  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
+  samp[greedy-equiv] PASS
+  samp[tiny-nucleus] PASS first-nucleus=1
+  samp[determinism] PASS
+  samp[spread] PASS (seed7 gives 17 ids, seed8 differs=yes)
+  sampled decode: The capital of France is:ĊA) ParisĊB) MarseilleĊC) Lyons
+SAMPLING: PASS
+  sampler[dist] PASS draws=200 mism=0 amb=0 grid=0 exact=0 ids=44
+SAMPLER-DIST: PASS
+  step2 ours=13 top=20.221141815186 second=19.923461914062 comma_logit=19.923461914062 comma_rank=2
+long prompt tokens: 84 -> ids after gen: 88
+LONGCTX: PASS (generated past the old 64-token limit)
+  tok[0] PASS ids=785
+  tok[1] PASS ids=785,6722,315,9625,374
+  tok[2] PASS ids=40,2776,537,2704
+  tok[3] PASS ids=785,6722,315,9625,374,12095,13
+  tok[4] PASS ids=64,220
+  tok[5] PASS ids=64,256
+  tok[6] PASS ids=64,262
+  tok[7] PASS ids=262
+  tok[8] PASS ids=64,220,293
+  tok[9] PASS ids=64,11,220,293
+  tok[10] PASS ids=64,198,65
+  tok[11] PASS ids=64,2233
+  tok[12] PASS ids=64,624,65
+  tok[13] PASS ids=64,271,65
+  tok[14] PASS ids=64,715
+  tok[15] PASS ids=14990,2303,14615
+  tok[16] PASS ids=16,15,15
+  tok[17] PASS ids=16,17,18,19,20
+  tok[18] PASS ids=15007,944
+  tok[19] PASS ids=785,3349,374,400,18,13,20,15,13
+TOKENIZER: PASS (20 cases vs llama-tokenize)
+  chat[template] PASS
+  chat[ctrl-0] PASS ids=151644
+  chat[ctrl-1] PASS ids=1796,151645,198
+  chat[turn] PASS ids=151644,872,198,13048,151645,198
+  chat[e2e] prompt=151644,872,198,785,6722,315,9625,374,151645,198 -> <|im_start|>userĊThe capital of France is<|im_end|>Ċ<|im_start|>userĊWhat are the
+CHAT: PASS
+PIPELINE decoded: The capital of France is Paris. It
+PIPELINE: text-in/text-out OK
+parity tokens: 274
+PERF steady: prefill(5 tok)=48.0991 ms  prefill(200 tok)=442.2455 ms  decode=281.4905 ms over 15 steps
+PERF tok/s (decode, steady) = 53.287766372222
+PERF stages(1 tok): s0=0.0829 s1=11.4964 s2=2.2124 (s0=emb+rope s1=24 blocks s2=norm+lm_head)
+PERF stages(5 tok): s0=0.1365 s1=36.813 s2=2.0811
+PERF stage-sweep: L=8: s0=0.0815 s1=10.1941 s2=5.4183 step=15.872955322266 ok=0 tok=3283 | L=32: s0=0.0672 s1=15.1815 s2=1.9513 step=17.361164093018 ok=0 tok=279 | L=64: s0=0.0742 s1=21.1709 s2=2.0731 step=23.478984832764 ok=0 tok=6722 | L=128: s0=0.9319 s1=48.1723 s2=2.177 step=51.481962203979 ok=0 tok=315 | L=256: s0=0.0751 s1=77.9747 s2=2.2568 step=80.47080039978 ok=0 tok=374 |
+PERF long: prefill(512 tok)=1297.9810237885 ms (394.45877144306 tok/s) err=
+ORCH plan b0 dev=Intel(R) Arc(TM) B390 GPU total=25.34GiB budget=13.94GiB weights_f32=1.84GiB weights_f16=0.92GiB kv(2048 tok)=0.047GiB strategy=weights-resident resident_now=0.50GiB
+ORCH plan b1 dev=Intel(R) Core(TM) Ultra X7 358H total=31.52GiB budget=17.34GiB weights_f32=1.84GiB weights_f16=0.92GiB kv(2048 tok)=0.047GiB strategy=weights-resident resident_now=0.50GiB
+  curve[0GiB] step=17.61286 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
+  curve[0.6GiB] step=22.23074 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=0.60GiB device=25.34GiB hot_embedding_kept=1
+  curve[0.05GiB] step=988.31786 ms  residency enabled=1 kept=205/290 planned=0.05GiB used=0.05GiB budget=0.05GiB device=25.34GiB hot_embedding_kept=0
+  orch[policy] PASS -> plan b0 dev=Intel(R) Arc(TM) B390 GPU total=25.34GiB budget=0.05GiB weights_f32=1.84GiB weights_f16=0.92GiB kv(2048 tok)=0.047GiB strategy=stream-weights resident_now=0.00GiB
+  orch[fallback] PASS streaming path produced identical tokens (6 steps)
+  residency tiny=residency enabled=1 kept=205/290 planned=0.05GiB used=0.05GiB budget=0.05GiB device=25.34GiB hot_embedding_kept=0
+  split: split primary=b? secondary=b1 layers=[12,24)
+==RUN_EXIT=-1073741819== 

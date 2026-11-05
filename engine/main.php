@@ -9309,6 +9309,66 @@ function main(): void
     }
     echo "PERF stages(5 tok):" . $stag . "\n";
 
+    // F364: the served per-token cost grows with the CONTEXT length (the live measurement put
+    // the growth at ~0.35ms per token of context over a 60-token stream, and the server's own
+    // iteration cadence grows the same way). Which part of a step grows? A 1-token step at
+    // context length L attends over all L cached rows, so the stage marks of such a step show
+    // the slope per stage (s1 = the 24 blocks, which is where the attention lives), and the host
+    // wall around the step shows the TOTAL slope - that is what the served path pays, so the two
+    // can be compared directly.
+    $swpFail = 0;
+    // F365 A/B: both attention paths live in this binary, so for every context length the two
+    // modes are measured back to back, twice each. The pairing is the point: two separate sweeps
+    // would compare two moments in time, and the machine drifts (an earlier sweep showed s1 at
+    // L=32 above s1 at L=64), while adjacent measurements cancel that drift. The two paths
+    // compute the same values in the same order, so the sampled token must not move.
+    foreach (explode(",", "8,32,64,128,256") as $swpLs) {
+        $swpL = (int) $swpLs;
+        $swpCtx = "";
+        $swpAt = 0;
+        for ($swpK = 0; $swpK < $swpL; $swpK++) {
+            $swpTok = $pv[$swpAt];
+            $swpAt = $swpAt + 1;
+            if ($swpAt >= $np) {
+                $swpAt = 0;
+            }
+            $swpCtx = $swpK == 0 ? $swpTok : $swpCtx . "," . $swpTok;
+        }
+        $swpOut = "";
+        $swpTok0 = -1;
+        $swpTok1 = -1;
+        foreach (explode(",", "0,1") as $swpModeLs) {
+            $swpMode = (int) $swpModeLs;
+            model_set_attn_mode($swpMode);
+            $swpS1 = "";
+            $swpTokm = -1;
+            for ($swpR = 0; $swpR < 2; $swpR++) {
+                $swpOk = model_session_start(0, $swpCtx);
+                $swpT0 = microtime(true);
+                $swpTok2 = model_session_next(0, 0.0, 1.0);
+                $swpMs = (microtime(true) - $swpT0) * 1000.0;
+                $swpS1 = $swpS1 . " s1=" . model_stage_at(1) . " step=" . $swpMs;
+                $swpTokm = $swpTok2;
+            }
+            $swpOut = $swpOut . " m" . $swpMode . ":" . $swpS1 . " tok=" . $swpTokm . " |";
+            if ($swpMode == 0) {
+                $swpTok0 = $swpTokm;
+            } else {
+                $swpTok1 = $swpTokm;
+            }
+        }
+        model_set_attn_mode(0);
+        if ($swpTok0 != $swpTok1) {
+            $swpFail = $swpFail + 1;
+        }
+        echo "PERF sweep L=" . $swpL . ":" . $swpOut . "\n";
+    }
+    if ($swpFail == 0) {
+        echo "ATTN-MODE: PASS (score cache and three-pass sample the same tokens)\n";
+    } else {
+        echo "ATTN-MODE: FAIL the tokens differ at " . $swpFail . " context lengths\n";
+    }
+
     // Long-context prefill point: the baseline only had 5/200 tokens, which is not enough to say
     // anything about scaling. 512 tokens is the next meaningful step on this model.
     $longTxt = "";

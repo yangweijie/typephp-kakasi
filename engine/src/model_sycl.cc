@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <string>
@@ -35,6 +36,27 @@ namespace {
     // Cleared at the start of every pass: a failed pass must leave nothing to sample from.
     std::vector<float> g_last_logits;
     int g_nucleus = 0;             // nucleus size of the first sampled token of the last run
+    // F365 A/B switch: 0 = the score cache (each attention score computed once and reused by
+    // the three passes that need it), 1 = the pre-F365 kernel (the score recomputed in every
+    // pass). Both live in this binary, so the fix can be measured both ways in one process, and
+    // they are arithmetically identical, so the sampled token must not change between them.
+    int g_attn_mode = 0;
+    // The server reads the same switch from the environment, so the served path can be A/B'd
+    // in this binary too: KAKASI_ATTN_MODE=1 starts it on the pre-F365 kernel.
+    struct AttnModeFromEnv {
+        AttnModeFromEnv() {
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+            const char* e = std::getenv("KAKASI_ATTN_MODE");
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+            if (e && e[0] != '\0') g_attn_mode = (std::atoi(e) == 1) ? 1 : 0;
+        }
+    };
+    AttnModeFromEnv g_attn_mode_from_env;
 
     // Persistent KV cache: the prefill writes rows [0,T) and each decode step appends one
     // row, so a step costs one token of block work instead of re-running the prompt.
@@ -533,9 +555,22 @@ namespace {
     // path is lo=0, hi=pos+b; a batched pass sets them per row so each row sees only the rows of
     // its own conversation. The two mechanisms are exclusive: a tree pass has no ranges.
     template <typename KVt>
+    // F365: the attention used to walk the visible KV range THREE times and recompute the same
+    // dot product in every pass - once for the max, once for the softmax sum and once for the
+    // weighted sum of V. That cost is linear in the context length, and the measurement (F364:
+    // the served per-token cost grows 0.35-0.42ms per token of context, and the sweep showed it
+    // is s1 - the 24 blocks - that grows) put ~25ms of a 60-token step inside it. The scores are
+    // now computed ONCE into `scores` and reused, which leaves the arithmetic bit-for-bit
+    // identical (same values in the same order) and cuts the K reads and the MACs to a third.
+    // `scoreRows` is the length of the visible range, so the scratch holds T*NH*scoreRows floats.
     void attention(sycl::queue& q, const float* Q, const KVt* K, const KVt* V, int T, int pos, int NH, int NKV,
-                   int HD, float scale, float* O, const uint32_t* tree = nullptr,
+                   int HD, float scale, float* O, float* scores, int scoreRows,
+                   const uint32_t* tree = nullptr,
                    const int* lo = nullptr, const int* hi = nullptr) {
+        // F365 A/B: mode 0 computes each score once and reuses it; mode 1 recomputes it in every
+        // pass (the pre-F365 kernel). The branch is uniform across the work items, so it costs
+        // one predicate per (token, head) and nothing per iteration.
+        const int threePass = g_attn_mode;
         q.parallel_for(sycl::range<2>(T, NH), [=](sycl::item<2> it) {
             const int b = (int) it.get_id(0);
             const int h = (int) it.get_id(1);
@@ -545,32 +580,56 @@ namespace {
             const int first = lo ? lo[b] : 0;
             const bool masked = (tree != nullptr);
             const uint32_t allow = masked ? tree[b] : 0u;
+            float* srow = scores + ((size_t) b * NH + h) * (size_t) scoreRows;
+            float* orow = O + ((size_t) b * NH + h) * HD;
             float mx = -1e30f;
             float sum = 0.0f;
+            if (threePass) {
+                for (int j = first; j <= last; ++j) {
+                    if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
+                    const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
+                    float s = 0.0f;
+                    for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
+                    s *= scale;
+                    mx = sycl::max(mx, s);
+                }
+                for (int j = first; j <= last; ++j) {
+                    if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
+                    const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
+                    float s = 0.0f;
+                    for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
+                    sum += sycl::exp(s * scale - mx);
+                }
+                for (int d = 0; d < HD; ++d) orow[d] = 0.0f;
+                for (int j = first; j <= last; ++j) {
+                    if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
+                    const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
+                    const KVt* vrow = V + ((size_t) j * NKV + kv) * HD;
+                    float s = 0.0f;
+                    for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
+                    const float w = sycl::exp(s * scale - mx) / sum;
+                    for (int d = 0; d < HD; ++d) orow[d] += w * (float) vrow[d];
+                }
+                return;
+            }
             for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
                 const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
                 float s = 0.0f;
                 for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
                 s *= scale;
+                srow[j - first] = s;
                 mx = sycl::max(mx, s);
             }
             for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
-                const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
-                float s = 0.0f;
-                for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
-                sum += sycl::exp(s * scale - mx);
+                sum += sycl::exp(srow[j - first] - mx);
             }
-            float* orow = O + ((size_t) b * NH + h) * HD;
             for (int d = 0; d < HD; ++d) orow[d] = 0.0f;
             for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
-                const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
                 const KVt* vrow = V + ((size_t) j * NKV + kv) * HD;
-                float s = 0.0f;
-                for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
-                const float w = sycl::exp(s * scale - mx) / sum;
+                const float w = sycl::exp(srow[j - first] - mx) / sum;
                 for (int d = 0; d < HD; ++d) orow[d] += w * (float) vrow[d];
             }
         });
@@ -957,6 +1016,12 @@ void set_weight_prec(int p) {
 }
 
 int weight_prec() { return g_wprec; }
+
+// F365 A/B switch: 0 = score cache, 1 = the pre-F365 three-pass kernel. Switching does not
+// change the arithmetic (both paths compute the same values in the same order), so it can be
+// flipped between two runs and the output must not move.
+void set_attn_mode(int m) { g_attn_mode = (m == 1) ? 1 : 0; }
+int attn_mode() { return g_attn_mode; }
 
 // Backend fingerprint for `engine doctor` (FR-04): what the runtime actually sees, not what the
 // build hoped for.
@@ -1495,6 +1560,18 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
     if (planned) {
         for (int t = 0; t < T; ++t) planNeed = std::max(planNeed, g_plan.slot[(size_t) t] + 1);
     }
+    // F365: the attention scores are computed once per (token, head) and reused by the three
+    // passes that used to recompute them, so the scratch is one row of visible-range length per
+    // (token, head): T * NH * scoreRows floats. The plain path sees [0, pos+b], a planned pass
+    // sees [lo[b], hi[b]].
+    int scoreRows = 1;
+    if (planned) {
+        for (int t = 0; t < T; ++t) {
+            scoreRows = std::max(scoreRows, g_plan.hi[(size_t) t] - g_plan.lo[(size_t) t] + 1);
+        }
+    } else {
+        scoreRows = pos + T;
+    }
     if (theta <= 0.0) theta = 1000000.0;
     const int eIdx = gguf::find_tensor("token_embd.weight");
     if (eIdx < 0 || HD > 128) { g_err = "no token_embd.weight or head too wide"; return {}; }
@@ -1508,6 +1585,9 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // Long-lived: live across every layer, so they own their memory instead of using the
         // per-layer arena that gets reset.
         Dev x(&q, (size_t) T * D, true), h(&q, (size_t) T * D, true);
+        // F365: long-lived too - the attention scores of every layer land here, and the per-layer
+        // arena is reset between layers, so this one has to own its memory.
+        Dev scores(&q, (size_t) T * NH * (size_t) scoreRows, true);
         auto probe = [&]() {
             std::vector<float> px((size_t) T * D);
             q.memcpy(px.data(), x.p, sizeof(float) * px.size());
@@ -1561,7 +1641,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // per-layer scratch, and `kv` the cache that lives on that same device - all of the
         // second device's state is separate, which is what makes the split sound.
         auto run_layer = [&](sycl::queue& ql, float* xp, float* hp, KVCache& kv,
-                             const float* cosp, const float* sinp, int l, bool trace) -> bool {
+                             const float* cosp, const float* sinp, float* sc, int l, bool trace) -> bool {
             const std::string p = "blk." + std::to_string(l) + ".";
             Wt anw = load_weight(ql, p + "attn_norm.weight", (uint64_t) D);
             if (!anw.p) return false;
@@ -1620,11 +1700,13 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             if (kv.f16) {
                 attention(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
                           (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale, ao.p,
+                          sc, scoreRows,
                           planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
                           planned ? g_plan.d_hi : nullptr);
             } else {
                 attention(ql, att.p, (const float*) kv.k[(size_t) l],
                           (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale, ao.p,
+                          sc, scoreRows,
                           planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
                           planned ? g_plan.d_hi : nullptr);
             }
@@ -1681,9 +1763,21 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // by the other.
         float* dCos2 = nullptr;
         float* dSin2 = nullptr;
+        // F365: the second device needs its own score scratch - a pointer allocated on one
+        // device must never be dereferenced by the other, which is exactly what the split path
+        // would do if the layers on the second device reused the primary scratch.
+        float* scores2 = nullptr;
         if (splitActive) {
             dCos2 = sycl::malloc_device<float>(ctab.size(), q2);
             dSin2 = sycl::malloc_device<float>(stab.size(), q2);
+            scores2 = sycl::malloc_device<float>((size_t) T * NH * (size_t) scoreRows, q2);
+            if (!dCos2 || !dSin2 || !scores2) {
+                if (dCos2) sycl::free(dCos2, q2);
+                if (dSin2) sycl::free(dSin2, q2);
+                if (scores2) sycl::free(scores2, q2);
+                g_err = "split scratch allocation failed";
+                return {};
+            }
             q2.memcpy(dCos2, ctab.data(), sizeof(float) * ctab.size());
             q2.memcpy(dSin2, stab.data(), sizeof(float) * stab.size());
             q2.wait_and_throw();
@@ -1733,7 +1827,8 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             }
             if (!run_layer(on2 ? q2 : q, on2 ? xs.p : x.p, on2 ? hs.p : h.p,
                            on2 ? g_kv2 : g_kv,
-                           on2 ? dCos2 : dCos, on2 ? dSin2 : dSin, l, !on2)) {
+                           on2 ? dCos2 : dCos, on2 ? dSin2 : dSin,
+                           on2 ? scores2 : scores.p, l, !on2)) {
                 return {};
             }
             // One drain per layer bounds the arena reset: everything this layer queued has run,
@@ -1753,6 +1848,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             q.wait_and_throw();
             sycl::free(dCos2, q2);
             sycl::free(dSin2, q2);
+            sycl::free(scores2, q2);
         }
 
         sycl::free(dCos, q);

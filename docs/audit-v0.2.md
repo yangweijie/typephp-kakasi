@@ -283,3 +283,29 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 每 token 成本随长度增长 | q1→q4 中位 34.6→51.3 / 39.4→52.0 / 36.7→52.7 / 38.9→55.2 ms；前10→后10 +21.4 / +14.6 / +18.9 / +21.3 ms | `engine/chunk_gap_f364e_r1_t0_9.json` … `r4_t0_0.json`（四分位由到达时刻现算） |
 | 对齐三坑的留档 | 第一次跑 lag 中位 969289 ms、server gap 最小 −971602 ms | 数字留在 `findings.md` F364「对齐的三个坑」里（那次产物在清理临时文件时一并删掉，**没有留在仓库里**） |
 | 增长在**服务端**（不是客户端读得慢） | 服务端自己的迭代 cadence 同样在涨：q1 41.8 → q4 61.5 ms（首 10 次 42.0 → 末 10 次 66.8） | `engine/chunk_gap_trend_f364e.json`（由 `engine/par_trace.log` 最后 120 行 `STEP A` 现算） |
+
+## 审计增补（F365，2026-11-06 01:36）——长度相关的那笔钱**定位并改掉**：注意力三遍重算 → 算一次缓存复用
+- **机制（F364 的"机制待证"到此为止）**：自检里新增的 `PERF stage-sweep`（L=8/32/64/128/256 各起会话量一步的 stage 计时）在旧二进制上显示**只有 s1（24 个 block）随长度涨**（s0≈0.1 ms、s2≈2.2 ms 恒定）⇒ 长度相关的钱在 block 里；block 里随长度变贵的是 `attention()`，它对可见 KV 范围走三遍（max / softmax 求和 / 加权 V）且**每遍重算同一个点积**。
+- **改法**：每个 `(token, head)` 的分数**只算一次**写进设备端 scratch（`T × NH × scoreRows`），三遍复用；**值与求和顺序不变 ⇒ 逐位相同**。分层切到第二块设备时**另配一块 scratch**（第一版跨设备共用缓冲 ⇒ 自检 split 段崩 `0xC0000005`）。
+- **测法**：两条路径**都在同一个二进制里**（`model_set_attn_mode(0|1)`；环境 `KAKASI_ATTN_MODE=1`），sweep **按 L 配对**（每个 L 先 m0 再 m1，各两遍）⇒ 相邻测量抵消机器漂移（单独一趟 sweep 曾出现 L=32 的 s1 高于 L=64）。**跨轮比较不成立**：旧构建同一算法 fit 0.39 ms/token vs 本轮 0.365 ⇒ 机器漂 ≈13%。
+- **正确性**：新增自检门 `ATTN-MODE`——**逐 L 比对两条路径采样出的 token id**（五个 L 全同）⇒ 这是"逐位相同"的直接证据；自检 **160 PASS / 0 FAIL**（`engine/run_f365c.log`，相对 159 基线只多这一项）。
+
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 长度相关的钱在 s1（block）里 | 旧构建 s1 随 L：21.75/23.82/37.03/65.31/**117.60** ms（s0、s2 恒定） | `engine/run_f364b.log`（`PERF stage-sweep`） |
+| 同构建配对 A/B：s1（缓存 vs 三遍重算） | L=8 10.18/9.83 vs 11.20/12.27；L=32 16.18/14.94 vs 19.77/19.48；L=64 21.45/21.22 vs 32.82/32.06；L=128 36.76/36.75 vs 56.72/57.04；L=256 **62.43/62.19 vs 101.96/101.37** ms | `engine/run_f365c.log`（`PERF sweep L=…`） |
+| 拟合：长度相关项降 42%、常数项不动 | m0 **s1 ≈ 8.54+0.212·L**；m1 **s1 ≈ 8.86+0.365·L**（5 点最小二乘） | 同上 |
+| 每步整体收益（随长度增长） | L=8 1.15×；L=32 1.23×；L=64 1.48×；L=128 1.50×；L=256 **1.60×** | 同上（`step=` 两模式之比） |
+| 两条路径逐位相同 | 五个 L 的 token id 全同（3283/279/6722/315/374） | `engine/run_f365c.log`（`ATTN-MODE: PASS`） |
+| 自检 | **160 PASS / 0 FAIL** | `engine/run_f365c.log` |
+| 跨设备共用缓冲会崩（真缺陷，已修） | 自检 split 段 `0xC0000005`（第一版 scratch 在主设备） | `engine/run_f365.log`（崩掉的那一趟）与 `engine/run_f365b.log`（修后 159/0） |
+
+### F365 服务面端到端（同构建 A/B）与门禁
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 服务面每 token cadence（temp 0.9） | m0 **31.1** ms / m1 **44.6** ms（各 3 次的中位）⇒ **1.43×** | `engine/chunk_gap_split_f365m0_r*_t0_9.json` / `engine/chunk_gap_split_f365m1_r*_t0_9.json` |
+| 服务面每 token cadence（temp 0.0） | m0 30.9 / m1 34.3 ms（m1 三次 34.3/39.4/33.9，噪声大） | `engine/chunk_gap_split_f365m{0,1}_r*_t0_0.json` |
+| 双流一次迭代 cadence | m0 **40.4** / m1 **47.6** ms（trace 自拆，B 的写两模式都是 0.3 ms） | `engine/chunk_gap_ab_f365m0.json` / `engine/chunk_gap_ab_f365m1.json` |
+| 8001 双流 scaling | m0 **1.637×** / m1 1.582× | `engine/chunk_gap_two_f365m0.log` / `engine/chunk_gap_two_f365m1.log` |
+| 端到端"逐位相同" | 两模式输出文本逐字节相同（148 / 150 字符，探针已带 `seed=12345`） | `engine/chunk_gap_f365m{0,1}_r1_t0_9.json` / `…_t0_0.json` |
+| 活门禁 | 8000 **115 PASS / 0 FAIL**；8001 `par` **0**、`fairness` **0**、scaling **1.625×**；投机 greedy **2.841×** / sampled **2.071×**；哨兵 0 | `engine/gate_f365.log` |

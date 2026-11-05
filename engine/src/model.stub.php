@@ -31,6 +31,9 @@ function model_set_kv_f16(int $on): int {}
 function model_kv_cache_gib(): float {}
 function model_set_weight_prec(int $p): int {}
 function model_weight_prec(): int {}
+// F365: 0 = attention score cache, 1 = the pre-F365 three-pass kernel (same arithmetic).
+function model_set_attn_mode(int $m): int {}
+function model_attn_mode(): int {}
 function model_session_start(int $backend, string $tokens): int {}
 function model_session_next(int $backend, float $temp, float $top_p): int {}
 function model_session_len(): int {}

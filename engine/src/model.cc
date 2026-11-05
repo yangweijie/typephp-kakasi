@@ -32,6 +32,9 @@ void set_kv_f16(int on);
 int kv_f16();
 void set_weight_prec(int p);
 int weight_prec();
+// F365 A/B switch: 0 = attention score cache, 1 = the pre-F365 three-pass kernel.
+void set_attn_mode(int m);
+int attn_mode();
 int session_start(int backend, const std::vector<int>& ids);
 int session_next(int backend, double temp, double top_p);
 void session_seed(uint64_t seed);
@@ -129,6 +132,12 @@ php::Int php_model_set_weight_prec(php::Int p) {
     return php::Int(model::weight_prec());
 }
 php::Int php_model_weight_prec() { return php::Int(model::weight_prec()); }
+// F365: flips the attention path between the score cache and the pre-F365 three-pass kernel.
+php::Int php_model_set_attn_mode(php::Int m) {
+    model::set_attn_mode((int) m);
+    return php::Int(model::attn_mode());
+}
+php::Int php_model_attn_mode() { return php::Int(model::attn_mode()); }
 php::Int php_model_session_start(php::Int backend, php::Str tokens) {
     const std::string csv(tokens.data(), tokens.length());
     return php::Int(model::session_start((int) backend, parse_ids(csv)));

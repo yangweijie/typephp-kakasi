@@ -30,6 +30,9 @@ body = json.dumps({
     "max_tokens": TOKENS,
     "stream": True,
     "temperature": TEMP,
+    # A fixed seed makes the served text reproducible, so two runs of two builds (or two
+    # attention modes of one build) can be compared byte for byte.
+    "seed": 12345,
 }).encode()
 
 req = urllib.request.Request("http://127.0.0.1:%d/v1/chat/completions" % PORT,
@@ -72,11 +75,13 @@ def stats(xs):
 
 
 gaps = [arrivals[i + 1][0] - arrivals[i][0] for i in range(len(arrivals) - 1)]
+text = "".join(c[1] for c in arrivals)
 out = {
     "port": PORT,
     "tokens": TOKENS,
     "temp": TEMP,
     "chunks": len(arrivals),
+    "text": text,
     "wall_s": round(t_end - t_open, 4),
     "first_arrival_epoch": round(arrivals[0][0], 6) if arrivals else 0.0,
     "last_arrival_epoch": round(arrivals[-1][0], 6) if arrivals else 0.0,
