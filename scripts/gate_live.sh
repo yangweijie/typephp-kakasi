@@ -49,6 +49,16 @@ fi
 python "$E/tests/api_smoke.py" > "$E/api_smoke_$TAG.log" 2>&1
 echo "SMOKE_EXIT=$?" >> "$E/api_smoke_$TAG.log"
 echo "SMOKE: PASS=$(grep -c 'PASS' "$E/api_smoke_$TAG.log") FAIL=$(grep -c 'FAIL' "$E/api_smoke_$TAG.log")"
+# F351: the served speculation claim becomes a standing observation instead of a one-off
+# measurement - spec off vs spec on at equal temperature, plus the engine's own counters. Reported,
+# not asserted: the honest result so far is "runs, accepts, does not speed this workload up", and a
+# future change should show up here as a delta rather than as a new investigation.
+python "$E/tests/throughput_test.py" 8000 60 2 "" > "$E/thru_plain_$TAG.log" 2>&1
+python "$E/tests/throughput_test.py" 8000 60 2 "2,6" > "$E/thru_spec_$TAG.log" 2>&1
+curl -s -m 5 http://127.0.0.1:8000/spec_stats > "$E/spec_stats_$TAG.log" 2>&1
+echo "SERVED-SPEC plain: $(grep concurrent "$E/thru_plain_$TAG.log")"
+echo "SERVED-SPEC spec : $(grep concurrent "$E/thru_spec_$TAG.log")"
+echo "SERVED-SPEC stats: $(cat "$E/spec_stats_$TAG.log")"
 stop_all
 
 # ---------- 8001: two-slot streaming parity + fairness ----------
