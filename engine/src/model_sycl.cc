@@ -126,6 +126,8 @@ namespace {
     int g_spec_multiwin = 0;          // F320: widening was measured neutral while costing 3 wasted
                                       // tree nodes per pass, so it is off by default (gate toggle
                                       // model_spec_multiwin(1) re-enables it for measurement).
+    int g_spec_selfseed = 0;          // F323 (FR-06.2 step 3): extra branches seeded from the
+                                      // model's own root distribution instead of the text.
     int g_spec_fix = 1;               // F315 control: 0 disables the depth-position + compaction
                                       // repair inside the SAME build, so the defect can be shown
                                       // behaviourally instead of argued.
@@ -2081,6 +2083,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
 
     while (produced < n_new) {
         std::vector<std::vector<int>> branches;
+        int nSelf = 0;               // branches appended from the model's own root row (F323)
         const size_t n = out.size();
         const int room = g_kv.cap - pos;
         const int maxNodes = std::min(B * D, room > 0 ? room : 0);
@@ -2180,6 +2183,41 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
 
         if (reverseBranches) std::reverse(branches.begin(), branches.end());
         if ((int) branches.size() > g_spec_bmax) g_spec_bmax = (int) branches.size();
+        // F323 (FR-06.2 step 3): prompt-lookup can only propose continuations the text ALREADY
+        // contains, which is why max_branches never rose past 2 (F322) and why bins had no effect.
+        // A self-seeded branch starts from the model's own root row instead: the seed is drawn
+        // from p, so for that first token q = p and accepting it always is exact (the branch's
+        // remainder still goes through the normal p(draft) test). It must be added BEFORE the tree
+        // is flattened - otherwise the extra branch is never verified and only perturbs the RNG
+        // stream, which is exactly the bug this comment documents. Inert at temp<=0, where p is a
+        // point mass, so the greedy-tree gates keep their byte-for-byte guarantee.
+        if (g_spec_selfseed && drafting && !greedy_like && (int) branches.size() < B) {
+            const int excl = branches.empty() ? -1 : branches[0][(size_t) 0];
+            for (int add = (int) branches.size(); add < B; ++add) {
+                const int seed = sample_excluding(excl, temp);
+                if (seed < 0) break;
+                bool seen = false;
+                for (size_t bi = 0; bi < branches.size(); ++bi) {
+                    if (branches[bi][(size_t) 0] == seed) { seen = true; break; }
+                }
+                if (seen) continue;
+                std::vector<int> br3;
+                br3.push_back(seed);
+                for (size_t p3 = n; p3 > 0; --p3) {
+                    if (out[p3 - 1] != seed) continue;
+                    const size_t f3 = p3;
+                    for (int j3 = 0; j3 < D - 1 && f3 + (size_t) j3 < n; ++j3) {
+                        br3.push_back(out[f3 + (size_t) j3]);
+                    }
+                    break;
+                }
+                while ((int) br3.size() < D) br3.push_back(br3.back());
+                branches.push_back(br3);
+                ++nSelf;
+                if ((int) branches.size() > g_spec_bmax) g_spec_bmax = (int) branches.size();
+            }
+        }
+
         // Flatten the tree. `want[node]` is the token this node must predict for its own branch,
         // or -1 at a branch's last node, where the draw is the bonus token instead.
         std::vector<int> nodes;
@@ -2198,16 +2236,22 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
         }
 
         // Root test first: every branch's first token is judged against the distribution that
-        // produced `ref`, still live in g_last_logits, so no forward is needed for it.
+        // produced `ref`, still live in g_last_logits, so no forward is needed for it. A
+        // self-seeded branch starts from a token DRAWN from that same row, so q(seed) = p(seed)
+        // and the exact test is accept-with-probability 1 (F323); rejecting it by the point-mass
+        // rule would drop the chain's distribution off p for no reason.
         std::vector<char> rootAcc(branches.size(), 0);
         std::vector<int> rootTail(branches.size(), ref);
+        const int selfFrom = (int) branches.size() - nSelf;
         int canonB = 0;
         double bestP = -1.0;
         for (size_t b = 0; b < branches.size(); ++b) {
             const int d0 = branches[b][(size_t) 0];
             const double p = token_prob(d0, temp);
             if (p > bestP) { bestP = p; canonB = (int) b; }
-            if (p >= 1.0) {
+            if ((int) b >= selfFrom && nSelf > 0) {
+                rootAcc[b] = 1;
+            } else if (p >= 1.0) {
                 rootAcc[b] = 1;
             } else if (p > 0.0 && !greedy_like && rand01() < p) {
                 rootAcc[b] = 1;
@@ -2303,6 +2347,8 @@ void set_spec_freq(int on) { g_spec_freq = on ? 1 : 0; }
 int spec_freq_on() { return g_spec_freq; }
 void set_spec_multiwin(int on) { g_spec_multiwin = on ? 1 : 0; }
 int spec_multiwin_on() { return g_spec_multiwin; }
+void set_spec_selfseed(int on) { g_spec_selfseed = on ? 1 : 0; }
+int spec_selfseed_on() { return g_spec_selfseed; }
 
 std::string spec_stats() {    char buf[220];
     std::snprintf(buf, sizeof(buf),

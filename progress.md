@@ -773,3 +773,8 @@
 - **基线**：本次 HEAD；源码==被验证的二进制。自检 **151 PASS / 0 FAIL**（`run_f322.log`）、8000 **113/0**、8001 `par_smoke`+`fairness` 全 0、哨兵 0。
 - **FR-06 形状已成实测结论**（`SPEC-TREE-SHAPES`，同构建隔离对照）：`bins=1/2/4` 在 depth=3 下**逐字相同**（36/48/12、1.371–1.375×）⇒ 收益全部来自**验证深度**；depth=4 反而退化到 1.112× ⇒ **推荐 `spec_bins` 随意、`spec_depth=3`**。旧 `SPEC-TREE-SWEEP` 的计时按 F312 作废，本门是其替代品。
 - **下一轮第一个动作**：模型自举草稿源（根行 top-k／`sample_excluding` 造新起点分支），目标 `max_branches` 从 1/2 抬到 4+，判据＝`SPEC-TREE-SHAPES` 里不同 `bins` 之间**必须出现差异**＋`accepted/verifies` 上升，同时 `temp=0` 仍逐 id 等于贪心、`alt_branch` 保持 COVERED。其后顺位见 F321 那节。
+
+## ▶ 状态（F325，2026-11-05 07:01 —— 本轮收点，覆盖 F323 那节的"下一步"）
+- **基线**：本次 HEAD；源码==被验证的二进制。自检 **152 PASS / 0 FAIL**（`run_f324.log`）、8000 **113/0**、8001 全 0、哨兵 0。`g_spec_selfseed` 默认 **0**（测量结论：不划算）。
+- **FR-06.2 现在的完整图景**：多样性**能造出来**（自举分支把 `max_branches` 从 1 抬到 4），但满深度补分支的成本（+84 节点换 +3 接受）让 wall 退到 0.92× ⇒ 卡点从"没有候选"变成"树必须是**变深度**的"。
+- **下一轮第一个动作**：变深度树——分支自带长度，`nodes/depths/want/mask` 由 `b*D+i` 改为按分支起点偏移表；自举分支长度取 1。判据＝同构建 A/B 下 `SPEC-TREE-SELFSEED` 的 `ratio` 转正（>1.0）且 `accepted` 不降；`temp=0` 仍须逐 id 等于贪心、`alt_branch` 保持 COVERED。其后顺位：per-session KV 并行吞吐、SSD 前缀分桶、多属性对象项（先定位 dispatch 归属）、GGUF 分片、多卡 split（需第二设备）、FR-05。

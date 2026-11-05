@@ -46,6 +46,7 @@ function model_spec_stats(): string {}
 function model_spec_fix(int $on): int {}
 function model_spec_freq(int $on): int {}
 function model_spec_multiwin(int $on): int {}
+function model_spec_selfseed(int $on): int {}
 function model_spec_tree(int $backend, string $tokens, int $n_new, int $bins, int $depth): string {}
 function model_spec_tree_sample(int $backend, string $tokens, int $n_new, int $bins, int $depth, float $temp, int $seed): string {}
 function model_cache_store(int $backend, string $tokens, string $path): int {}

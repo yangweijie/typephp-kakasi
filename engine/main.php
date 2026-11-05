@@ -10377,6 +10377,53 @@ function main(): void
             . " off_ms=" . $f322OffMs . "\n" . $f322Rows;
     }
 
+    // SPEC-TREE-SELFSEED (F323, FR-06.2 step 3): F322 proved the branch COUNT never enters the
+    // computation, because lookup can only repeat continuations the text already contains. The
+    // extra branches here start from a token drawn from the model's OWN root row - q = p for that
+    // token, so accepting it always is exact - which is the only way to get competing branches at
+    // all. Toggled inside one build; temp=0 must stay byte-identical to the greedy tree, since no
+    // seed exists when the distribution is a point mass.
+    model_spec_selfseed(0);
+    $f323T0 = microtime(true);
+    $f323Plain = model_spec_tree_sample(0, $specIds, 48, 4, 3, 0.9, 3230);
+    $f323PlainMs = (microtime(true) - $f323T0) * 1000.0;
+    $f323PlainStats = model_spec_stats();
+    model_spec_selfseed(1);
+    $f323T1 = microtime(true);
+    $f323Seed = model_spec_tree_sample(0, $specIds, 48, 4, 3, 0.9, 3230);
+    $f323SeedMs = (microtime(true) - $f323T1) * 1000.0;
+    $f323SeedStats = model_spec_stats();
+    $f323Ref = model_spec_tree(0, $specIds, 24, 4, 3);
+    $f323Zero = model_spec_tree_sample(0, $specIds, 24, 4, 3, 0.0, 3231);
+    model_spec_selfseed(0);
+    $f323MbPlain = 0;
+    $f323MbSeed = 0;
+    foreach (explode(" ", $f323PlainStats) as $f323tok) {
+        if (substr($f323tok, 0, 13) == "max_branches=") {
+            $f323MbPlain = (int) substr($f323tok, 13);
+        }
+    }
+    foreach (explode(" ", $f323SeedStats) as $f323tok2) {
+        if (substr($f323tok2, 0, 13) == "max_branches=") {
+            $f323MbSeed = (int) substr($f323tok2, 13);
+        }
+    }
+    $f323ZEq = $f323Zero == $f323Ref ? 1 : 0;
+    $f323PlainN = count(explode(",", $f323Plain));
+    $f323SeedN = count(explode(",", $f323Seed));
+    $f323Ratio = $f323SeedMs > 0.0 ? $f323PlainMs / $f323SeedMs : 0.0;
+    if ($f323ZEq == 1 && $f323PlainN > 10 && $f323SeedN > 10 && $f323SeedMs > 0.0) {
+        $f323How = $f323MbSeed > $f323MbPlain ? "SEEDED" : "NOTSEEDED";
+        echo "SPEC-TREE-SELFSEED: PASS temp0_greedy_identical=1 branches=" . $f323MbPlain . "->"
+            . $f323MbSeed . " " . $f323How . " plain_ms=" . $f323PlainMs . " seeded_ms="
+            . $f323SeedMs . " ratio=" . $f323Ratio . "\n  plain:  " . $f323PlainStats
+            . "\n  seeded: " . $f323SeedStats . "\n";
+    } else {
+        echo "SPEC-TREE-SELFSEED: FAIL temp0_greedy_identical=" . $f323ZEq
+            . " plain_len=" . $f323PlainN . " seeded_len=" . $f323SeedN
+            . " seeded_ms=" . $f323SeedMs . "\n";
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.
