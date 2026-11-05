@@ -810,4 +810,4 @@
 - **并发吞吐已量化**：两路流 **中位 1.149×** 聚合（serial ~20.6 tok/s、concurrent ~23.9 tok/s，四次并发侧几乎不漂移）；第三路连接失败 ⇒ 8001 是两槽。⇒ 想要真并行必须**把两路批进一次前向**（continuous batching），属内核级改造，未做。
 - **常驻探针**：`engine/tests/throughput_test.py`（含预热流），已并入 `scripts/gate_live.sh` 的 8001 段，每轮门禁自动出数。
 - 基线不变：自检 **153 PASS / 0 FAIL**、8000 **113/0**、8001 全 0（`*_f335.log`；f337/f338 只加测试脚本与工装，未动引擎源码，故不重跑构建）。
-- **下一轮顺位**：①continuous batching（吞吐上限的钥匙，工作量大）；②SSD 前缀分桶；③多属性对象项（先 dispatch 打点）；④GGUF 分片 / 多卡 split / FR-05（本机不可验）。
+- **下一轮顺位**：①continuous batching（吞吐上限的钥匙，工作量大）；②**前缀缓存先加可观测性门禁**（槽 owner / 撞槽驱逐计数）再谈 LRU——现状已是 `model_cache_key(ids,64)` 的 64 槽哈希索引，计划里那句"无多前缀索引/淘汰"经核查是**过期陈述**（F339，磁盘实测仅 1 个文件 3.8 MB）；③多属性对象项（先 dispatch 打点）；④GGUF 分片 / 多卡 split / FR-05（本机不可验）。
