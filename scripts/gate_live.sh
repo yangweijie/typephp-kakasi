@@ -65,8 +65,13 @@ python "$E/tests/par_smoke.py" 8001 > "$E/par_smoke_$TAG.log" 2>&1
 echo "PAR_EXIT=$?" >> "$E/par_smoke_$TAG.log"
 python "$E/tests/fairness_test.py" 8001 > "$E/fairness_$TAG.log" 2>&1
 echo "FAIR_EXIT=$?" >> "$E/fairness_$TAG.log"
+# Aggregate throughput of N concurrent streams vs one - the number the plan has been asserting
+# ("throughput is still shared") without ever measuring. Scales with the slots in the 8001 server.
+python "$E/tests/throughput_test.py" 8001 "${THRU_TOKENS:-60}" "${THRU_STREAMS:-2}" > "$E/throughput_$TAG.log" 2>&1
+echo "THRU_EXIT=$?" >> "$E/throughput_$TAG.log"
 stop_all
 echo "PAR: $(tail -1 "$E/par_smoke_$TAG.log")"
 echo "FAIR: $(tail -1 "$E/fairness_$TAG.log")"
+echo "THRU: $(grep -E 'scaling|THROUGHPUT:' "$E/throughput_$TAG.log" | tr '\n' ' ')"
 echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
 echo GATE_LIVE_DONE tag=$TAG
