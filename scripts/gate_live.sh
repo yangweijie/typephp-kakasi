@@ -59,6 +59,14 @@ curl -s -m 5 http://127.0.0.1:8000/spec_stats > "$E/spec_stats_$TAG.log" 2>&1
 echo "SERVED-SPEC plain: $(grep concurrent "$E/thru_plain_$TAG.log")"
 echo "SERVED-SPEC spec : $(grep concurrent "$E/thru_spec_$TAG.log")"
 echo "SERVED-SPEC stats: $(cat "$E/spec_stats_$TAG.log")"
+# F357: standing single-request speculation reports (greedy chain + sampled tree). REPORT ONLY -
+# never an assertion: the probe decides whether its own workload was valid (a run that stops early
+# or returns no tokens must not turn into a red gate), and speculation speed is workload-dependent
+# by design (F355/F356: greedy 3.31x, sampled ~1.0x on the same engine).
+python "$E/tests/spec_greedy_probe.py" 8000 192 - greedy > "$E/spec_greedy_$TAG.log" 2>&1
+python "$E/tests/spec_greedy_probe.py" 8000 128 - sampled > "$E/spec_sampled_$TAG.log" 2>&1
+echo "SPEC-PROBE greedy  : $(grep speedup "$E/spec_greedy_$TAG.log" | head -1) | $(grep 'SPEC-GREEDY:' "$E/spec_greedy_$TAG.log")"
+echo "SPEC-PROBE sampled : $(grep speedup "$E/spec_sampled_$TAG.log" | head -1) | $(grep 'SPEC-GREEDY:' "$E/spec_sampled_$TAG.log")"
 stop_all
 
 # ---------- 8001: two-slot streaming parity + fairness ----------

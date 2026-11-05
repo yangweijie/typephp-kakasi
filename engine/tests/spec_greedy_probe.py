@@ -31,10 +31,13 @@ MODE = sys.argv[4] if len(sys.argv) > 4 else "greedy"   # "greedy" (spec_k) or "
 # and the model answered it in 10-11 tokens - too short to compare drafting against, and the probe's
 # own validity check said so (FAIL invalid) - so the workload is now a parameter with a default
 # that reliably generates hundreds of tokens.
-CTX = (sys.argv[3] if len(sys.argv) > 3 else
-       "List English words starting with the letter a, in alphabetical order, separated by commas "
-       "and nothing else, as many as you can: "
-       + ", ".join(["able", "about", "above"] * 6))
+CTX_DEFAULT = ("List English words starting with the letter a, in alphabetical order, separated by "
+               "commas and nothing else, as many as you can: "
+               + ", ".join(["able", "about", "above"] * 6))
+# "-" means "use the built-in prompt". Passing an empty string here would blank the prompt and the
+# model then returns zero tokens - the validity guard below catches that, but the harness should not
+# have to rely on it.
+CTX = CTX_DEFAULT if (len(sys.argv) < 4 or sys.argv[3] == "-") else sys.argv[3]
 
 
 def once(spec_k):
