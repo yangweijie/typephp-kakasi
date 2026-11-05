@@ -24,6 +24,9 @@ import urllib.request
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8001
 TOKENS = int(sys.argv[2]) if len(sys.argv) > 2 else 60
 STREAMS = int(sys.argv[3]) if len(sys.argv) > 3 else 2
+SPEC = sys.argv[4] if len(sys.argv) > 4 else ""   # "bins,depth" - empty means plain decoding
+PROMPT = sys.argv[5] if len(sys.argv) > 5 else "List many English words, comma separated."
+TEMP = 0.9                                         # both sides sampled, so the A/B is honest
 URL = "http://127.0.0.1:%d/v1/chat/completions" % PORT
 
 
@@ -33,8 +36,12 @@ def stream(label, results, barrier):
     t0 = time.time()
     chunks = 0
     body = {"messages": [{"role": "user",
-                          "content": "List many English words, comma separated."}],
-            "max_tokens": TOKENS, "stream": True}
+                          "content": PROMPT}],
+            "max_tokens": TOKENS, "stream": True, "temperature": TEMP}
+    if SPEC:
+        parts = SPEC.split(",")
+        body["spec_bins"] = int(parts[0])
+        body["spec_depth"] = int(parts[1]) if len(parts) > 1 else 3
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     err = ""
@@ -80,7 +87,8 @@ errs = [v[2] for v in resN.values() if v[2]]
 rate_many = n_chunks / wallN if wallN > 0 else 0.0
 scaling = rate_many / rate_one if rate_one > 0 else 0.0
 
-print("THROUGHPUT port=%d tokens=%d streams=%d" % (PORT, TOKENS, STREAMS))
+print("THROUGHPUT port=%d tokens=%d streams=%d spec=%s temp=%.1f" % (PORT, TOKENS, STREAMS,
+                                                                     SPEC or "off", TEMP))
 print("  serial     : chunks=%d wall=%.2fs rate=%.2f tok/s %s" % (one_chunks, wall1, rate_one, one_err))
 print("  concurrent : chunks=%d wall=%.2fs rate=%.2f tok/s errors=%d" % (n_chunks, wallN, rate_many, len(errs)))
 print("  scaling    : %.3fx (1.000 = no parallel gain, %.3f = perfect)" % (scaling, STREAMS))
