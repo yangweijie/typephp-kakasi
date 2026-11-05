@@ -41,6 +41,19 @@ function model_session_seed(int $seed): int {}
 // Park/resume one of two conversation snapshots (slot 0 or 1).
 function model_session_save(int $slot): int {}
 function model_session_restore(int $slot): int {}
+// F359 continuous batching: two conversations decode in ONE forward pass. batch_start allocates
+// the two KV regions (cap rows each); batch_add prefills one conversation into a slot with its
+// own temperature, nucleus and seed; batch_next advances every live conversation by one token in
+// a single pass and returns the number of rows in that pass; batch_tokens returns the token each
+// conversation emitted ("t0,t1", -1 when a conversation produced none).
+function model_batch_start(int $backend, int $cap): int {}
+function model_batch_add(int $backend, int $slot, string $ids, float $temp, float $top_p, int $seed): int {}
+function model_batch_stop(int $slot): int {}
+function model_batch_reset(): int {}
+function model_batch_next(int $backend): int {}
+function model_batch_tokens(): string {}
+function model_batch_len(int $slot): int {}
+function model_batch_end(): int {}
 function model_spec_generate(int $backend, string $tokens, int $n_new, int $k): string {}
 function model_spec_stats(): string {}
 function model_spec_fix(int $on): int {}

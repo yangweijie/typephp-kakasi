@@ -135,6 +135,46 @@ namespace {
     // Kept as module state so prefill_top1's external signature (and its mangled name) never
     // changes - the same reason g_head_rows is a global.
     const uint32_t* g_tree_mask = nullptr;
+    // F359 continuous batching: a pass whose rows belong to DIFFERENT conversations. Every row
+    // carries its own KV slot (where its K/V land), its own visible range (the cache rows it may
+    // attend to) and its own absolute RoPE position, so two conversations can share ONE forward
+    // pass without seeing each other's context. An empty plan means the plain single-session path.
+    struct RowPlan {
+        bool on = false;
+        std::vector<int> slot;    // cache row each row writes to
+        std::vector<int> lo;      // first cache row each row may attend to
+        std::vector<int> hi;      // last cache row each row may attend to (inclusive)
+        std::vector<int> abspos;  // absolute RoPE position of each row
+        int head_rows = 1;         // how many rows need logits from the head
+        // Device copies of slot/lo/hi. The kernels read them, and a host pointer is NOT
+        // accessible from a device kernel: passing the host vectors made the first batched pass
+        // fault inside the kernel, which surfaced as a catchable SYCL exception and then as a
+        // crash in the next unrelated call.
+        int* d_slot = nullptr;
+        int* d_lo = nullptr;
+        int* d_hi = nullptr;
+    } g_plan;
+    std::vector<std::vector<float>> g_row_logits;   // per-row logits of the last planned pass
+    // The two batched conversations (F359). Each owns a contiguous KV region: session 0 lives in
+    // rows [0, half), session 1 in [half, 2*half).
+    struct BatchSess {
+        bool active = false;
+        bool done = false;
+        int len = 0;              // tokens in the KV cache (rows owned)
+        int base = 0;             // first cache row of this session's region
+        int cap = 0;              // rows this conversation may use (prompt + what it generates)
+        double temp = 0.0;        // sampling temperature of THIS conversation
+        double top_p = 1.0;       // nucleus size of THIS conversation
+        uint64_t rng = 12345;
+        std::vector<float> logits;
+        int last = -1;            // last token this session emitted (-1 after eos)
+    } g_bs[2];
+    int g_bhalf = 0;              // rows per session region
+    // Rows reserved for the single-session path. The batch's two regions start AFTER this area,
+    // so a request that still needs the single-session path (a constrained pass in the parallel
+    // server) cannot overwrite a live conversation's cache rows. It has to be larger than one
+    // batch region, because the constrained pass adds its own tokens on top of the prompt.
+    const int g_bstage = 8192;
     int g_spec_drafts = 0, g_spec_accepted = 0, g_spec_verified = 0;
     int g_spec_on = 1;                    // 0 once the adaptive rule disabled drafting
     // Which tensors residency intends to keep, chosen by reuse value per byte rather than by
@@ -275,11 +315,57 @@ namespace {
         });
     }
 
+    // Two rows in one matvec (F359). A batched decode step has M=2, and the tiled GEMM would
+    // compute a full 16-row tile - 8x more MACs than the two rows need - which is why a batch of
+    // two conversations used to cost as much as two separate forwards (F360). This kernel loads
+    // each weight element ONCE and dots it into two accumulators, so the weight traffic (the
+    // largest read of a decode step) is shared instead of doubled. The accumulation order per row
+    // is the one gemv uses, so a batched row is bit-identical to the same row decoded alone.
+    void gemv2(sycl::queue& q, const float* X, int K, Wt w, int N, float* Y, int ldy,
+               const float* bias) {
+        constexpr int TG = 64;
+        q.submit([&](sycl::handler& h) {
+            sycl::local_accessor<float, 2> red(sycl::range<2>(TG, 2), h);
+            h.parallel_for(sycl::nd_range<1>((size_t) N * TG, TG), [=](sycl::nd_item<1> item) {
+                const int row = (int) item.get_group(0);
+                const int lane = (int) item.get_local_id(0);
+                const size_t base = (size_t) row * (size_t) K;
+                float a0 = 0.0f;
+                float a1 = 0.0f;
+                for (int k = lane; k < K; k += TG) {
+                    const float wv = wat(w, base + (size_t) k);
+                    a0 += X[k] * wv;
+                    a1 += X[(size_t) K + (size_t) k] * wv;
+                }
+                red[lane][0] = a0;
+                red[lane][1] = a1;
+                item.barrier(sycl::access::fence_space::local_space);
+                for (int s = TG / 2; s > 0; s >>= 1) {
+                    if (lane < s) {
+                        red[lane][0] += red[lane + s][0];
+                        red[lane][1] += red[lane + s][1];
+                    }
+                    item.barrier(sycl::access::fence_space::local_space);
+                }
+                if (lane == 0) {
+                    const float bs = bias ? bias[row] : 0.0f;
+                    Y[(size_t) row] = red[0][0] + bs;
+                    Y[(size_t) ldy + (size_t) row] = red[0][1] + bs;
+                }
+            });
+        });
+    }
+
     void gemm(sycl::queue& q, const float* X, int M, int K, Wt w, int N, float* Y,
-              const float* bias) {
-        // Decode (M=1) goes to the matvec path; prefill keeps the tiled GEMM, which is the right
-        // choice once M is large. Either reads any of the three weight precisions via wat().
+              const float* bias, int ldy = 0) {
+        // Decode (M=1) goes to the matvec path; a two-row batch step goes to the shared matvec
+        // path (F359/F360); prefill keeps the tiled GEMM, which is the right choice once M is
+        // large. Either reads any of the three weight precisions via wat().
         if (M == 1) { gemv(q, X, K, w, N, Y, bias); return; }
+        if (M == 2) { gemv2(q, X, K, w, N, Y, ldy > 0 ? ldy : N, bias); return; }
+        // ldy (optional) is the distance between output rows: it lets one GEMM write several rows
+        // of a wide output (the batched head writes nOut rows of `rows` logits each).
+        const size_t stride = ldy > 0 ? (size_t) ldy : (size_t) N;
         constexpr int TM = 16, TN = 16, TK = 32;
         const int mt = (M + TM - 1) / TM;
         const int nt = (N + TN - 1) / TN;
@@ -310,7 +396,7 @@ namespace {
                 }
                 if (row < M && col < N) {
                     if (bias) acc += bias[col];
-                    Y[(size_t) row * N + col] = acc;
+                    Y[(size_t) row * stride + col] = acc;
                 }
             });
         });
@@ -358,6 +444,46 @@ namespace {
         });
     }
 
+    // Same store, but each row picks its own destination row (F359): a batched pass writes the
+    // rows of two conversations into their own regions of one cache, so the destination of row t
+    // is slots[t] rather than pos+t.
+    template <typename KVt>
+    void kv_store_slots(sycl::queue& q, const float* src, KVt* dst, int T, int dkv, const int* slots) {
+        const size_t n = (size_t) T * dkv;
+        q.parallel_for(sycl::range<1>(n), [=](sycl::item<1> it) {
+            const size_t i = it.get_id(0);
+            const size_t t = i / (size_t) dkv;
+            const size_t c = i % (size_t) dkv;
+            dst[(size_t) slots[t] * (size_t) dkv + c] = (KVt) src[i];
+        });
+    }
+
+    void plan_free(sycl::queue& q);
+
+    // Upload the row plan to the device (F359). The kernels read slot/lo/hi, and only DEVICE
+    // memory is readable from a kernel: the host vectors caused a fault inside the first batched
+    // pass, which the forward caught as a SYCL exception - the batch then produced nothing and
+    // the queue was left in an error state that crashed the next unrelated call.
+    bool plan_upload(sycl::queue& q) {
+        const size_t n = g_plan.slot.size();
+        if (n == 0) return false;
+        g_plan.d_slot = sycl::malloc_device<int>(n, q);
+        g_plan.d_lo = sycl::malloc_device<int>(n, q);
+        g_plan.d_hi = sycl::malloc_device<int>(n, q);
+        if (!g_plan.d_slot || !g_plan.d_lo || !g_plan.d_hi) { plan_free(q); return false; }
+        q.memcpy(g_plan.d_slot, g_plan.slot.data(), n * sizeof(int));
+        q.memcpy(g_plan.d_lo, g_plan.lo.data(), n * sizeof(int));
+        q.memcpy(g_plan.d_hi, g_plan.hi.data(), n * sizeof(int));
+        q.wait_and_throw();
+        return true;
+    }
+
+    void plan_free(sycl::queue& q) {
+        if (g_plan.d_slot) { sycl::free(g_plan.d_slot, q); g_plan.d_slot = nullptr; }
+        if (g_plan.d_lo) { sycl::free(g_plan.d_lo, q); g_plan.d_lo = nullptr; }
+        if (g_plan.d_hi) { sycl::free(g_plan.d_hi, q); g_plan.d_hi = nullptr; }
+    }
+
     // Allocate (or grow) the per-layer cache. The prefill path and the prefix-cache loader must
     // agree on this layout exactly, so it lives in one place. Element width follows g_kv.f16,
     // so switching KV precision drops the old cache and rebuilds it at the new width.
@@ -402,20 +528,26 @@ namespace {
     // the draft nodes that query b may attend to, where bit k means cache row pos+k. Prefix rows
     // (< pos) are always visible. This is what lets several draft branches share ONE verify pass
     // without the branches seeing each other - the requirement behind KFlash (FR-06.1).
+    //
+    // `lo`/`hi` (optional) give every row its own visible RANGE of cache rows (F359). The plain
+    // path is lo=0, hi=pos+b; a batched pass sets them per row so each row sees only the rows of
+    // its own conversation. The two mechanisms are exclusive: a tree pass has no ranges.
     template <typename KVt>
     void attention(sycl::queue& q, const float* Q, const KVt* K, const KVt* V, int T, int pos, int NH, int NKV,
-                   int HD, float scale, float* O, const uint32_t* tree = nullptr) {
+                   int HD, float scale, float* O, const uint32_t* tree = nullptr,
+                   const int* lo = nullptr, const int* hi = nullptr) {
         q.parallel_for(sycl::range<2>(T, NH), [=](sycl::item<2> it) {
             const int b = (int) it.get_id(0);
             const int h = (int) it.get_id(1);
             const int kv = h * NKV / NH;
             const float* qrow = Q + ((size_t) b * NH + h) * HD;
-            const int last = pos + b;
+            const int last = hi ? hi[b] : (pos + b);
+            const int first = lo ? lo[b] : 0;
             const bool masked = (tree != nullptr);
             const uint32_t allow = masked ? tree[b] : 0u;
             float mx = -1e30f;
             float sum = 0.0f;
-            for (int j = 0; j <= last; ++j) {
+            for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
                 const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
                 float s = 0.0f;
@@ -423,7 +555,7 @@ namespace {
                 s *= scale;
                 mx = sycl::max(mx, s);
             }
-            for (int j = 0; j <= last; ++j) {
+            for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
                 const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
                 float s = 0.0f;
@@ -432,7 +564,7 @@ namespace {
             }
             float* orow = O + ((size_t) b * NH + h) * HD;
             for (int d = 0; d < HD; ++d) orow[d] = 0.0f;
-            for (int j = 0; j <= last; ++j) {
+            for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
                 const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
                 const KVt* vrow = V + ((size_t) j * NKV + kv) * HD;
@@ -1053,13 +1185,20 @@ double next_u64_unit(uint64_t& s) {
 // Nucleus (top-p) sampling over g_last_logits. temp <= 0 is greedy, so a temperature of 0
 // must reproduce generate() exactly. Returns the token id, or -1 when there is nothing to
 // sample from. nucleus_out reports how many tokens survived the cut.
+int sample_from(const std::vector<float>& lg, double temp, double top_p, uint64_t& rng, int* nucleus_out);
 int sample_next(double temp, double top_p, uint64_t& rng, int* nucleus_out) {
-    const int n = (int) g_last_logits.size();
+    return sample_from(g_last_logits, temp, top_p, rng, nucleus_out);
+}
+
+// The same sampler over an explicit set of logits (F359): a batched pass has one logit vector
+// per conversation, and each conversation samples from its own.
+int sample_from(const std::vector<float>& lg, double temp, double top_p, uint64_t& rng, int* nucleus_out) {
+    const int n = (int) lg.size();
     if (n == 0) { g_err = "sample requested with no logits"; return -1; }
     int argmax = 0;
-    float mx = g_last_logits[0];
+    float mx = lg[0];
     for (int i = 1; i < n; ++i) {
-        if (g_last_logits[i] > mx) { mx = g_last_logits[i]; argmax = i; }
+        if (lg[i] > mx) { mx = lg[i]; argmax = i; }
     }
     if (temp <= 0.0) {
         if (nucleus_out) *nucleus_out = 1;
@@ -1068,7 +1207,7 @@ int sample_next(double temp, double top_p, uint64_t& rng, int* nucleus_out) {
     std::vector<double> p((size_t) n);
     double z = 0.0;
     for (int i = 0; i < n; ++i) {
-        const double v = std::exp(((double) g_last_logits[i] - (double) mx) / temp);
+        const double v = std::exp(((double) lg[i] - (double) mx) / temp);
         p[(size_t) i] = v;
         z += v;
     }
@@ -1164,12 +1303,24 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         g_err = "bad model dims or token count";
         return {};
     }
+    // F359: a planned pass gives every row its own KV slot, visible range and RoPE position.
+    // The plan must describe exactly this many rows, otherwise it is a caller bug and the pass
+    // falls back to the plain single-session behaviour (which would silently mix the rows).
+    const bool planned = g_plan.on
+        && (int) g_plan.slot.size() == T && (int) g_plan.lo.size() == T
+        && (int) g_plan.hi.size() == T && (int) g_plan.abspos.size() == T;
+    int planNeed = 0;
+    if (planned) {
+        for (int t = 0; t < T; ++t) planNeed = std::max(planNeed, g_plan.slot[(size_t) t] + 1);
+    }
     if (theta <= 0.0) theta = 1000000.0;
     const int eIdx = gguf::find_tensor("token_embd.weight");
     if (eIdx < 0 || HD > 128) { g_err = "no token_embd.weight or head too wide"; return {}; }
 
-    // (Re)allocate the cache when the backend changes or the sequence outgrows it.
-    if (!ensure_kv(backend, q, pos + T, DKV, L, pos)) return {};
+    // (Re)allocate the cache when the backend changes or the sequence outgrows it. A planned pass
+    // keeps nothing on a growth: its rows live in two regions, so the contiguous copy that the
+    // plain path does would move one conversation's rows into the other's region.
+    if (!ensure_kv(backend, q, planned ? planNeed : (pos + T), DKV, L, planned ? 0 : pos)) return {};
 
     try {
         // Long-lived: live across every layer, so they own their memory instead of using the
@@ -1197,14 +1348,17 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         }
         probe();
 
-        // rope tables, positioned at [pos, pos+T)
+        // rope tables, positioned at [pos, pos+T) - or, for a planned pass, at each row's own
+        // absolute position (F359): the second conversation's rows are rotated as if they were
+        // the beginning of their own sequence, not as a continuation of the first one's.
         const int half = HD / 2;
         std::vector<float> ctab((size_t) T * half), stab((size_t) T * half);
         for (int t = 0; t < T; ++t) {
             const int rt = (!g_row_pos.empty() && t < (int) g_row_pos.size()) ? g_row_pos[(size_t) t] : t;
+            const int apos = planned ? g_plan.abspos[(size_t) t] : (pos + rt);
             for (int j = 0; j < half; ++j) {
                 const float freq = (float) std::pow(theta, -(double) (2 * j) / (double) HD);
-                const float ang = (float) (pos + rt) * freq;
+                const float ang = (float) apos * freq;
                 ctab[(size_t) t * half + j] = std::cos(ang);
                 stab[(size_t) t * half + j] = std::sin(ang);
             }
@@ -1262,7 +1416,17 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             rope(ql, att.p, T, NH, HD, cosp, sinp);
             rope(ql, kt.p, T, NKV, HD, cosp, sinp);
 
-            if (kv.f16) {
+            if (planned) {
+                // F359: every row lands in its own slot, so the two conversations never share a
+                // cache row even before the mask is applied.
+                if (kv.f16) {
+                    kv_store_slots(ql, kt.p, (sycl::half*) kv.k[(size_t) l], T, DKV, g_plan.d_slot);
+                    kv_store_slots(ql, vt.p, (sycl::half*) kv.v[(size_t) l], T, DKV, g_plan.d_slot);
+                } else {
+                    kv_store_slots(ql, kt.p, (float*) kv.k[(size_t) l], T, DKV, g_plan.d_slot);
+                    kv_store_slots(ql, vt.p, (float*) kv.v[(size_t) l], T, DKV, g_plan.d_slot);
+                }
+            } else if (kv.f16) {
                 kv_store(ql, kt.p, (sycl::half*) kv.k[(size_t) l], T, DKV, pos);
                 kv_store(ql, vt.p, (sycl::half*) kv.v[(size_t) l], T, DKV, pos);
             } else {
@@ -1274,11 +1438,13 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             if (kv.f16) {
                 attention(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
                           (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale, ao.p,
-                          g_tree_mask);
+                          planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
+                          planned ? g_plan.d_hi : nullptr);
             } else {
                 attention(ql, att.p, (const float*) kv.k[(size_t) l],
                           (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale, ao.p,
-                          g_tree_mask);
+                          planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
+                          planned ? g_plan.d_hi : nullptr);
             }
 
             Wt wo = load_weight(ql, p + "attn_output.weight", (uint64_t) D * D);
@@ -1415,8 +1581,11 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // Final norm + tied lm_head. Normally only the last row is needed (sampling). When the
         // speculative verifier asks for it, the head also reports the argmax at each of the last
         // g_head_rows positions, which is what makes a batched accept/reject decision possible.
-        const int nOut = std::max(1, std::min(g_head_rows, T));
+        // A planned pass (F359) asks for one head row per conversation.
+        const int nOut = planned ? std::max(1, std::min(g_plan.head_rows, T))
+                                 : std::max(1, std::min(g_head_rows, T));
         g_step_top1.clear();
+        g_row_logits.clear();
         Dev xn(&q, (size_t) D * (size_t) nOut, true);
         {
             Wt nw = load_weight(q, "output_norm.weight", (uint64_t) D);
@@ -1431,40 +1600,47 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         const int rows = (int) gguf::tensor_ne(eIdx, 1);
         const int chunk = 4096;
         const Wt embH = resident_handle(eIdx);
-        Dev dLogits(&q, (size_t) rows);
+        Dev dLogits(&q, (size_t) rows * (size_t) nOut);
         std::vector<float> all;
         double best = -1e300, second = -1e300;
         int bestId = -1;
-        for (int r = 0; r < nOut; ++r) {
-            for (int r0 = 0; r0 < rows; r0 += chunk) {
-                const int nrows = std::min(chunk, rows - r0);
-                Wt dW;
-                if (embH.p) {
-                    // Slice the resident table at this chunk. D is a multiple of 64, so a chunk
-                    // boundary is also an int8 block boundary and the scale slice stays aligned.
-                    const size_t off = (size_t) r0 * (size_t) D;
-                    if (embH.kind == 0) dW = {(const float*) embH.p + off, nullptr, 0};
-                    else if (embH.kind == 1) dW = {(const sycl::half*) embH.p + off, nullptr, 1};
-                    else dW = {(const int8_t*) embH.p + off, embH.s + (off >> 6), 2};
-                }
-                float* dStream = nullptr;
-                if (!dW.p) {
-                    std::vector<uint8_t> raw;
-                    const uint32_t dt = (uint32_t) gguf::tensor_dtype(eIdx);
-                    const uint64_t blk = (dt == 0) ? 1u : ((dt == 12 || dt == 14) ? 256u : 32u);
-                    const uint64_t bytes_per_blk = (dt == 0) ? 4 : (dt == 8 ? 34 : (dt == 6 ? 22 : (dt == 12 ? 144 : 210)));
-                    const uint64_t off = (uint64_t) r0 * ((uint64_t) D / blk) * bytes_per_blk;
-                    const uint64_t len = (uint64_t) nrows * ((uint64_t) D / blk) * bytes_per_blk;
-                    if (!gguf::raw_bytes_range(eIdx, off, len, raw)) { g_err = "lm_head chunk read failed"; return {}; }
-                    dStream = dequant_device(q, raw, dt, (uint64_t) nrows * D);
-                    if (!dStream) return {};
-                    dW = {dStream, false};
-                }
-                gemm(q, xn.p + (size_t) r * D, 1, D, dW, nrows, dLogits.p + (size_t) r0, nullptr);
-                if (dStream) { q.wait_and_throw(); sycl::free(dStream, q); }
+        // One walk over the vocabulary serves every row (F359): the embedding table is the biggest
+        // read of a decode step, so two rows must share it. The output rows sit `rows` apart,
+        // which is what the ldy argument of the GEMM expresses.
+        for (int r0 = 0; r0 < rows; r0 += chunk) {
+            const int nrows = std::min(chunk, rows - r0);
+            Wt dW;
+            if (embH.p) {
+                // Slice the resident table at this chunk. D is a multiple of 64, so a chunk
+                // boundary is also an int8 block boundary and the scale slice stays aligned.
+                const size_t off = (size_t) r0 * (size_t) D;
+                if (embH.kind == 0) dW = {(const float*) embH.p + off, nullptr, 0};
+                else if (embH.kind == 1) dW = {(const sycl::half*) embH.p + off, nullptr, 1};
+                else dW = {(const int8_t*) embH.p + off, embH.s + (off >> 6), 2};
             }
+            float* dStream = nullptr;
+            if (!dW.p) {
+                std::vector<uint8_t> raw;
+                const uint32_t dt = (uint32_t) gguf::tensor_dtype(eIdx);
+                const uint64_t blk = (dt == 0) ? 1u : ((dt == 12 || dt == 14) ? 256u : 32u);
+                const uint64_t bytes_per_blk = (dt == 0) ? 4 : (dt == 8 ? 34 : (dt == 6 ? 22 : (dt == 12 ? 144 : 210)));
+                const uint64_t off = (uint64_t) r0 * ((uint64_t) D / blk) * bytes_per_blk;
+                const uint64_t len = (uint64_t) nrows * ((uint64_t) D / blk) * bytes_per_blk;
+                if (!gguf::raw_bytes_range(eIdx, off, len, raw)) { g_err = "lm_head chunk read failed"; return {}; }
+                dStream = dequant_device(q, raw, dt, (uint64_t) nrows * D);
+                if (!dStream) return {};
+                dW = {dStream, false};
+            }
+            if (nOut == 1) {
+                gemm(q, xn.p, 1, D, dW, nrows, dLogits.p + (size_t) r0, nullptr);
+            } else {
+                gemm(q, xn.p, nOut, D, dW, nrows, dLogits.p + (size_t) r0, nullptr, rows);
+            }
+            if (dStream) { q.wait_and_throw(); sycl::free(dStream, q); }
+        }
+        for (int r = 0; r < nOut; ++r) {
             std::vector<float> row((size_t) rows);
-            q.memcpy(row.data(), dLogits.p, sizeof(float) * row.size());
+            q.memcpy(row.data(), dLogits.p + (size_t) r * (size_t) rows, sizeof(float) * row.size());
             q.wait_and_throw();
             double rbest = -1e300, rsecond = -1e300;
             int rbestId = -1;
@@ -1479,6 +1655,9 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 row_accept_stats(row, g_head_want[(size_t) r], g_head_temp, hp, ha);
                 g_head_prob.push_back(hp);
                 g_head_alt.push_back(ha);
+            }
+            if (planned) {
+                g_row_logits.push_back(row);   // every conversation gets its own logits (F359)
             }
             if (r == nOut - 1) {
                 best = rbest; second = rsecond; bestId = rbestId;
@@ -1680,6 +1859,211 @@ int session_next_allowed(int backend, const std::vector<int>& allowed) {
 }
 
 int session_len() { return g_sess_len; }
+
+// ---- F359: two conversations in ONE forward pass --------------------------------------------
+// Each conversation owns a contiguous KV region (conversation 0 in rows [0, half), conversation 1
+// in [half, 2*half)) and appends one row per step, so the two never share a cache row. The rows
+// of a step form ONE pass: row t has its own RoPE position, its own visible range and its own
+// logits, and the head walks the vocabulary once for all of them.
+
+namespace {
+// Prefill one conversation into its region: rows [base, base+len), RoPE positions 0..len-1, and
+// the visible range of row i is [base, base+i] - its own conversation and nothing else.
+bool batch_prefill(int backend, int s, const std::vector<int>& ids) {
+    BatchSess& b = g_bs[s];
+    const int len = (int) ids.size();
+    if (len <= 0) return false;
+    g_plan.on = true;
+    g_plan.slot.assign((size_t) len, 0);
+    g_plan.lo.assign((size_t) len, 0);
+    g_plan.hi.assign((size_t) len, 0);
+    g_plan.abspos.assign((size_t) len, 0);
+    for (int i = 0; i < len; ++i) {
+        g_plan.slot[(size_t) i] = b.base + i;
+        g_plan.lo[(size_t) i] = b.base;
+        g_plan.hi[(size_t) i] = b.base + i;
+        g_plan.abspos[(size_t) i] = i;
+    }
+    g_plan.head_rows = 1;
+    sycl::queue* qp = kakasi::queue_for(backend);
+    const bool up = qp && plan_upload(*qp);
+    if (!up) g_err = "batch: plan upload failed";
+    const std::vector<double> r = up ? prefill_top1(backend, ids, -1, 0) : std::vector<double>();
+    if (qp) plan_free(*qp);
+    g_plan.on = false;
+    g_plan.slot.clear();
+    g_plan.lo.clear();
+    g_plan.hi.clear();
+    g_plan.abspos.clear();
+    if (r.empty()) return false;
+    b.len = len;
+    b.logits = g_row_logits.empty() ? g_last_logits : g_row_logits[0];
+    return true;
+}
+}  // namespace
+
+// Start a batch of two conversations. `cap` is the number of KV rows EACH conversation may use
+// (its prompt plus the tokens it will generate), so the cache holds 2*cap rows. The two regions
+// are fixed for the lifetime of the batch, which is what lets a conversation be added or removed
+// at any moment without moving a single cache row.
+int batch_start(int backend, int cap) {
+    g_err.clear();
+    for (int s = 0; s < 2; ++s) g_bs[s] = BatchSess();
+    g_bhalf = 0;
+    if (cap <= 0) { g_err = "batch: bad cap"; return -1; }
+    const int D = (int) gguf::meta_num("qwen2.embedding_length");
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    const int NH = (int) gguf::meta_num("qwen2.attention.head_count");
+    const int NKV = (int) gguf::meta_num("qwen2.attention.head_count_kv");
+    if (D <= 0 || L <= 0 || NH <= 0 || NKV <= 0) { g_err = "batch: bad model dims"; return -1; }
+    const int DKV = NKV * (D / NH);
+    sycl::queue* qp = kakasi::queue_for(backend);
+    if (!qp) { g_err = "batch: backend unavailable"; return -1; }
+    if (!ensure_kv(backend, *qp, g_bstage + 2 * cap, DKV, L, 0)) { g_err = "batch: kv alloc failed"; return -1; }
+    g_bhalf = cap;
+    for (int s = 0; s < 2; ++s) { g_bs[s].base = g_bstage + s * cap; g_bs[s].cap = cap; }
+    return 0;
+}
+
+// Add a conversation to a slot: its prompt is prefilled into that slot's region and its sampling
+// parameters are remembered. A slot that still holds a conversation is replaced - the old rows
+// stay in the cache but stay invisible, because a conversation only ever attends to
+// [base, base+len).
+int batch_add(int backend, int slot, const std::vector<int>& ids,
+              double temp, double top_p, uint64_t seed) {
+    g_err.clear();
+    if (slot < 0 || slot > 1) { g_err = "batch: bad slot"; return -1; }
+    if (g_bhalf <= 0) { g_err = "batch: not started"; return -1; }
+    if (ids.empty()) { g_err = "batch: empty prompt"; return -1; }
+    if ((int) ids.size() > g_bhalf) { g_err = "batch: prompt longer than the slot"; return -1; }
+    BatchSess& b = g_bs[slot];
+    const int base = g_bstage + slot * g_bhalf;
+    const int cap = g_bhalf;
+    b = BatchSess();
+    b.base = base;
+    b.cap = cap;
+    b.active = true;
+    b.temp = temp;
+    b.top_p = top_p;
+    b.rng = seed;
+    if (!batch_prefill(backend, slot, ids)) {
+        b = BatchSess();
+        b.base = base;
+        b.cap = cap;
+        return -1;
+    }
+    return 0;
+}
+
+// End one conversation; the slot becomes free for the next request.
+int batch_stop(int slot) {
+    if (slot < 0 || slot > 1) return -1;
+    const int base = g_bstage + slot * g_bhalf;
+    const int cap = g_bhalf;
+    g_bs[slot] = BatchSess();
+    g_bs[slot].base = base;
+    g_bs[slot].cap = cap;
+    return 0;
+}
+
+// End every conversation; the regions stay allocated.
+void batch_reset() {
+    for (int s = 0; s < 2; ++s) {
+        const int base = g_bstage + s * g_bhalf;
+        const int cap = g_bhalf;
+        g_bs[s] = BatchSess();
+        g_bs[s].base = base;
+        g_bs[s].cap = cap;
+    }
+}
+
+// Seed one conversation's sampler (F359). The single-session path seeds with session_seed, so
+// the same seed must land on the same tokens in both paths for the comparison to mean anything.
+void batch_seed(int s, uint64_t seed) {
+    if (s < 0 || s > 1) return;
+    g_bs[s].rng = seed;
+}
+
+// One step for every live conversation: each samples its next token from its own logits with
+// its OWN temperature and nucleus, and all of them are fed through a SINGLE forward pass.
+// Returns the number of rows in that pass (0 when nothing is live).
+int batch_next(int backend) {
+    g_err.clear();
+    const int eos = (int) gguf::meta_num("tokenizer.ggml.eos_token_id");
+    std::vector<int> toks;
+    std::vector<int> rowSess;
+    for (int s = 0; s < 2; ++s) {
+        BatchSess& b = g_bs[s];
+        if (!b.active || b.done) continue;
+        // A conversation may never write past its own region: the row after the region belongs
+        // to the other conversation.
+        if (b.len + 1 > b.cap) { b.done = true; b.last = -1; continue; }
+        const int t = sample_from(b.logits, b.temp, b.top_p, b.rng, nullptr);
+        if (t < 0) { b.done = true; b.last = -1; continue; }
+        // The single-session path returns -1 at eos and never appends the eos token, so the
+        // batch reports the same -1: the caller must not see an eos id as text.
+        if (eos > 0 && t == eos) { b.done = true; b.last = -1; continue; }
+        toks.push_back(t);
+        rowSess.push_back(s);
+    }
+    if (toks.empty()) return 0;
+    const int T = (int) toks.size();
+    g_plan.on = true;
+    g_plan.slot.assign((size_t) T, 0);
+    g_plan.lo.assign((size_t) T, 0);
+    g_plan.hi.assign((size_t) T, 0);
+    g_plan.abspos.assign((size_t) T, 0);
+    for (int t = 0; t < T; ++t) {
+        BatchSess& b = g_bs[(size_t) rowSess[(size_t) t]];
+        g_plan.slot[(size_t) t] = b.base + b.len;
+        g_plan.lo[(size_t) t] = b.base;
+        g_plan.hi[(size_t) t] = b.base + b.len;
+        g_plan.abspos[(size_t) t] = b.len;
+    }
+    g_plan.head_rows = T;
+    sycl::queue* qp = kakasi::queue_for(backend);
+    const bool up = qp && plan_upload(*qp);
+    if (!up) g_err = "batch: plan upload failed";
+    const std::vector<double> r = up ? prefill_top1(backend, toks, -1, 0) : std::vector<double>();
+    if (qp) plan_free(*qp);
+    g_plan.on = false;
+    g_plan.slot.clear();
+    g_plan.lo.clear();
+    g_plan.hi.clear();
+    g_plan.abspos.clear();
+    if (r.empty()) return -1;
+    for (int t = 0; t < T; ++t) {
+        BatchSess& b = g_bs[(size_t) rowSess[(size_t) t]];
+        if ((size_t) t < g_row_logits.size()) b.logits = g_row_logits[(size_t) t];
+        b.last = toks[(size_t) t];
+        b.len += 1;
+    }
+    return T;
+}
+
+// The tokens the last step emitted, one per conversation (-1 when a conversation is not live).
+std::vector<int> batch_tokens() {
+    std::vector<int> out(2, -1);
+    for (int s = 0; s < 2; ++s) out[(size_t) s] = g_bs[s].last;
+    return out;
+}
+
+// The number of rows a conversation owns in the KV cache.
+int batch_len(int s) {
+    if (s < 0 || s > 1) return -1;
+    return g_bs[s].len;
+}
+
+// End the batch and release the plan state.
+void batch_end() {
+    for (int s = 0; s < 2; ++s) g_bs[s] = BatchSess();
+    g_bhalf = 0;
+    g_plan.on = false;
+    g_plan.slot.clear();
+    g_plan.lo.clear();
+    g_plan.hi.clear();
+    g_plan.abspos.clear();
+}
 
 // Host-side KV snapshots: two conversation slots can be parked and resumed exactly, which is the
 // primitive a cooperative scheduler needs (the HTTP loop does not use it yet). The logits and the

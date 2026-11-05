@@ -37,6 +37,15 @@ int session_next(int backend, double temp, double top_p);
 void session_seed(uint64_t seed);
 int session_len();
 bool session_save(int slot);
+// F359: two conversations in one forward pass.
+int batch_start(int backend, int cap);
+int batch_add(int backend, int slot, const std::vector<int>& ids, double temp, double top_p, uint64_t seed);
+int batch_stop(int slot);
+void batch_reset();
+int batch_next(int backend);
+std::vector<int> batch_tokens();
+int batch_len(int slot);
+void batch_end();
 bool session_restore(int slot);
 int session_next_allowed(int backend, const std::vector<int>& allowed);
 int eos_id();
@@ -136,6 +145,43 @@ php::Int php_model_session_save(php::Int slot) {
 }
 php::Int php_model_session_restore(php::Int slot) {
     return php::Int(model::session_restore((int) slot) ? 1 : 0);
+}
+// F359: two conversations in one forward pass. batch_start allocates the two KV regions (cap rows
+// each); batch_add prefills one conversation into a slot with its own temperature, nucleus and
+// seed; batch_next advances every live conversation by one token in a single pass and
+// batch_tokens reports the token each of them emitted ("t0,t1", -1 for a slot that produced none).
+php::Int php_model_batch_start(php::Int backend, php::Int cap) {
+    return php::Int(model::batch_start((int) backend, (int) cap));
+}
+php::Int php_model_batch_add(php::Int backend, php::Int slot, php::Str ids,
+                              php::Float temp, php::Float top_p, php::Int seed) {
+    const std::string csv(ids.data(), ids.length());
+    return php::Int(model::batch_add((int) backend, (int) slot, parse_ids(csv),
+                                      (double) temp, (double) top_p, (uint64_t)(int64_t) seed));
+}
+php::Int php_model_batch_stop(php::Int slot) {
+    return php::Int(model::batch_stop((int) slot));
+}
+php::Int php_model_batch_reset() {
+    model::batch_reset();
+    return php::Int(1);
+}
+php::Int php_model_batch_next(php::Int backend) {
+    return php::Int(model::batch_next((int) backend));
+}
+php::Str php_model_batch_tokens() {
+    const std::vector<int> t = model::batch_tokens();
+    std::string s;
+    for (size_t i = 0; i < t.size(); ++i) {
+        if (i) s += ",";
+        s += std::to_string(t[i]);
+    }
+    return php::Str(s);
+}
+php::Int php_model_batch_len(php::Int slot) { return php::Int(model::batch_len((int) slot)); }
+php::Int php_model_batch_end() {
+    model::batch_end();
+    return php::Int(1);
 }
 php::Int php_model_session_next_allowed(php::Int backend, php::Str allowed) {
     const std::string csv(allowed.data(), allowed.length());

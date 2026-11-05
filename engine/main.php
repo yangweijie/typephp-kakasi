@@ -6360,6 +6360,14 @@ function api_serve_par(int $port): void
     stream_set_blocking($srv, false);
     echo "API_LISTEN " . $port . " (parallel: streaming text only)\n";
     echo "PAR loop start\n";
+    // F359: the two batch regions are allocated once, each holding `cap` KV rows. A prompt plus
+    // the tokens it may generate has to fit in one region; requests that do not fit are refused
+    // instead of overwriting the other conversation's rows.
+    $cap = 4096;
+    if (model_batch_start(0, $cap) != 0) {
+        echo "PAR_BATCH_FAIL\n";
+        return;
+    }
     $onA = 0;
     $onB = 0;
     $kA = 1;
@@ -6380,7 +6388,6 @@ function api_serve_par(int $port): void
     $rsB = 0;
     $snA = 0;
     $snB = 0;
-    $cur = -1;
     $stopA = "";
     $stopB = "";
     $holdA = "";
@@ -6503,17 +6510,22 @@ Connection: close
                         $sdv = api_num($body, "seed", 12345);
                         $bgv = api_num($body, "timeout_ms", 0);
                         $kind = strpos($req, "/v1/messages") !== false ? 2 : 1;
-                        if ($cur >= 0) {
-                            model_session_save($cur);
-                        }
-                        $hit = model_cache_prefill(0, $ids, api_cache_pick($ids));
-                        if ($hit < 0 && model_session_start(0, $ids) != 0) {
+                        // F359: the conversation joins the batch instead of taking the single
+                        // session path. The prefix cache is not used here: it restores one
+                        // conversation into rows [0,n), which is the staging area the batch
+                        // deliberately leaves free, and the batch owns its own two regions.
+                        if ($pn + $mxv > $cap) {
+                            $payload = "{\"error\":{\"message\":\"parallel mode: prompt plus max_tokens exceeds the slot capacity\",\"type\":\"invalid_request_error\"}}";
+                            fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                                     . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                            fclose($c);
+                        } else if (model_batch_add(0, $slot, $ids, $tev, $tpv, $sdv) != 0) {
+                            $payload = "{\"error\":{\"message\":\"parallel mode: the slot could not take this prompt\",\"type\":\"server_error\"}}";
+                            fwrite($c, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                                     . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                             fclose($c);
                         } else {
-                            model_session_seed($sdv);
-                            $cur = $slot;
                             api_par_trace("START slot=" . $slot . " kind=" . $kind . " mx=" . $mxv);
-
                             if ($slot == 0) {
                                 $cA = $c;
                                 $onA = 1;
@@ -6758,6 +6770,9 @@ Connection: close
                                     fwrite($c, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
                                 }
                                 echo "SESSION par schema slot=" . $slot . " bytes=" . strlen($scText) . "\n";
+                                // The constrained pass answered this request on the single-session
+                                // path, so the batch slot it was given is free again.
+                                model_batch_stop($slot);
                                 if ($slot == 0) {
                                     $onA = 0;
                                 } else {
@@ -6770,21 +6785,41 @@ Connection: close
                 }
             }
         }
-        // One token per active session per iteration, parked/resumed through the KV snapshot.
+        // One forward pass for the whole batch (F359): every live conversation advances by one
+        // token in the SAME pass, so two concurrent streams cost one forward pass instead of two.
+        // The stop conditions are decided BEFORE the pass, so a conversation that is already
+        // finished is not stepped again.
+        $tokA = -1;
+        $tokB = -1;
         if ($onA == 1) {
-            if ($cur != 0) {
-                if ($cur >= 0) {
-                    model_session_save($cur);
-                }
-                model_session_restore(0);
-                $cur = 0;
-            }
             if ($bgA > 0 && (microtime(true) - $t0A) * 1000.0 > $bgA) {
                 $rsA = 3;
+                model_batch_stop(0);
             } else if ($snA >= $mxA) {
                 $rsA = 2;
-            } else {
-                $t = model_session_next(0, $teA, $tpA);
+                model_batch_stop(0);
+            }
+        }
+        if ($onB == 1) {
+            if ($bgB > 0 && (microtime(true) - $t0B) * 1000.0 > $bgB) {
+                $rsB = 3;
+                model_batch_stop(1);
+            } else if ($snB >= $mxB) {
+                $rsB = 2;
+                model_batch_stop(1);
+            }
+        }
+        if (($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0)) {
+            $rows = model_batch_next(0);
+            if ($rows > 0) {
+                $tk = explode(",", model_batch_tokens());
+                $tokA = (int) $tk[0];
+                $tokB = (int) $tk[1];
+            }
+        }
+        if ($onA == 1) {
+            if ($rsA == 0) {
+                $t = $tokA;
                 if ($t < 0) {
                     $rsA = 1;
                 } else {
@@ -6853,24 +6888,14 @@ Connection: close
                 }
                 $why = $rsA == 1 ? "eos" : ($rsA == 2 ? "max" : ($rsA == 3 ? "timeout" : ($rsA == 5 ? "stop" : "client-gone")));
                 echo "SESSION par slot=A tokens=" . $snA . " reason=" . $why . "\n";
+                model_batch_stop(0);
                 fclose($cA);
                 $onA = 0;
             }
         }
         if ($onB == 1) {
-            if ($cur != 1) {
-                if ($cur >= 0) {
-                    model_session_save($cur);
-                }
-                model_session_restore(1);
-                $cur = 1;
-            }
-            if ($bgB > 0 && (microtime(true) - $t0B) * 1000.0 > $bgB) {
-                $rsB = 3;
-            } else if ($snB >= $mxB) {
-                $rsB = 2;
-            } else {
-                $t = model_session_next(0, $teB, $tpB);
+            if ($rsB == 0) {
+                $t = $tokB;
                 if ($t < 0) {
                     $rsB = 1;
                 } else {
@@ -6939,6 +6964,7 @@ Connection: close
                 }
                 $why = $rsB == 1 ? "eos" : ($rsB == 2 ? "max" : ($rsB == 3 ? "timeout" : ($rsB == 5 ? "stop" : "client-gone")));
                 echo "SESSION par slot=B tokens=" . $snB . " reason=" . $why . "\n";
+                model_batch_stop(1);
                 fclose($cB);
                 $onB = 0;
             }
@@ -8815,6 +8841,21 @@ function models_cli(): void
     }
 
     echo "usage: models.bat import <path> | pull <url> | list | rm <name>\n";
+}
+
+// Two decimals as text, without relying on float-to-string formatting (F360): the batch
+// measurement prints ratios, and a ratio printed as "1.9999999999999998" is not evidence.
+function f360_x100(float $v): string
+{
+    $n = (int) ($v * 100.0);
+    $neg = "";
+    if ($n < 0) {
+        $neg = "-";
+        $n = -$n;
+    }
+    $i = (int) ($n / 100);
+    $f = $n - $i * 100;
+    return $neg . $i . "." . ($f < 10 ? "0" . $f : "" . $f);
 }
 
 function main(): void
@@ -12373,6 +12414,114 @@ function main(): void
         } else {
             echo "CACHE-LRU-INTEGRATION: NOTCOVERED no shared candidate pair in 150 prompts\n";
         }
+    }
+
+    // BATCH-EQ (F359): a batched pass must produce the same tokens as two separate passes.
+    // The batch shares ONE forward pass between two conversations, so the only things keeping
+    // them apart are the per-row slot, visible range and RoPE position; a mistake there leaks
+    // one conversation's context into the other and the tokens diverge. The batch is also the
+    // only path that runs two rows per pass, so the row count is asserted: a batch that quietly
+    // ran one conversation at a time would pass the equality check while batching nothing.
+    $f359A = tok_encode("The capital of France is Paris and the largest ocean is the Pacific.");
+    $f359B = tok_encode("Water boils at one hundred degrees Celsius at normal pressure.");
+    $f359N = 10;
+    $f359Seed = 4242;
+    $f359Sa = "";
+    model_session_start(0, $f359A);
+    model_session_seed($f359Seed);
+    for ($f359i = 0; $f359i < $f359N; $f359i++) {
+        $f359t = model_session_next(0, 0.0, 1.0);
+        if ($f359t < 0) {
+            break;
+        }
+        $f359Sa = $f359Sa . ($f359Sa == "" ? "" : ",") . $f359t;
+    }
+    $f359Sb = "";
+    model_session_start(0, $f359B);
+    model_session_seed($f359Seed);
+    for ($f359i = 0; $f359i < $f359N; $f359i++) {
+        $f359t2 = model_session_next(0, 0.0, 1.0);
+        if ($f359t2 < 0) {
+            break;
+        }
+        $f359Sb = $f359Sb . ($f359Sb == "" ? "" : ",") . $f359t2;
+    }
+    $f359Ba = "";
+    $f359Bb = "";
+    $f359Rows = 0;
+    model_batch_start(0, 256);
+    model_batch_add(0, 0, $f359A, 0.0, 1.0, $f359Seed);
+    model_batch_add(0, 1, $f359B, 0.0, 1.0, $f359Seed);
+    for ($f359i = 0; $f359i < $f359N; $f359i++) {
+        $f359rows = model_batch_next(0);
+        if ($f359rows <= 0) {
+            break;
+        }
+        if ($f359i == 0) {
+            $f359Rows = $f359rows;
+        }
+        $f359tk = explode(",", model_batch_tokens());
+        $f359Ba = $f359Ba . ($f359Ba == "" ? "" : ",") . $f359tk[0];
+        $f359Bb = $f359Bb . ($f359Bb == "" ? "" : ",") . $f359tk[1];
+    }
+    model_batch_end();
+    $f359EqA = ($f359Sa == $f359Ba) ? 1 : 0;
+    $f359EqB = ($f359Sb == $f359Bb) ? 1 : 0;
+    $f359Cnt = $f359Sa == "" ? 0 : count(explode(",", $f359Sa));
+    if ($f359EqA == 1 && $f359EqB == 1 && $f359Cnt >= 4 && $f359Rows == 2) {
+        echo "BATCH-EQ: PASS tokens=" . $f359Cnt . " rows=" . $f359Rows
+            . " batch==single for both conversations\n";
+    } else {
+        echo "BATCH-EQ: FAIL eq_a=" . $f359EqA . " eq_b=" . $f359EqB . " n=" . $f359Cnt
+            . " rows=" . $f359Rows . "\n  single_a=" . $f359Sa . "\n  batch_a=" . $f359Ba
+            . "\n  single_b=" . $f359Sb . "\n  batch_b=" . $f359Bb . "\n";
+    }
+
+    // BATCH-THRU (F360): what a batch actually buys, measured inside the engine so the HTTP
+    // layer is not part of the number. Same shape on both sides: N greedy steps of one
+    // conversation against N greedy steps of a two-conversation batch, each side warmed up
+    // first. The gate is a no-regression one - a batched step must not cost more than two
+    // separate steps - because the interesting quantity (how much of the weight traffic the two
+    // rows share) is not a threshold this engine can promise for every prompt.
+    $f360N = 12;
+    model_session_start(0, $f359A);
+    model_session_seed($f359Seed);
+    for ($f360w = 0; $f360w < 3; $f360w++) {
+        model_session_next(0, 0.0, 1.0);
+    }
+    $f360t0 = microtime(true);
+    for ($f360i = 0; $f360i < $f360N; $f360i++) {
+        $f360t = model_session_next(0, 0.0, 1.0);
+        if ($f360t < 0) {
+            break;
+        }
+    }
+    $f360Single = (microtime(true) - $f360t0) * 1000.0;
+    model_batch_start(0, 256);
+    model_batch_add(0, 0, $f359A, 0.0, 1.0, $f359Seed);
+    model_batch_add(0, 1, $f359B, 0.0, 1.0, $f359Seed);
+    for ($f360w = 0; $f360w < 3; $f360w++) {
+        model_batch_next(0);
+    }
+    $f360t1 = microtime(true);
+    for ($f360i = 0; $f360i < $f360N; $f360i++) {
+        $f360rows2 = model_batch_next(0);
+        if ($f360rows2 <= 0) {
+            break;
+        }
+    }
+    $f360Batch = (microtime(true) - $f360t1) * 1000.0;
+    model_batch_end();
+    $f360sTps = $f360N / ($f360Single / 1000.0);
+    $f360bTps = (2 * $f360N) / ($f360Batch / 1000.0);
+    $f360Ratio = $f360bTps / $f360sTps;
+    if ($f360Batch <= 2.0 * $f360Single) {
+        echo "BATCH-THRU: PASS single_tps=" . f360_x100($f360sTps) . " batch_tps=" . f360_x100($f360bTps)
+            . " ratio=" . f360_x100($f360Ratio) . " single_ms=" . f360_x100($f360Single)
+            . " batch_ms=" . f360_x100($f360Batch) . "\n";
+    } else {
+        echo "BATCH-THRU: FAIL single_ms=" . f360_x100($f360Single) . " batch_ms=" . f360_x100($f360Batch)
+            . " ratio=" . f360_x100($f360Ratio) . "\n";
     }
 
     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to

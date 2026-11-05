@@ -206,3 +206,21 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 并发吞吐上限 | 1.05–1.15×，第三路失败 | `engine/throughput_f357.log`（scaling），`engine/throughput_f337_3s.log`（errs=1） |
 | 负结果（不外推） | 词表提示 1.006×/0.71× | `engine/run_f340.log`+F354/F356 条目（早停/自适应停用所致） |
 **基线**：`engine/run_f349.log` 155 PASS / 0 FAIL；`engine/api_smoke_f357.log` 115 PASS / 0 FAIL；`engine/par_smoke_f357.log`+`fairness_f357.log` 退出码 0；HEAD 二进制 == 该自测构建。
+
+## 审计增补（F359–F360，2026-11-05 15:00）——continuous batching 落地，收益从 1.06× 抬到 1.45×
+- **F359（机制落地）**：批 API（`model_batch_add/stop/next`，逐会话温度/种子）、每行计划（slot/lo/hi/abspos）、逐行 KV 落槽（`kv_store_slots`）、8001 两会话**共用一次前向**（删掉 `model_session_save/restore` 轮转）；批布局 = 暂存区 `[0,8192)` + 两个 4096 行区域。**代价**：8001 不再用前缀缓存；提示+max_tokens 超槽容量按 400 拒绝。**坑**：主机指针传进 device kernel 会让 kernel fault 被 `catch` 吞掉（`BATCH-EQ rows=0` + 队列错误态导致下一个无关调用崩溃）⇒ 必须用 device 副本（`plan_upload/plan_free`）。**第一版吞吐没达标（1.060×）**：M=2 落进分块 GEMM，16 行 tile 里只有 2 行有用 ⇒ 8 倍白算 MAC ⇒ **F353"不是内核重写"对机制成立、对性能不成立**。
+- **F360（性能）**：`gemv2`——权重只读一次、点积进两个累加器；逐行累加顺序与 `gemv` 相同 ⇒ 批里的行与单独解码**逐位相同**。引擎内比值 **1.77×**（单流 18.69ms/步 vs 批 21.07ms/步，第二个会话只多 13%）；服务面 8001 scaling 4 样本 **1.457/1.448/1.496/1.418**（中位 **1.45×**），**目标 1.6–2× 未达成**。
+- **瓶颈已经换人**：服务面每 token 60.3ms 里引擎只占 18.7ms ⇒ **~41.6ms/token 在 PHP 侧**（token→文本、socket 写、HTTP 帧），两个流各付一次 ⇒ 把 1.77× 稀释成 1.45×。**下一轮杠杆是 PHP 每 token 热路径，不是 kernel。**
+
+### F359/F360 证据索引（每条都可 grep 复核）
+| 论断 | 数值 | 证据文件（本轮实测行） |
+|---|---|---|
+| 批跑 == 单跑（逐 id） | PASS tokens=10 rows=2 | `engine/run_f360.log`：`BATCH-EQ: PASS tokens=10 rows=2 batch==single for both conversations` |
+| 引擎内批处理比值 | 1.77×（53.49 → 94.93 tok/s） | `engine/run_f360.log`：`BATCH-THRU: PASS single_tps=53.49 batch_tps=94.93 ratio=1.77 single_ms=224.31 batch_ms=252.79` |
+| 服务面 8001 并发 scaling | 中位 1.45× | `engine/throughput_f360.log`（1.457×）+ `engine/thru3_f360.log`（1.448/1.496/1.418） |
+| F359 第一版（无 gemv2） | 1.060× | `engine/throughput_f359.log`：串行 3.22s/18.95 tok/s、并发 6.07s/20.08 tok/s |
+| 8000 单槽（对照，未批处理） | 1.004× | `engine/thru_plain_f360.log` |
+| 投机门未受 M=2 改动影响 | greedy 3.324× / sampled 2.358× | `engine/spec_greedy_f360.log`、`engine/spec_sampled_f360.log` |
+| 8000 形状 / 8001 par+fairness | 115 PASS 0 FAIL / 退出码 0 / 0 | `engine/api_smoke_f360.log`、`engine/par_smoke_f360.log`、`engine/fairness_f360.log` |
+| 自检基线 | **157 PASS / 0 FAIL** | `engine/run_f360.log`（相对 155 基线多 `BATCH-EQ` + `BATCH-THRU`） |
+**基线（本次 HEAD）**：`engine/run_f360.log` 157 PASS / 0 FAIL；`engine/api_smoke_f360.log` 115 PASS / 0 FAIL；8001 `par`+`fairness` 退出码 0；哨兵 0；HEAD 二进制 == 该自测构建（exe 3377152 bytes，22:31）。
