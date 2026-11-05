@@ -719,10 +719,12 @@
 - **红线提醒**：构建与测量之间用 `&&`；重建前 `Get-Process` 清孤儿；测量前先证 exe mtime 变新；探针"没打印"必须先证明探针在二进制里（池序号 → `main.cc` 引用）。
 
 ## ▶ 续跑从这里开始（2026-11-04 23:31 更新，覆盖 F240 时期的旧指引）
-- **当前基线（HEAD `4e4c489`＋f311 构建，二进制与源码同源）**：自检 **146 PASS / 1 FAIL**（唯一 FAIL＝`SPEC-TREE-ALT` 的常驻覆盖门 `alt_branch=0`，见 F312，不是行为缺陷）、8000 **113 形状全绿**、8001 `par_smoke`/`fairness` 全 0。日志：`run_f311.log` / `api_smoke_f311.log` / `par_smoke_f311.log` / `fairness_f311.log`。活服务起法**必须**用 `bash scripts/gate_live.sh <tag>`（F309：cwd 错会让自测冒充服务并产出假红数）。
+- **当前基线（HEAD `4e4c489`＋f311 构建，二进制与源码同源）**：自检 **147 PASS / 0 FAIL**（`SPEC-TREE-ALT` 已拆为行为 PASS ＋覆盖 `NOTCOVERED` 两条）、8000 **113 形状全绿**、8001 `par_smoke`/`fairness` 全 0。日志：`run_f313.log` / `api_smoke_f313.log` / `par_smoke_f313.log` / `fairness_f313.log`。活服务起法**必须**用 `bash scripts/gate_live.sh <tag>`（F309：cwd 错会让自测冒充服务并产出假红数）。
 - **已具备的 FR-06 原语**：`model_token_prob(id,temp)`、`model_rand01()`、`model_sample_excluding(id,temp)`、`model_peek_argmax()`；自检内已验证 `SPEC-SAMPLE`（acc=9 rej=15 diff=15 可复现）与 `SPEC-COST`（接受机制仅贵 1.7%/token）。
 - **F307 已闭合这条**（见 findings F307）：采样验证的树解码进了 C++ `spec_tree_sample()`，实测 **1.34×**（`SPEC-TREE-WALL` off_ms=1871.6 → on_ms=1396.1，temp=0.9、等长 95 token、每次验证提交 4.0 token），`temp=0` 逐 id 等于贪心树、同种子逐字节复现、temp=0.9 下 22/71 位置与贪心不同；服务侧 `spec_bins`/`spec_depth` 已接（门控 `temp>0 && top_p>=1`）。
-- **唯一下一步（F308，正确性而非提速）**：树节点 RoPE 位置按摊平序号算、接受 `b>0` 分支后不压实 KV 行 ⇒ 只有分支 0 是精确的，采样验证会让 `b>0` 接受从罕见变常见。修法＝①`model_sycl.cc:1183` 的 rope 表按**逻辑深度**给位置 ②接受后把该分支的 K/V 行压实到 `[pos,pos+run)`（`g_kv.k[l]/v[l]` 行距 `dkv*elem()`）③`spec_stats()` 加 `alt_branch=` 计数，先用它证明判据真的走过 `b>0`，再谈"已验证"。
+- **F308 已落地（未验证其效果）**：rope 行位置改按逻辑深度（`g_row_pos`）、接受非零分支后 `kv_compact()` 压实 K/V 行、`spec_stats()` 常驻 `alt_branch=`/`max_branches=`。
+- **唯一下一步（F313b→f314，先让覆盖门自己说话）**：`max_branches=2` 证明草稿器**能**给出两条竞争分支，而 `alt_branch=0` 的真正原因是**我只在倒序那次运行之后读 stats**（正序 `$f308Tree` 之后没取 `model_spec_stats()`），外加 `max_branches=` 的 `substr` 偏移误写 14（正确 13）⇒ 回显恒 0 且与同一行原样打印的 stats 自相矛盾。已补正序读数与偏移：**判据没测到 ≠ 判据不存在**（F312 那条方法论反过来咬了我自己一次）。
+- **再下一步（FR-06.2 步 1）**：若 f314 的覆盖门仍 `NOTCOVERED`，说明"最长接受"总是落在列表首位，需要的是**抬高分支间的真实竞争度**（同三元组的全部不同续写＋按历史频次排序），它同时决定树的收益上限与 F308 的可验证性。
 - **其余未闭合**：多属性对象项（阻塞于上游 dispatch 归属未定位，F298–F300）、`g_sess_len` 覆盖缺口（F261）、含元字符 pattern / `minimum·maximum·multipleOf`、per-session KV 并行吞吐、SSD 前缀分桶、GGUF 分片、多卡 split（需第二设备）、FR-05。
 - **护栏**：单引擎进程；构建与测量之间用 `&&`；重建前清孤儿并核 exe mtime；新增 native 函数必须同时改 `php_model_*` 包装与 `model.stub.php`。
 

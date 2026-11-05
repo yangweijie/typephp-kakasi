@@ -10177,6 +10177,7 @@ function main(): void
         . "The pattern is a b e f. The pattern is a b c d. The pattern is a");
     $f308Ref = model_generate(0, $f308p, 40);
     $f308Tree = model_spec_tree(0, $f308p, 40, 4, 3);
+    $f308NatStats = model_spec_stats();      // F313b: the natural-order run was never sampled
     $f308Rev = model_spec_tree(0, $f308p, 40, -4, 3);
     $f308Stats = model_spec_stats();
     $f308Alt = 0;
@@ -10196,9 +10197,15 @@ function main(): void
     $f308Req = $f308Rev == $f308Ref ? 1 : 0;
     $f308Seq = $f308Smp == $f308Ref ? 1 : 0;
     $f308Br = 0;
+    $f308AltNat = 0;
+    foreach (explode(" ", $f308NatStats) as $f308tok4) {
+        if (substr($f308tok4, 0, 11) == "alt_branch=") {
+            $f308AltNat = (int) substr($f308tok4, 11);
+        }
+    }
     foreach (explode(" ", $f308Stats) as $f308tok3) {
-        if (substr($f308tok3, 0, 14) == "max_branches=") {
-            $f308Br = (int) substr($f308tok3, 14);
+        if (substr($f308tok3, 0, 13) == "max_branches=") {
+            $f308Br = (int) substr($f308tok3, 13);
         }
     }
     // Two separate verdicts on purpose (F313): behaviour may be green while the path the fix
@@ -10207,10 +10214,12 @@ function main(): void
     // the drafter's own width, which is the measured reason it cannot be reached yet.
     if ($f308Teq == 1 && $f308Req == 1 && $f308Seq == 1) {
         echo "SPEC-TREE-ALT: PASS greedy-identical under both branch orders\n";
-        if ($f308Alt > 0 && $f308Alt2 > 0) {
-            echo "SPEC-TREE-ALT-COVERAGE: COVERED alt_branch=" . $f308Alt . "/" . $f308Alt2 . "\n";
+        if ($f308AltNat > 0 || $f308Alt > 0 || $f308Alt2 > 0) {
+            echo "SPEC-TREE-ALT-COVERAGE: COVERED alt_branch=nat" . $f308AltNat
+                . "/rev" . $f308Alt . "/smp" . $f308Alt2 . " max_branches=" . $f308Br . "\n";
         } else {
-            echo "SPEC-TREE-ALT-COVERAGE: NOTCOVERED alt_branch=" . $f308Alt . "/" . $f308Alt2
+            echo "SPEC-TREE-ALT-COVERAGE: NOTCOVERED alt_branch=nat" . $f308AltNat
+                . "/rev" . $f308Alt . "/smp" . $f308Alt2
                 . " max_branches=" . $f308Br . " " . $f308Stats . "\n";
         }
     } else {
