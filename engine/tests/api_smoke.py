@@ -188,6 +188,18 @@ def main():
     check("chat-spec-tree-affects-output", c_off != "" and c_off != c_16,
           "off_len=%d spec16_len=%d shapes_agree=%s" % (len(c_off), len(c_16), c_16 == c_26))
 
+    # F349: liveness is not acceptance. Read the engine's own counters (they reset at the start of
+    # every generation call, so this is the request just sent) and require that the served path
+    # verified drafts and accepted some - the number the latency-only checks can never show.
+    post("/v1/chat/completions", dict(base, spec_bins=2, spec_depth=6))
+    with urllib.request.urlopen(BASE + "/spec_stats", timeout=15) as f:
+        stxt = json.loads(f.read().decode()).get("stats", "")
+    st_ver = int(re.search(r"verifies=(\d+)", stxt).group(1)) if "verifies=" in stxt else -1
+    st_acc = int(re.search(r"accepted=(\d+)", stxt).group(1)) if "accepted=" in stxt else -1
+    st_drf = int(re.search(r"drafts=(\d+)", stxt).group(1)) if "drafts=" in stxt else -1
+    check("chat-spec-tree-accepts", st_ver > 0 and st_acc > 0,
+          "verifies=%d accepted=%d drafts=%d raw=%r" % (st_ver, st_acc, st_drf, stxt))
+
     # F226: a long forced nested assembly must arrive complete on the FIRST served request. The
     # cold-session defect (findings F208-F225) showed up as empty text on attempt one and a correct
     # body only on an identical retry, so grading a retry here would prove nothing.

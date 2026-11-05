@@ -7010,7 +7010,8 @@ function api_serve(int $port): void
         $ctype = "application/json";
         $status = "200 OK";
         // Local chat page on "/" (FR-09.2). Plain form + fetch, no build step, no CDN.
-        if (strpos($req, "/v1/") === false && strpos($req, "GET /health") === false) {
+        if (strpos($req, "/v1/") === false && strpos($req, "GET /health") === false
+            && strpos($req, "GET /spec_stats") === false) {
             $ctype = "text/html; charset=utf-8";
             $payload = "<!doctype html><meta charset=utf-8><title>Kakashi</title>"
                 . "<style>body{font:15px system-ui;max-width:46rem;margin:2rem auto;padding:0 1rem}"
@@ -7026,6 +7027,12 @@ function api_serve(int $port): void
         } else if (strpos($req, "GET /health") !== false) {
             // Liveness/readiness probe: cheap, no model work.
             $payload = "{\"status\":\"ok\",\"model\":\"" . api_esc(gguf_meta_str("general.architecture")) . "\"}";
+        } else if (strpos($req, "GET /spec_stats") !== false) {
+            // F349: the speculative counters are process-global and reset at the start of every
+            // generation call, so this reports the LAST request's drafts/accepted/verifies. Read it
+            // immediately after the request being probed and keep the requests serial - two
+            // concurrent generations would otherwise report each other's counters.
+            $payload = "{\"stats\":\"" . api_esc(model_spec_stats()) . "\"}";
         } else if (strpos($req, "/v1/models") !== false) {
             $mp = strpos($req, "/v1/models/");
             if ($mp !== false) {

@@ -2705,3 +2705,17 @@ CACHE-EVICT: PASS 2-way protected ... hit_own=49 hit_after=49        ← F342 �
 顺带修掉一次误判：第一次跑这个差分拿到 **HTTP 400**，因为 **8001 是"只流式"的两槽服务器**，非流式请求必须打 **8000**。这属于工装事实，不是引擎缺陷。
 **已固化为门禁**：`engine/tests/api_smoke.py` 新增 `chat-spec-tree-affects-output`（断言 off ≠ spec，并把 `(1,6)==(2,6)` 作为信息打印）。活服务复跑：8000 **114 PASS / 0 FAIL**（`api_smoke_f348.log` 第 20 行 `PASS chat-spec-tree-affects-output`）、8001 `par`+`fairness` 全 0、吞吐第 8 个样本 `1.084×`、哨兵 0。本轮**未动引擎源码**，HEAD 的二进制仍等于 `run_f343.log` 验证过的那份。
 **还没解决的那一半**：分支在跑 ≠ 有收益。F345 的 2×3 轮服务吞吐测量显示 spec/plain 差 ≤3%（正负翻转）⇒ **服务负载上未证明获益**，而"是不是真的接受了草稿"仍要 `model_spec_stats()` 进响应才能钉死（F346 里写好的三步改法依旧有效，只是现在它从"证明有没有跑"降级为"量化接受率"）。
+
+### F350 · 服务面不再只是"路径在跑"，而是**确实在接受草稿**：`GET /spec_stats` + `chat-spec-tree-accepts`
+F348 用同种子差分证明了路径被执行；F349 的遗留问题是"执行 ≠ 接受"。这一轮把引擎自己的计数暴露出来，把那句话变成判据。
+**改了什么**：`engine/main.php` 在 8000 服务器上加一条诊断路由 **`GET /spec_stats`**，返回 `{"stats":"drafts=… accepted=… verifies=… alt_branch=… max_branches=… drafting=…"}`（直接取 `model_spec_stats()`）。放在 `/health` 旁边，同时把 `/spec_stats` 从"回落成 HTML 首页"的守卫条件里排除掉——**没有碰任何响应 JSON 的形状**，所以 115 个形状的门禁不受影响。新门 `chat-spec-tree-accepts` 先正常发一个 `spec_bins=2, spec_depth=6` 的请求，再立刻读该路由，要求 **`verifies>0 且 accepted>0`**。
+**为什么读的是"最后一次调用"**：`g_spec_*` 是**进程级**计数、每次生成入口清零，所以判据必须**串行**紧跟在请求之后读（并发两槽会互相串数）——这条约束写进了路由注释和门的位置。
+**测到（`engine/run_f349.log` + `engine/api_smoke_f349.log`）**：自检 **155 PASS / 0 FAIL**（881 s，新增路由零回归）；8000 **115 PASS / 0 FAIL**，三条 spec 门全绿：
+```
+PASS chat-spec-tree-sampled          # 同种子可复现
+PASS chat-spec-tree-affects-output   # 参数确实改变输出（路径活着）
+PASS chat-spec-tree-accepts          # verifies>0 且 accepted>0（草稿真的被接受）
+```
+8001 `PAR_EXIT=0` + `FAIR_EXIT=0`；吞吐第 9 个样本 `1.059×`；哨兵 0。
+**这把 FR-06 的服务面陈述钉成三段**：路径被执行 ⇒ 被执行**且**有接受 ⇒ 但**服务吞吐没有提升**（1.06–1.15× 全部来自并发测量，spec/plain 差 ≤3%）。所以现在的准确说法是："**投机采样在服务路径上工作并在接受草稿，但在这个工作负载上没有转化为端到端加速**"——瓶颈从"机制是否生效"移到"工作负载是否有可重复结构 + 单设备算力串行"，前者归 FR-06.2（草稿源），后者归 continuous batching。
+**诊断面留下的口子**：`/spec_stats` 是**全局最近一次**生成，不是按请求 id 查询；两槽并发下不可归因。真要按请求归因需要把 stats 塞进响应或做 per-slot 计数——留给需要精确归因的那一天，不预先做。
