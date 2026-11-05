@@ -335,3 +335,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **新测量**：同一构建、同一提示、60 token/流，只改温度 ⇒ temp 0.0 下 8001 scaling **1.714× / 1.789×**（中位 1.75×），temp 0.9 下 1.45×。
 **⇒ F359 的验收（1.6–2×）在 temp 0 下达成**；两者的唯一差别是采样路径（`temp<=0` 走 argmax，`temp>0` 走全词表 exp + 151936 元素 `std::sort` + 核截断）⇒ 每流每 token 多 14.9ms，两个流各付一次。
 **⇒ 下一轮第一动作**：采样器去排序化（分布不变；同 seed 下具体 token 只可能在 tie 上变），验收＝"同 seed 分布不变"＋"服务面 temp 0.9 的串行速率与 scaling 同时抬升"。**不是 PHP**（F360 那句"下一轮动 PHP"作废：PHP 那 26ms/token 里还混着 Python 客户端的 wall，拆不开）。
+
+## F362 更新（采样器的实现路线已由探针定案，不再是三个候选）
+`probe/sampler/sampler_bench.cpp`（600 次抽样，n=151936、temp 0.9、top_p 1.0）实测：引擎现状 **15.48ms/次**；打包排序 **16.59ms（更慢，否决）**；**quickselect 去排序 5.05ms（3.07×，采用）**。
+⇒ 下一轮第一动作：引擎 `sample_from` 的 **`top_p ≥ 1.0` 分支换成 quickselect**（带上方概率质量累加，分布不变、同 seed 只在 tie 上可能不同）；`top_p < 1` 保留排序路径（核截断需要有序前缀）。
+**验收**：①引擎内"同 seed 分布不变"对照门（探针那 0.00% 只覆盖头部 token，不算数，**必须引擎内再证一次尾部分布**）；②服务面 temp 0.9 的串行速率与 8001 scaling 同时抬升；③`BATCH-EQ`/`BATCH-THRU`/8000 115/8001 par+fairness 全不回退。
+**顺位**：M≥3 的批 → 8001 批路径的前缀缓存 → per-request spec 归因 → 真草稿源 / 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。

@@ -236,3 +236,15 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | temp 0.9 下摊薄 | 中位 1.45× | `engine/throughput_f360.log` + `engine/thru3_f360.log` |
 | 采样每流每 token 的代价 | ~14.9ms | 同上两组的串行速率之差（59.3 vs 44.4 ms/token） |
 | 引擎内批处理比值 | 1.77× | `engine/run_f360.log`：`BATCH-THRU: PASS ... ratio=1.77` |
+
+## 审计增补（F362，2026-11-05 15:07）——采样器的账算清：15.48ms/次，去排序可到 5.05ms
+- **探针**（`probe/sampler/sampler_bench.cpp`，纯 C++，`probe/sampler/build.bat` 跑）：引擎现状 **15.484 ms/次**（与服务面独立测到的 14.9ms/token/流 相符 ⇒ F361 的归因获第三方确认）；"打包 (p,id) 排序" **16.586 ms（更慢，否决）**；**quickselect 完全不排序 5.045 ms（3.07×）**。
+- **含义**：开销主要来自 O(n log n) 的比较次数本身，不是访存 ⇒ 下一轮把 `sample_from` 的 `top_p ≥ 1.0` 分支换成 quickselect（**分布不变**，同 seed 只在 tie 上可能不同），`top_p < 1` 保留排序（核截断要有序前缀）。
+- **边界**：探针的分布校验只覆盖头部 token（600 次抽样只落到 6 个不同 token）⇒ 尾部分布必须**在引擎内再证一次**，不能引用探针的 0.00%。
+
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 采样器现状成本 | 15.484 ms/次 | `probe/sampler/sampler_bench.log`（600 次抽样，n=151936，temp 0.9，top_p 1.0） |
+| 打包排序更慢 | 16.586 ms（0.93×） | 同上 |
+| 去排序可达 | 5.045 ms（3.07×） | 同上 |
+| 与服务面测值互证 | 15.48 vs 14.9 ms/token | `probe/sampler/sampler_bench.log` + `engine/thru_t0_f360.log` / `engine/throughput_f360.log` |
