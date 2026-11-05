@@ -2541,3 +2541,14 @@ for step in 0..N:
 ⇒ 多样性**确实拿到了**（`max_branches` 1→4，这是 F322 判定"缺的就是这个"的那件事），每次验证提交数也升了 6.7%；但 wall **慢 7.7%（ratio 0.9225）**：多补的 3 条分支各带 D=3 个节点，一共 84 个额外节点，只换来 3 个额外接受。`temp=0` 仍逐 id 等于贪心树（自举在点质量分布下不启用，`SPEC-TREE-SELFSEED: PASS temp0_greedy_identical=1`），`SPEC-TREE-SHAPES`/`ALT-COVERAGE`/`CTRL` 全部不受影响，梯子 **152 PASS / 0 FAIL**、8000 **113/0**、8001 `par`+`fairness` 全 0。默认 `g_spec_selfseed = 0`（不划算的形态不进服务路径）。
 **由此得到的下一步（形状问题，不是有无问题）**：自举分支**不该按满深度补**。它只需要 1 个节点（seed 本身，q=p ⇒ 恒可接受），后面交回正常验证与残差采样；按 `drafts = 36 + 3×1 = 39` 估算，接受数若仍能到 ~46-48，wall 就会**转正**。⇒ 需要的是**变深度树**（分支带自己的长度，掩码/`want` 按变长构造），这是机制级改动但范围可控：`nodes/depths/want/mask` 从 `b*D+i` 索引改为按分支起点偏移表。
 **顺带一个已确认的事实**：`alt_branch` 在 seeded 运行里仍为 0——四条分支并列时 `prefer` 用严格大于，文本分支（下标 0）先赢；自举分支要真正胜出，得等变深度形态把成本降下来再说。
+
+### F327 · **变深度树**落地：同样的 +3 接受，从 0.9225× 翻成 1.0564×
+F325 的诊断是自举分支被补到满深度 ⇒ 每条白占 D−1 个节点。本轮把 `spec_tree_sample` 的摊平/掩码/走查/压实全部改成**按分支自身长度**（`nodeOff`/`nodeLen` 取代固定步长 `b*D`，掩码位与 `want` 同步改；`nodes.size() > 32` 时裁掉尾部分支而不是移位越界）。自举分支现在只有 **1 个节点**。
+**同构建 A/B**（`engine/run_f326.log`，temp=0.9、同 prompt 同种子；`SPEC-TREE-SELFSEED`）：
+| 模式 | drafts | accepted | token/验证 | max_branches | wall ms |
+|---|---|---|---|---|---|
+| plain | 36 | 45 | 3.75 | 1 | 1817.38 |
+| seeded（变深度） | **62** | **48** | **4.0** | **4** | **1720.33** ⇒ **ratio 1.0564** |
+⇒ F325 的 +3 接受在节点数从 120 降到 62 之后**由亏转正**。接受数的增量没变（+3），变的全是**成本**——这条把 F326 那句"卡点在形态不在候选来源"钉死了。
+**回归与不敏感性**：深度均匀的主路径逐字未变（`SPEC-TREE-WALL drafts=36 accepted=48 verifies=12`，与 f321/f324 相同），`temp=0` 仍与贪心树逐 id 相同（`SPEC-TREE-SAMPLE: PASS`、`SPEC-TREE-SELFSEED: temp0_greedy_identical=1`），F308 的双向对照不受影响（`ALT-COVERAGE: COVERED alt_branch=nat6`、`CTRL: defect reproduced diffs=4/84`）。`SPEC-TREE-WALL` 拿到十个样本里的最高值 **1.3921×**。梯子全绿：**152 PASS / 0 FAIL**、8000 **113/0**、8001 `par`+`fairness` 全 0、哨兵 0。
+**这条收益还不能当结论**：`ratio=1.0564` 是**每侧一次采样**，而本机跨轮漂移就有 5–12%。默认因此仍留在 `g_spec_selfseed = 0`；把它翻成 1 的前提是同一构建内**多次交错 A/B 取中位数**仍 >1.0（下一轮 f328 就做这件事）。

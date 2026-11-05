@@ -2202,38 +2202,51 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                 }
                 if (seen) continue;
                 std::vector<int> br3;
-                br3.push_back(seed);
-                for (size_t p3 = n; p3 > 0; --p3) {
-                    if (out[p3 - 1] != seed) continue;
-                    const size_t f3 = p3;
-                    for (int j3 = 0; j3 < D - 1 && f3 + (size_t) j3 < n; ++j3) {
-                        br3.push_back(out[f3 + (size_t) j3]);
-                    }
-                    break;
-                }
-                while ((int) br3.size() < D) br3.push_back(br3.back());
+                br3.push_back(seed);      // F326: ONE node, not a padded depth-D chain - see the
+                                          // flatten below, which now takes each branch's own length
                 branches.push_back(br3);
                 ++nSelf;
                 if ((int) branches.size() > g_spec_bmax) g_spec_bmax = (int) branches.size();
             }
         }
 
+        // The mask is one uint32_t per node, so the flattened tree cannot exceed 32 rows; drop the
+        // tail of the branch list rather than shift past the bitmap width.
+        {
+            int total = 0;
+            for (size_t b = 0; b < branches.size(); ++b) {
+                if (total + (int) branches[b].size() > 32) { branches.resize(b); break; }
+                total += (int) branches[b].size();
+            }
+            if (branches.empty()) break;
+        }
+
         // Flatten the tree. `want[node]` is the token this node must predict for its own branch,
         // or -1 at a branch's last node, where the draw is the bonus token instead.
+        // F326: branches may differ in LENGTH (a self-seeded chain is one node deep, a lookup chain
+        // is D), so every index goes through nodeOff instead of the fixed stride b*D. The mask is a
+        // 32-bit bitmap, so the flattened node count is capped at 32.
         std::vector<int> nodes;
         std::vector<int> want;
         std::vector<int> depths;
+        std::vector<int> nodeOff;
+        std::vector<int> nodeLen;
         std::vector<uint32_t> mask;
         for (size_t b = 0; b < branches.size(); ++b) {
+            const int len = (int) branches[b].size();
+            nodeOff.push_back((int) nodes.size());    // keep the index parallel to branches
+            nodeLen.push_back(len);
+            if (len <= 0) continue;
             uint32_t bits = 0;
-            for (int i = 0; i < D; ++i) {
+            for (int i = 0; i < len; ++i) {
                 nodes.push_back(branches[b][(size_t) i]);
                 depths.push_back(i);      // F308: logical depth, not the flat slot
-                want.push_back((i + 1 < D) ? branches[b][(size_t) (i + 1)] : -1);
-                bits |= (1u << (uint32_t) ((int) b * D + i));
+                want.push_back((i + 1 < len) ? branches[b][(size_t) (i + 1)] : -1);
+                bits |= (1u << (uint32_t) (nodeOff[(size_t) b] + i));
                 mask.push_back(bits);
             }
         }
+        if (nodes.size() > 32) break;
 
         // Root test first: every branch's first token is judged against the distribution that
         // produced `ref`, still live in g_last_logits, so no forward is needed for it. A
@@ -2273,17 +2286,19 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
         g_head_want.clear();
         if (tops.size() != nodes.size()) break;
 
-        // Longest accepted chain, each ending in its own correction (or bonus) draw.
+        // Longest accepted chain, each ending in its own correction (or bonus) draw. Branch lengths
+        // differ (F326), so the walk stops at the branch's own length and indexes through nodeOff.
         int bestB = -1, bestRun = -1, bestTail = -1;
         for (size_t b = 0; b < branches.size(); ++b) {
+            const int len = b < nodeLen.size() ? nodeLen[(size_t) b] : 0;
             int run = 0;
             int tail = rootTail[b];
-            if (rootAcc[b]) {
+            if (rootAcc[b] && len > 0) {
                 run = 1;
                 tail = -1;
                 bool rejected = false;      // a real rejection produced this branch's correction
-                for (int i = 1; i < D; ++i) {
-                    const int pi = (int) b * D + (i - 1);
+                for (int i = 1; i < len; ++i) {
+                    const int pi = nodeOff[(size_t) b] + (i - 1);
                     if (pi >= (int) g_head_prob.size()) { run = -1; break; }
                     const double p = g_head_prob[(size_t) pi];
                     if (p >= 1.0 || (p > 0.0 && !greedy_like && rand01() < p)) { ++run; continue; }
@@ -2293,7 +2308,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                 }
                 if (run >= 0 && !rejected) {
                     // Whole branch accepted: the node after the last draft gives the bonus token.
-                    const int pi = (int) b * D + D - 1;
+                    const int pi = nodeOff[(size_t) b] + len - 1;
                     if (pi < (int) g_head_alt.size()) tail = g_head_alt[(size_t) pi];
                 }
                 if (run < 0) tail = -1;
@@ -2313,7 +2328,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
             ++produced;
             ++committed;
         }
-        if (bestB > 0 && committed > 0) { ++g_spec_alt; if (g_spec_fix) kv_compact(backend, pos, pos + bestB * D, committed); }
+        if (bestB > 0 && committed > 0) { ++g_spec_alt; if (g_spec_fix) kv_compact(backend, pos, pos + nodeOff[(size_t) bestB], committed); }
         pos += committed;
         g_spec_accepted += committed;
         if (produced >= n_new) break;
