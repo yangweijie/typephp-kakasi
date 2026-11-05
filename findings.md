@@ -2414,9 +2414,43 @@ for step in 0..N:
 - 每个节点用它**自己那一行 logits** 给出 `p(draft)`，接受条件 `rand01() < p(draft)`；拒绝就从残差 `(p−δ_draft)⁺` 重采一个 token 收尾。`row_accept_stats()` 里残差**按 `mass − p(want)` 归一**——第一版我按 `mass` 归一，那会让重采样的 token 系统性偏向词表头部（数学上就不是精确 sampler 了），发现后改掉。
 - 树里每个节点还需要自己那行的概率，而 `prefill_top1` 原本只把**最后一行**留在 `g_last_logits`，其余行只留 argmax（`g_step_top1`）。⇒ 给 lm_head 的行循环加了可选出参 `g_head_want/g_head_prob/g_head_alt`（`:1399` 一带），行数据本来就在 host 上，只多两趟扫描。
 - **温度 0 是极限情形不是特例**：`temp<=0` 时 `p` 落在 argmax 上（1/0），残差退化成 argmax ⇒ 与 `spec_tree_generate` 逐 token 相同，这条被写成回归门而不是靠推理。
-**测到的数**（`engine/run_f307.log`，同一次构建）：
+**测到的数**（`engine/run_f307.log`，同一次构建，全量自检 **146 PASS / 0 FAIL**、`RUN_EXIT=0`、**791 s**；基线 144 ＋本轮新增 2 门，逐条对得上）：
 - `SPEC-TREE-SAMPLE: PASS temp0==greedy_tree reproducible diff=22/71`（temp=0.9 下 71 个位置有 22 个与贪心不同 ⇒ 采样确实在路径里；同种子两次逐字节相同 ⇒ 抽签来自 `g_sess_rng` 而非墙钟）
 - `SPEC-TREE-WALL: PASS off_ms=1871.59 on_ms=1396.10 speedup=1.3406x`，且 `off_len=95 == on_len=95` ⇒ 等长度可比；`drafts=36 accepted=48 verifies=12` ⇒ 12 次前向提交 48 个 token（**每次验证 4.0 token**，这是收益的来源，不是"感觉快了"）。
 - 顺带把 `SPEC-COST` 重测为 `ratio=1.0094`（F306 那次是 1.0174）⇒ 接受机制本身的开销仍远小于 1.34× 的收益，两者相乘自洽。
 **服务面**：`spec_bins`/`spec_depth` 进了 `api_gen_text`（`engine/main.php:8191`），门条件是 `temp>0 && top_p>=1 && 非 json 模式`——`top_p<1` 会把残差正要采的那条尾巴截掉，所以宁可不开。活服务门禁见后续日志。
 **遗留（同轮发现，见 F308）**：分支 `b>0` 的位置/缓存槽不一致是这条路径的**真缺陷**，采样验证会把它从"潜在"变成"常见"，必须先有判别实验再修。
+
+### F308 · 落地修法（**已写码，未构建未验证**——本轮门禁跑完才生效）
+三处改动，全在 `engine/src/model_sycl.cc`：
+1. **行位置按逻辑深度给**：新增 `g_row_pos`（相对 `pos` 的每行位置，空＝老约定 `pos+t`），rope 表构造用它取代摊平序号；`prefill_tops_tree` 在**每条出口**（含 backend/mask/alloc 三条早退）清空 `g_row_pos` 与 `g_head_want`——泄漏一次就会把后续单 token 前馈的位置悄悄改掉。掩码与缓存槽仍用摊平序号（分支要共处一次前向，靠的正是这个）。
+2. **接受 `b>0` 分支后压实 KV 行**：`kv_compact(backend,pos0,src0,run)` 对每层 `g_kv.k[l]/v[l]` 做一次 `memcpy`，行距 `dkv*elem()`（f16/f32 自适应），`src0>pos0` 且 `run<=D<=b*D` ⇒ 区间必不重叠。贪心树 `spec_tree_generate` 与采样树 `spec_tree_sample` 都接了（同一根因不该只修一半）。
+3. **判别量先打印**：`spec_stats()` 增加 `alt_branch=`（提交过非零分支的次数），新增自检 `SPEC-TREE-ALT`：`bins=4,depth=3` 跑 32 token，要求 **`alt_branch>0` 且树输出与 `model_generate` 逐 id 相同**。`alt_branch=0` 直接算 FAIL——**判据没走过的那条路，绿了也不算证据**（F255 的老教训）。
+**为什么这不是"顺手优化"**：F307 之前只有分支 0 的接受判据是真值，`b>0` 既判据有偏又污染缓存；采样验证把 `b>0` 从罕见变成常见，所以缺陷从"记录在案"升级为"必须先修"。
+**下一步（按序）**：清 AST 重建 → 核 exe mtime/无 `SYCL_LINK_FAILED` → 全量自检看 `SPEC-TREE-ALT` 的 `alt_branch` 是否 >0 → 8000/8001 门禁 → 若 `alt_branch` 仍为 0，就说明这些 prompt 压根不触发非零分支，届时要么专门造一个能触发的形状，要么把结论改写成"分支 0 精确、其余分支未被任何门禁覆盖"（不得写成已验证）。
+
+### F309 · 我的门禁链把**自测冒充成服务**，于是给出两个"看着合理的"红数（`SMOKE_EXIT=1`＋`FAIRNESS FAIL`）
+**症状**（`engine/api_smoke_f307.log` / `par_smoke_f307.log` / `fairness_f307.log`）：8000 侧 `urllib.error.URLError: [WinError 10061] 目标计算机积极拒绝` + **PASS=0/FAIL=0**；8001 侧 `PAR_EXIT=1`、`FAIRNESS: FAIL (short waited for the long stream)`。**这三个红都不是引擎的缺陷**：根本没有服务在监听。
+**真因**：我在 Bash 链里用**绝对路径**起了 `$E/build/kakasi_engine_sycl.exe`，但**没有 `cd` 进 `engine`**——而服务哨兵是按 **cwd 相对路径** `serve.on` 读的（`scripts/serve.bat` 的第一步就是 `cd /d ...\engine`）。我把 `serve.on` 写到了 `engine/` 下，进程的工作目录却是仓库根 ⇒ exe 找不到哨兵 ⇒ **跑的是全量自测**。`engine/serve_f307.log` 里 15 条 `: PASS`（`SESSION-PAR`、`SESSION-POS`…）且**一条服务标志都没有**，就是铁证。
+**为什么这条特别贵**：它不只是浪费时间——它**造出两个会被误读的失败数**（"公平性 FAIL"、"smoke 全红"），而这两个数在语义上完全指向引擎缺陷。
+**新增硬规则（进护栏）**：
+1. 起服务的链**必须先 `cd` 到 `engine`**（或直接调 `scripts/serve*.bat`，它们自带 `cd`），并且**用哨兵存在性做二次确认**：启动后先断言 `ls engine/*.on` 命中，再等 `/health`。
+2. **健康探测超时＝中止整条链**，不得继续跑门禁。我这版是"探 40×5 s 后照样跑测试"，于是把"服务没起来"变成了"测试失败"。判据应当是 `HEALTH_POLLS` 命中，而不是测试的退出码。
+3. 一次只允许一个引擎进程这条**已经生效但不够**：还要保证"我以为在跑 A，其实进程在跑 B"——**用日志的首行特征判别进程身份**（服务日志不该出现 `: PASS`；自测日志不该出现监听地址）。
+**对验收的影响**：F307 的活服务门禁**作废**（未验证），改由下一轮（F308 构建，`spec_bins` 服务路径同样在其中）一次性补跑 8000/8001 并记录为 F307+F308 的活服务证据；`run_f307.log` 的自测证据（146 PASS / 0 FAIL、`SPEC-TREE-*`）**仍然有效**，因为它来自真正的全量自测。
+
+### F310 · 更硬的结论：**树的多分支从未被任何门禁触达**（`alt_branch=0` 出现在每一条树门禁里）
+**测到的**（F308 构建的 `engine/run_f308.log`，**146 PASS / 1 FAIL**）：唯一那条 FAIL 就是我按 F308 新加的 `SPEC-TREE-ALT`，它报 `alt_branch=0/0`；同时 `SPEC-TREE`、`SPEC-TREE-SWEEP`（三种形状）、`SPEC-TREE-SAMPLE`、`SPEC-TREE-WALL`、`SPEC-AMB` 的 stats 里 **`alt_branch` 全为 0**，而这些门禁的输出仍与贪心逐 id 相同（`tree_eq=1`）。
+**这说明两件事，都必须说出口**：
+1. **F307 的 1.34× 是"单次验证宽 B*D 但只沿一条分支接受"挣来的**——被接受路径始终是"最近匹配"那条（分支 0）。所以"多分支带来收益"这句仍然**没有证据**；已有证据只支持"**一次批量验证更宽 ⇒ 每次验证提交 4.0 个 token**"。F273 的推论没有被推翻，被推翻的只是"采样验证下也必然只有一条分支能过"这层预期。
+2. **F308 的修法（深度位置＋行压实）本身没被跑到**：`b>0` 一次都没发生 ⇒ 我不能宣称修好了，只能说"改了且无回归"（`alt_branch=0` 与全部树门禁仍绿）。这正是 F255 的老坑：**判据没走过的路，绿了不算证据**。
+**因此加负控（而不是继续猜 prompt）**：`bins<0`＝同样的宽度，但把草稿分支列表**按新近倒序**给出，于是模型真正想要的那条落在**非零下标**。新的 `SPEC-TREE-ALT` 用 `-4` 跑贪心树与采样树（temp=0），要求 **`alt_branch>0` 且输出仍等于 `model_generate`**。判读只有两种，都可写：`alt_branch>0 且等值` ⇒ F308 的修法第一次拿到行为证据；`alt_branch>0 但不等值` ⇒ 直接暴露残留缺陷（说明还有第三条未处理的路径，例如压实与 `n_new` 截断的交互）。
+**另一条待解释的数（不许用"噪声"糊过去）**：`SPEC-TREE-SWEEP` 的 `bins=2 depth=2` 从 F307 的 **865 ms** 变成 F308 的 **1934 ms**，而 `drafts/accepted/verifies` 三者完全相同（24/24/12）；同一轮里 `bins=2 depth=3` 只从 1503→1627、`bins=3 depth=2` 1365→1577，主行 `SPEC-TREE (2,3)` 620→700 ms（+13%），**未被改动触碰的** `SPEC-TREE-WALL off` 也 +12% ⇒ 整体确有 ~12% 的机器级漂移，但 **(2,2) 的 +123% 远超这个量级**，需要 f310 这一轮的第二个样本才能判定是"位置改动的真实代价"还是"单点异常"。在此之前，(2,2) 只记为**未解释**，不写结论。
+
+### F311 · f310 一轮把 F307/F308 的**活服务证据补齐**（F309 的教训生效）
+`engine/run_f310.log` + `engine/api_smoke_f310.log` + `engine/par_smoke_f310.log` + `engine/fairness_f310.log`（同一二进制 `BUILD_EXIT=0/FAILED=0`）：
+- 自检 **146 PASS / 1 FAIL**，唯一 FAIL 是 `SPEC-TREE-ALT`（`alt_branch=0/0`＝路径未覆盖，见 F310，不是行为错误）。
+- **8000：113 PASS / 0 FAIL**（基线 112 形状 + 本轮新增 `chat-spec-tree-sampled`，日志第 19 行 `PASS chat-spec-tree-sampled`）⇒ `spec_bins/spec_depth` 的服务路径**在活服务上可用且同种子可复现**。
+- **8001：`PAR_EXIT=0` + `FAIR_EXIT=0`**，收尾 `SENTINELS_LEFT=0`。
+- 这次门禁用的是新脚本 `scripts/gate_live.sh`：先在 `engine` 目录起进程、健康探测不通就**中止整条链**（`HEALTH_OK port=8000 polls=1` / `port=8001 polls=1`）——正是 F309 那条"红数看起来像缺陷"的修法。
+- 顺带第三次采样 `SPEC-TREE-SWEEP`：`bins=2 depth=2` 仍 **1876 ms**（F308 轮 1934、F307 轮 865），`bins=2 depth=3` 1607、`bins=3 depth=2` 1600，而后两者在两轮里只差 ~7%。⇒ **(2,2) 的倍数差不是随机噪声，但也不是接受数变化**（三轮 `drafts/accepted/verifies` 恒为 24/24/12）。结论：**sweep 的绝对计时不能跨轮比较**（它在套件内部受前序测试的缓存/频率状态影响），形状选择必须以 `SPEC-TREE-WALL` 这种隔离测量为准。此结论记为**测量方法缺陷**，不是引擎性能结论。

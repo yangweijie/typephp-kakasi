@@ -10168,6 +10168,41 @@ function main(): void
             . " off_len=" . $f307OffN . " on_len=" . $f307OnN . "\n";
     }
 
+    // SPEC-TREE-ALT (F308): every gate above that says "tree == greedy" only proves something if
+    // the tree actually committed a branch OTHER than branch 0 at least once - that is precisely
+    // the case where the row's RoPE position and its KV slot disagreed. So the counter is
+    // asserted, not admired: alt_branch=0 means the case never happened and the gate is vacuous,
+    // which is reported as FAIL rather than as green.
+    $f308p = tok_encode("Alpha one two three four. Beta five six seven eight. Alpha one two three four. "
+        . "Beta five six seven eight. Gamma nine ten eleven twelve. Gamma nine ten");
+    $f308Ref = model_generate(0, $f308p, 32);
+    $f308Tree = model_spec_tree(0, $f308p, 32, 4, 3);
+    $f308Rev = model_spec_tree(0, $f308p, 32, -4, 3);
+    $f308Stats = model_spec_stats();
+    $f308Alt = 0;
+    foreach (explode(" ", $f308Stats) as $f308tok) {
+        if (substr($f308tok, 0, 11) == "alt_branch=") {
+            $f308Alt = (int) substr($f308tok, 11);
+        }
+    }
+    $f308Smp = model_spec_tree_sample(0, $f308p, 32, -4, 3, 0.0, 2026011);
+    $f308Alt2 = 0;
+    foreach (explode(" ", model_spec_stats()) as $f308tok2) {
+        if (substr($f308tok2, 0, 11) == "alt_branch=") {
+            $f308Alt2 = (int) substr($f308tok2, 11);
+        }
+    }
+    $f308Teq = $f308Tree == $f308Ref ? 1 : 0;
+    $f308Req = $f308Rev == $f308Ref ? 1 : 0;
+    $f308Seq = $f308Smp == $f308Ref ? 1 : 0;
+    if ($f308Alt > 0 && $f308Alt2 > 0 && $f308Teq == 1 && $f308Req == 1 && $f308Seq == 1) {
+        echo "SPEC-TREE-ALT: PASS greedy-identical on the non-zero branch (alt_branch="
+            . $f308Alt . "/" . $f308Alt2 . ")\n";
+    } else {
+        echo "SPEC-TREE-ALT: FAIL tree_eq=" . $f308Teq . " reversed_eq=" . $f308Req . " sampled_eq=" . $f308Seq
+            . " alt_branch=" . $f308Alt . "/" . $f308Alt2 . " " . $f308Stats . "\n";
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.

@@ -115,6 +115,12 @@ namespace {
     std::vector<double> g_head_prob;
     std::vector<int> g_head_alt;
     double g_head_temp = 1.0;
+    // F308: RoPE positions for the rows of the current pass, RELATIVE to `pos`. Empty means the
+    // plain causal convention (row t sits at pos+t). A tree pass fills it with each node's LOGICAL
+    // depth, because all branches stand at the same depth and must be rotated as if they were the
+    // one true continuation - otherwise only branch 0 is ever verified against a real position.
+    std::vector<int> g_row_pos;
+    int g_spec_alt = 0;               // commits taken from a non-zero tree branch (F308 coverage)
     // Device-side tree mask for the current verify pass; nullptr means plain causal attention.
     // Kept as module state so prefill_top1's external signature (and its mangled name) never
     // changes - the same reason g_head_rows is a global.
@@ -1185,9 +1191,10 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         const int half = HD / 2;
         std::vector<float> ctab((size_t) T * half), stab((size_t) T * half);
         for (int t = 0; t < T; ++t) {
+            const int rt = (!g_row_pos.empty() && t < (int) g_row_pos.size()) ? g_row_pos[(size_t) t] : t;
             for (int j = 0; j < half; ++j) {
                 const float freq = (float) std::pow(theta, -(double) (2 * j) / (double) HD);
-                const float ang = (float) (pos + t) * freq;
+                const float ang = (float) (pos + rt) * freq;
                 ctab[(size_t) t * half + j] = std::cos(ang);
                 stab[(size_t) t * half + j] = std::sin(ang);
             }
@@ -1750,6 +1757,7 @@ std::vector<int> prefill_tops(int backend, const std::vector<int>& tokens, int p
 std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int k) {
     std::vector<int> out = ids;
     g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
+    g_spec_alt = 0;
     // Negative control for the self-test: a negative k means "propose drafts but reject every
     // one". Nothing is accepted, so the output must still equal plain greedy generation, and
     // the adaptive rule must switch drafting off after its miss budget.
@@ -1845,20 +1853,52 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
 // One verify pass over B draft branches of depth D. The mask makes each node attend only to the
 // prefix plus its own ancestors, so the branches cannot see each other - this is the "verify a
 // tree in one pass" half of FR-06.1. Returns the argmax at every node, branch-major.
+//
+// F308: the tree's per-node state is transient. The rows live in FLAT slots (so the branches can
+// coexist in one pass) while their rotation comes from the LOGICAL depth in g_row_pos, and both
+// scratch vectors are cleared on every exit - a leaked g_row_pos would silently reposition the
+// next single-token prefill.
 std::vector<int> prefill_tops_tree(int backend, const std::vector<int>& tokens, int pos,
                                    const std::vector<uint32_t>& mask) {
     sycl::queue* qp = kakasi::queue_for(backend);
-    if (!qp) { g_err = "tree verify: backend unavailable"; return {}; }
-    if (mask.size() != tokens.size()) { g_err = "tree verify: mask size mismatch"; return {}; }
+    if (!qp) { g_err = "tree verify: backend unavailable"; g_row_pos.clear(); g_head_want.clear(); return {}; }
+    if (mask.size() != tokens.size()) { g_err = "tree verify: mask size mismatch"; g_row_pos.clear(); g_head_want.clear(); return {}; }
     uint32_t* dm = sycl::malloc_device<uint32_t>(mask.size(), *qp);
-    if (!dm) { g_err = "tree verify: mask alloc failed"; return {}; }
+    if (!dm) { g_err = "tree verify: mask alloc failed"; g_row_pos.clear(); g_head_want.clear(); return {}; }
     qp->memcpy(dm, mask.data(), sizeof(uint32_t) * mask.size());
     qp->wait_and_throw();
     g_tree_mask = dm;
     const std::vector<int> out = prefill_tops(backend, tokens, pos);
     g_tree_mask = nullptr;
+    g_row_pos.clear();
+    g_head_want.clear();
     sycl::free(dm, *qp);
     return out;
+}
+
+// F308: after a branch other than branch 0 wins, its rows sit at [src0, src0+run) while the
+// committed prefix logically occupies [pos0, pos0+run). Without this move, the next token is fed
+// right after the prefix and attends to the REJECTED branch-0 rows as if they were the context.
+// src0 > pos0 and run <= D <= b*D, so the ranges never overlap.
+void kv_compact(int backend, int pos0, int src0, int run) {
+    if (run <= 0 || src0 <= pos0) return;
+    sycl::queue* qp = kakasi::queue_for(backend);
+    if (!qp || g_kv.k.empty()) return;
+    const int L = (int) g_kv.k.size();
+    const size_t stride = (size_t) g_kv.dkv * g_kv.elem();
+    if (stride == 0) return;
+    const size_t bytes = (size_t) run * stride;
+    for (int l = 0; l < L; ++l) {
+        if (g_kv.k[(size_t) l]) {
+            qp->memcpy((char*) g_kv.k[(size_t) l] + (size_t) pos0 * stride,
+                       (char*) g_kv.k[(size_t) l] + (size_t) src0 * stride, bytes);
+        }
+        if (g_kv.v[(size_t) l]) {
+            qp->memcpy((char*) g_kv.v[(size_t) l] + (size_t) pos0 * stride,
+                       (char*) g_kv.v[(size_t) l] + (size_t) src0 * stride, bytes);
+        }
+    }
+    qp->wait_and_throw();
 }
 
 // Tree speculative decoding: B branches x D tokens per verify pass, accept the longest verified
@@ -1868,8 +1908,14 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
                                     int depth) {
     std::vector<int> out = ids;
     g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
+    g_spec_alt = 0;
     g_spec_on = 1;
-    const int B = std::max(1, bins);
+    // F308 negative control: bins<0 keeps the width but proposes the lookup matches in REVERSE
+    // recency order, so the branch the model actually wants is no longer branch 0. Without this,
+    // every tree gate can pass while never committing a non-zero branch - which is exactly what
+    // measured alt_branch=0 across all of them.
+    const bool reverseBranches = (bins < 0);
+    const int B = std::max(1, reverseBranches ? -bins : bins);
     const int D = std::max(1, depth);
     g_head_rows = 1;
     std::vector<double> r = prefill_top1(backend, out, -1, 0);
@@ -1924,19 +1970,23 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
             continue;
         }
 
+        if (reverseBranches) std::reverse(branches.begin(), branches.end());
         // Flatten the tree and build the mask: node (b,i) may attend to its branch's ancestors.
         std::vector<int> nodes;
         std::vector<uint32_t> mask;
+        std::vector<int> depths;
         for (size_t b = 0; b < branches.size(); ++b) {
             uint32_t bits = 0;
             for (int i = 0; i < D; ++i) {
                 nodes.push_back(branches[b][(size_t) i]);
+                depths.push_back(i);      // F308: every branch stands at the same depth
                 bits |= (1u << (uint32_t) ((int) b * D + i));
                 mask.push_back(bits);      // cumulative: branch prefix up to and including i
             }
         }
         ++g_spec_verified;
         g_spec_drafts += (int) nodes.size();
+        g_row_pos = depths;
         const std::vector<int> tops = prefill_tops_tree(backend, nodes, pos, mask);
         if (tops.size() != nodes.size()) break;
 
@@ -1950,13 +2000,19 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
                 if (branches[b][(size_t) i] != pred) break;
                 ++acc;
             }
-            if (acc > bestAcc) { bestAcc = acc; bestB = (int) b; }
+            // Ties commit identical tokens (both branches' depth-0 row is the same row, so they
+            // agree on every token up to the run length), so preferring the LAST tied branch is
+            // not a heuristic - it is what makes the non-zero branch actually get committed, i.e.
+            // the F308 compaction path becomes reachable without changing the expected output.
+            const bool prefer = reverseBranches ? (acc >= bestAcc && acc > 0) : (acc > bestAcc);
+            if (prefer) { bestAcc = acc; bestB = (int) b; }
         }
 
         if (bestAcc > 0) {
             const int take = std::min(bestAcc, n_new - produced);
             for (int i = 0; i < take; ++i) out.push_back(branches[(size_t) bestB][(size_t) i]);
             produced += take;
+            if (bestB > 0) { kv_compact(backend, pos, pos + bestB * D, bestAcc); ++g_spec_alt; }
             pos += bestAcc;
             g_spec_accepted += take;
             misses = 0;
@@ -1991,10 +2047,12 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                                   double temp, long long seed) {
     std::vector<int> out = ids;
     g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
+    g_spec_alt = 0;
     g_spec_on = 1;
     g_sess_rng = (uint64_t) (unsigned long long) (long long) seed;
     const bool greedy_like = !(temp > 0.0);
-    const int B = std::max(1, bins);
+    const bool reverseBranches = (bins < 0);   // F308 negative control, see spec_tree_generate
+    const int B = std::max(1, reverseBranches ? -bins : bins);
     const int D = std::max(1, depth);
     std::vector<double> r = prefill_top1(backend, out, -1, 0);
     if (r.empty()) return {};
@@ -2004,9 +2062,10 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
     int ref = (int) r[0];
     const int m = 3;
     int misses = 0;
-    // bins<=0 means "never draft": the loop below then behaves as plain sampled decoding, which is
-    // the same-function control for the tree-on/tree-off wall measurement.
-    bool drafting = (bins > 0);
+    // bins==0 means "never draft": the loop below then behaves as plain sampled decoding, which is
+    // the same-function control for the tree-on/tree-off wall measurement. bins<0 drafts with the
+    // branch order reversed (F308 control).
+    bool drafting = (bins != 0);
 
     while (produced < n_new) {
         std::vector<std::vector<int>> branches;
@@ -2049,15 +2108,18 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
             continue;
         }
 
+        if (reverseBranches) std::reverse(branches.begin(), branches.end());
         // Flatten the tree. `want[node]` is the token this node must predict for its own branch,
         // or -1 at a branch's last node, where the draw is the bonus token instead.
         std::vector<int> nodes;
         std::vector<int> want;
+        std::vector<int> depths;
         std::vector<uint32_t> mask;
         for (size_t b = 0; b < branches.size(); ++b) {
             uint32_t bits = 0;
             for (int i = 0; i < D; ++i) {
                 nodes.push_back(branches[b][(size_t) i]);
+                depths.push_back(i);      // F308: logical depth, not the flat slot
                 want.push_back((i + 1 < D) ? branches[b][(size_t) (i + 1)] : -1);
                 bits |= (1u << (uint32_t) ((int) b * D + i));
                 mask.push_back(bits);
@@ -2086,6 +2148,8 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
 
         ++g_spec_verified;
         g_spec_drafts += (int) nodes.size();
+        g_head_rows = (int) nodes.size();
+        g_row_pos = depths;
         g_head_want = want;
         g_head_temp = temp;
         g_head_prob.clear();
@@ -2119,7 +2183,10 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                 }
                 if (run < 0) tail = -1;
             }
-            if (run > bestRun) { bestRun = run; bestB = (int) b; bestTail = tail; }
+            // reverseBranches prefers the LAST tied branch: see spec_tree_generate, the tied runs
+            // commit identical tokens, so this only routes the commit through a non-zero branch.
+            const bool prefer = reverseBranches ? (run >= bestRun && run > 0) : (run > bestRun);
+            if (prefer) { bestRun = run; bestB = (int) b; bestTail = tail; }
         }
         if (bestB < 0) break;
         if (bestRun <= 0) { bestB = canonB; bestTail = rootTail[(size_t) canonB]; }
@@ -2131,6 +2198,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
             ++produced;
             ++committed;
         }
+        if (bestB > 0 && committed > 0) { kv_compact(backend, pos, pos + bestB * D, committed); ++g_spec_alt; }
         pos += committed;
         g_spec_accepted += committed;
         if (produced >= n_new) break;
@@ -2152,9 +2220,10 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
 }
 
 std::string spec_stats() {
-    char buf[160];
-    std::snprintf(buf, sizeof(buf), "drafts=%d accepted=%d verifies=%d drafting=%s",
-                  g_spec_drafts, g_spec_accepted, g_spec_verified, g_spec_on ? "on" : "off");
+    char buf[200];
+    std::snprintf(buf, sizeof(buf), "drafts=%d accepted=%d verifies=%d alt_branch=%d drafting=%s",
+                  g_spec_drafts, g_spec_accepted, g_spec_verified, g_spec_alt,
+                  g_spec_on ? "on" : "off");
     return std::string(buf);
 }
 
