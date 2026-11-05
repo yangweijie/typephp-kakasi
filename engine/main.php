@@ -10356,7 +10356,10 @@ function main(): void
     $f322Off = model_spec_tree_sample(0, $specIds, 48, 0, 3, 0.9, 777);
     $f322OffMs = (microtime(true) - $f322T) * 1000.0;
     $f322OffN = count(explode(",", $f322Off));
-    $f322Shapes = "1,3;2,3;4,3;2,4;1,6;1,8";
+    // F332: the previous bound (depth<=4) was an unexamined assumption and hid a 1.5x better shape,
+    // so the curve is now carried out to depth 12 - where it actually ends - rather than where the
+    // first guess stopped.
+    $f322Shapes = "1,3;1,6;1,8;1,10;1,12;2,3;4,3;2,4";
     $f322Best = 0.0;
     $f322BestShape = "";
     $f322Rows = "";
@@ -10470,17 +10473,29 @@ function main(): void
     // that F312 retired as unusable. This re-runs it properly: same build, same prompt, three
     // interleaved rounds, a median per mode, and all three must stay byte-identical to greedy
     // because acceptance is argmax-based at temp=0.
+    // F330's "chain wins" was measured at k=8 only, and F332 showed that stopping a sweep at an
+    // arbitrary bound hides the real optimum - so the chain side is carried to k=12 and k=16 too.
     $f330Ref = model_generate(0, $specIds, 24);
     $f330Eq = 1;
-    $f330Cs = 0.0; $f330Cmin = 0.0; $f330Cmax = 0.0;
-    $f330O1s = 0.0; $f330O1min = 0.0; $f330O1max = 0.0;
-    $f330O2s = 0.0; $f330O2min = 0.0; $f330O2max = 0.0;
+    $f330K8 = 0.0; $f330K8min = 0.0; $f330K8max = 0.0; $f330K8sum = 0.0;
+    $f330K12 = 0.0; $f330K12min = 0.0; $f330K12max = 0.0; $f330K12sum = 0.0;
+    $f330K16 = 0.0; $f330K16min = 0.0; $f330K16max = 0.0; $f330K16sum = 0.0;
+    $f330GreedyMs = 0.0; $f330Gmin = 0.0; $f330Gmax = 0.0; $f330Gsum = 0.0;
     $f330ChainStats = "";
     $f330Tree2Stats = "";
     for ($f330k = 0; $f330k < 3; $f330k++) {
+        $f330Tg = microtime(true);
+        $f330G = model_generate(0, $specIds, 24);
+        $f330GreedyMs = (microtime(true) - $f330Tg) * 1000.0;
         $f330Ta = microtime(true);
         $f330A = model_spec_generate(0, $specIds, 24, 8);
-        $f330C = (microtime(true) - $f330Ta) * 1000.0;
+        $f330K8 = (microtime(true) - $f330Ta) * 1000.0;
+        $f330Td = microtime(true);
+        $f330D = model_spec_generate(0, $specIds, 24, 12);
+        $f330K12 = (microtime(true) - $f330Td) * 1000.0;
+        $f330Te = microtime(true);
+        $f330E = model_spec_generate(0, $specIds, 24, 16);
+        $f330K16 = (microtime(true) - $f330Te) * 1000.0;
         $f330ChainStats = model_spec_stats();
         $f330Tb = microtime(true);
         $f330B = model_spec_tree(0, $specIds, 24, 1, 3);
@@ -10489,38 +10504,67 @@ function main(): void
         $f330Cc = model_spec_tree(0, $specIds, 24, 2, 3);
         $f330O2 = (microtime(true) - $f330Tc) * 1000.0;
         $f330Tree2Stats = model_spec_stats();
-        if ($f330A != $f330Ref || $f330B != $f330Ref || $f330Cc != $f330Ref) {
+        if ($f330A != $f330Ref || $f330B != $f330Ref || $f330Cc != $f330Ref
+            || $f330G != $f330Ref || $f330D != $f330Ref || $f330E != $f330Ref) {
             $f330Eq = 0;
         }
+        $f330Gsum = $f330Gsum + $f330GreedyMs;
+        $f330K8sum = $f330K8sum + $f330K8;
+        $f330K12sum = $f330K12sum + $f330K12;
+        $f330K16sum = $f330K16sum + $f330K16;
         if ($f330k == 0) {
-            $f330Cmin = $f330C; $f330Cmax = $f330C; $f330Cs = 0.0;
+            $f330Cmin = $f330K8; $f330Cmax = $f330K8;
+            $f330K12min = $f330K12; $f330K12max = $f330K12;
+            $f330K16min = $f330K16; $f330K16max = $f330K16;
+            $f330Gmin = $f330GreedyMs; $f330Gmax = $f330GreedyMs;
             $f330O1min = $f330O1; $f330O1max = $f330O1;
             $f330O2min = $f330O2; $f330O2max = $f330O2;
         } else {
-            if ($f330C < $f330Cmin) { $f330Cmin = $f330C; }
-            if ($f330C > $f330Cmax) { $f330Cmax = $f330C; }
+            if ($f330K8 < $f330Cmin) { $f330Cmin = $f330K8; }
+            if ($f330K8 > $f330Cmax) { $f330Cmax = $f330K8; }
+            if ($f330K12 < $f330K12min) { $f330K12min = $f330K12; }
+            if ($f330K12 > $f330K12max) { $f330K12max = $f330K12; }
+            if ($f330K16 < $f330K16min) { $f330K16min = $f330K16; }
+            if ($f330K16 > $f330K16max) { $f330K16max = $f330K16; }
+            if ($f330GreedyMs < $f330Gmin) { $f330Gmin = $f330GreedyMs; }
+            if ($f330GreedyMs > $f330Gmax) { $f330Gmax = $f330GreedyMs; }
             if ($f330O1 < $f330O1min) { $f330O1min = $f330O1; }
             if ($f330O1 > $f330O1max) { $f330O1max = $f330O1; }
             if ($f330O2 < $f330O2min) { $f330O2min = $f330O2; }
             if ($f330O2 > $f330O2max) { $f330O2max = $f330O2; }
         }
-        $f330Cs = $f330Cs + $f330C;
+        $f330Cs = $f330Cs + $f330K8;
         $f330O1s = $f330O1s + $f330O1;
         $f330O2s = $f330O2s + $f330O2;
     }
     // median of three = sum - min - max
     $f330CMed = $f330Cs - $f330Cmin - $f330Cmax;
+    $f330K12Med = $f330K12sum - $f330K12min - $f330K12max;
+    $f330K16Med = $f330K16sum - $f330K16min - $f330K16max;
+    $f330GMed = $f330Gsum - $f330Gmin - $f330Gmax;
     $f330O1Med = $f330O1s - $f330O1min - $f330O1max;
     $f330O2Med = $f330O2s - $f330O2min - $f330O2max;
-    $f330Fast = "chain";
-    if ($f330O1Med < $f330CMed) {
+    $f330Fast = "chain8";
+    if ($f330K12Med < $f330CMed) {
+        $f330Fast = "chain12";
+    }
+    if ($f330K16Med < $f330CMed && $f330K16Med < $f330K12Med) {
+        $f330Fast = "chain16";
+    }
+    if ($f330O1Med < $f330CMed && $f330O1Med < $f330K12Med && $f330O1Med < $f330K16Med) {
         $f330Fast = "tree1";
     }
-    if ($f330O2Med < $f330CMed && $f330O2Med < $f330O1Med) {
+    if ($f330O2Med < $f330CMed && $f330O2Med < $f330K12Med && $f330O2Med < $f330K16Med
+        && $f330O2Med < $f330O1Med) {
         $f330Fast = "tree2";
     }
+    $f330Sp8 = $f330CMed > 0.0 ? $f330GMed / $f330CMed : 0.0;
+    $f330Sp12 = $f330K12Med > 0.0 ? $f330GMed / $f330K12Med : 0.0;
+    $f330Sp16 = $f330K16Med > 0.0 ? $f330GMed / $f330K16Med : 0.0;
     if ($f330Eq == 1 && $f330CMed > 0.0) {
-        echo "SPEC-CHAIN-VS-TREE: PASS greedy-identical medians chain_ms=" . $f330CMed
+        echo "SPEC-CHAIN-VS-TREE: PASS greedy-identical greedy_med_ms=" . $f330GMed
+            . " chain8_med_ms=" . $f330CMed . " (x" . $f330Sp8 . ") chain12_med_ms=" . $f330K12Med
+            . " (x" . $f330Sp12 . ") chain16_med_ms=" . $f330K16Med . " (x" . $f330Sp16 . ")"
             . " tree(b1d3)_ms=" . $f330O1Med . " tree(b2d3)_ms=" . $f330O2Med
             . " fastest=" . $f330Fast . "\n  chain: " . $f330ChainStats . "\n  tree2: "
             . $f330Tree2Stats . "\n";
