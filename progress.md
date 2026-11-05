@@ -811,3 +811,9 @@
 - **常驻探针**：`engine/tests/throughput_test.py`（含预热流），已并入 `scripts/gate_live.sh` 的 8001 段，每轮门禁自动出数。
 - 基线不变：自检 **153 PASS / 0 FAIL**、8000 **113/0**、8001 全 0（`*_f335.log`；f337/f338 只加测试脚本与工装，未动引擎源码，故不重跑构建）。
 - **下一轮顺位**：①continuous batching（吞吐上限的钥匙，工作量大）；②**前缀缓存先加可观测性门禁**（槽 owner / 撞槽驱逐计数）再谈 LRU——现状已是 `model_cache_key(ids,64)` 的 64 槽哈希索引，计划里那句"无多前缀索引/淘汰"经核查是**过期陈述**（F339，磁盘实测仅 1 个文件 3.8 MB）；③多属性对象项（先 dispatch 打点）；④GGUF 分片 / 多卡 split / FR-05（本机不可验）。
+
+## ▶ 状态（F341，2026-11-05 09:32）
+- **基线**：本次 HEAD；源码==被验证的二进制。自检 **154 PASS / 0 FAIL**（`run_f340.log`）、8000 **113/0**、8001 全 0、吞吐门 `scaling=1.105×`（与 F338 的 1.149 中位一致）、哨兵 0。
+- **新增判据**：`CACHE-EVICT` ⇒ 量化了撞槽驱逐（热前缀复用 **49→22 token**），并顺带守住"64 槽哈希"这一前提（找不到碰撞即 FAIL）。
+- **前缀缓存的下一步（判据已备好）**：recency-aware 驱逐（LRU 或 2-way 关联 + 槽 owner 指纹）。**验收写法**：`CACHE-EVICT` 的 `hit_after_other_prompt_stole_slot` 必须显著回升（理想 ≈ `hit_own`），且 `PREFIXCACHE`/`PREFIXPART` 不变差。
+- 其余顺位不变：continuous batching（吞吐上限）、多属性对象项（先 dispatch 打点）、GGUF 分片 / 多卡 split / FR-05（本机不可验）。

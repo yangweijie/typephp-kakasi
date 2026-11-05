@@ -12119,6 +12119,56 @@ function main(): void
         unlink($ppPath);
     }
 
+    // CACHE-EVICT (F340): observability BEFORE any eviction change. The prefix cache is a 64-slot
+    // hash index (api_cache_path -> model_cache_key(ids,64)), so two prompts that share a slot make
+    // the newer store silently displace the older one, and nothing in the API reports that. This
+    // gate finds a colliding pair at run time and pins the displacement as a measured hit-length
+    // drop, so a future recency-aware policy has a number to improve against. It FAILS if 40
+    // attempts produce no collision - with 64 buckets that would mean the hashing itself changed.
+    $f340Buckets = [];
+    $f340IdsList = [];
+    for ($f340i = 0; $f340i < 40; $f340i++) {
+        $f340Txt = "The quick brown fox jumps over the lazy dog and then keeps walking for a while. "
+            . "Numbered tail item " . $f340i . " with some extra words to make this prompt long "
+            . "enough to be worth caching by the prefix reuse logic in the engine and distinct.";
+        $f340Ids = tok_encode($f340Txt);
+        $f340Buckets[] = model_cache_key($f340Ids, 64);
+        $f340IdsList[] = $f340Ids;
+    }
+    $f340Ai = -1;
+    $f340Bi = -1;
+    for ($f340i = 0; $f340i < count($f340Buckets) && $f340Ai < 0; $f340i++) {
+        for ($f340j = $f340i + 1; $f340j < count($f340Buckets); $f340j++) {
+            if ($f340Buckets[$f340i] == $f340Buckets[$f340j]) {
+                $f340Ai = $f340i;
+                $f340Bi = $f340j;
+                break;
+            }
+        }
+    }
+    if ($f340Ai >= 0) {
+        $f340PA = api_cache_path($f340IdsList[$f340Ai]);
+        $f340PB = api_cache_path($f340IdsList[$f340Bi]);
+        model_cache_store(0, $f340IdsList[$f340Ai], $f340PA);
+        $f340H1 = model_cache_prefill(0, $f340IdsList[$f340Ai], $f340PA);
+        model_cache_store(0, $f340IdsList[$f340Bi], $f340PB);
+        $f340H2 = model_cache_prefill(0, $f340IdsList[$f340Ai], $f340PA);
+        $f340Same = $f340PA == $f340PB ? 1 : 0;
+        if ($f340Same == 1 && $f340H2 < $f340H1 && $f340H1 > 0) {
+            echo "CACHE-EVICT: PASS slot=" . $f340Buckets[$f340Ai] . " hit_own=" . $f340H1
+                . " hit_after_other_prompt_stole_slot=" . $f340H2
+                . " (displacement is silent today; a recency policy must shrink this)\n";
+        } else {
+            echo "CACHE-EVICT: FAIL same_path=" . $f340Same . " hit_own=" . $f340H1
+                . " hit_after=" . $f340H2 . "\n";
+        }
+        if (file_exists($f340PA)) {
+            unlink($f340PA);
+        }
+    } else {
+        echo "CACHE-EVICT: FAIL no_collision_in_40 (bucket hashing or its width changed)\n";
+    }
+
     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to
     // 1.6e-2 (F34). If quantization is not reproducible, clearing residency and re-quantizing on
     // the SAME backend should move the logit by the same order; if it is reproducible, the gap
