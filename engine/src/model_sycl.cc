@@ -123,7 +123,9 @@ namespace {
     int g_spec_alt = 0;               // commits taken from a non-zero tree branch (F308 coverage)
     int g_spec_bmax = 0;              // widest branch list ever collected in this call (F313)
     int g_spec_freq = 1;              // FR-06.2: frequency-ranked draft branches (0 = recency order)
-    int g_spec_multiwin = 1;          // FR-06.2 step 2: widen the lookup window to fill B branches
+    int g_spec_multiwin = 0;          // F320: widening was measured neutral while costing 3 wasted
+                                      // tree nodes per pass, so it is off by default (gate toggle
+                                      // model_spec_multiwin(1) re-enables it for measurement).
     int g_spec_fix = 1;               // F315 control: 0 disables the depth-position + compaction
                                       // repair inside the SAME build, so the defect can be shown
                                       // behaviourally instead of argued.

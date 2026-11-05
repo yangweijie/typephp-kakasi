@@ -2511,3 +2511,10 @@ for step in 0..N:
 - 代价在另一处可见：`SPEC-TREE-WALL` 的 `drafts` 从 36 涨到 **39**（`max_branches` 1→2），`accepted` 仍是 48、`verifies` 仍是 12 ⇒ 多出的 3 个节点是**白算**；speedup 第 8 个样本 **1.3346×**（前七轮 1.3377–1.3629）。
 **结论**：FR-06.2 的两步（换排序、加宽窗口）**都被测量否证为收益来源**。接受数的上限不在查找策略，而在**草稿源**：目前只有"文本里已经出现过的续写"。要把 `max_branches` 真正抬到 4+，必须引入**模型自举**的分支（用根行的 top-k／`sample_excluding` 造出文本里没出现过的起点），那才是 Kapitsa/DFlash 类草稿器的实质。
 **待翻转项（诚实记录）**：`g_spec_multiwin` 当前默认 1，但按上面的数它应当默认 0（省 39→36 的白算）。翻转本身是一行改动，但要"源码==被验证的二进制"就得再走一次梯子；本轮已用完可观预算，**留给下一轮第一个动作**，在那之前不得宣称"默认已是最优配置"。
+
+### F321 · `g_spec_multiwin` 默认翻回 0，并**用测量确认这一行没有白翻**
+`engine/run_f321.log`（同梯全绿：自检 **150 PASS / 0 FAIL**、841 s；8000 `SMOKE 113/0`；8001 `PAR_EXIT=0`+`FAIR_EXIT=0`；哨兵 0）：
+- `SPEC-TREE-WALL` 的 `drafts` 从多开时的 **39 回到 36**，`accepted=48 / verifies=12` 不变 ⇒ 那 3 个白算节点确实被消掉；**speedup=1.3679x**——九个独立样本里的最高值（区间 1.3346–1.3679）。
+- `SPEC-TREE-WIDEN` 仍 PASS：两种模式 `36/40/11` 完全一致、`NOTWIDENED branches=2->2`、`temp0_greedy_identical=1`（门自己显式开关，不依赖默认值）。
+- `SPEC-TREE-ALT-COVERAGE: COVERED alt_branch=nat6`、`SPEC-TREE-CTRL: PASS defect reproduced (alt_branch=2 diffs=4/84)` ⇒ F308 的证据链不受本次翻转影响。
+**流程上的自我要求**：F320 我写的是"该翻默认但需要一次梯子才敢宣称"，这一轮就是那次梯子——**一行改动也要走完梯子再落文档**，否则"源码==被验证的二进制"这条就断了。

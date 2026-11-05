@@ -10311,6 +10311,7 @@ function main(): void
     $f319ZeroOff = model_spec_tree_sample(0, $f308p, 40, 4, 3, 0.0, 3191);
     model_spec_multiwin(1);
     $f319ZeroOn = model_spec_tree_sample(0, $f308p, 40, 4, 3, 0.0, 3191);
+    model_spec_multiwin(0);      // leave the engine on its default for every later gate
     $f319Nb = 0;
     $f319Wb = 0;
     foreach (explode(" ", $f319NarrowStats) as $f319tok) {

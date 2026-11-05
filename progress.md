@@ -764,3 +764,7 @@
 - **基线**：本次 HEAD；二进制与源码同源、全梯绿：自检 **150 PASS / 0 FAIL**（`run_f319.log`）、8000 **113/0**、8001 `par_smoke`/`fairness` 全 0。FR-06 收益 `SPEC-TREE-WALL` 八个独立样本 **1.3346×–1.3629×**。
 - **FR-06.2 已否证两条**：换排序（F318 中性）与加宽窗口（F320 中性且白算 3 节点）⇒ **上限在草稿源**，不在查找/排序策略。
 - **下一轮动作（按序）**：①`g_spec_multiwin` 默认翻成 0 并走一次梯子（一行改动＋验证它的白算）；②模型自举分支——用根行 top-k／`sample_excluding` 生成文本中未出现的起点，判据仍是同构建 A/B 的 `accepted/verifies` 与 `max_branches`，且 `temp=0` 必须继续逐 id 等于贪心、`alt_branch` 保持 COVERED；③之后才轮到 per-session KV 并行吞吐、SSD 前缀分桶、GGUF 分片、多卡 split（需第二设备）、FR-05（本机无可验硬件）。
+
+## ▶ 状态（F321，2026-11-05 05:57 —— 本轮收点，覆盖 F320 的"下一步①"）
+- **基线**：本次 HEAD；源码==被验证的二进制。自检 **150 PASS / 0 FAIL**（`run_f321.log`）、8000 **113/0**、8001 `par_smoke`+`fairness` 全 0。`g_spec_multiwin` 默认 0 已由测量确认（`drafts` 39→36、接受数不变、`SPEC-TREE-WALL` 九个样本 **1.3346×–1.3679×**）。
+- **F320 待办①已闭合。** 下一轮第一个动作改为：**FR-06.2 模型自举草稿源**（用根行 top-k／`sample_excluding` 造出文本里没出现过的起点分支，目标把 `max_branches` 从 2 抬到 4+）；判据仍是同构建 A/B 的 `accepted/verifies` 与 wall，且 `temp=0` 必须继续逐 id 等于贪心、`alt_branch` 保持 COVERED。之后顺位：per-session KV 并行吞吐、SSD 前缀分桶、多属性对象项（先定位 dispatch 归属）、GGUF 分片、多卡 split（需第二设备）、FR-05（本机无可验硬件）。
