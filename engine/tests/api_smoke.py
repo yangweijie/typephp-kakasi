@@ -174,6 +174,20 @@ def main():
     check("chat-spec-tree-sampled", sa != "" and sa == sb,
           "len=%d eq=%s head=%r" % (len(sa), sa == sb, sa[:40]))
 
+    # F347: reproducibility alone cannot tell you the speculative branch ran, so this asserts that
+    # the parameter has an effect: identical seed/temperature/prompt, spec off vs spec on. If the
+    # branch never fired the outputs would be identical; on a repetitive context they are not.
+    # (1,6) vs (2,6) is compared too - equal there means the shapes agreed on this prompt, which is
+    # reported but not required, because it depends on how many drafts the context offers.
+    rep = ("alpha beta gamma delta " * 30).strip()
+    base = {"messages": [{"role": "user", "content": rep}],
+            "max_tokens": 64, "temperature": 0.9, "seed": 4242}
+    c_off = post("/v1/chat/completions", dict(base))["choices"][0]["message"]["content"]
+    c_16 = post("/v1/chat/completions", dict(base, spec_bins=1, spec_depth=6))["choices"][0]["message"]["content"]
+    c_26 = post("/v1/chat/completions", dict(base, spec_bins=2, spec_depth=6))["choices"][0]["message"]["content"]
+    check("chat-spec-tree-affects-output", c_off != "" and c_off != c_16,
+          "off_len=%d spec16_len=%d shapes_agree=%s" % (len(c_off), len(c_16), c_16 == c_26))
+
     # F226: a long forced nested assembly must arrive complete on the FIRST served request. The
     # cold-session defect (findings F208-F225) showed up as empty text on attempt one and a correct
     # body only on an identical retry, so grading a retry here would prove nothing.

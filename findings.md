@@ -2699,3 +2699,9 @@ CACHE-EVICT: PASS 2-way protected ... hit_own=49 hit_after=49        ← F342 �
 1. 在 `engine/main.php` 采样分支（`spec_bins` 那条 `else if`，紧接 `model_spec_tree_sample(...)` 之后）记一句 `$specDiag = model_spec_stats();`，并把 `"spec"` 键**只加到非流式 chat/completions 的响应对象**（加法字段，不碰已有键；grep `"usage"` 定位组装处）。
 2. `engine/tests/api_smoke.py` 的 `chat-spec-tree-sampled` 判据从"非空 + 可复现"升级为 **`verifies > 0 且 accepted > 0`**，提示词必须用**长重复结构**（例如把同一句原样重复 6 次并要求继续重复），且**串行**发请求——`g_spec_*` 是进程级计数、每次调用入口清零，两槽并发会串数。
 3. 若加完仍拿不到 `accepted>0`，那就是**服务端真的没在受益**，届时应把 `spec_bins` 从文档推荐值降为"仅自测可用"，而不是继续留着当卖点。
+
+### F348 · F346 的"不可判定"用一次差分**解掉了**：服务端采样分支确实在跑（新常驻门）
+不需要先加响应字段就能证明"参数有作用"：**同 seed、同温度、同提示，只变 `spec_bins/depth`**。若分支没命中，输出必然逐字节相同；实测（重复上下文，2 次独立试验）`off vs (1,6) = 不同`、`off vs (2,6) = 不同`、`(1,6) vs (2,6) = 相同` ⇒ **分支被执行**（草稿被验证、抽签序列被消耗），而两种形状在这条提示上给出同样的接受结果。
+顺带修掉一次误判：第一次跑这个差分拿到 **HTTP 400**，因为 **8001 是"只流式"的两槽服务器**，非流式请求必须打 **8000**。这属于工装事实，不是引擎缺陷。
+**已固化为门禁**：`engine/tests/api_smoke.py` 新增 `chat-spec-tree-affects-output`（断言 off ≠ spec，并把 `(1,6)==(2,6)` 作为信息打印）。活服务复跑：8000 **114 PASS / 0 FAIL**（`api_smoke_f348.log` 第 20 行 `PASS chat-spec-tree-affects-output`）、8001 `par`+`fairness` 全 0、吞吐第 8 个样本 `1.084×`、哨兵 0。本轮**未动引擎源码**，HEAD 的二进制仍等于 `run_f343.log` 验证过的那份。
+**还没解决的那一半**：分支在跑 ≠ 有收益。F345 的 2×3 轮服务吞吐测量显示 spec/plain 差 ≤3%（正负翻转）⇒ **服务负载上未证明获益**，而"是不是真的接受了草稿"仍要 `model_spec_stats()` 进响应才能钉死（F346 里写好的三步改法依旧有效，只是现在它从"证明有没有跑"降级为"量化接受率"）。
