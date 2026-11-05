@@ -2917,3 +2917,17 @@ SAMPLER-DIST: PASS
 2. 数字是**这一条负载**（temp 0.9、60 token/流、两流、0.5B 模型）的；temp 0 与 temp 0.9 现在落在同一档（26.24 vs 23.36 tok/s），**不代表采样开销归零**。
 3. `top_p < 1` 的**核截断路径完全没动** ⇒ `samp[tiny-nucleus]`/`samp[spread]`/`samp[determinism]` 这些门不受影响。
 4. **第一版门禁自己写错并被门抓住**：第一次跑（`engine/run_f363.log`）报 `mism=150`，根因是**门禁的参照实现**先把 RNG 状态推进了一次再调 `sample_from`，于是拿**两次不同的抽样**互比（同一轮里 `grid=0`、`exact=0` 说明采样器本身当时就是对的）⇒ 修的是门禁不是引擎。留这份日志是为了说明"引擎内对照门"这件事本身也会写错，**必须让数字自己说话**。
+
+**F363 收点：剩下的每 token 钱花在哪（用引擎**已有**的 stage 计时，不动代码）**
+`main.php` 已经在自检里打印每步的三个 stage（`engine/run_f363b.log:82-83`）：`s0`＝emb+rope+residency、`s1`＝24 个 transformer 块、`s2`＝final norm + tied lm_head（全词表 151936）+ host 端 logit 归约。
+
+| stage | F363（本次构建） | F360 基线 | 读法 |
+|---|---|---|---|
+| s0 emb+rope | 0.056 ms | 0.058 ms | 可忽略 |
+| **s1 24 blocks** | **8.47 ms** | 8.08 ms | 前向的主体 |
+| **s2 norm+lm_head+reduce** | **1.95 ms** | 1.93 ms | 全词表 lm_head + host 归约 |
+| stage 合计 | **≈10.5 ms** | ≈10.1 ms | **F363 没有让引擎前向变慢**（采样不在 stage 里） |
+
+⇒ 本构建的服务面每 token 账：**引擎 stage ≈10.5ms ＋ 采样 ≈4.7ms（F363 之后）＝ ≈15ms**，而服务面串行 temp 0.9 是 **42.8 ms/token**、temp 0 是 **38.1 ms/token** ⇒ **还有 ≈23ms/token 落在引擎 stage 计时之外**（PHP 侧 token→文本、socket 写、HTTP 帧，外加 Python 客户端自己的 wall，以及 stage 标记没有覆盖的每步主机侧零碎）。
+⇒ **下一轮的第一目标不再模糊**：不是"24 个块"（8.5ms），而是 **那 ≈23ms/token 的未归因部分**——其中"客户端 wall"这一项本来就不可归因（Python 侧），所以真正要拆的是"PHP 每 token 热路径 vs 引擎每步未标记开销"。**要拆开它必须先在服务面加计时**（当前服务日志只有 `SESSION ...` 一行，没有任何时间字段，`engine/serve_par_f363b.log` 可查），这是下一轮的第一个动作。
+**边界**：stage 计时来自"1 token 前向"这个代理（`main.php:9299` 的注释说明了它与解码步同缓冲、同 launch 数），不是解码步本身；上面 10.5ms 与解码步实测（`BATCH-THRU` 的 22.7ms/token）之间还有 ≈7ms 未归因，**归属未定**，不要当成已知量。
