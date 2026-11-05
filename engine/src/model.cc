@@ -46,6 +46,8 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
                                   double temp, long long seed);
 void set_spec_fix(int on);
 int spec_fix_on();
+void set_spec_freq(int on);
+int spec_freq_on();
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
@@ -151,6 +153,10 @@ php::Str php_model_spec_stats() { return php::Str(model::spec_stats()); }
 php::Int php_model_spec_fix(php::Int on) {
     model::set_spec_fix((int) on);
     return php::Int(model::spec_fix_on());
+}
+php::Int php_model_spec_freq(php::Int on) {
+    model::set_spec_freq((int) on);
+    return php::Int(model::spec_freq_on());
 }
 php::Str php_model_spec_tree(php::Int backend, php::Str tokens, php::Int n_new, php::Int bins,
                              php::Int depth) {

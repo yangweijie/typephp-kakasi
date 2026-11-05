@@ -10258,6 +10258,39 @@ function main(): void
             . "/" . $f315N . " on_eq=" . ($f315On == $f308Ref ? 1 : 0) . "\n";
     }
 
+    // SPEC-TREE-DIVERSITY (F317, FR-06.2 step 1): does ranking draft branches by historical
+    // frequency beat taking the nearest B? The toggle lives inside ONE build, so the two numbers
+    // are directly comparable - cross-round timing was already shown to be unusable (F312).
+    // The prompt is the one with two competing continuations, because that is where order matters.
+    $f317T0 = microtime(true);
+    model_spec_freq(0);
+    $f317Near = model_spec_tree_sample(0, $f308p, 40, 2, 3, 0.9, 3170);
+    $f317NearMs = (microtime(true) - $f317T0) * 1000.0;
+    $f317NearStats = model_spec_stats();
+    $f317T1 = microtime(true);
+    model_spec_freq(1);
+    $f317Freq = model_spec_tree_sample(0, $f308p, 40, 2, 3, 0.9, 3170);
+    $f317FreqMs = (microtime(true) - $f317T1) * 1000.0;
+    $f317FreqStats = model_spec_stats();
+    $f317T2 = microtime(true);
+    model_spec_freq(0);
+    $f317Off = model_spec_tree_sample(0, $f308p, 40, 0, 3, 0.9, 3170);
+    $f317OffMs = (microtime(true) - $f317T2) * 1000.0;
+    model_spec_freq(1);
+    $f317OffN = count(explode(",", $f317Off));
+    $f317NearN = count(explode(",", $f317Near));
+    $f317FreqN = count(explode(",", $f317Freq));
+    if ($f317OffN > 10 && $f317NearN > 10 && $f317FreqN > 10 && $f317NearMs > 0.0 && $f317FreqMs > 0.0) {
+        echo "SPEC-TREE-DIVERSITY: PASS off_ms=" . $f317OffMs . " recency_ms=" . $f317NearMs
+            . " freq_ms=" . $f317FreqMs . " speedup_recency=" . ($f317OffMs / $f317NearMs)
+            . "x speedup_freq=" . ($f317OffMs / $f317FreqMs) . "x\n  recency: " . $f317NearStats
+            . "\n  freq:    " . $f317FreqStats . "\n";
+    } else {
+        echo "SPEC-TREE-DIVERSITY: FAIL off_len=" . $f317OffN . " recency_len=" . $f317NearN
+            . " freq_len=" . $f317FreqN . " off_ms=" . $f317OffMs
+            . " recency_ms=" . $f317NearMs . " freq_ms=" . $f317FreqMs . "\n";
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.

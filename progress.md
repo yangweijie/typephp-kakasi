@@ -753,3 +753,9 @@
 - **F308 已闭合**：树节点 RoPE 改按逻辑深度（`g_row_pos`）＋接受非零分支后压实 KV 行（`kv_compact`）＋`spec_stats()` 常驻 `alt_branch`/`max_branches`；双向对照在同一构建内完成（`model_spec_fix(0/1)`）：关掉修复 `diffs=4/84`，打开则逐 id 等于贪心。
 - **唯一下一步**：FR-06.2 步 1（同三元组全部不同续写、按历史频次排序成多条分支）。判据＝`SPEC-TREE-WALL` 的 speedup 与 `accepted/verifies`（当前 2.9/验证）变化，外加 `alt_branch` 保持 COVERED。形状计时**不要**用 `SPEC-TREE-SWEEP`（F312：三轮互相矛盾）。
 - **护栏（本轮新增/复用）**：起服务只能 `bash scripts/gate_live.sh <tag>`（F309：cwd 错 ⇒ 自测冒充服务 ⇒ 假红数）；构建与测量之间用 `&&`；重建前清孤儿并核 exe mtime；新增 native 必须同时改 `php_model_*` 与 `model.stub.php`；任一时刻只允许一个引擎进程。
+
+## ▶ 最终状态（F318，2026-11-05 05:12，覆盖 F316 那节的"下一步"）
+- **基线**：本次 HEAD；二进制与源码同源。自检 **149 PASS / 0 FAIL**（`run_f317.log`）、8000 **113/0**（`api_smoke_f317.log`）、8001 `par_smoke`/`fairness` 全 0。
+- **FR-06 现有可宣称的东西**：采样验证的树 **1.34–1.36×**（七个独立样本）；`temp=0` 退化回贪心＝回归门；F308 的树位置/缓存缺陷＝已修且**同构建双向对照**复现过缺陷（`model_spec_fix`）；`spec_bins`/`spec_depth` 有活门禁；FR-06.2 步 1（频次排序）＝**已实现、已测量、结论为中性**（F318）。
+- **唯一下一步（换草稿来源，不再调排序）**：把 `max_branches` 从 2 抬上去——①同一三元组取 top-k 不同续写而非仅最近两条；②用模型自身根行的 top-k/`sample_excluding` 生成第二条起点分支。判据＝`SPEC-TREE-DIVERSITY` 同构建三段对比的 `accepted/verifies` 与 wall，`alt_branch` 须保持 COVERED。
+- **其余未闭合**：多属性对象项（上游 dispatch 归属未定位，F298–F300）；`pattern` 元字符 / `minimum·maximum·multipleOf` / 混合类型枚举；per-session KV 并行吞吐；SSD 前缀分桶；GGUF 分片；多卡 split（需第二设备）；FR-05 厂商插件（本机无可验硬件）。

@@ -122,6 +122,7 @@ namespace {
     std::vector<int> g_row_pos;
     int g_spec_alt = 0;               // commits taken from a non-zero tree branch (F308 coverage)
     int g_spec_bmax = 0;              // widest branch list ever collected in this call (F313)
+    int g_spec_freq = 1;              // FR-06.2: frequency-ranked draft branches (0 = recency order)
     int g_spec_fix = 1;               // F315 control: 0 disables the depth-position + compaction
                                       // repair inside the SAME build, so the defect can be shown
                                       // behaviourally instead of argued.
@@ -2101,6 +2102,50 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
             }
         }
 
+        if (g_spec_freq && drafting && !branches.empty()) {
+            // Re-scan ALL matches (the loop above stops at B, which is exactly what hides the
+            // frequent-but-not-nearest continuation), tally each distinct continuation, and keep
+            // the top B by count. Ties keep recency: the scan is nearest-first and the sort only
+            // swaps on a strict comparison.
+            std::vector<std::vector<int>> cands;
+            std::vector<int> counts;
+            for (size_t p2 = n - (size_t) m; p2 > 0; --p2) {
+                const size_t start2 = p2 - 1;
+                bool hit2 = true;
+                for (int j2 = 0; j2 < m; ++j2) {
+                    if (out[start2 + (size_t) j2] != out[n - (size_t) m + (size_t) j2]) { hit2 = false; break; }
+                }
+                if (!hit2) continue;
+                const size_t f2 = start2 + (size_t) m;
+                if (f2 + (size_t) D > n) continue;
+                std::vector<int> br2;
+                for (int j2 = 0; j2 < D; ++j2) br2.push_back(out[f2 + (size_t) j2]);
+                size_t at = cands.size();
+                for (size_t ci = 0; ci < cands.size(); ++ci) {
+                    if (cands[ci] == br2) { at = ci; break; }
+                }
+                if (at == cands.size()) { cands.push_back(br2); counts.push_back(0); }
+                counts[at] += 1;
+            }
+            if (!cands.empty()) {
+                std::vector<size_t> order(cands.size());
+                for (size_t i2 = 0; i2 < order.size(); ++i2) order[i2] = i2;
+                for (size_t i2 = 1; i2 < order.size(); ++i2) {
+                    size_t j2 = i2;
+                    while (j2 > 0 && counts[order[j2 - 1]] < counts[order[j2]]) {
+                        const size_t t2 = order[j2];
+                        order[j2] = order[j2 - 1];
+                        order[j2 - 1] = t2;
+                        --j2;
+                    }
+                }
+                branches.clear();
+                for (size_t i2 = 0; i2 < order.size() && (int) branches.size() < B; ++i2) {
+                    branches.push_back(cands[order[i2]]);
+                }
+            }
+        }
+
         if (branches.empty()) {
             // Nothing to verify: one plain step. At temp>0 that step is a sample from p, and
             // sample_excluding(-1, temp) is exactly that (no id is skipped).
@@ -2233,6 +2278,12 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
 // what makes the non-zero branch greedy-identical.
 void set_spec_fix(int on) { g_spec_fix = on ? 1 : 0; }
 int spec_fix_on() { return g_spec_fix; }
+
+// FR-06.2 step 1 control: rank draft branches by how often each continuation actually followed the
+// tail window, instead of by recency. Toggled inside one build so the A/B is not confounded by the
+// cross-round machine drift that made SPEC-TREE-SWEEP unusable (F312).
+void set_spec_freq(int on) { g_spec_freq = on ? 1 : 0; }
+int spec_freq_on() { return g_spec_freq; }
 
 std::string spec_stats() {    char buf[220];
     std::snprintf(buf, sizeof(buf),
