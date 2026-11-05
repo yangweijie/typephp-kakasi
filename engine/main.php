@@ -10336,6 +10336,47 @@ function main(): void
             . " wide_ms=" . $f319WideMs . "\n";
     }
 
+    // SPEC-TREE-SHAPES (F322, FR-06.4 for trees): the shape has to be a measured choice, and the
+    // old SPEC-TREE-SWEEP cannot do that job - F312 showed its absolute timings contradict each
+    // other across rounds while accepts stayed fixed. So every shape here is timed against ONE
+    // off-baseline, in the same build, on the same prompt/seed/temperature, and the shape is the
+    // only variable. Best speedup is reported as the recommendation, not assumed.
+    $f322T = microtime(true);
+    $f322Off = model_spec_tree_sample(0, $specIds, 48, 0, 3, 0.9, 777);
+    $f322OffMs = (microtime(true) - $f322T) * 1000.0;
+    $f322OffN = count(explode(",", $f322Off));
+    $f322Shapes = "1,3;2,3;4,3;2,4";
+    $f322Best = 0.0;
+    $f322BestShape = "";
+    $f322Rows = "";
+    $f322Ok = 1;
+    foreach (explode(";", $f322Shapes) as $f322sh) {
+        $f322ab = explode(",", $f322sh);
+        $f322bins = (int) $f322ab[0];
+        $f322dep = (int) $f322ab[1];
+        $f322T2 = microtime(true);
+        $f322Run = model_spec_tree_sample(0, $specIds, 48, $f322bins, $f322dep, 0.9, 777);
+        $f322Ms = (microtime(true) - $f322T2) * 1000.0;
+        $f322N = count(explode(",", $f322Run));
+        $f322Sp = $f322Ms > 0.0 ? $f322OffMs / $f322Ms : 0.0;
+        if ($f322N != $f322OffN || $f322Ms <= 0.0) {
+            $f322Ok = 0;
+        }
+        if ($f322Sp > $f322Best) {
+            $f322Best = $f322Sp;
+            $f322BestShape = $f322bins . "," . $f322dep;
+        }
+        $f322Rows = $f322Rows . "  bins=" . $f322bins . " depth=" . $f322dep . " ms=" . $f322Ms
+            . " speedup=" . $f322Sp . "x len=" . $f322N . " " . model_spec_stats() . "\n";
+    }
+    if ($f322Ok == 1 && $f322OffN > 10 && $f322Best > 0.0) {
+        echo "SPEC-TREE-SHAPES: PASS off_ms=" . $f322OffMs . " off_len=" . $f322OffN . "\n"
+            . $f322Rows . "  best=" . $f322BestShape . " speedup=" . $f322Best . "x\n";
+    } else {
+        echo "SPEC-TREE-SHAPES: FAIL ok=" . $f322Ok . " off_len=" . $f322OffN
+            . " off_ms=" . $f322OffMs . "\n" . $f322Rows;
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.
