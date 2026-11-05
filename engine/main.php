@@ -271,11 +271,35 @@ function api_cache_owner(int $slot, string $ix): int
     $best = -1;
     for ($i = 0; $i < count($lines); $i++) {
         $p = explode("|", $lines[$i]);
-        if (count($p) == 2 && (int) $p[0] == $slot) {
+        if (count($p) == 3 && (int) $p[0] == $slot) {
             $best = intval($p[1]);
         }
     }
     return $best;
+}
+
+// Last-use tick of a slot, or -1 when unowned. Ticks are line counts at append time, so a larger
+// tick means "used later".
+function api_cache_use(int $slot, string $ix): int
+{
+    $lines = explode("\n", $ix);
+    $best = -1;
+    for ($i = 0; $i < count($lines); $i++) {
+        $p = explode("|", $lines[$i]);
+        if (count($p) == 3 && (int) $p[0] == $slot) {
+            $best = intval($p[2]);
+        }
+    }
+    return $best;
+}
+
+// F343: which of two already-owned candidates to overwrite. The slot whose owner was used EARLIER
+// is the victim, so a hot entry is only ever displaced by a strictly colder neighbour - F342's
+// version threw at its alternate blindly, which could kill the recent one. Equal ticks give the
+// primary, keeping the choice deterministic.
+function api_cache_victim(int $useA, int $useB): int
+{
+    return $useA <= $useB ? 0 : 1;
 }
 
 function api_cache_pick(string $ids): string
@@ -292,19 +316,34 @@ function api_cache_pick(string $ids): string
             fclose($h);
         }
     }
-    // An oversized index is dropped rather than compacted: the cost of losing it is one collision
-    // back to single-slot behaviour, never correctness.
-    $slot = $k1;
-    $own = api_cache_owner($k1, $ix);
-    if ($own >= 0 && $own != $fp) {
-        $slot = $k2;
-    }
+    // An oversized index is dropped rather than compacted: losing it only falls back to a cold
+    // cache, it can never hand out wrong tokens because the engine still compares stored prefix.
     if (strlen($ix) > 200000 && file_exists($ip)) {
         unlink($ip);
+        $ix = "";
     }
+    $own1 = api_cache_owner($k1, $ix);
+    $own2 = api_cache_owner($k2, $ix);
+    $slot = $k1;
+    if ($own1 == $fp) {
+        $slot = $k1;
+    } else if ($own2 == $fp) {
+        $slot = $k2;
+    } else if ($own1 < 0) {
+        $slot = $k1;
+    } else if ($own2 < 0) {
+        $slot = $k2;
+    } else if (api_cache_victim(api_cache_use($k1, $ix), api_cache_use($k2, $ix)) == 0) {
+        $slot = $k1;
+    } else {
+        $slot = $k2;
+    }
+    // Choosing is also using: recording the tick here is what makes the next victim choice
+    // recency-aware, and it needs no separate call at the read sites.
+    $tick = count(explode("\n", $ix));
     $o = fopen($ip, "a");
     if ($o !== false) {
-        fwrite($o, $slot . "|" . $fp . "\n");
+        fwrite($o, "" . $slot . "|" . $fp . "|" . $tick . "\n");
         fclose($o);
     }
     return "C:/git/c/typephp-kakasi/engine/api_prefix_b" . $slot . ".kv";
@@ -12232,6 +12271,101 @@ function main(): void
         }
     } else {
         echo "CACHE-EVICT: FAIL no_collision_in_40 (bucket hashing or its width changed)\n";
+    }
+
+    // CACHE-LRU (F343): the eviction POLICY, asserted directly, plus an end-to-end check when the
+    // hash happens to provide a contested triple. F342 protected the first owner of a bucket pair
+    // but threw at its alternate blindly whenever both were owned; now the victim is whichever
+    // neighbour was used EARLIER, so touching a hot entry keeps it alive. The policy is tested as a
+    // unit (always covered), and the triple search is reported separately as COVERED/NOTCOVERED
+    // rather than folded into one green - the lesson from F310/F313.
+    $f343Pol = 1;
+    if (api_cache_victim(5, 9) != 0) {
+        $f343Pol = 0;
+    }
+    if (api_cache_victim(9, 5) != 1) {
+        $f343Pol = 0;
+    }
+    if (api_cache_victim(7, 7) != 0) {
+        $f343Pol = 0;
+    }
+    if (api_cache_victim(-1, 4) != 0) {
+        $f343Pol = 0;
+    }
+    $f343Sig = [];
+    $f343K1 = [];
+    $f343K2 = [];
+    $f343Ids = [];
+    for ($f343i = 0; $f343i < 150; $f343i++) {
+        $f343Txt = "The quick brown fox jumps over the lazy dog and then keeps walking for a while. "
+            . "Triple hunt item " . $f343i . " padded with extra words so that the prompt stays long "
+            . "enough for the prefix cache to consider it worth storing at all and distinct enough.";
+        $f343Id = tok_encode($f343Txt);
+        $a1 = model_cache_key($f343Id, 64);
+        $a2 = model_cache_key($f343Id . "|alt", 64) + 64;
+        $f343K1[] = $a1;
+        $f343K2[] = $a2;
+        $f343Ids[] = $f343Id;
+        $f343Sig[] = ($a1 < $a2 ? "" . $a1 . "_" . $a2 : "" . $a2 . "_" . $a1);
+    }
+    $f343Ta = -1;
+    $f343Tb = -1;
+    $f343Tc = -1;
+    for ($f343i = 0; $f343i < count($f343Sig) && $f343Tc < 0; $f343i++) {
+        $f343j1 = -1;
+        for ($f343j = $f343i + 1; $f343j < count($f343Sig); $f343j++) {
+            if ($f343Sig[$f343j] == $f343Sig[$f343i]) {
+                if ($f343j1 < 0) {
+                    $f343j1 = $f343j;
+                } else {
+                    $f343Ta = $f343i;
+                    $f343Tb = $f343j1;
+                    $f343Tc = $f343j;
+                    break;
+                }
+            }
+        }
+    }
+    if ($f343Pol != 1) {
+        echo "CACHE-LRU: FAIL policy (victim must be the earlier-used slot; equal ticks -> primary)\n";
+    } else {
+        echo "CACHE-LRU: PASS policy victim=earlier_used equal=primary\n";
+        if ($f343Tc >= 0) {
+            $f343PA = api_cache_pick($f343Ids[$f343Ta]);
+            model_cache_store(0, $f343Ids[$f343Ta], $f343PA);
+            $f343HA = model_cache_prefill(0, $f343Ids[$f343Ta], $f343PA);
+            $f343PB = api_cache_pick($f343Ids[$f343Tb]);
+            model_cache_store(0, $f343Ids[$f343Tb], $f343PB);
+            $f343HB = model_cache_prefill(0, $f343Ids[$f343Tb], $f343PB);
+            // touch A again so it becomes the MORE recent of the two, then let C in: with a
+            // recency-aware victim, C must take B's slot and leave A intact.
+            $f343PA2 = api_cache_pick($f343Ids[$f343Ta]);
+            $f343PC = api_cache_pick($f343Ids[$f343Tc]);
+            model_cache_store(0, $f343Ids[$f343Tc], $f343PC);
+            $f343HA2 = model_cache_prefill(0, $f343Ids[$f343Ta], $f343PA2);
+            $f343HB2 = model_cache_prefill(0, $f343Ids[$f343Tb], $f343PB);
+            $f343Ok = ($f343PA == $f343PA2 && $f343HA > 0 && $f343HA2 == $f343HA
+                && $f343HB2 < $f343HB) ? 1 : 0;
+            if ($f343Ok == 1) {
+                echo "CACHE-LRU-INTEGRATION: COVERED hot entry survived the triple (own=" . $f343HA
+                    . " after=" . $f343HA2 . ", victim=" . $f343HB . "->" . $f343HB2 . ")\n";
+            } else {
+                echo "CACHE-LRU-INTEGRATION: FAIL same_slot=" . ($f343PA == $f343PA2 ? 1 : 0)
+                    . " own=" . $f343HA . " after=" . $f343HA2 . " victim=" . $f343HB . "->"
+                    . $f343HB2 . "\n";
+            }
+            if (file_exists($f343PA)) {
+                unlink($f343PA);
+            }
+            if (file_exists($f343PB) && $f343PB != $f343PA) {
+                unlink($f343PB);
+            }
+            if (file_exists($f343PC) && $f343PC != $f343PA && $f343PC != $f343PB) {
+                unlink($f343PC);
+            }
+        } else {
+            echo "CACHE-LRU-INTEGRATION: NOTCOVERED no shared candidate pair in 150 prompts\n";
+        }
     }
 
     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to

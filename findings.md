@@ -2657,3 +2657,18 @@ CACHE-EVICT: PASS 2-way protected primary=32 distinct_slot=1 hit_own=49 hit_afte
 ⇒ **同一对碰撞提示、同一把哈希**：单槽时代热前缀被无关请求打掉 27 个可复用 token，现在**一个没掉**。`PREFIXCACHE` 仍 `19/19`、warm 22.4 ms，`PREFIXPART` 仍逐 id 复现 fresh 的 logits 与 token ⇒ 保护没有拿正确性换速度。
 **这条改动不是什么（必须写清）**：它**不是 LRU**。当**两个候选槽都被占**时，仍然无条件覆盖备用槽——没有新近度排序、没有引用计数。所以准确说法是"**2 路组相联 + owner 索引**把盲驱逐的概率从"撞 1/64"降到"两次独立碰撞同时发生"，而"按新近度挑受害者"仍然是未做的独立工作（下一轮再动，且这条判据已经能证伪它：`CACHE-EVICT` 的 `hit_after` 若再低于 `hit_own` 就红）。
 **顺带**：`api_cache_path()` 保留未删（旧 self-test 仍在用它测单槽存取语义），新代码路径只用 `api_cache_pick`。
+
+### F344 · 驱逐策略升级为**2 路 LRU**：热条目在三方争抢下毫发无损，冷邻居被选中
+F342 留的那句"两槽都被占时仍无条件覆盖"这一轮补掉了。
+**改了什么（纯 PHP）**：owner 索引每条记录带上**使用时戳**（append 时的行数，单调递增）；`api_cache_pick` 的选择次序变成——①自己占着哪个就用哪个；②有空槽用空槽；③**两个候选都被别人占着时，选"最后使用时间更早"的那个当受害者**（`api_cache_victim(use1,use2)`，并列取主槽保证确定性）；③'选择即使用：pick 会写一条新的 `slot|fp|tick`，读路径不需要额外调用。
+**测到（`engine/run_f343.log`，梯全绿 **155 PASS / 0 FAIL**、809 s；8000 **113/0**；8001 `par`+`fairness` 全 0、吞吐第 7 个样本 `1.125×`）**：
+```
+CACHE-LRU: PASS policy victim=earlier_used equal=primary
+CACHE-LRU-INTEGRATION: COVERED hot entry survived the triple (own=48 after=48, victim=49->21)
+CACHE-EVICT: PASS 2-way protected ... hit_own=49 hit_after=49        ← F342 那对仍受保护
+```
+**这三条各自证明什么**：
+- **policy（单元）**：`api_cache_victim` 的四条取值（旧/新/并列/未占）都对——与哈希运气无关，永远覆盖。
+- **integration（端到端）**：在 150 个提示里搜到**共享同一对候选槽的三个提示** A/B/C；顺序 store A → store B → **再 pick A（等于"用一次"）** → pick+store C，结果 **A 的复用 48→48 完好**，被打掉的是**更冷的 B（49→21）** ⇒ 受害者确实是"最近最少使用"，不是"备用槽倒霉"。找不到三元组时这条会打 `NOTCOVERED` 而不是偷偷绿（F310/F313 的规则）。
+- **回归**：F342 的成对碰撞保护数字不变，`PREFIXCACHE`/`PREFIXPART` 不变差。
+**这仍然不是什么**：容量固定 128 槽、2 路关联、时戳来自索引文件行数（文件被尺寸上限重置后退化为冷启动，不影响正确性——引擎自己比较已存前缀）。更大方向（更大结合度、按 token 预算淘汰、以及把两路请求批进一次前向的真并行）依旧未做。
