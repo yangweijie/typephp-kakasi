@@ -24,9 +24,9 @@ import urllib.request
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8001
 TOKENS = int(sys.argv[2]) if len(sys.argv) > 2 else 60
 STREAMS = int(sys.argv[3]) if len(sys.argv) > 3 else 2
-SPEC = sys.argv[4] if len(sys.argv) > 4 else ""   # "bins,depth" - empty means plain decoding
+SPEC = sys.argv[4] if len(sys.argv) > 4 else ""   # "bins,depth" sampled tree, or "k12" greedy chain
 PROMPT = sys.argv[5] if len(sys.argv) > 5 else "List many English words, comma separated."
-TEMP = 0.9                                         # both sides sampled, so the A/B is honest
+TEMP = float(sys.argv[6]) if len(sys.argv) > 6 else 0.9   # 0.0 to compare the greedy chain path
 URL = "http://127.0.0.1:%d/v1/chat/completions" % PORT
 
 
@@ -39,9 +39,12 @@ def stream(label, results, barrier):
                           "content": PROMPT}],
             "max_tokens": TOKENS, "stream": True, "temperature": TEMP}
     if SPEC:
-        parts = SPEC.split(",")
-        body["spec_bins"] = int(parts[0])
-        body["spec_depth"] = int(parts[1]) if len(parts) > 1 else 3
+        if SPEC.startswith("k"):
+            body["spec_k"] = int(SPEC[1:])
+        else:
+            parts = SPEC.split(",")
+            body["spec_bins"] = int(parts[0])
+            body["spec_depth"] = int(parts[1]) if len(parts) > 1 else 3
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     err = ""
