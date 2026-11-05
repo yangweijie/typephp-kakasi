@@ -9117,6 +9117,45 @@ function main(): void
     echo "  sampled decode: " . str_replace("Ġ", " ", $sText) . "\n";
     echo $sfail == 0 ? "SAMPLING: PASS\n" : "SAMPLING: {$sfail} FAILURE(S)\n";
 
+    // F363: the sort-free sampler (top_p == 1.0) must return the same token as the sorted walk
+    // for the same draw on the model's real logits, and the whole vocabulary must stay
+    // reachable - the exact case is what catches a partition range that stops one entry short.
+    $smpChk = model_sampler_check(0, "785,6722,315,9625,374", 200, 4242);
+    $smpErr = "";
+    $smpD = 0;
+    $smpM = 0;
+    $smpA = 0;
+    $smpG = 0;
+    $smpE = 0;
+    $smpIds = 0;
+    foreach (explode(" ", $smpChk) as $smpTok) {
+        if (substr($smpTok, 0, 4) == "err=") { $smpErr = substr($smpTok, 4); }
+        if (substr($smpTok, 0, 6) == "draws=") { $smpD = (int) substr($smpTok, 6); }
+        if (substr($smpTok, 0, 5) == "mism=") { $smpM = (int) substr($smpTok, 5); }
+        if (substr($smpTok, 0, 4) == "amb=") { $smpA = (int) substr($smpTok, 4); }
+        if (substr($smpTok, 0, 5) == "grid=") { $smpG = (int) substr($smpTok, 5); }
+        if (substr($smpTok, 0, 6) == "exact=") { $smpE = (int) substr($smpTok, 6); }
+        if (substr($smpTok, 0, 4) == "ids=") { $smpIds = (int) substr($smpTok, 4); }
+    }
+    $smpfail = 0;
+    if ($smpErr != "none") {
+        echo "  sampler[dist] FAIL err={$smpErr} raw={$smpChk}\n";
+        $smpfail++;
+    } elseif ($smpM != 0) {
+        echo "  sampler[dist] FAIL mism={$smpM} amb={$smpA} raw={$smpChk}\n";
+        $smpfail++;
+    } elseif ($smpG != 0) {
+        echo "  sampler[dist] FAIL grid={$smpG} raw={$smpChk}\n";
+        $smpfail++;
+    } elseif ($smpE != 0) {
+        echo "  sampler[dist] FAIL exact={$smpE} raw={$smpChk}\n";
+        $smpfail++;
+    } else {
+        echo "  sampler[dist] PASS draws={$smpD} mism={$smpM} amb={$smpA} grid={$smpG}"
+            . " exact={$smpE} ids={$smpIds}\n";
+    }
+    echo $smpfail == 0 ? "SAMPLER-DIST: PASS\n" : "SAMPLER-DIST: {$smpfail} FAILURE(S)\n";
+
     // Step-2 parity probe. Oracle: "The capital of France is Paris" -> ',' (id 11) then
     // ' the'(279) ' largest'(7772) ' city'(3283). Print the margin so a near-tie on
     // quantized weights is distinguishable from a genuine mismatch.

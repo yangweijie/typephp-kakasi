@@ -79,6 +79,9 @@ function model_prefill(int $backend, string $tokens, int $expect): int {}
 function model_generate(int $backend, string $tokens, int $n_new): string {}
 function model_generate_sampled(int $backend, string $tokens, int $n_new, float $temp, float $top_p, int $seed): string {}
 function model_nucleus_size(): int {}
+// F363: compares the sort-free sampler against the sorted walk on the model's real logits.
+// Returns "err=none draws=N mism=N amb=N grid=N exact=N ids=N".
+function model_sampler_check(int $backend, string $tokens, int $draws, int $seed): string {}
 
 function model_gen_prefill_ms(): float {}
 

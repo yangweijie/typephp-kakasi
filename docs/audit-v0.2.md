@@ -248,3 +248,20 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 打包排序更慢 | 16.586 ms（0.93×） | 同上 |
 | 去排序可达 | 5.045 ms（3.07×） | 同上 |
 | 与服务面测值互证 | 15.48 vs 14.9 ms/token | `probe/sampler/sampler_bench.log` + `engine/thru_t0_f360.log` / `engine/throughput_f360.log` |
+
+## 审计增补（F363，2026-11-06 00:40）——采样器去排序化：每流每 token 的采样开销 14.5ms → 4.7ms，8001 scaling 1.45× → 1.640×
+- **改动**：`engine/src/model_sycl.cc` 的 `sample_from` 拆成两条路——`0 < top_p < 1` **原样保留**（核截断需要有序前缀）；`top_p ≥ 1.0`（**服务默认**）换成 `smp_select`（带上方概率质量累加的 quickselect，**不排序**），并复用一块 `static` 缓冲（引擎内无线程）。
+- **分布证明在引擎内**：新增原生 `model_sampler_check`（`model_sycl.cc` + `model.cc` 包装 + `model.stub.php` 声明）与自检门 `SAMPLER-DIST`，把已发布的采样器与"先排序再走累积"的参考实现逐 token id 对照。
+- **边界**：①**tie 顺序变了**（新比较器 `p 降序、id 升序`）⇒ 同 seed 的具体 token 可能变，**分布不变**，仓库无 golden 输出文件；②`top_p < 1` 未动；③采样开销**不是零**（还剩 4.7ms/流/token）；④**F362 探针的 `select_sample` 用 `hi = n - 1` 而 `nth_element` 的 `hi` 是开区间上界 ⇒ 最后一个词表项永远抽不到**（`probe/sampler/sampler_bench.cpp:164`），已发布的 `smp_select` 用 `hi = n` ⇒ **F362 的 5.045ms 是探针数字，不是已发布代码的数字**。
+
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 分布不变（引擎内对照） | `mism=0 amb=0 grid=0 exact=0`（200 抽样 / 128 点扫描 / 12 精确点） | `engine/run_f363b.log`：`sampler[dist] PASS draws=200 ... ids=44` |
+| 自检门禁不回退 | 159 PASS / 0 FAIL（基线 157，只多 `SAMPLER-DIST`） | `engine/run_f363b.log` |
+| 8000 形状门 | 115 PASS / 0 FAIL | `engine/api_smoke_f363.log` |
+| 8001 门 | `PAR_EXIT=0`、`FAIR_EXIT=0` | `engine/par_smoke_f363.log`、`engine/fairness_f363.log` |
+| temp 0.9 服务面（4 样本中位） | 串行 23.36 tok/s、并发 38.93 tok/s、scaling **1.640×** | `engine/thru_s1_f363.log` … `thru_s4_f363.log`、`engine/throughput_f363.log` |
+| 同构建 temp 0 对照（4 样本中位） | 串行 26.24 tok/s、并发 45.17 tok/s、scaling **1.736×** | `engine/thru_t0_s1_f363.log` … `thru_t0_s4_f363.log` |
+| 采样开销（抗漂移口径：同构建 temp0 − temp0.9） | **14.5 → 4.7 ms/流/token** | 上两行的倒数之差 |
+| 投机门未被扰动 | greedy 3.335× / sampled 2.368×（基线 3.324×/2.358×） | `engine/spec_greedy_f363.log`、`engine/spec_sampled_f363.log` |
+| 第一版门禁写错的留档 | `mism=150`（参照实现多推进了一次 RNG） | `engine/run_f363.log` |

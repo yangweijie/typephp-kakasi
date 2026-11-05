@@ -1190,6 +1190,47 @@ int sample_next(double temp, double top_p, uint64_t& rng, int* nucleus_out) {
     return sample_from(g_last_logits, temp, top_p, rng, nucleus_out);
 }
 
+// One vocabulary entry for the sampler: the probability mass and the token it belongs to.
+struct SmpPair {
+    double p;
+    int id;
+};
+
+// Descending by mass, ties broken by id so the order is total and reproducible.
+inline bool smp_by_prob_desc(const SmpPair& a, const SmpPair& b) {
+    if (a.p != b.p) return a.p > b.p;
+    return a.id < b.id;
+}
+
+// Picks the token whose descending cumulative interval contains u (mass scale, not normalised).
+//
+// The old sampler sorted the WHOLE vocabulary for every token, which the served measurement put
+// at ~15ms per token per stream (F361) - and with top_p=1.0 the nucleus IS the whole
+// vocabulary, so the sorted order was only ever needed to walk a cumulative. This finds the
+// crossing token with nth_element instead: the range is partitioned so that the upper half is
+// known to be the largest entries, its mass is summed, and the search continues in whichever
+// half contains u. The mass accounting is exact, so the token that comes out has the same
+// probability as the one the sorted walk would have produced.
+//
+// `acc` is the mass already known to sit ABOVE the range; `u` is the draw in the same units.
+int smp_select(std::vector<SmpPair>& v, int lo, int hi, double acc, double u) {
+    while (hi - lo > 1) {
+        // The upper half must be a proper subset of the range, so the pivot is placed one
+        // below the midpoint: with hi-lo == 2 the group is the single largest entry.
+        const int mid = lo + (hi - lo - 1) / 2;
+        std::nth_element(v.begin() + lo, v.begin() + mid, v.begin() + hi, smp_by_prob_desc);
+        double top = 0.0;
+        for (int i = lo; i <= mid; ++i) top += v[(size_t) i].p;
+        if (u < acc + top) {
+            hi = mid + 1;      // the crossing is inside the upper half
+        } else {
+            acc += top;        // the upper half sits above the crossing
+            lo = mid + 1;
+        }
+    }
+    return v[(size_t) lo].id;
+}
+
 // The same sampler over an explicit set of logits (F359): a batched pass has one logit vector
 // per conversation, and each conversation samples from its own.
 int sample_from(const std::vector<float>& lg, double temp, double top_p, uint64_t& rng, int* nucleus_out) {
@@ -1204,6 +1245,30 @@ int sample_from(const std::vector<float>& lg, double temp, double top_p, uint64_
         if (nucleus_out) *nucleus_out = 1;
         return argmax;
     }
+
+    // F363: with top_p == 1.0 the nucleus IS the whole vocabulary, so the sorted order was only
+    // ever needed to walk a cumulative. smp_select finds the same crossing token without
+    // sorting, which is the served hot path (the server's default top_p is 1.0).
+    const bool nucleus_cut = (top_p > 0.0 && top_p < 1.0);
+    if (!nucleus_cut) {
+        // The engine is single-threaded, so one reused buffer is enough: the old code allocated
+        // two 151936-entry vectors on every single token.
+        static std::vector<SmpPair> buf;
+        buf.clear();
+        buf.resize((size_t) n);
+        double z = 0.0;
+        for (int i = 0; i < n; ++i) {
+            const double v = std::exp(((double) lg[i] - (double) mx) / temp);
+            buf[(size_t) i].p = v;
+            buf[(size_t) i].id = i;
+            z += v;
+        }
+        if (!(z > 0.0)) { if (nucleus_out) *nucleus_out = 1; return argmax; }
+        if (nucleus_out) *nucleus_out = n;
+        const double u = next_u64_unit(rng) * z;
+        return smp_select(buf, 0, n, 0.0, u);
+    }
+
     std::vector<double> p((size_t) n);
     double z = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -1221,7 +1286,7 @@ int sample_from(const std::vector<float>& lg, double temp, double top_p, uint64_
 
     // Keep tokens until the cumulative probability reaches top_p; the token that crosses
     // the threshold stays in, which is what llama.cpp's top-p does too.
-    const double target = (top_p > 0.0 && top_p < 1.0) ? top_p : 1.0;
+    const double target = top_p;
     int keep = 0;
     double cum = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -1267,6 +1332,123 @@ std::vector<int> generate_sampled(int backend, std::vector<int> ids, int n_new,
 }
 
 int nucleus_size() { return g_nucleus; }
+
+// F363: the sort-free sampler must return the same token as the sorted walk for the same draw
+// on the model's real logits, and the whole vocabulary must stay reachable. The standalone probe
+// that motivated this had a weak distribution check and an off-by-one in its partition range, so
+// the proof lives here, in the engine, against the real logits.
+//
+// Returns "err=none draws=N mism=N amb=N grid=N exact=N ids=N":
+//   draws  random draws compared against the sorted walk
+//   mism   disagreements that are NOT explainable by a floating-point boundary
+//   amb    disagreements that sit on a boundary (the two paths sum the same masses in a
+//          different order, so a draw exactly on a boundary may land either way)
+//   grid   disagreements over a scan of the whole draw range
+//   exact  failures of the exact case (all masses equal, so the crossing token is exactly
+//          floor(u) and any range error shows up as a wrong id)
+//   ids    distinct tokens the random draws produced
+std::string sampler_check(int backend, std::vector<int> ids, int draws, uint64_t seed) {
+    char out[256];
+    std::vector<double> r = prefill_top1(backend, ids, -1, 0);
+    if (r.empty()) {
+        std::snprintf(out, sizeof(out), "err=prefill draws=0 mism=1 amb=0 grid=1 exact=1 ids=0");
+        return std::string(out);
+    }
+    const std::vector<float> lg = g_last_logits;
+    const int n = (int) lg.size();
+    if (n < 2) {
+        std::snprintf(out, sizeof(out), "err=vocab draws=0 mism=1 amb=0 grid=1 exact=1 ids=0");
+        return std::string(out);
+    }
+    const double temp = 0.9;
+
+    // Masses, unnormalised: the sampler compares one draw against sums of these.
+    std::vector<double> p((size_t) n);
+    double z = 0.0;
+    float mx = lg[0];
+    for (int i = 1; i < n; ++i) if (lg[i] > mx) mx = lg[i];
+    for (int i = 0; i < n; ++i) {
+        p[(size_t) i] = std::exp(((double) lg[i] - (double) mx) / temp);
+        z += p[(size_t) i];
+    }
+    if (!(z > 0.0)) {
+        std::snprintf(out, sizeof(out), "err=mass draws=0 mism=1 amb=0 grid=1 exact=1 ids=0");
+        return std::string(out);
+    }
+
+    // Reference: the order the sort-free path partitions by, with its cumulative mass.
+    std::vector<SmpPair> ref((size_t) n);
+    for (int i = 0; i < n; ++i) { ref[(size_t) i].p = p[(size_t) i]; ref[(size_t) i].id = i; }
+    std::sort(ref.begin(), ref.end(), smp_by_prob_desc);
+    std::vector<double> cum((size_t) n + 1, 0.0);
+    for (int i = 0; i < n; ++i) cum[(size_t) i + 1] = cum[(size_t) i] + ref[(size_t) i].p;
+
+    // The crossing rank: the first rank whose cumulative mass exceeds the draw. The interval of
+    // that rank is [cum[r], cum[r+1]), which is the same rule the sorted walk uses (u < acc).
+    auto ref_rank = [&](double u) -> int {
+        int lo = 0, hi = n - 1;
+        while (lo < hi) {
+            const int mid = (lo + hi) / 2;
+            if (cum[(size_t) mid + 1] > u) hi = mid; else lo = mid + 1;
+        }
+        return lo;
+    };
+
+    const double tol = 1e-8 * z;   // both paths sum the same masses in a different order
+    int mism = 0, amb = 0, grid = 0, exact = 0, distinct = 0;
+    std::vector<char> seen((size_t) n, 0);
+
+    // Random draws through the shipped path. The draw sample_from makes is the one the copied
+    // state produces, so the state must NOT be advanced before the call.
+    uint64_t rng = seed;
+    for (int d = 0; d < draws; ++d) {
+        uint64_t s = rng;
+        const double rv = next_u64_unit(s);      // the draw sample_from is about to make
+        const int got = sample_from(lg, temp, 1.0, rng, nullptr);
+        const double u = rv * z;
+        const int rank = ref_rank(u);
+        if (!seen[(size_t) got]) { seen[(size_t) got] = 1; ++distinct; }
+        if (got != ref[(size_t) rank].id) {
+            const double d0 = std::fabs(u - cum[(size_t) rank]);
+            const double d1 = std::fabs(u - cum[(size_t) rank + 1]);
+            if (d0 <= tol || d1 <= tol) ++amb; else ++mism;
+        }
+    }
+
+    // A scan of the whole draw range: every point must map to the same token as the walk.
+    {
+        std::vector<SmpPair> gbuf((size_t) n);
+        const int G = 128;
+        for (int g = 0; g < G; ++g) {
+            for (int i = 0; i < n; ++i) { gbuf[(size_t) i].p = p[(size_t) i]; gbuf[(size_t) i].id = i; }
+            const double u = z * ((double) g + 0.5) / (double) G;
+            const int got = smp_select(gbuf, 0, n, 0.0, u);
+            if (got != ref[(size_t) ref_rank(u)].id) ++grid;
+        }
+    }
+
+    // The exact case: with every mass equal the cumulative mass is a run of integers, so the
+    // crossing token is exactly floor(u). This is what catches a range error - the probe's
+    // partition stopped one entry short, which made the smallest token unreachable.
+    {
+        const double un = (double) n;
+        const double us[] = {0.001, 0.5, 1.0, 1.5, 2.0, 2.5, un * 0.5, un - 2.5, un - 1.5,
+                              un - 1.0, un - 0.5, un - 0.001};
+        std::vector<SmpPair> ub((size_t) n);
+        for (int i = 0; i < n; ++i) { ub[(size_t) i].p = 1.0; ub[(size_t) i].id = i; }
+        for (size_t k = 0; k < sizeof(us) / sizeof(us[0]); ++k) {
+            std::vector<SmpPair> tmp = ub;    // the partition permutes the buffer
+            const int got = smp_select(tmp, 0, n, 0.0, us[k]);
+            const int want = (int) std::floor(us[k]);
+            if (got != want) ++exact;
+        }
+    }
+
+    std::snprintf(out, sizeof(out),
+                  "err=none draws=%d mism=%d amb=%d grid=%d exact=%d ids=%d",
+                  draws, mism, amb, grid, exact, distinct);
+    return std::string(out);
+}
 
 // Runs the model over `tokens`, which occupy cache positions [pos, pos+T), and returns
 // {top1_id, top1_logit, top2_logit} for the last position.

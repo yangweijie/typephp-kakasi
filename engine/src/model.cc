@@ -73,6 +73,7 @@ std::vector<int> generate(int backend, std::vector<int> ids, int n_new);
 std::vector<int> generate_sampled(int backend, std::vector<int> ids, int n_new,
                                   double temp, double top_p, uint64_t seed);
 int nucleus_size();
+std::string sampler_check(int backend, std::vector<int> ids, int draws, uint64_t seed);
 double gen_prefill_ms();
 double gen_step_ms();
 }  // namespace model
@@ -351,3 +352,9 @@ php::Str php_model_generate_sampled(php::Int backend, php::Str tokens, php::Int 
 }
 
 php::Int php_model_nucleus_size() { return php::Int(model::nucleus_size()); }
+
+// F363: the sort-free sampler compared against the sorted walk on the model's real logits.
+php::Str php_model_sampler_check(php::Int backend, php::Str tokens, php::Int draws, php::Int seed) {
+    const std::string csv(tokens.data(), tokens.length());
+    return php::Str(model::sampler_check((int) backend, parse_ids(csv), (int) draws, (uint64_t) seed));
+}
