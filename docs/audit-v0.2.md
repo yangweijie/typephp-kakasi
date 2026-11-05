@@ -190,3 +190,19 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **F352（服务面接受计数，首次）**：门禁固定报告 spec off/on 并发速率 + `GET /spec_stats`。首轮：**21.07 vs 20.75 tok/s（−1.5%）**，计数 `drafts=36 accepted=13 verifies=6` ⇒ 每次验证 ~2.2 token，**在接受但换不到时间**（验证宽度从 1 涨到 6，自洽地抵消）。尾部 `drafting=off` 表明这是末次调用快照，不能当平均接受率引用；按请求归因仍是缺口。三项均为**报告**而非硬门，理由：硬门会把机器漂移或本负载的固有零和性误当成回归。
 - **F356（FR-06 服务面定档）**：同探针跑 `sampled` 模式——tree(2,6) 满长度 128/128、`accepted=41 verifies=11` 却只有 **1.006×** 且 `drafting=off`（自适应止损生效）⇒ F352 的中性结论**不是短样本假象**；tree(1,6) 表面 1.564× 但只生成 52 token，被探针有效性判据拒绝上报。与 F355 合并：**贪心链 3.31× 有效、采样树 ≈1.0× 有效**，收益取决于负载重复度与温度 ⇒ 文档口径改为"按温度选路"。
 - **F358（更正 F356 的外推）**：两套探针进入 `gate_live.sh` 后首次满长度测量显示采样树服务面 **2.346×(1,6) / 2.112×(2,6)**、贪心链 **3.26×**，全部有效性判据 PASS ⇒ F356 的"采样树中性 1.006×"降级为特定词表提示的局部观测（那次尾部 `drafting=off`）。再次确认深度>分支（同 accepted=124，drafts 108→216 无收益），并把服务口径改为"由调用方按负载重复度选择，默认不开"。梯：8000 115/115、8001 全 0、吞吐 1.054×。
+
+## FR-06 证据索引（F358 收点；每条都可 grep 复核）
+| 论断 | 数值 | 证据文件（本轮实测行） |
+|---|---|---|
+| 采样树自测峰值（深度 6） | 2.1457× | `engine/run_f333.log`：`best=1,6 speedup=2.145661670111x` |
+| 贪心链自测峰值（k=12） | 3.0213× | `engine/run_f333.log`：`chain12_med_ms=330.89995384216 (x3.0213121309609` |
+| 树位置/KV 压实缺陷必要 | 关修复 4/84 位不同 | `engine/run_f333.log`：`SPEC-TREE-CTRL: PASS defect reproduced ... (alt_branch=2 diffs=4/84)` |
+| 非零分支确被提交 | alt_branch=nat6 | `engine/run_f324.log`：`SPEC-TREE-ALT-COVERAGE: COVERED alt_branch=nat6/rev0/smp0 max_branches=4`（f324 起为 nat6） |
+| 前缀缓存成对保护 | 49→49 | `engine/run_f343.log`：`CACHE-EVICT: PASS 2-way protected ... hit_own=49 hit_after=49` |
+| LRU 三方争抢 | 热存活/冷被逐 | `engine/run_f343.log`：`CACHE-LRU-INTEGRATION: COVERED ... own=48 after=48, victim=49->21` |
+| 服务面贪心投机 | 3.263× | `engine/spec_greedy_f357.log`：`k=8 ... 3.263x`（192 token 满长度，PASS measured） |
+| 服务面采样投机 | 2.346× / 2.112× | `engine/spec_sampled_f357.log`：`tree(1,6) ... 2.346x`、`tree(2,6) ... 2.112x` |
+| 采样在接受（服务面） | verifies>0 accepted>0 | `engine/api_smoke_f357.log`：`PASS chat-spec-tree-accepts`；`engine/spec_stats_f357.log` |
+| 并发吞吐上限 | 1.05–1.15×，第三路失败 | `engine/throughput_f357.log`（scaling），`engine/throughput_f337_3s.log`（errs=1） |
+| 负结果（不外推） | 词表提示 1.006×/0.71× | `engine/run_f340.log`+F354/F356 条目（早停/自适应停用所致） |
+**基线**：`engine/run_f349.log` 155 PASS / 0 FAIL；`engine/api_smoke_f357.log` 115 PASS / 0 FAIL；`engine/par_smoke_f357.log`+`fairness_f357.log` 退出码 0；HEAD 二进制 == 该自测构建。
