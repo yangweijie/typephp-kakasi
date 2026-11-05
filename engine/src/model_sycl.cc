@@ -121,6 +121,7 @@ namespace {
     // one true continuation - otherwise only branch 0 is ever verified against a real position.
     std::vector<int> g_row_pos;
     int g_spec_alt = 0;               // commits taken from a non-zero tree branch (F308 coverage)
+    int g_spec_bmax = 0;              // widest branch list ever collected in this call (F313)
     // Device-side tree mask for the current verify pass; nullptr means plain causal attention.
     // Kept as module state so prefill_top1's external signature (and its mangled name) never
     // changes - the same reason g_head_rows is a global.
@@ -1758,6 +1759,7 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
     std::vector<int> out = ids;
     g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
     g_spec_alt = 0;
+    g_spec_bmax = 0;
     // Negative control for the self-test: a negative k means "propose drafts but reject every
     // one". Nothing is accepted, so the output must still equal plain greedy generation, and
     // the adaptive rule must switch drafting off after its miss budget.
@@ -1909,6 +1911,7 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
     std::vector<int> out = ids;
     g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
     g_spec_alt = 0;
+    g_spec_bmax = 0;
     g_spec_on = 1;
     // F308 negative control: bins<0 keeps the width but proposes the lookup matches in REVERSE
     // recency order, so the branch the model actually wants is no longer branch 0. Without this,
@@ -1971,6 +1974,7 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
         }
 
         if (reverseBranches) std::reverse(branches.begin(), branches.end());
+        if ((int) branches.size() > g_spec_bmax) g_spec_bmax = (int) branches.size();
         // Flatten the tree and build the mask: node (b,i) may attend to its branch's ancestors.
         std::vector<int> nodes;
         std::vector<uint32_t> mask;
@@ -2048,6 +2052,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
     std::vector<int> out = ids;
     g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
     g_spec_alt = 0;
+    g_spec_bmax = 0;
     g_spec_on = 1;
     g_sess_rng = (uint64_t) (unsigned long long) (long long) seed;
     const bool greedy_like = !(temp > 0.0);
@@ -2109,6 +2114,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
         }
 
         if (reverseBranches) std::reverse(branches.begin(), branches.end());
+        if ((int) branches.size() > g_spec_bmax) g_spec_bmax = (int) branches.size();
         // Flatten the tree. `want[node]` is the token this node must predict for its own branch,
         // or -1 at a branch's last node, where the draw is the bonus token instead.
         std::vector<int> nodes;
@@ -2220,9 +2226,10 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
 }
 
 std::string spec_stats() {
-    char buf[200];
-    std::snprintf(buf, sizeof(buf), "drafts=%d accepted=%d verifies=%d alt_branch=%d drafting=%s",
-                  g_spec_drafts, g_spec_accepted, g_spec_verified, g_spec_alt,
+    char buf[220];
+    std::snprintf(buf, sizeof(buf),
+                  "drafts=%d accepted=%d verifies=%d alt_branch=%d max_branches=%d drafting=%s",
+                  g_spec_drafts, g_spec_accepted, g_spec_verified, g_spec_alt, g_spec_bmax,
                   g_spec_on ? "on" : "off");
     return std::string(buf);
 }

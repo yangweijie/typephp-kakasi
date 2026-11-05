@@ -159,3 +159,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 - **经济性实测**（F306）：24 步 wall 对比 **greedy 444.87 ms / sampling 452.61 ms，ratio 1.017** ⇒ 接受判定+残差采样只贵 **1.7%/token**，任何被接受的草稿都是净收益。
 - **当前基线**：自检 **144 PASS / 0 FAIL**、8000 **112 形状**、8001 `par_smoke` 9/9 + `fairness` PASS（同一构建）。
 - **仍缺口**：把采样循环接进 C++ `spec_*`（多草稿 + 一次批量验证）并测 **同温度 tree-on/off wall**；多属性对象项（阻塞于上游 dispatch 归属未定位）；per-session KV 并行吞吐；SSD 前缀分桶；GGUF 分片；多卡 split（需第二设备）；FR-05。
+
+## 审计增补（F307–F312，2026-11-05 03:28）——FR-06 第一次拿到**可复现的真实收益**，同时把"多分支"这件事证伪到草稿器
+- **FR-06 采样验证落地（F307）**：接受判据从"逐位等于 argmax"改成 `rand01() < p(draft)`，拒绝时从残差 `(p−δ)⁺` 重采（归一用 `mass − p(want)`，第一版按 `mass` 归一是**数学错误**，会让重采样偏向词表头部）。`temp=0` 退化回贪心树，写成回归门而非推理。
+- **收益三次独立复现（F312）**：`SPEC-TREE-WALL`（同 temp=0.9、同 prompt、`off_len==on_len==95`）在三个不同二进制上给出 **1.3406× / 1.3513× / 1.3567×**，`accepted/verifies` 恒为 **48/12 ⇒ 每次验证 4.0 token**。服务侧 `spec_bins`/`spec_depth` 已在活服务验证（8000 **113/113**，含新门 `chat-spec-tree-sampled`；8001 `par`+`fairness` 全 0）。
+- **负结果同样入账（F310/F312）**：`alt_branch`（提交非零分支的次数）在**所有**树门禁里为 0；再叠加"分支倒序＋并列取最大下标"的覆盖控制仍为 0 ⇒ **当前 prompt-lookup 草稿器产生不了真正竞争的分支**（重复三元组的续写彼此相同，去重后只剩一条）。因此：①"多分支收益"**无证据**，已证的只是"一次验证更宽"；②F308 的修法**行为上未被触达**，只能说"已实现且无回归"。解开两者的同一个动作＝FR-06.2 步 1。
+- **F308 缺陷与修法（审计自己新代码时从内核倒推）**：RoPE 行位置原按摊平序号 `pos+b*D+i` 给，且接受非零分支后不压实 KV 行 ⇒ 只有分支 0 精确。已改为①rope 位置按**逻辑深度**（`g_row_pos`，`prefill_tops_tree` 每条出口都清）②`kv_compact()` 把接受分支的 K/V 行搬到 `[pos,pos+run)`（行距 `dkv*elem()`，f16/f32 自适应）③`spec_stats()` 常驻 `alt_branch=` 覆盖门。
+- **测量方法更正（F312，三轮样本）**：`SPEC-TREE-SWEEP` 的绝对计时三轮互相矛盾（(2,2)=865/1934/1221 而 `drafts/accepted/verifies` 恒定）⇒ **sweep 计时不可用于形状判断**；形状与收益一律以同函数、同温度、只变 `bins` 的 `SPEC-TREE-WALL` 隔离测量为准。
+- **门禁工装缺陷（F309）**：起服务的 Bash 链没 `cd` 进 `engine` ⇒ exe 按 cwd 相对路径读不到 `serve.on` ⇒ **跑的是全量自测**，端口不监听，产出 `SMOKE_EXIT=1` 与 `FAIRNESS FAIL` 两个**看似引擎缺陷的红数**。修法是固化工装 `scripts/gate_live.sh`：从 `engine` 起进程、健康探测不通就中止整条链、按日志特征确认进程身份。
+- **基线（f311 构建）**：自检 **146 PASS / 1 FAIL**（唯一 FAIL＝`SPEC-TREE-ALT` 覆盖门，非行为缺陷）、8000 **113 形状**、8001 `par_smoke`+`fairness` 全 0。日志 `run_f311.log` / `api_smoke_f311.log` / `par_smoke_f311.log` / `fairness_f311.log`。f312 轮（竞争分支提示词）结果见本文件末尾补记。
