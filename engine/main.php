@@ -10381,21 +10381,47 @@ function main(): void
     // computation, because lookup can only repeat continuations the text already contains. The
     // extra branches here start from a token drawn from the model's OWN root row - q = p for that
     // token, so accepting it always is exact - which is the only way to get competing branches at
-    // all. Toggled inside one build; temp=0 must stay byte-identical to the greedy tree, since no
-    // seed exists when the distribution is a point mass.
+    // all. F327 reported 1.0564 from ONE sample per side, and one sample per side is not evidence
+    // on this machine (cross-round drift measured at 5-12%, F312), so the A/B now runs three
+    // interleaved pairs and reports the MEDIAN ratio. The ratio is printed, not asserted - the
+    // gate asserts correctness; the median is what decides the default.
+    // temp=0 must stay byte-identical to the greedy tree, since no seed exists when the
+    // distribution is a point mass.
+    $f328PlMs = 0.0;
+    $f328SdMs = 0.0;
+    $f328Rsum = 0.0;
+    $f328Rmin = 0.0;
+    $f328Rmax = 0.0;
+    $f328Ratios = "";
+    for ($f328k = 0; $f328k < 3; $f328k++) {
+        model_spec_selfseed(0);
+        $f328Ta = microtime(true);
+        $f323Plain = model_spec_tree_sample(0, $specIds, 48, 4, 3, 0.9, 3230);
+        $f328PlMs = (microtime(true) - $f328Ta) * 1000.0;
+        $f323PlainStats = model_spec_stats();
+        model_spec_selfseed(1);
+        $f328Tb = microtime(true);
+        $f323Seed = model_spec_tree_sample(0, $specIds, 48, 4, 3, 0.9, 3230);
+        $f328SdMs = (microtime(true) - $f328Tb) * 1000.0;
+        $f323SeedStats = model_spec_stats();
+        $f328R = $f328SdMs > 0.0 ? $f328PlMs / $f328SdMs : 0.0;
+        $f328Rsum = $f328Rsum + $f328R;
+        if ($f328k == 0) {
+            $f328Rmin = $f328R;
+            $f328Rmax = $f328R;
+        } else {
+            if ($f328R < $f328Rmin) {
+                $f328Rmin = $f328R;
+            }
+            if ($f328R > $f328Rmax) {
+                $f328Rmax = $f328R;
+            }
+        }
+        $f328Ratios = $f328Ratios . " " . $f328R;
+    }
     model_spec_selfseed(0);
-    $f323T0 = microtime(true);
-    $f323Plain = model_spec_tree_sample(0, $specIds, 48, 4, 3, 0.9, 3230);
-    $f323PlainMs = (microtime(true) - $f323T0) * 1000.0;
-    $f323PlainStats = model_spec_stats();
-    model_spec_selfseed(1);
-    $f323T1 = microtime(true);
-    $f323Seed = model_spec_tree_sample(0, $specIds, 48, 4, 3, 0.9, 3230);
-    $f323SeedMs = (microtime(true) - $f323T1) * 1000.0;
-    $f323SeedStats = model_spec_stats();
     $f323Ref = model_spec_tree(0, $specIds, 24, 4, 3);
     $f323Zero = model_spec_tree_sample(0, $specIds, 24, 4, 3, 0.0, 3231);
-    model_spec_selfseed(0);
     $f323MbPlain = 0;
     $f323MbSeed = 0;
     foreach (explode(" ", $f323PlainStats) as $f323tok) {
@@ -10411,12 +10437,16 @@ function main(): void
     $f323ZEq = $f323Zero == $f323Ref ? 1 : 0;
     $f323PlainN = count(explode(",", $f323Plain));
     $f323SeedN = count(explode(",", $f323Seed));
-    $f323Ratio = $f323SeedMs > 0.0 ? $f323PlainMs / $f323SeedMs : 0.0;
+    // median of three interleaved pairs = sum - min - max
+    $f323PlainMs = $f328PlMs;
+    $f323SeedMs = $f328SdMs;
+    $f323Ratio = $f328Rsum - $f328Rmin - $f328Rmax;
     if ($f323ZEq == 1 && $f323PlainN > 10 && $f323SeedN > 10 && $f323SeedMs > 0.0) {
         $f323How = $f323MbSeed > $f323MbPlain ? "SEEDED" : "NOTSEEDED";
+        $f323Verd = $f323Ratio > 1.0 ? "MEDIAN_GAIN" : "MEDIAN_NOGAIN";
         echo "SPEC-TREE-SELFSEED: PASS temp0_greedy_identical=1 branches=" . $f323MbPlain . "->"
-            . $f323MbSeed . " " . $f323How . " plain_ms=" . $f323PlainMs . " seeded_ms="
-            . $f323SeedMs . " ratio=" . $f323Ratio . "\n  plain:  " . $f323PlainStats
+            . $f323MbSeed . " " . $f323How . " " . $f323Verd . " pairs=" . $f328Ratios
+            . " median_ratio=" . $f323Ratio . "\n  plain:  " . $f323PlainStats
             . "\n  seeded: " . $f323SeedStats . "\n";
     } else {
         echo "SPEC-TREE-SELFSEED: FAIL temp0_greedy_identical=" . $f323ZEq
