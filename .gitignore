@@ -27,3 +27,7 @@ engine/par_*.txt
 __pycache__/
 *.pyc
 *.bak
+
+# prefix-cache runtime artifacts (F342): the .kv slots and the owner index
+engine/api_prefix_b*.kv
+engine/api_prefix_index.txt
