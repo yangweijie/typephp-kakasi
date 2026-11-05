@@ -32,7 +32,7 @@ void set_kv_f16(int on);
 int kv_f16();
 void set_weight_prec(int p);
 int weight_prec();
-// F365 A/B switch: 0 = attention score cache, 1 = the pre-F365 three-pass kernel.
+// F365/F366 A/B switch: 0 = attention score cache, 1 = three-pass, 2 = split-KV.
 void set_attn_mode(int m);
 int attn_mode();
 int session_start(int backend, const std::vector<int>& ids);

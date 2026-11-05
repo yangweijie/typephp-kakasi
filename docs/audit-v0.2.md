@@ -309,3 +309,18 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 8001 双流 scaling | m0 **1.637×** / m1 1.582× | `engine/chunk_gap_two_f365m0.log` / `engine/chunk_gap_two_f365m1.log` |
 | 端到端"逐位相同" | 两模式输出文本逐字节相同（148 / 150 字符，探针已带 `seed=12345`） | `engine/chunk_gap_f365m{0,1}_r1_t0_9.json` / `…_t0_0.json` |
 | 活门禁 | 8000 **115 PASS / 0 FAIL**；8001 `par` **0**、`fairness` **0**、scaling **1.625×**；投机 greedy **2.841×** / sampled **2.071×**；哨兵 0 | `engine/gate_f365.log` |
+
+## 审计增补（F366，2026-11-06 07:35）——**负结果**：split-KV 并行度 ×16 = 收益 0%，注意力的长度成本不是工作项数
+- **假设**：F365 后注意力每 `(token, head)` 只有 1 个工作项（解码 T=1 时 NH=14 个），整条可见 KV 范围是一项之内串行 ⇒ 猜占用率/延迟受限。
+- **实现（默认关）**：模式 2 `attention_split`——范围切 `P=min(16, scoreRows/16)` 块，每块 online softmax 出 `(max, sum, 未归一化加权 V)`，第二个小 kernel 合并；只在 `T*NH<224` 时启用；partial 缓冲 `T*NH*P*(HD+2)`，**第二块设备另配一份**（F365 的教训）。开关：`model_set_attn_mode(2)` / `KAKASI_ATTN_MODE=2`。
+- **判据设计**：模式 2 **换了求和分组**，所以不断言逐位相同，而是新增 `ATTN-SPLIT`（五个 L 的 greedy token 与模式 0 一致）；收益用同一二进制内**按 L 配对**的 m0/m2 计时。
+- **结论**：**假设被否**——五个 L 的 s1/step 差都在 ±3% 内且方向不一致（L=64 慢 7%）⇒ **并行度乘 16 收益为 0**。与 F365（动字节 ⇒ 斜率 −42%）合起来 ⇒ 剩下的是**每位置 K+V 读路径本身**。
+- **状态**：默认仍是模式 0 ⇒ **发布的数值行为与 F365 一致**；模式 2 留在树里作测量工装。自检 **161 PASS / 0 FAIL**（比 F365 多的那一项是 `ATTN-SPLIT`）、`RUN_EXIT=0`。
+
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| split-KV 无收益（s1 中位） | L=8 10.30 vs 10.39；L=32 15.96 vs 15.57；L=64 22.20 vs 23.82（**更慢**）；L=128 39.45 vs 38.94；L=256 64.23 vs 62.57 ms | `engine/run_f366.log`（`PERF sweep L=…` m0/m2 两列） |
+| 每步整体同样没变 | L=8 12.67/12.82；L=32 18.44/18.00；L=64 24.64/26.34；L=128 44.76/42.24；L=256 67.52/65.84 ms | 同上（`step=`） |
+| 并行度确实上去了 | `T*NH=14 → 14×P`，L=256 时 P=16 ⇒ **224 个工作项/层**（规则见 `splitP` 计算） | `engine/src/model_sycl.cc`（`splitP` / `attention_split`） |
+| 分组不同但 argmax 未翻 | 五个 L 的 greedy token 与模式 0 全同 | `engine/run_f366.log`（`ATTN-SPLIT: PASS`） |
+| 基线不动 | 自检 **161 PASS / 0 FAIL**、`RUN_EXIT=0`；默认模式 0 | `engine/run_f366.log` |

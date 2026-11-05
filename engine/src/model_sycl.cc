@@ -36,10 +36,11 @@ namespace {
     // Cleared at the start of every pass: a failed pass must leave nothing to sample from.
     std::vector<float> g_last_logits;
     int g_nucleus = 0;             // nucleus size of the first sampled token of the last run
-    // F365 A/B switch: 0 = the score cache (each attention score computed once and reused by
-    // the three passes that need it), 1 = the pre-F365 kernel (the score recomputed in every
-    // pass). Both live in this binary, so the fix can be measured both ways in one process, and
-    // they are arithmetically identical, so the sampled token must not change between them.
+    // F365/F366 A/B switch: 0 = the score cache (each attention score computed once and
+    // reused by the three passes that need it), 1 = the pre-F365 kernel (the score recomputed in
+    // every pass), 2 = split-KV (the range cut into chunks, one work item each, then combined).
+    // All three live in this binary so they can be measured in one process; 0 and 1 are
+    // arithmetically identical, 2 groups the same sum differently on purpose.
     int g_attn_mode = 0;
     // The server reads the same switch from the environment, so the served path can be A/B'd
     // in this binary too: KAKASI_ATTN_MODE=1 starts it on the pre-F365 kernel.
@@ -635,6 +636,85 @@ namespace {
         });
     }
 
+    // F366: split-KV attention (mode 2, off by default). The kernel above gives each
+    // (token, head) exactly ONE work item, so a decode step runs NH=14 of them and the whole
+    // visible KV range is a serial loop inside each - the attention is bound by that latency,
+    // not by bandwidth or FLOPs (the score cache of F365 cut the work by 3x and the length slope
+    // only fell 42%, which is the signature of a latency-bound loop). Here the range is cut into
+    // P chunks computed by P separate work items, each keeping its own running max, denominator
+    // and unnormalized weighted-V accumulator, and a second, tiny kernel folds the P partials
+    // together. Same sum, different grouping, so the result is only equal up to reassociation -
+    // that is what the self-test's ATTN-SPLIT check measures rather than assumes.
+    template <typename KVt>
+    void attention_split(sycl::queue& q, const float* Q, const KVt* K, const KVt* V,
+                         int T, int pos, int NH, int NKV, int HD, float scale, float* O,
+                         float* part, int P, int partStride, const uint32_t* tree = nullptr,
+                         const int* lo = nullptr, const int* hi = nullptr) {
+        q.parallel_for(sycl::range<3>(T, NH, P), [=](sycl::item<3> it) {
+            const int b = (int) it.get_id(0);
+            const int h = (int) it.get_id(1);
+            const int p = (int) it.get_id(2);
+            const int kv = h * NKV / NH;
+            const float* qrow = Q + ((size_t) b * NH + h) * HD;
+            const int last = hi ? hi[b] : (pos + b);
+            const int first = lo ? lo[b] : 0;
+            const int len = last - first + 1;
+            const int chunk = (len + P - 1) / P;
+            const int j0 = first + p * chunk;
+            const int j1 = sycl::min(last, j0 + chunk - 1);
+            const bool masked = (tree != nullptr);
+            const uint32_t allow = masked ? tree[b] : 0u;
+            float* prow = part + ((size_t) b * NH + h) * (size_t) P * partStride
+                                + (size_t) p * partStride;
+            float* ov = prow + 2;
+            float mx = -1e30f;
+            float sum = 0.0f;
+            for (int d = 0; d < HD; ++d) ov[d] = 0.0f;
+            for (int j = j0; j <= j1; ++j) {
+                if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
+                const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
+                const KVt* vrow = V + ((size_t) j * NKV + kv) * HD;
+                float s = 0.0f;
+                for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
+                const float sc = s * scale;
+                if (sc > mx) {
+                    // online softmax: rescale what has already been accumulated, then fold j in.
+                    const float r = sycl::exp(mx - sc);
+                    sum *= r;
+                    for (int d = 0; d < HD; ++d) ov[d] *= r;
+                    mx = sc;
+                }
+                const float w = sycl::exp(sc - mx);
+                sum += w;
+                for (int d = 0; d < HD; ++d) ov[d] += w * (float) vrow[d];
+            }
+            prow[0] = mx;
+            prow[1] = sum;
+        });
+        q.parallel_for(sycl::range<2>(T, NH), [=](sycl::item<2> it) {
+            const int b = (int) it.get_id(0);
+            const int h = (int) it.get_id(1);
+            const float* prow = part + ((size_t) b * NH + h) * (size_t) P * partStride;
+            float M = -1e30f;
+            for (int p = 0; p < P; ++p) M = sycl::max(M, prow[(size_t) p * partStride]);
+            float S = 0.0f;
+            for (int p = 0; p < P; ++p) {
+                const float mx = prow[(size_t) p * partStride];
+                if (mx <= -1e29f) continue;   // an empty chunk contributes nothing
+                S += prow[(size_t) p * partStride + 1] * sycl::exp(mx - M);
+            }
+            float* orow = O + ((size_t) b * NH + h) * HD;
+            for (int d = 0; d < HD; ++d) orow[d] = 0.0f;
+            for (int p = 0; p < P; ++p) {
+                const float mx = prow[(size_t) p * partStride];
+                if (mx <= -1e29f || S == 0.0f) continue;
+                const float f = sycl::exp(mx - M) / S;
+                const float* ov = prow + (size_t) p * partStride + 2;
+                for (int d = 0; d < HD; ++d) orow[d] += f * ov[d];
+            }
+        });
+    }
+
     void silu_mul(sycl::queue& q, const float* G, const float* U, size_t n, float* O) {
         q.parallel_for(sycl::range<1>(n), [=](sycl::item<1> it) {
             const size_t i = it.get_id(0);
@@ -1017,9 +1097,9 @@ void set_weight_prec(int p) {
 
 int weight_prec() { return g_wprec; }
 
-// F365 A/B switch: 0 = score cache, 1 = the pre-F365 three-pass kernel. Switching does not
-// change the arithmetic (both paths compute the same values in the same order), so it can be
-// flipped between two runs and the output must not move.
+// F365/F366 A/B switch: 0 = score cache, 1 = the pre-F365 three-pass kernel, 2 = split-KV.
+// 0 and 1 compute the same values in the same order; 2 groups the same sum differently, so it
+// is checked by the greedy token rather than by bit-equality.
 void set_attn_mode(int m) { g_attn_mode = (m == 1) ? 1 : 0; }
 int attn_mode() { return g_attn_mode; }
 
@@ -1572,6 +1652,17 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
     } else {
         scoreRows = pos + T;
     }
+    // F366: how many chunks mode 2 cuts the visible range into. One work item per (token, head)
+    // is only T*NH of them - 14 for a decode step - so there is nothing for the GPU to overlap;
+    // once a pass already has a couple of hundred items there is nothing to gain, and splitting
+    // would only add a second launch and a partial buffer to walk.
+    int splitP = 1;
+    if (T * NH < 224) {
+        splitP = (scoreRows + 15) / 16;
+        if (splitP > 16) splitP = 16;
+        if (splitP < 1) splitP = 1;
+    }
+    const int partStride = HD + 2;
     if (theta <= 0.0) theta = 1000000.0;
     const int eIdx = gguf::find_tensor("token_embd.weight");
     if (eIdx < 0 || HD > 128) { g_err = "no token_embd.weight or head too wide"; return {}; }
@@ -1588,6 +1679,9 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // F365: long-lived too - the attention scores of every layer land here, and the per-layer
         // arena is reset between layers, so this one has to own its memory.
         Dev scores(&q, (size_t) T * NH * (size_t) scoreRows, true);
+        // F366: the partials of the split-KV path (mode 2): running max, denominator and
+        // unnormalized weighted V per (token, head, chunk).
+        Dev part(&q, (size_t) T * NH * (size_t) splitP * (size_t) partStride, true);
         auto probe = [&]() {
             std::vector<float> px((size_t) T * D);
             q.memcpy(px.data(), x.p, sizeof(float) * px.size());
@@ -1641,7 +1735,8 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // per-layer scratch, and `kv` the cache that lives on that same device - all of the
         // second device's state is separate, which is what makes the split sound.
         auto run_layer = [&](sycl::queue& ql, float* xp, float* hp, KVCache& kv,
-                             const float* cosp, const float* sinp, float* sc, int l, bool trace) -> bool {
+                             const float* cosp, const float* sinp, float* sc, float* pc,
+                             int l, bool trace) -> bool {
             const std::string p = "blk." + std::to_string(l) + ".";
             Wt anw = load_weight(ql, p + "attn_norm.weight", (uint64_t) D);
             if (!anw.p) return false;
@@ -1697,18 +1792,39 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             }
 
             Dev ao(&ql, (size_t) T * D);
+            // F366: mode 2 runs the split-KV kernel instead - one work item per (token, head,
+            // chunk) plus a combine - as long as this device has a partial buffer to write into.
+            const bool useSplit = (g_attn_mode == 2) && (pc != nullptr);
             if (kv.f16) {
-                attention(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
-                          (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale, ao.p,
-                          sc, scoreRows,
-                          planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
-                          planned ? g_plan.d_hi : nullptr);
+                if (useSplit) {
+                    attention_split(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
+                                    (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD,
+                                    scale, ao.p, pc, splitP, partStride,
+                                    planned ? nullptr : g_tree_mask,
+                                    planned ? g_plan.d_lo : nullptr,
+                                    planned ? g_plan.d_hi : nullptr);
+                } else {
+                    attention(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
+                              (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale,
+                              ao.p, sc, scoreRows,
+                              planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
+                              planned ? g_plan.d_hi : nullptr);
+                }
             } else {
-                attention(ql, att.p, (const float*) kv.k[(size_t) l],
-                          (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale, ao.p,
-                          sc, scoreRows,
-                          planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
-                          planned ? g_plan.d_hi : nullptr);
+                if (useSplit) {
+                    attention_split(ql, att.p, (const float*) kv.k[(size_t) l],
+                                    (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD,
+                                    scale, ao.p, pc, splitP, partStride,
+                                    planned ? nullptr : g_tree_mask,
+                                    planned ? g_plan.d_lo : nullptr,
+                                    planned ? g_plan.d_hi : nullptr);
+                } else {
+                    attention(ql, att.p, (const float*) kv.k[(size_t) l],
+                              (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale,
+                              ao.p, sc, scoreRows,
+                              planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
+                              planned ? g_plan.d_hi : nullptr);
+                }
             }
 
             Wt wo = load_weight(ql, p + "attn_output.weight", (uint64_t) D * D);
@@ -1767,14 +1883,18 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // device must never be dereferenced by the other, which is exactly what the split path
         // would do if the layers on the second device reused the primary scratch.
         float* scores2 = nullptr;
+        float* part2 = nullptr;
         if (splitActive) {
             dCos2 = sycl::malloc_device<float>(ctab.size(), q2);
             dSin2 = sycl::malloc_device<float>(stab.size(), q2);
             scores2 = sycl::malloc_device<float>((size_t) T * NH * (size_t) scoreRows, q2);
-            if (!dCos2 || !dSin2 || !scores2) {
+            part2 = sycl::malloc_device<float>(
+                (size_t) T * NH * (size_t) splitP * (size_t) partStride, q2);
+            if (!dCos2 || !dSin2 || !scores2 || !part2) {
                 if (dCos2) sycl::free(dCos2, q2);
                 if (dSin2) sycl::free(dSin2, q2);
                 if (scores2) sycl::free(scores2, q2);
+                if (part2) sycl::free(part2, q2);
                 g_err = "split scratch allocation failed";
                 return {};
             }
@@ -1828,7 +1948,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             if (!run_layer(on2 ? q2 : q, on2 ? xs.p : x.p, on2 ? hs.p : h.p,
                            on2 ? g_kv2 : g_kv,
                            on2 ? dCos2 : dCos, on2 ? dSin2 : dSin,
-                           on2 ? scores2 : scores.p, l, !on2)) {
+                           on2 ? scores2 : scores.p, on2 ? part2 : part.p, l, !on2)) {
                 return {};
             }
             // One drain per layer bounds the arena reset: everything this layer queued has run,
@@ -1849,6 +1969,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             sycl::free(dCos2, q2);
             sycl::free(dSin2, q2);
             sycl::free(scores2, q2);
+            sycl::free(part2, q2);
         }
 
         sycl::free(dCos, q);

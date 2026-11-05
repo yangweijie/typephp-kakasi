@@ -9317,10 +9317,11 @@ function main(): void
     // wall around the step shows the TOTAL slope - that is what the served path pays, so the two
     // can be compared directly.
     $swpFail = 0;
-    // F365 A/B: both attention paths live in this binary, so for every context length the two
-    // modes are measured back to back, twice each. The pairing is the point: two separate sweeps
+    $swpFailS = 0;
+    // F365/F366 A/B: the attention paths all live in this binary, so for every context length
+    // they are measured back to back, twice each. The pairing is the point: separate sweeps
     // would compare two moments in time, and the machine drifts (an earlier sweep showed s1 at
-    // L=32 above s1 at L=64), while adjacent measurements cancel that drift. The two paths
+    // L=32 above s1 at L=64), while adjacent measurements cancel that drift. Modes 0 and 1
     // compute the same values in the same order, so the sampled token must not move.
     foreach (explode(",", "8,32,64,128,256") as $swpLs) {
         $swpL = (int) $swpLs;
@@ -9337,7 +9338,8 @@ function main(): void
         $swpOut = "";
         $swpTok0 = -1;
         $swpTok1 = -1;
-        foreach (explode(",", "0,1") as $swpModeLs) {
+        $swpTokS = -1;
+        foreach (explode(",", "0,1,2") as $swpModeLs) {
             $swpMode = (int) $swpModeLs;
             model_set_attn_mode($swpMode);
             $swpS1 = "";
@@ -9353,13 +9355,20 @@ function main(): void
             $swpOut = $swpOut . " m" . $swpMode . ":" . $swpS1 . " tok=" . $swpTokm . " |";
             if ($swpMode == 0) {
                 $swpTok0 = $swpTokm;
-            } else {
+            }
+            if ($swpMode == 1) {
                 $swpTok1 = $swpTokm;
+            }
+            if ($swpMode == 2) {
+                $swpTokS = $swpTokm;
             }
         }
         model_set_attn_mode(0);
         if ($swpTok0 != $swpTok1) {
             $swpFail = $swpFail + 1;
+        }
+        if ($swpTok0 != $swpTokS) {
+            $swpFailS = $swpFailS + 1;
         }
         echo "PERF sweep L=" . $swpL . ":" . $swpOut . "\n";
     }
@@ -9368,6 +9377,44 @@ function main(): void
     } else {
         echo "ATTN-MODE: FAIL the tokens differ at " . $swpFail . " context lengths\n";
     }
+    // F366: the split-KV path groups the sum differently on purpose, so this is reported as
+    // "the greedy token still agrees", not as a claim of bit-identical arithmetic.
+    if ($swpFailS == 0) {
+        echo "ATTN-SPLIT: PASS (split-KV agrees with the score cache on the greedy token)\n";
+    } else {
+        echo "ATTN-SPLIT: FAIL the greedy token differs at " . $swpFailS . " context lengths\n";
+    }
+
+    // F366 follow-up: which is it - bytes or dependent latency? F365 showed the length cost moves
+    // when the number of K bytes read per position moves, F366 showed it does not move when the
+    // number of work items moves. f16 KV changes ONLY the bytes per position, nothing else in the
+    // loop, so the slope under f16 separates the two explanations. Reported, not asserted.
+    foreach (explode(",", "0,1") as $kvOnLs) {
+        $kvOn = (int) $kvOnLs;
+        model_set_kv_f16($kvOn);
+        $kvOut = "";
+        foreach (explode(",", "8,64,256") as $kvLs) {
+            $kvL = (int) $kvLs;
+            $kvCtx = "";
+            $kvAt = 0;
+            for ($kvK = 0; $kvK < $kvL; $kvK++) {
+                $kvT = $pv[$kvAt];
+                $kvAt = $kvAt + 1;
+                if ($kvAt >= $np) {
+                    $kvAt = 0;
+                }
+                $kvCtx = $kvK == 0 ? $kvT : $kvCtx . "," . $kvT;
+            }
+            model_session_start(0, $kvCtx);
+            $kvT0 = microtime(true);
+            $kvTok = model_session_next(0, 0.0, 1.0);
+            $kvMs = (microtime(true) - $kvT0) * 1000.0;
+            $kvOut = $kvOut . " L=" . $kvL . " s1=" . model_stage_at(1) . " step=" . $kvMs
+                . " tok=" . $kvTok . " |";
+        }
+        echo "PERF kv-sweep f16=" . $kvOn . ":" . $kvOut . "\n";
+    }
+    model_set_kv_f16(0);
 
     // Long-context prefill point: the baseline only had 5/200 tokens, which is not enough to say
     // anything about scaling. 512 tokens is the next meaningful step on this model.
