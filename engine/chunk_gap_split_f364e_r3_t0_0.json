@@ -1,0 +1,38 @@
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 24.0,
+  "median": 43.6,
+  "mean": 44.539,
+  "p90": 58.5,
+  "max": 79.9
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 24.021,
+  "median": 43.74,
+  "mean": 44.54,
+  "p90": 58.302,
+  "max": 79.891
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.898,
+  "median": -0.138,
+  "mean": -0.154,
+  "p90": 0.003,
+  "max": 0.072
+ },
+ "client_wall_ms": 2627.882,
+ "server_span_ms": 2627.8,
+ "lag_sum_ms": -9.252,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793897465.2239,
+ "first_client_ts": 1793897465.223854
+}

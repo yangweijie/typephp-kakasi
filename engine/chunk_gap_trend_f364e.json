@@ -1,0 +1,10 @@
+{
+ "phase": "two-stream, last 120 STEP A rows of the server trace",
+ "n": 120,
+ "q1_ms": 41.8,
+ "q2_ms": 57.2,
+ "q3_ms": 53.7,
+ "q4_ms": 61.5,
+ "first10_ms": 42.0,
+ "last10_ms": 66.8
+}

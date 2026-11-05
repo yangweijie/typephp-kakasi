@@ -265,3 +265,21 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 采样开销（抗漂移口径：同构建 temp0 − temp0.9） | **14.5 → 4.7 ms/流/token** | 上两行的倒数之差 |
 | 投机门未被扰动 | greedy 3.335× / sampled 2.368×（基线 3.324×/2.358×） | `engine/spec_greedy_f363.log`、`engine/spec_sampled_f363.log` |
 | 第一版门禁写错的留档 | `mism=150`（参照实现多推进了一次 RNG） | `engine/run_f363.log` |
+
+## 审计增补（F364，2026-11-06 00:53）——每 token 的钱：**客户端/传输被排除**，剩下的大头**随上下文长度增长**
+- **方法（不改引擎、不重建）**：服务端 `engine/par_trace.log` 本来就给每个 token 打时间戳（`STEP A n=k`，写在 socket 之后，`main.php:6857`/`6933`）⇒ 与客户端到达时刻（同一台机器的同一个 Unix epoch）直接相减。新增 `engine/tests/chunk_gap_probe.py`（客户端到达）、`engine/tests/chunk_gap_analyze.py`（配对与拆分）、`engine/tests/chunk_gap_ab.py`（双流：用 trace 相邻行拆迭代）、`scripts/chunk_gap_run.sh`（起服务/跑探针/收尾）。
+- **否掉的推断**：F363 写"差额里必然有客户端的 wall 与 socket 写阻塞" ⇒ **被测量否掉**：transport lag 中位 |−0.13 ms|/token（60 token 合计 −8.6…−13.4 ms），双流下 **B 的写只占 0.4 ms**（服务端 `fwrite` 没在等读者）⇒ **那 ≈23ms 全在服务端**。
+- **新的账**：每 token 成本 = **常数 + 长度相关**两项。60 个 token 内每 token 成本涨 **14.6…+21.4 ms**（≈0.25–0.36 ms/上下文 token，temp 0.9 与 temp 0.0 一样涨）⇒ 剩下的不是固定开销，而是**随上下文变长而变贵的每步工作**（机制待证）。
+- **边界**：客户端探针只读单流（双流侧是服务端 trace 自拆）；**长度增长的机制未证**（下一步查 `model_batch_next` 每步搬了什么）；本轮**未改引擎与门禁** ⇒ 基线不动。
+
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| transport lag ≈ 0（单流） | 中位 −0.132 / −0.132 / −0.138 / −0.135 ms（60 token 合计 −8.6 / −13.4 / −9.3 / −10.5 ms） | `engine/chunk_gap_split_f364e_r1_t0_9.json` … `engine/chunk_gap_split_f364e_r4_t0_0.json` |
+| 服务端 cadence（temp 0.9） | 中位 47.8 / 47.4 ms | 同上 |
+| 服务端 cadence（temp 0.0） | 中位 43.6 / 43.6 ms | 同上 |
+| 服务面采样开销（抗漂移：同批次 temp0.9 − temp0.0） | **4.0 ms/token**（F363 在会话路径上量到 4.7 ms） | 上两行之差 |
+| 客户端没在等（双流） | B 的写中位 **0.4 ms**（max 6.7）；迭代 cadence 中位 57.8 ms（min 36.0 / max 79.7） | `engine/chunk_gap_ab_f364e.json` |
+| 双流 scaling 同批复测 | **1.679×**（F363 记录 1.640×） | `engine/chunk_gap_two_f364e.log` |
+| 每 token 成本随长度增长 | q1→q4 中位 34.6→51.3 / 39.4→52.0 / 36.7→52.7 / 38.9→55.2 ms；前10→后10 +21.4 / +14.6 / +18.9 / +21.3 ms | `engine/chunk_gap_f364e_r1_t0_9.json` … `r4_t0_0.json`（四分位由到达时刻现算） |
+| 对齐三坑的留档 | 第一次跑 lag 中位 969289 ms、server gap 最小 −971602 ms | 数字留在 `findings.md` F364「对齐的三个坑」里（那次产物在清理临时文件时一并删掉，**没有留在仓库里**） |
+| 增长在**服务端**（不是客户端读得慢） | 服务端自己的迭代 cadence 同样在涨：q1 41.8 → q4 61.5 ms（首 10 次 42.0 → 末 10 次 66.8） | `engine/chunk_gap_trend_f364e.json`（由 `engine/par_trace.log` 最后 120 行 `STEP A` 现算） |
