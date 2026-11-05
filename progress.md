@@ -863,3 +863,9 @@
 - **本轮没有可报告的收益数字**：贪心投机的服务面测法被证伪（`spec_k` 强制非流式 ⇒ SSE chunk 计数失效；提示词早停 ⇒ 无草稿可接受）。引擎与门禁未改，HEAD 仍 == `run_f349.log`（155 PASS / 0 FAIL）那份二进制，活门禁 115/115 不变。
 - **下一轮若要测服务面贪心投机**：非流式 + 整请求 wall + `usage.completion_tokens`，重复可续写的提示，temp 0.0，off vs `spec_k=12`，≥256 token。
 - 其余顺位不变：continuous batching（F353 已给出可行性与验收）、per-request spec 归因、FR-06.2 真草稿源、多属性对象项、pattern/数值界限、分片/多卡/FR-05。
+
+## ▶ 状态（F355，2026-11-05 11:20 —— 服务面结论被更正）
+- **服务面贪心投机 = 3.31×（实测）**：`spec_k=8` 41.68 tok/s vs plain 12.61，192 token 非流式、中位 3 次、探针自判 PASS；计数 `verifies=33 accepted=187` ⇒ 5.7 token/验证。k=8/12/16 差 ≤2.3%。
+- **边界照旧有效**：这是单请求延迟收益（`spec_k` 按设计非流式），并发 scaling 仍 1.06–1.15×；且**只在可持续重复的输出上成立**——10 token 就结束的提示上投机净亏 0.71×（F354 的第一次运行）。
+- **新增**：`engine/tests/spec_greedy_probe.py`（带"长度不足即判无效"的自我守卫）。
+- **下一轮**：①把该探针接进 `gate_live.sh` 做每轮报告；②用可持续生成的提示**重测采样树**的服务面结论（F352 的 −1.5% 可能同样受短输出误导）；③continuous batching（F353 规格）；④per-request spec 归因；⑤多属性对象项、pattern/数值界限、分片/多卡/FR-05。
