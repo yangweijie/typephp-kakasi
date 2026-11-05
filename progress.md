@@ -746,3 +746,10 @@
 - `SPEC-TREE-SAMPLE-TEMP0`：temp=0 的输出与现有 `spec_tree_generate` 完全一致（回归护栏）。
 - `SPEC-TREE-WALL`：同温度、同 prompt、≥512 token，tree-on vs 单步 off 的 wall 对比 ⇒ FR-06 第一个"真实收益"数字。
 **构建纪律（每次重建前逐条核）**：清 `engine/build/gen/cache/ast`（动 C++ 再清 `build/gen`/`build/obj`）→ `Get-Process` 找孤儿引擎并 `Stop-Process -Force` → 核 exe mtime 前进且无 `SYCL_LINK_FAILED` → 构建与测量之间用 `&&`；任一时刻只允许一个引擎进程。
+
+## ▶ 最终状态（F316，2026-11-05 04:49，覆盖上面 721-731 行的旧指引）
+- **基线**：HEAD 本次提交；二进制与源码同源。自检 **148 PASS / 0 FAIL**（`run_f315.log`）、8000 **113 形状全绿**（`api_smoke_f315.log`）、8001 `par_smoke`+`fairness` 全 0（`par_smoke_f315.log`/`fairness_f315.log`）。
+- **FR-06 已测到的收益**：采样验证的树 `SPEC-TREE-WALL` 六个独立构建 **1.3377×–1.3629×**（temp=0.9、等长 95 token、每次验证提交 4.0 token）；服务侧 `spec_bins`/`spec_depth` 已在活服务门禁覆盖（`chat-spec-tree-sampled`）。
+- **F308 已闭合**：树节点 RoPE 改按逻辑深度（`g_row_pos`）＋接受非零分支后压实 KV 行（`kv_compact`）＋`spec_stats()` 常驻 `alt_branch`/`max_branches`；双向对照在同一构建内完成（`model_spec_fix(0/1)`）：关掉修复 `diffs=4/84`，打开则逐 id 等于贪心。
+- **唯一下一步**：FR-06.2 步 1（同三元组全部不同续写、按历史频次排序成多条分支）。判据＝`SPEC-TREE-WALL` 的 speedup 与 `accepted/verifies`（当前 2.9/验证）变化，外加 `alt_branch` 保持 COVERED。形状计时**不要**用 `SPEC-TREE-SWEEP`（F312：三轮互相矛盾）。
+- **护栏（本轮新增/复用）**：起服务只能 `bash scripts/gate_live.sh <tag>`（F309：cwd 错 ⇒ 自测冒充服务 ⇒ 假红数）；构建与测量之间用 `&&`；重建前清孤儿并核 exe mtime；新增 native 必须同时改 `php_model_*` 与 `model.stub.php`；任一时刻只允许一个引擎进程。

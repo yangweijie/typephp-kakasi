@@ -122,6 +122,9 @@ namespace {
     std::vector<int> g_row_pos;
     int g_spec_alt = 0;               // commits taken from a non-zero tree branch (F308 coverage)
     int g_spec_bmax = 0;              // widest branch list ever collected in this call (F313)
+    int g_spec_fix = 1;               // F315 control: 0 disables the depth-position + compaction
+                                      // repair inside the SAME build, so the defect can be shown
+                                      // behaviourally instead of argued.
     // Device-side tree mask for the current verify pass; nullptr means plain causal attention.
     // Kept as module state so prefill_top1's external signature (and its mangled name) never
     // changes - the same reason g_head_rows is a global.
@@ -1990,7 +1993,7 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
         }
         ++g_spec_verified;
         g_spec_drafts += (int) nodes.size();
-        g_row_pos = depths;
+        if (g_spec_fix) g_row_pos = depths;
         const std::vector<int> tops = prefill_tops_tree(backend, nodes, pos, mask);
         if (tops.size() != nodes.size()) break;
 
@@ -2016,7 +2019,7 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
             const int take = std::min(bestAcc, n_new - produced);
             for (int i = 0; i < take; ++i) out.push_back(branches[(size_t) bestB][(size_t) i]);
             produced += take;
-            if (bestB > 0) { kv_compact(backend, pos, pos + bestB * D, bestAcc); ++g_spec_alt; }
+            if (bestB > 0) { ++g_spec_alt; if (g_spec_fix) kv_compact(backend, pos, pos + bestB * D, bestAcc); }
             pos += bestAcc;
             g_spec_accepted += take;
             misses = 0;
@@ -2155,7 +2158,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
         ++g_spec_verified;
         g_spec_drafts += (int) nodes.size();
         g_head_rows = (int) nodes.size();
-        g_row_pos = depths;
+        if (g_spec_fix) g_row_pos = depths;
         g_head_want = want;
         g_head_temp = temp;
         g_head_prob.clear();
@@ -2204,7 +2207,7 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
             ++produced;
             ++committed;
         }
-        if (bestB > 0 && committed > 0) { kv_compact(backend, pos, pos + bestB * D, committed); ++g_spec_alt; }
+        if (bestB > 0 && committed > 0) { ++g_spec_alt; if (g_spec_fix) kv_compact(backend, pos, pos + bestB * D, committed); }
         pos += committed;
         g_spec_accepted += committed;
         if (produced >= n_new) break;
@@ -2225,8 +2228,13 @@ std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, 
     return out;
 }
 
-std::string spec_stats() {
-    char buf[220];
+// F315: switch the tree verifier between the repaired path (logical-depth RoPE + KV row
+// compaction) and the legacy path, inside one build, so a self-test can show that the repair is
+// what makes the non-zero branch greedy-identical.
+void set_spec_fix(int on) { g_spec_fix = on ? 1 : 0; }
+int spec_fix_on() { return g_spec_fix; }
+
+std::string spec_stats() {    char buf[220];
     std::snprintf(buf, sizeof(buf),
                   "drafts=%d accepted=%d verifies=%d alt_branch=%d max_branches=%d drafting=%s",
                   g_spec_drafts, g_spec_accepted, g_spec_verified, g_spec_alt, g_spec_bmax,

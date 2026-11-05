@@ -44,6 +44,8 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
 std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new, int bins, int depth);
 std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, int bins, int depth,
                                   double temp, long long seed);
+void set_spec_fix(int on);
+int spec_fix_on();
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
@@ -146,6 +148,10 @@ php::Str php_model_spec_generate(php::Int backend, php::Str tokens, php::Int n_n
     return php::Str(s);
 }
 php::Str php_model_spec_stats() { return php::Str(model::spec_stats()); }
+php::Int php_model_spec_fix(php::Int on) {
+    model::set_spec_fix((int) on);
+    return php::Int(model::spec_fix_on());
+}
 php::Str php_model_spec_tree(php::Int backend, php::Str tokens, php::Int n_new, php::Int bins,
                              php::Int depth) {
     const std::string csv(tokens.data(), tokens.length());

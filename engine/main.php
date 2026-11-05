@@ -10227,6 +10227,37 @@ function main(): void
             . " alt_branch=" . $f308Alt . "/" . $f308Alt2 . " " . $f308Stats . "\n";
     }
 
+    // SPEC-TREE-CTRL (F315): the necessity control. Same prompt, same natural order, but with the
+    // F308 repair switched OFF inside THIS build. If the tree then stops matching greedy while it is
+    // still committing non-zero branches, the defect is reproduced behaviourally instead of argued -
+    // which is the missing half of "the fix is exercised and passes".
+    model_spec_fix(0);
+    $f315Off = model_spec_tree(0, $f308p, 40, 4, 3);
+    $f315OffAlt = 0;
+    foreach (explode(" ", model_spec_stats()) as $f315tok) {
+        if (substr($f315tok, 0, 11) == "alt_branch=") {
+            $f315OffAlt = (int) substr($f315tok, 11);
+        }
+    }
+    model_spec_fix(1);
+    $f315On = model_spec_tree(0, $f308p, 40, 4, 3);
+    $f315A = explode(",", $f315Off);
+    $f315B = explode(",", $f308Ref);
+    $f315N = count($f315A) < count($f315B) ? count($f315A) : count($f315B);
+    $f315D = 0;
+    for ($f315i = 0; $f315i < $f315N; $f315i++) {
+        if ($f315A[$f315i] != $f315B[$f315i]) {
+            $f315D = $f315D + 1;
+        }
+    }
+    if ($f315OffAlt > 0 && $f315D > 0 && $f315On == $f308Ref) {
+        echo "SPEC-TREE-CTRL: PASS defect reproduced without the repair (alt_branch=" . $f315OffAlt
+            . " diffs=" . $f315D . "/" . $f315N . ")\n";
+    } else {
+        echo "SPEC-TREE-CTRL: NOTREPRODUCED alt_branch=" . $f315OffAlt . " diffs=" . $f315D
+            . "/" . $f315N . " on_eq=" . ($f315On == $f308Ref ? 1 : 0) . "\n";
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.
