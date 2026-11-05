@@ -108,6 +108,13 @@ namespace {
     // for each (all but the last), and counters for the accept/reject report.
     int g_head_rows = 1;
     std::vector<int> g_step_top1;
+    // Tree speculative sampling (F307): the verifier needs p(draft) at EVERY node of the tree,
+    // not only at the last row, so the lm_head loop can be handed one wanted id per row and
+    // reports back that id's probability plus a draw from the residual of the same row.
+    std::vector<int> g_head_want;
+    std::vector<double> g_head_prob;
+    std::vector<int> g_head_alt;
+    double g_head_temp = 1.0;
     // Device-side tree mask for the current verify pass; nullptr means plain causal attention.
     // Kept as module state so prefill_top1's external signature (and its mangled name) never
     // changes - the same reason g_head_rows is a global.
@@ -918,6 +925,59 @@ double token_prob(int id, double temp) {
     if (!(sum > 0.0)) return -1.0;
     return std::exp(((double) g_last_logits[(size_t) id] - mx) / temp) / sum;
 }
+// Per-row acceptance statistics for a sampled tree verify (F307). `want` is the drafter's token
+// at the position this row predicts; prob_out is p(want) under the temperature-scaled row and
+// alt_out is a draw from the residual (p - delta_want)+, which is the exact correction token when
+// the draft is rejected. want < 0 means "no draft to correct" -> a plain sample from p, which is
+// the bonus token of a fully accepted branch. temp <= 0 is the greedy limit: p is 1 on the argmax
+// and 0 elsewhere, and the draw is the argmax, so a sampled tree degenerates into the greedy one.
+void row_accept_stats(const std::vector<float>& row, int want, double temp,
+                      double& prob_out, int& alt_out) {
+    const int n = (int) row.size();
+    prob_out = -1.0;
+    alt_out = -1;
+    if (n == 0) return;
+    if (want >= n) { prob_out = 0.0; want = -1; }
+    double mx = -1e300;
+    for (int i = 0; i < n; ++i) mx = std::max(mx, (double) row[(size_t) i]);
+    if (!(temp > 0.0)) {
+        int best = 0;
+        for (int i = 1; i < n; ++i) if (row[(size_t) i] > row[(size_t) best]) best = i;
+        prob_out = (want >= 0 && best == want) ? 1.0 : 0.0;
+        alt_out = best;
+        return;
+    }
+    const double inv = 1.0 / temp;
+    double pw = 0.0, mass = 0.0;
+    for (int i = 0; i < n; ++i) {
+        const double e = std::exp(((double) row[(size_t) i] - mx) * inv);
+        mass += e;
+        if (i == want) pw = e;
+    }
+    if (!(mass > 0.0)) return;
+    prob_out = (want >= 0) ? (pw / mass) : 1.0;
+    // Residual walk over p restricted to the ids that are NOT the draft: normalising by
+    // mass - p(want) is what makes the re-draw an exact (p-q)+ sample for a point-mass drafter.
+    const double res = (want >= 0) ? (mass - pw) : mass;
+    if (!(res > 0.0)) {
+        int sb = -1;
+        double sv = -1e300;
+        for (int i = 0; i < n; ++i) {
+            if (i == want) continue;
+            if ((double) row[(size_t) i] > sv) { sv = (double) row[(size_t) i]; sb = i; }
+        }
+        alt_out = sb;
+        return;
+    }
+    double u = next_u64_unit(g_sess_rng) * res;
+    for (int i = 0; i < n; ++i) {
+        if (i == want) continue;
+        u -= std::exp(((double) row[(size_t) i] - mx) * inv);
+        if (u <= 0.0) { alt_out = i; return; }
+    }
+    for (int i = n - 1; i >= 0; --i) if (i != want) { alt_out = i; return; }
+}
+
 int expect_rank() { return g_expect_rank; }
 int trace_count() { return (int) g_trace.size(); }
 double trace_at(int i) { return (i >= 0 && i < (int) g_trace.size()) ? g_trace[(size_t) i] : 0.0; }
@@ -1395,6 +1455,13 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 const double v = row[(size_t) i];
                 if (v > rbest) { rsecond = rbest; rbest = v; rbestId = i; }
                 else if (v > rsecond) rsecond = v;
+            }
+            if (!g_head_want.empty() && r < (int) g_head_want.size()) {
+                double hp = -1.0;
+                int ha = -1;
+                row_accept_stats(row, g_head_want[(size_t) r], g_head_temp, hp, ha);
+                g_head_prob.push_back(hp);
+                g_head_alt.push_back(ha);
             }
             if (r == nOut - 1) {
                 best = rbest; second = rsecond; bestId = rbestId;
@@ -1907,6 +1974,178 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
         ++pos;
         if (r.empty()) break;
         ref = (int) r[0];
+    }
+    g_spec_on = drafting ? 1 : 0;
+    return out;
+}
+
+// FR-06 with a SAMPLING verifier. Under the greedy argmax test a tree can accept at most one
+// branch, because the argmax along an accepted prefix is unique (F273) - branch diversity only
+// pays once acceptance is probabilistic. At each node the model's OWN logits row gives p(draft)
+// for its branch's next token: keep the draft when rand01() < p(draft), otherwise end the branch
+// with a draw from the residual (p - delta_draft)+. For bins=1 that is exactly speculative
+// sampling (Leviathan et al.); for bins>1 the per-chain tests plus "longest accepted chain wins,
+// correct from its own residual" is the standard tree rule, and no exactness is claimed for it.
+// temp<=0 puts p on the argmax, so this degenerates into spec_tree_generate token for token.
+std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, int bins, int depth,
+                                  double temp, long long seed) {
+    std::vector<int> out = ids;
+    g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
+    g_spec_on = 1;
+    g_sess_rng = (uint64_t) (unsigned long long) (long long) seed;
+    const bool greedy_like = !(temp > 0.0);
+    const int B = std::max(1, bins);
+    const int D = std::max(1, depth);
+    std::vector<double> r = prefill_top1(backend, out, -1, 0);
+    if (r.empty()) return {};
+    int pos = (int) out.size();
+    int produced = 0;
+    const int eos = eos_id();
+    int ref = (int) r[0];
+    const int m = 3;
+    int misses = 0;
+    // bins<=0 means "never draft": the loop below then behaves as plain sampled decoding, which is
+    // the same-function control for the tree-on/tree-off wall measurement.
+    bool drafting = (bins > 0);
+
+    while (produced < n_new) {
+        std::vector<std::vector<int>> branches;
+        const size_t n = out.size();
+        const int room = g_kv.cap - pos;
+        const int maxNodes = std::min(B * D, room > 0 ? room : 0);
+        if (drafting && maxNodes >= D && n >= (size_t) m + 1) {
+            for (size_t p = n - (size_t) m; p > 0 && (int) branches.size() < B; --p) {
+                const size_t start = p - 1;
+                bool hit = true;
+                for (int j = 0; j < m; ++j) {
+                    if (out[start + (size_t) j] != out[n - (size_t) m + (size_t) j]) { hit = false; break; }
+                }
+                if (!hit) continue;
+                const size_t f = start + (size_t) m;
+                if (f + (size_t) D > n) continue;
+                std::vector<int> br;
+                for (int j = 0; j < D; ++j) br.push_back(out[f + (size_t) j]);
+                bool dup = false;
+                for (size_t bi = 0; bi < branches.size(); ++bi) {
+                    if (branches[bi] == br) { dup = true; break; }
+                }
+                if (dup) continue;
+                branches.push_back(std::move(br));
+            }
+        }
+
+        if (branches.empty()) {
+            // Nothing to verify: one plain step. At temp>0 that step is a sample from p, and
+            // sample_excluding(-1, temp) is exactly that (no id is skipped).
+            int c = ref;
+            if (!greedy_like) { const int s1 = sample_excluding(-1, temp); if (s1 >= 0) c = s1; }
+            out.push_back(c);
+            ++produced;
+            if (eos > 0 && c == eos) break;
+            r = prefill_top1(backend, std::vector<int>{c}, -1, pos);
+            ++pos;
+            if (r.empty()) break;
+            ref = (int) r[0];
+            continue;
+        }
+
+        // Flatten the tree. `want[node]` is the token this node must predict for its own branch,
+        // or -1 at a branch's last node, where the draw is the bonus token instead.
+        std::vector<int> nodes;
+        std::vector<int> want;
+        std::vector<uint32_t> mask;
+        for (size_t b = 0; b < branches.size(); ++b) {
+            uint32_t bits = 0;
+            for (int i = 0; i < D; ++i) {
+                nodes.push_back(branches[b][(size_t) i]);
+                want.push_back((i + 1 < D) ? branches[b][(size_t) (i + 1)] : -1);
+                bits |= (1u << (uint32_t) ((int) b * D + i));
+                mask.push_back(bits);
+            }
+        }
+
+        // Root test first: every branch's first token is judged against the distribution that
+        // produced `ref`, still live in g_last_logits, so no forward is needed for it.
+        std::vector<char> rootAcc(branches.size(), 0);
+        std::vector<int> rootTail(branches.size(), ref);
+        int canonB = 0;
+        double bestP = -1.0;
+        for (size_t b = 0; b < branches.size(); ++b) {
+            const int d0 = branches[b][(size_t) 0];
+            const double p = token_prob(d0, temp);
+            if (p > bestP) { bestP = p; canonB = (int) b; }
+            if (p >= 1.0) {
+                rootAcc[b] = 1;
+            } else if (p > 0.0 && !greedy_like && rand01() < p) {
+                rootAcc[b] = 1;
+            } else {
+                const int s1 = greedy_like ? ref : sample_excluding(d0, temp);
+                rootTail[b] = (s1 >= 0) ? s1 : ref;
+            }
+        }
+
+        ++g_spec_verified;
+        g_spec_drafts += (int) nodes.size();
+        g_head_want = want;
+        g_head_temp = temp;
+        g_head_prob.clear();
+        g_head_alt.clear();
+        const std::vector<int> tops = prefill_tops_tree(backend, nodes, pos, mask);
+        g_head_want.clear();
+        if (tops.size() != nodes.size()) break;
+
+        // Longest accepted chain, each ending in its own correction (or bonus) draw.
+        int bestB = -1, bestRun = -1, bestTail = -1;
+        for (size_t b = 0; b < branches.size(); ++b) {
+            int run = 0;
+            int tail = rootTail[b];
+            if (rootAcc[b]) {
+                run = 1;
+                tail = -1;
+                bool rejected = false;      // a real rejection produced this branch's correction
+                for (int i = 1; i < D; ++i) {
+                    const int pi = (int) b * D + (i - 1);
+                    if (pi >= (int) g_head_prob.size()) { run = -1; break; }
+                    const double p = g_head_prob[(size_t) pi];
+                    if (p >= 1.0 || (p > 0.0 && !greedy_like && rand01() < p)) { ++run; continue; }
+                    tail = g_head_alt[(size_t) pi];
+                    rejected = true;
+                    break;
+                }
+                if (run >= 0 && !rejected) {
+                    // Whole branch accepted: the node after the last draft gives the bonus token.
+                    const int pi = (int) b * D + D - 1;
+                    if (pi < (int) g_head_alt.size()) tail = g_head_alt[(size_t) pi];
+                }
+                if (run < 0) tail = -1;
+            }
+            if (run > bestRun) { bestRun = run; bestB = (int) b; bestTail = tail; }
+        }
+        if (bestB < 0) break;
+        if (bestRun <= 0) { bestB = canonB; bestTail = rootTail[(size_t) canonB]; }
+        if (bestTail < 0) break;
+
+        int committed = 0;
+        for (int i = 0; i < bestRun && produced < n_new; ++i) {
+            out.push_back(branches[(size_t) bestB][(size_t) i]);
+            ++produced;
+            ++committed;
+        }
+        pos += committed;
+        g_spec_accepted += committed;
+        if (produced >= n_new) break;
+        if (committed > 0) misses = 0;
+        if (eos > 0 && committed > 0 && out.back() == eos) break;
+        // The correction/bonus token was not part of the verified tree, so it gets its own feed.
+        out.push_back(bestTail);
+        ++produced;
+        ++pos;
+        ++g_spec_accepted;
+        if (eos > 0 && bestTail == eos) break;
+        r = prefill_top1(backend, std::vector<int>{bestTail}, -1, pos - 1);
+        if (r.empty()) break;
+        ref = (int) r[0];
+        if (bestRun <= 0 && ++misses >= 3) drafting = false;
     }
     g_spec_on = drafting ? 1 : 0;
     return out;

@@ -721,7 +721,8 @@
 ## ▶ 续跑从这里开始（2026-11-04 23:31 更新，覆盖 F240 时期的旧指引）
 - **当前基线（HEAD `dc90ad6`，二进制与源码同源）**：自检 **144 PASS / 0 FAIL**、8000 **112 形状**、8001 `par_smoke` 9/9 + `fairness` PASS。基线日志：`run_f306.log` / `api_smoke_f306.log` / `par_smoke_f306.log` / `fairness_f306.log`。
 - **已具备的 FR-06 原语**：`model_token_prob(id,temp)`、`model_rand01()`、`model_sample_excluding(id,temp)`、`model_peek_argmax()`；自检内已验证 `SPEC-SAMPLE`（acc=9 rej=15 diff=15 可复现）与 `SPEC-COST`（接受机制仅贵 1.7%/token）。
-- **唯一下一步（能出真实收益）**：把 `SPEC-SAMPLE` 的循环接进 C++ `spec_*` 路径（多草稿 + 一次批量验证），判据是**同温度 tree-on/off 的 wall 对比**；实现时记住 F273（贪心验证下多分支恒无收益）与 F284（四步规格）。
+- **F307 已闭合这条**（见 findings F307）：采样验证的树解码进了 C++ `spec_tree_sample()`，实测 **1.34×**（`SPEC-TREE-WALL` off_ms=1871.6 → on_ms=1396.1，temp=0.9、等长 95 token、每次验证提交 4.0 token），`temp=0` 逐 id 等于贪心树、同种子逐字节复现、temp=0.9 下 22/71 位置与贪心不同；服务侧 `spec_bins`/`spec_depth` 已接（门控 `temp>0 && top_p>=1`）。
+- **唯一下一步（F308，正确性而非提速）**：树节点 RoPE 位置按摊平序号算、接受 `b>0` 分支后不压实 KV 行 ⇒ 只有分支 0 是精确的，采样验证会让 `b>0` 接受从罕见变常见。修法＝①`model_sycl.cc:1183` 的 rope 表按**逻辑深度**给位置 ②接受后把该分支的 K/V 行压实到 `[pos,pos+run)`（`g_kv.k[l]/v[l]` 行距 `dkv*elem()`）③`spec_stats()` 加 `alt_branch=` 计数，先用它证明判据真的走过 `b>0`，再谈"已验证"。
 - **其余未闭合**：多属性对象项（阻塞于上游 dispatch 归属未定位，F298–F300）、`g_sess_len` 覆盖缺口（F261）、含元字符 pattern / `minimum·maximum·multipleOf`、per-session KV 并行吞吐、SSD 前缀分桶、GGUF 分片、多卡 split（需第二设备）、FR-05。
 - **护栏**：单引擎进程；构建与测量之间用 `&&`；重建前清孤儿并核 exe mtime；新增 native 函数必须同时改 `php_model_*` 包装与 `model.stub.php`。
 

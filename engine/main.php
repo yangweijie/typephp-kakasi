@@ -8165,6 +8165,17 @@ function api_serve(int $port): void
                 // Draft length for speculative decoding; 0 = plain decoding. Greedy only, since
                 // acceptance is defined against the model's own argmax.
                 $specK = api_num($body, "spec_k", 0);
+                $specBins = api_num($body, "spec_bins", 0);
+                $specDepth = api_num($body, "spec_depth", 3);
+                if ($specBins > 8) {
+                    $specBins = 8;
+                }
+                if ($specDepth < 1) {
+                    $specDepth = 1;
+                }
+                if ($specDepth > 4) {
+                    $specDepth = 4;
+                }
                 $out = "";
                 $text = "";
                 $genN = 0;
@@ -8177,6 +8188,12 @@ function api_serve(int $port): void
                         $jsonOk = 1;      // the constraint already decided the tokens
                     } else if ($specK > 0 && $temp <= 0.0) {
                         $out = model_spec_generate(0, $ids, $maxTok, $specK);
+                    } else if ($specBins > 0 && $jsonMode == 0 && $temp > 0.0 && $topp >= 1.0) {
+                        // FR-06 served path: a tree only pays off once verification SAMPLES
+                        // (F273), so this branch is gated on temp>0 and no nucleus truncation -
+                        // top_p<1 would filter the very tail the residual draws from.
+                        $out = model_spec_tree_sample(0, $ids, $maxTok, $specBins, $specDepth,
+                                                      $temp, $seed);
                     } else if ($jsonMode == 0 && $prefixCache == 1) {
                         // Reuse the SSD prefix cache: cache_prefill leaves the session at the
                         // prompt tail, so decoding (greedy or sampled) continues from there.
@@ -10096,6 +10113,60 @@ function main(): void
             . model_spec_stats() . " " . $ok2 . "\n";
     }
     echo "SPEC-TREE-SWEEP\n" . $tsweep;
+
+    // SPEC-TREE-SAMPLE (F307): the same tree, verified by SAMPLING. Greedy verification can accept
+    // only one branch (F273), so this is the first version where more than one bin can pay. Three
+    // gates in one: temp=0 must reproduce the greedy tree token for token (regression guard), a
+    // fixed seed must reproduce itself byte for byte (the draws really come from g_sess_rng), and
+    // temp>0 must differ from greedy somewhere (proof the sampler is in the path, not dead code).
+    $f307Greedy = model_spec_tree(0, $specIds, 24, 2, 3);
+    $f307Z1 = model_spec_tree_sample(0, $specIds, 24, 2, 3, 0.0, 1234);
+    $f307Z2 = model_spec_tree_sample(0, $specIds, 24, 2, 3, 0.0, 1234);
+    $f307S1 = model_spec_tree_sample(0, $specIds, 24, 2, 3, 0.9, 4242);
+    $f307S2 = model_spec_tree_sample(0, $specIds, 24, 2, 3, 0.9, 4242);
+    $f307A = explode(",", $f307S1);
+    $f307B = explode(",", $f307Greedy);
+    $f307Diff = 0;
+    $f307N = count($f307A) < count($f307B) ? count($f307A) : count($f307B);
+    for ($f307i = 0; $f307i < $f307N; $f307i++) {
+        if ($f307A[$f307i] != $f307B[$f307i]) {
+            $f307Diff = $f307Diff + 1;
+        }
+    }
+    $f307Eq0 = $f307Z1 == $f307Greedy ? 1 : 0;
+    $f307R0 = $f307Z1 == $f307Z2 ? 1 : 0;
+    $f307RT = $f307S1 == $f307S2 ? 1 : 0;
+    if ($f307Eq0 == 1 && $f307R0 == 1 && $f307RT == 1 && $f307Diff > 0) {
+        echo "SPEC-TREE-SAMPLE: PASS temp0==greedy_tree reproducible diff=" . $f307Diff . "/"
+            . $f307N . " " . model_spec_stats() . "\n";
+    } else {
+        echo "SPEC-TREE-SAMPLE: FAIL eq0=" . $f307Eq0 . " repro0=" . $f307R0
+            . " reproT=" . $f307RT . " diff=" . $f307Diff . "/" . $f307N
+            . "\n  greedy=" . $f307Greedy . "\n  temp0=" . $f307Z1 . "\n  sampled=" . $f307S1 . "\n";
+    }
+
+    // SPEC-TREE-WALL (the number FR-06 has been owed): tree-on versus tree-off at the SAME
+    // temperature inside the SAME function, so drafting is the only difference. bins<=0 disables
+    // drafting and leaves plain sampled decoding. Both timings are printed; the ratio is measured,
+    // not assumed.
+    $f307TOff = microtime(true);
+    $f307Off = model_spec_tree_sample(0, $specIds, 48, 0, 3, 0.9, 777);
+    $f307OffMs = (microtime(true) - $f307TOff) * 1000.0;
+    $f307OffStats = model_spec_stats();
+    $f307TOn = microtime(true);
+    $f307On = model_spec_tree_sample(0, $specIds, 48, 2, 3, 0.9, 777);
+    $f307OnMs = (microtime(true) - $f307TOn) * 1000.0;
+    $f307OnStats = model_spec_stats();
+    $f307OffN = count(explode(",", $f307Off));
+    $f307OnN = count(explode(",", $f307On));
+    if ($f307OffN > 10 && $f307OnN > 10 && $f307OffMs > 0.0 && $f307OnMs > 0.0) {
+        echo "SPEC-TREE-WALL: PASS off_ms=" . $f307OffMs . " off_len=" . $f307OffN . " "
+            . $f307OffStats . "\n  on_ms=" . $f307OnMs . " on_len=" . $f307OnN . " "
+            . $f307OnStats . "\n  speedup=" . ($f307OffMs / $f307OnMs) . "x\n";
+    } else {
+        echo "SPEC-TREE-WALL: FAIL off_ms=" . $f307OffMs . " on_ms=" . $f307OnMs
+            . " off_len=" . $f307OffN . " on_len=" . $f307OnN . "\n";
+    }
 
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;

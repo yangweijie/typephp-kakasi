@@ -162,6 +162,17 @@ def main():
         ec = None
     check("chat-json-schema-extref", ec in ("Paris", "London"), str(ext)[:120])
 
+    # F307: the served SAMPLING path can be speculative too. A draft tree only pays once
+    # verification samples (F273), so this asks for spec_bins at temperature 0.9 and requires the
+    # same seed to reproduce byte-for-byte - i.e. the accept draws come from the request seed,
+    # not from wall-clock state.
+    sj = {"messages": [{"role": "user", "content": "Name three cities in France and say one line about each."}],
+          "max_tokens": 40, "temperature": 0.9, "seed": 11, "spec_bins": 2, "spec_depth": 3}
+    sa = post("/v1/chat/completions", sj)["choices"][0]["message"]["content"]
+    sb = post("/v1/chat/completions", sj)["choices"][0]["message"]["content"]
+    check("chat-spec-tree-sampled", sa != "" and sa == sb,
+          "len=%d eq=%s head=%r" % (len(sa), sa == sb, sa[:40]))
+
     # F226: a long forced nested assembly must arrive complete on the FIRST served request. The
     # cold-session defect (findings F208-F225) showed up as empty text on attempt one and a correct
     # body only on an identical retry, so grading a retry here would prove nothing.

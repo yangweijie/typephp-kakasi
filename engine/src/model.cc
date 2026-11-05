@@ -42,6 +42,8 @@ int session_next_allowed(int backend, const std::vector<int>& allowed);
 int eos_id();
 std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int k);
 std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new, int bins, int depth);
+std::vector<int> spec_tree_sample(int backend, std::vector<int> ids, int n_new, int bins, int depth,
+                                  double temp, long long seed);
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
@@ -149,6 +151,19 @@ php::Str php_model_spec_tree(php::Int backend, php::Str tokens, php::Int n_new, 
     const std::string csv(tokens.data(), tokens.length());
     const std::vector<int> out = model::spec_tree_generate(
         (int) backend, parse_ids(csv), (int) n_new, (int) bins, (int) depth);
+    std::string s;
+    for (size_t i = 0; i < out.size(); ++i) {
+        if (i) s += ",";
+        s += std::to_string(out[i]);
+    }
+    return php::Str(s);
+}
+php::Str php_model_spec_tree_sample(php::Int backend, php::Str tokens, php::Int n_new, php::Int bins,
+                                    php::Int depth, php::Float temp, php::Int seed) {
+    const std::string csv(tokens.data(), tokens.length());
+    const std::vector<int> out = model::spec_tree_sample(
+        (int) backend, parse_ids(csv), (int) n_new, (int) bins, (int) depth,
+        (double) temp, (long long) seed);
     std::string s;
     for (size_t i = 0; i < out.size(); ++i) {
         if (i) s += ",";

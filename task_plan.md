@@ -126,7 +126,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
   - ✅ **"树"已实现（F50）**：attention 加**树掩码**（`tree[b]` 位图限定每个 query 只能看到自己分支的祖先）⇒ **一次 verify pass 检查多分支**（FR-06.1 的字面要求）；`spec_tree_generate(bins,depth)` 取最长通过分支。三种形状均与贪心**逐位相同**
   - ⚠ **实测该负载下链式更快**：tree(bins2,d3)=684 ms / tree(2,2)=918 / tree(3,2)=969 vs **链式 k=8 = 355 ms**（贪心 ~880）。多出的分支在高可预测文本上全是白算
   - 🔎 **专为树构造的场景也没赢**（SPEC-AMB，最近重复给 99、更早给 42）：chain `accepted=5/verifies=5` vs tree `accepted=5/verifies=5` —— **接受数完全相同**，树只多算草稿。⇒ **瓶颈在草稿器不在验证形状**：prompt-lookup 的"最近匹配"按构造就是最可能续写，首分支几乎总对，多分支**结构性无收益**；树要赢必须有多样草稿器（DFlash 系列，FR-06.2）
-  - ⛔ 仍未做：DFlash/DFlash2/DSpark/LiLiCorr drafter（树的收益依赖它）
+  - ✅ **F307：采样验证让树第一次真的赢**（推翻上面"多分支结构性无收益"的前提——那条只在贪心验证下成立）：`spec_tree_sample(bins,depth,temp,seed)` 按 `rand01() < p(draft)` 接受、拒绝时从 `(p−δ_draft)⁺` 残差重采 ⇒ 多条分支同时具备被接受的可能。实测 `SPEC-TREE-WALL: off_ms=1871.6 on_ms=1396.1 speedup=1.34x`（同 temp=0.9、同为 95 token 输出、`drafts=36 accepted=48 verifies=12` ⇒ **每次验证提交 4.0 个 token**，收益来源可核）；`temp=0` 逐 id 等于贪心树（回归门）、同种子逐字节复现、temp=0.9 下 22/71 位置与贪心不同（证明采样确在路径内）。服务侧新增 `spec_bins`/`spec_depth`（门控 `temp>0 && top_p>=1 && 非 json`）
+  - 🐞 **F308（同轮审计发现，待修）**：树节点的 RoPE 绝对位置按**摊平序号** `pos+b*D+i` 计算，且接受 `b>0` 分支后不压实 KV 行 ⇒ 分支 0 以外的接受判据带位置偏差、缓存前缀里留下**被拒分支**的行。修法＝①位置按逻辑深度给 ②接受后把该行段压实
+  - ⛔ 仍未做：DFlash/DFlash2/DSpark/LiLiCorr drafter（采样验证已经把"验证形状"这条路打开，草稿器质量成为每次验证接受数的唯一天花板）
 - [ ] 吸收 Splash / 其他引擎的并行/调度思路（按 findings 待办清单）
 - [~] MoE 专家流式、多设备 split、SSD 前缀缓存（按优先级）
   - ✅ **SSD 前缀缓存已实现（findings F39）**：`cache_store`/`cache_prefill` 把 KV 落到磁盘并在下次请求复用最长公共前缀；实测 **hit 19/19、冷 67.1 ms → 命中 20.5 ms（3.3×）**，后续 token 逐 id 相同。全命中时只重跑最后一个 token 拿 logits；加载后对齐 `g_sess_len` 可接 `session_next`
@@ -266,3 +268,5 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **新的第一步是采样验证**（speculative sampling）：草稿分布 q、目标分布 p 下按 `min(1, p/q)` 接受，拒绝时从 `(p-q)+` 残差重采样；只有这样才能同时接受多条不同路径。
 **第二步**才是草稿器多样化（n-gram 频次 / 次优 token），且判据必须是**同温度下的 tok/s 或 wall 对比**，不是逐位一致。
 **前置条件**：先把 `verify` 从"逐位等于 argmax"改成"按概率接受"，并保证 temperature=0 时**退化回现有行为**（这样既有 138 项自检仍可作回归）。
+
+**F307 已闭合本节**（2026-11-05）：采样验证落地并量到 **1.34×**（`SPEC-TREE-WALL`，temp=0.9 同长度对比），temp=0 退化回贪心树已成回归门。推论"多分支恒零收益"的适用范围收窄为**仅贪心验证**。下一步顺位改变：先修 F308（树位置/缓存行一致性——采样验证会让 `b>0` 接受从罕见变常见），再抬草稿器多样性。
