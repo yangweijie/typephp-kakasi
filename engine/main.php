@@ -8173,8 +8173,19 @@ function api_serve(int $port): void
                 if ($specDepth < 1) {
                     $specDepth = 1;
                 }
-                if ($specDepth > 4) {
-                    $specDepth = 4;
+                // F331: depth was hard-capped at 4 to keep the 32-bit tree mask in range, but that
+                // was the worst case over bins. The real budget is bins*depth <= 32, and a long
+                // shallow-wide tree loses to depth (F330: a chain verify commits up to k tokens
+                // while a tree path is capped by depth), so depth up to 8 is allowed and trimmed
+                // only when the mask would overflow.
+                if ($specDepth > 8) {
+                    $specDepth = 8;
+                }
+                if ($specBins > 0 && $specBins * $specDepth > 32) {
+                    $specDepth = (int) (32 / $specBins);
+                    if ($specDepth < 1) {
+                        $specDepth = 1;
+                    }
                 }
                 $out = "";
                 $text = "";
@@ -10345,7 +10356,7 @@ function main(): void
     $f322Off = model_spec_tree_sample(0, $specIds, 48, 0, 3, 0.9, 777);
     $f322OffMs = (microtime(true) - $f322T) * 1000.0;
     $f322OffN = count(explode(",", $f322Off));
-    $f322Shapes = "1,3;2,3;4,3;2,4";
+    $f322Shapes = "1,3;2,3;4,3;2,4;1,6;1,8";
     $f322Best = 0.0;
     $f322BestShape = "";
     $f322Rows = "";
