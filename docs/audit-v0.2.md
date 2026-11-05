@@ -224,3 +224,15 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 8000 形状 / 8001 par+fairness | 115 PASS 0 FAIL / 退出码 0 / 0 | `engine/api_smoke_f360.log`、`engine/par_smoke_f360.log`、`engine/fairness_f360.log` |
 | 自检基线 | **157 PASS / 0 FAIL** | `engine/run_f360.log`（相对 155 基线多 `BATCH-EQ` + `BATCH-THRU`） |
 **基线（本次 HEAD）**：`engine/run_f360.log` 157 PASS / 0 FAIL；`engine/api_smoke_f360.log` 115 PASS / 0 FAIL；8001 `par`+`fairness` 退出码 0；哨兵 0；HEAD 二进制 == 该自测构建（exe 3377152 bytes，22:31）。
+
+## 审计增补（F361，2026-11-05 15:04）——F359 的吞吐目标在 temp 0 下达成，缺口归因更正
+- **实测**（同一构建、同一提示、60 token/流）：temp 0.0 下 8001 并发 scaling **1.714× / 1.789×**（中位 **1.75×**，落在 F359 的 1.6–2× 目标内）；temp 0.9 下仍 1.45×（4 样本 1.418–1.496）。证据：`engine/thru_t0_f360.log`。
+- **归因更正**：F360 把每 token 的非引擎开销（约 41.6ms）写成"PHP 侧"，**实际构成是采样器 ~15ms/流/token（引擎内 C++：全词表 exp + 151936 元素排序 + 核截断）+ 其余 ~26ms/token（PHP 与 Python 客户端）**。两个流各付一次采样 ⇒ 引擎内 1.77× 被摊成服务面 1.45×。**下一轮该动采样器**；F360 那句"下一轮动 PHP"作废。
+- **边界**：temp 0 与 temp 0.9 是两个不同的分布设置，两个数字都对、不能互相替代；`gemv2` 只覆盖 M=2，M≥3 未测。
+
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| temp 0 下批处理达标 | 1.714× / 1.789× | `engine/thru_t0_f360.log`（串行 2.71s/22.52 tok/s，并发 3.16s/38.61 tok/s） |
+| temp 0.9 下摊薄 | 中位 1.45× | `engine/throughput_f360.log` + `engine/thru3_f360.log` |
+| 采样每流每 token 的代价 | ~14.9ms | 同上两组的串行速率之差（59.3 vs 44.4 ms/token） |
+| 引擎内批处理比值 | 1.77× | `engine/run_f360.log`：`BATCH-THRU: PASS ... ratio=1.77` |
