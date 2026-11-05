@@ -10454,6 +10454,70 @@ function main(): void
             . " seeded_ms=" . $f323SeedMs . "\n";
     }
 
+    // SPEC-CHAIN-VS-TREE (F330): the greedy served path still defaults to the chain (`spec_k`)
+    // because the tree lost that comparison in the F50 era - and those numbers came from the sweep
+    // that F312 retired as unusable. This re-runs it properly: same build, same prompt, three
+    // interleaved rounds, a median per mode, and all three must stay byte-identical to greedy
+    // because acceptance is argmax-based at temp=0.
+    $f330Ref = model_generate(0, $specIds, 24);
+    $f330Eq = 1;
+    $f330Cs = 0.0; $f330Cmin = 0.0; $f330Cmax = 0.0;
+    $f330O1s = 0.0; $f330O1min = 0.0; $f330O1max = 0.0;
+    $f330O2s = 0.0; $f330O2min = 0.0; $f330O2max = 0.0;
+    $f330ChainStats = "";
+    $f330Tree2Stats = "";
+    for ($f330k = 0; $f330k < 3; $f330k++) {
+        $f330Ta = microtime(true);
+        $f330A = model_spec_generate(0, $specIds, 24, 8);
+        $f330C = (microtime(true) - $f330Ta) * 1000.0;
+        $f330ChainStats = model_spec_stats();
+        $f330Tb = microtime(true);
+        $f330B = model_spec_tree(0, $specIds, 24, 1, 3);
+        $f330O1 = (microtime(true) - $f330Tb) * 1000.0;
+        $f330Tc = microtime(true);
+        $f330Cc = model_spec_tree(0, $specIds, 24, 2, 3);
+        $f330O2 = (microtime(true) - $f330Tc) * 1000.0;
+        $f330Tree2Stats = model_spec_stats();
+        if ($f330A != $f330Ref || $f330B != $f330Ref || $f330Cc != $f330Ref) {
+            $f330Eq = 0;
+        }
+        if ($f330k == 0) {
+            $f330Cmin = $f330C; $f330Cmax = $f330C; $f330Cs = 0.0;
+            $f330O1min = $f330O1; $f330O1max = $f330O1;
+            $f330O2min = $f330O2; $f330O2max = $f330O2;
+        } else {
+            if ($f330C < $f330Cmin) { $f330Cmin = $f330C; }
+            if ($f330C > $f330Cmax) { $f330Cmax = $f330C; }
+            if ($f330O1 < $f330O1min) { $f330O1min = $f330O1; }
+            if ($f330O1 > $f330O1max) { $f330O1max = $f330O1; }
+            if ($f330O2 < $f330O2min) { $f330O2min = $f330O2; }
+            if ($f330O2 > $f330O2max) { $f330O2max = $f330O2; }
+        }
+        $f330Cs = $f330Cs + $f330C;
+        $f330O1s = $f330O1s + $f330O1;
+        $f330O2s = $f330O2s + $f330O2;
+    }
+    // median of three = sum - min - max
+    $f330CMed = $f330Cs - $f330Cmin - $f330Cmax;
+    $f330O1Med = $f330O1s - $f330O1min - $f330O1max;
+    $f330O2Med = $f330O2s - $f330O2min - $f330O2max;
+    $f330Fast = "chain";
+    if ($f330O1Med < $f330CMed) {
+        $f330Fast = "tree1";
+    }
+    if ($f330O2Med < $f330CMed && $f330O2Med < $f330O1Med) {
+        $f330Fast = "tree2";
+    }
+    if ($f330Eq == 1 && $f330CMed > 0.0) {
+        echo "SPEC-CHAIN-VS-TREE: PASS greedy-identical medians chain_ms=" . $f330CMed
+            . " tree(b1d3)_ms=" . $f330O1Med . " tree(b2d3)_ms=" . $f330O2Med
+            . " fastest=" . $f330Fast . "\n  chain: " . $f330ChainStats . "\n  tree2: "
+            . $f330Tree2Stats . "\n";
+    } else {
+        echo "SPEC-CHAIN-VS-TREE: FAIL greedy_identical=" . $f330Eq . " chain_med="
+            . $f330CMed . "\n";
+    }
+
     // The case a tree is FOR: the nearest repeat of the tail has a continuation the model will
     // now reject, while an OLDER repeat has the one it wants. Chain has only the nearest branch;
     // the tree can fall through to the older one. Both must still equal greedy.
