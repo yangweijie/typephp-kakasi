@@ -251,6 +251,65 @@ function api_cache_path(string $ids): string
     return "C:/git/c/typephp-kakasi/engine/api_prefix_b" . model_cache_key($ids, 64) . ".kv";
 }
 
+// F342: 2-way set-associative slot choice. A prompt has a primary bucket and an alternate one, and
+// it takes the alternate whenever the primary is recorded as owned by a DIFFERENT prefix. F341
+// measured what the single-slot hash did before this: an unrelated prompt colliding in bucket 32
+// silently destroyed a hot prefix's cache, cutting reusable tokens 49 -> 22 with no signal anywhere
+// in the API. Ownership lives in an append-only index (last line per slot wins); losing it - after
+// the index is reset for size - only falls back to the old behaviour, it can never hand out wrong
+// tokens because the engine still compares the stored prefix.
+function api_cache_index_path(): string
+{
+    return "C:/git/c/typephp-kakasi/engine/api_prefix_index.txt";
+}
+
+// Owner fingerprint of one slot from the index text, or -1 when nothing recorded it. The scan keeps
+// the LAST match because the index is append-only.
+function api_cache_owner(int $slot, string $ix): int
+{
+    $lines = explode("\n", $ix);
+    $best = -1;
+    for ($i = 0; $i < count($lines); $i++) {
+        $p = explode("|", $lines[$i]);
+        if (count($p) == 2 && (int) $p[0] == $slot) {
+            $best = intval($p[1]);
+        }
+    }
+    return $best;
+}
+
+function api_cache_pick(string $ids): string
+{
+    $k1 = model_cache_key($ids, 64);
+    $k2 = model_cache_key($ids . "|alt", 64) + 64;
+    $fp = model_cache_key($ids, 2147483000);
+    $ip = api_cache_index_path();
+    $ix = "";
+    if (file_exists($ip)) {
+        $h = fopen($ip, "r");
+        if ($h !== false) {
+            $ix = fread($h, 262144);
+            fclose($h);
+        }
+    }
+    // An oversized index is dropped rather than compacted: the cost of losing it is one collision
+    // back to single-slot behaviour, never correctness.
+    $slot = $k1;
+    $own = api_cache_owner($k1, $ix);
+    if ($own >= 0 && $own != $fp) {
+        $slot = $k2;
+    }
+    if (strlen($ix) > 200000 && file_exists($ip)) {
+        unlink($ip);
+    }
+    $o = fopen($ip, "a");
+    if ($o !== false) {
+        fwrite($o, $slot . "|" . $fp . "\n");
+        fclose($o);
+    }
+    return "C:/git/c/typephp-kakasi/engine/api_prefix_b" . $slot . ".kv";
+}
+
 // Store only when the entry is worth keeping AND we are not clobbering a better prefix with a
 // short accidental match (a divergent prompt sharing only the chat header used to evict the
 // whole conversation cache).
@@ -335,7 +394,7 @@ function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = "")
 function api_constrained(string $ids, array $vals, int $maxSteps, int $useCache = 1): string
 {
     // Constrained decoding is greedy, so it can start from a cached prefix like plain decoding.
-    $pcPathC = api_cache_path($ids);
+    $pcPathC = api_cache_pick($ids);
     $promptNc = count(explode(",", $ids));
     $hitc = $useCache == 1 ? model_cache_prefill(0, $ids, $pcPathC) : -1;
     if ($hitc < 0 && model_session_start(0, $ids) != 0) {
@@ -6408,7 +6467,7 @@ Connection: close
                         if ($cur >= 0) {
                             model_session_save($cur);
                         }
-                        $hit = model_cache_prefill(0, $ids, api_cache_path($ids));
+                        $hit = model_cache_prefill(0, $ids, api_cache_pick($ids));
                         if ($hit < 0 && model_session_start(0, $ids) != 0) {
                             fclose($c);
                         } else {
@@ -7009,7 +7068,7 @@ function api_serve(int $port): void
                 // writing the next user header, which is what the streamed chunks showed.
                 $ids = $ids . "," . tok_chat_open("assistant");
                 $promptN = count(explode(",", $ids));
-                $pcPath = api_cache_path($ids);
+                $pcPath = api_cache_pick($ids);
                 // Server-sent events: one chunk per token as soon as it exists. The engine keeps
                 // the KV cache between calls, so a step costs one token, not a re-prefill.
                 // Anthropic streams the same content as a different event sequence:
@@ -12147,23 +12206,29 @@ function main(): void
         }
     }
     if ($f340Ai >= 0) {
-        $f340PA = api_cache_path($f340IdsList[$f340Ai]);
-        $f340PB = api_cache_path($f340IdsList[$f340Bi]);
+        $f340PA = api_cache_pick($f340IdsList[$f340Ai]);
+        $f340PB = api_cache_pick($f340IdsList[$f340Bi]);
         model_cache_store(0, $f340IdsList[$f340Ai], $f340PA);
         $f340H1 = model_cache_prefill(0, $f340IdsList[$f340Ai], $f340PA);
         model_cache_store(0, $f340IdsList[$f340Bi], $f340PB);
         $f340H2 = model_cache_prefill(0, $f340IdsList[$f340Ai], $f340PA);
-        $f340Same = $f340PA == $f340PB ? 1 : 0;
-        if ($f340Same == 1 && $f340H2 < $f340H1 && $f340H1 > 0) {
-            echo "CACHE-EVICT: PASS slot=" . $f340Buckets[$f340Ai] . " hit_own=" . $f340H1
-                . " hit_after_other_prompt_stole_slot=" . $f340H2
-                . " (displacement is silent today; a recency policy must shrink this)\n";
+        $f340Dif = $f340PA != $f340PB ? 1 : 0;
+        // F342: the collision pair still exists (that part of the check is the point - it keeps the
+        // 64-bucket premise honest), but placement must now diverge so the stored owner survives.
+        // Before the 2-way picker this same pair measured hit_own=49 -> hit_after=22 (F341).
+        if ($f340Dif == 1 && $f340H1 > 0 && $f340H2 == $f340H1) {
+            echo "CACHE-EVICT: PASS 2-way protected primary=" . $f340Buckets[$f340Ai]
+                . " distinct_slot=1 hit_own=" . $f340H1 . " hit_after=" . $f340H2
+                . " (single-slot build lost 49->22 on this same pair)\n";
         } else {
-            echo "CACHE-EVICT: FAIL same_path=" . $f340Same . " hit_own=" . $f340H1
-                . " hit_after=" . $f340H2 . "\n";
+            echo "CACHE-EVICT: FAIL distinct_slot=" . $f340Dif . " hit_own=" . $f340H1
+                . " hit_after=" . $f340H2 . " pa=" . $f340PA . " pb=" . $f340PB . "\n";
         }
         if (file_exists($f340PA)) {
             unlink($f340PA);
+        }
+        if ($f340Dif == 1 && file_exists($f340PB)) {
+            unlink($f340PB);
         }
     } else {
         echo "CACHE-EVICT: FAIL no_collision_in_40 (bucket hashing or its width changed)\n";

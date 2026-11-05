@@ -817,3 +817,8 @@
 - **新增判据**：`CACHE-EVICT` ⇒ 量化了撞槽驱逐（热前缀复用 **49→22 token**），并顺带守住"64 槽哈希"这一前提（找不到碰撞即 FAIL）。
 - **前缀缓存的下一步（判据已备好）**：recency-aware 驱逐（LRU 或 2-way 关联 + 槽 owner 指纹）。**验收写法**：`CACHE-EVICT` 的 `hit_after_other_prompt_stole_slot` 必须显著回升（理想 ≈ `hit_own`），且 `PREFIXCACHE`/`PREFIXPART` 不变差。
 - 其余顺位不变：continuous batching（吞吐上限）、多属性对象项（先 dispatch 打点）、GGUF 分片 / 多卡 split / FR-05（本机不可验）。
+
+## ▶ 状态（F342，2026-11-05 09:58 —— 前缀缓存驱逐这一格补上）
+- **基线**：本次 HEAD；源码==被验证的二进制（构建于本轮最后一次 `main.php` 修改之后）。自检 **154 PASS / 0 FAIL**（`run_f342.log`）、8000 **113/0**、8001 全 0、吞吐 1.093×（第 6 个样本）、哨兵 0。
+- **前缀缓存**：改为 2 路组相联 + owner 索引（`api_cache_pick`），同一对碰撞提示的复用由 **49→22** 变为 **49→49**；仍**不是 LRU**（两候选槽皆被占时无新近度选择）。`CACHE-EVICT` 现在既能证伪盲驱逐回归，也能给未来的 LRU 判据。
+- **下一轮顺位**：①真正的 recency 驱逐（引用计数或时间戳受害者选择），判据＝`CACHE-EVICT` 在多对碰撞提示下 `hit_after == hit_own`；②continuous batching（吞吐上限，唯一能把 1.1× 变成 ~2× 的路）；③多属性对象项（先 dispatch 打点）；④GGUF 分片 / 多卡 split / FR-05（本机不可验）。

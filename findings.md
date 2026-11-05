@@ -2645,3 +2645,15 @@ CACHE-EVICT: PASS slot=32 hit_own=49 hit_after_other_prompt_stole_slot=22
 ### F341 的证据对照（自查发现的可追溯性缺陷）
 本节编号 **F341**，但同一轮的门禁日志前缀是 **`f340`**（`engine/run_f340.log`、`api_smoke_f340.log`、`par_smoke_f340.log`、`fairness_f340.log`、`throughput_f340.log`）——因为构建链是在我发现"计划里'无多前缀索引'是过期陈述"（记为 F339）之前起跑的，标签按构建轮次取号，文档按发现顺序取号，两者错开了一格。
 **核对方法**（自审时用一次调用完成，别靠记忆）：`CACHE-EVICT: PASS slot=32 hit_own=49 hit_after_other_prompt_stole_slot=22` 在 `engine/run_f340.log` 第 825 行；同轮 `SUITE_PASS=154 SUITE_FAIL=0`；`grep -h "SUITE_PASS" <task output>` 亦同。**以后规则：findings 条目正文里必须写清对应的日志 tag**，否则下一个人在 `*_f341.log` 里找不到证据就会以为数据是编的。本轮不重命名日志（重命名会割裂历史引用）。
+
+### F342 · 前缀缓存改为**2 路组相联**：同一对碰撞提示的复用从 49→22 变成 **49→49**
+F341 把缺陷量化成了判据，这一轮就是冲著它改的（不是蒙眼改）。
+**改了什么（纯 PHP，`engine/main.php`）**：新增 `api_cache_pick(ids)` —— 每个前缀有两个候选槽（`model_cache_key(ids,64)` 与 `model_cache_key(ids+"|alt",64)+64`，合计 ≤128 个文件、天然有界，不需要删除）；一张 **append-only 的 owner 索引** `engine/api_prefix_index.txt`（`slot|fingerprint`，读时取每槽**最后一条**），主槽若被**别的指纹**占着就走备用槽；索引超过 200 KB 就整张丢弃重来（丢掉只会退回单槽行为，**绝不会给出错的 token**，因为引擎仍自己比较已存前缀）。三处服务侧调用点（chat / anthropic / 内层）从 `api_cache_path` 换成 `api_cache_pick`。
+**测到（`engine/run_f342.log`，梯全绿 **154 PASS / 0 FAIL**、884 s；8000 **113/0**；8001 `par`+`fairness` 全 0；吞吐第 6 个样本 `1.093×`）**：
+```
+CACHE-EVICT: PASS 2-way protected primary=32 distinct_slot=1 hit_own=49 hit_after=49
+             (single-slot build lost 49->22 on this same pair)
+```
+⇒ **同一对碰撞提示、同一把哈希**：单槽时代热前缀被无关请求打掉 27 个可复用 token，现在**一个没掉**。`PREFIXCACHE` 仍 `19/19`、warm 22.4 ms，`PREFIXPART` 仍逐 id 复现 fresh 的 logits 与 token ⇒ 保护没有拿正确性换速度。
+**这条改动不是什么（必须写清）**：它**不是 LRU**。当**两个候选槽都被占**时，仍然无条件覆盖备用槽——没有新近度排序、没有引用计数。所以准确说法是"**2 路组相联 + owner 索引**把盲驱逐的概率从"撞 1/64"降到"两次独立碰撞同时发生"，而"按新近度挑受害者"仍然是未做的独立工作（下一轮再动，且这条判据已经能证伪它：`CACHE-EVICT` 的 `hit_after` 若再低于 `hit_own` 就红）。
+**顺带**：`api_cache_path()` 保留未删（旧 self-test 仍在用它测单槽存取语义），新代码路径只用 `api_cache_pick`。
