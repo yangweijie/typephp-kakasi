@@ -724,3 +724,22 @@
 - **唯一下一步（能出真实收益）**：把 `SPEC-SAMPLE` 的循环接进 C++ `spec_*` 路径（多草稿 + 一次批量验证），判据是**同温度 tree-on/off 的 wall 对比**；实现时记住 F273（贪心验证下多分支恒无收益）与 F284（四步规格）。
 - **其余未闭合**：多属性对象项（阻塞于上游 dispatch 归属未定位，F298–F300）、`g_sess_len` 覆盖缺口（F261）、含元字符 pattern / `minimum·maximum·multipleOf`、per-session KV 并行吞吐、SSD 前缀分桶、GGUF 分片、多卡 split（需第二设备）、FR-05。
 - **护栏**：单引擎进程；构建与测量之间用 `&&`；重建前清孤儿并核 exe mtime；新增 native 函数必须同时改 `php_model_*` 包装与 `model.stub.php`。
+
+## ▶ F307 · 采样验证树解码的落地规格（写给 /goal resume 的第一轮：规格已定，不必再推导）
+**要改的位置**：`engine/src/model_sycl.cc:1873` 之后的 accept 段，以及 `:1849` / `:1902` 两处单 token 回退。草稿收集 `:1821-1847`、树展平与 mask `:1861-1870` 原样复用。
+**为什么必须换验证规则（F273）**：贪心 argmax 下给定已接受前缀，每个节点的预测唯一 ⇒ 至多一条分支能被接受，多分支恒零收益。改成按概率接受后每条分支各自有接受概率，B 个 bin 才第一次有意义。
+**接受/残差（点位草稿 q=δ_d 的标准 speculative sampling）**：
+- 节点 (b,i) 的预测分布 p：该节点 logits 按温度归一（temp→0 退化为 argmax，等价现状）。
+- 下一草稿 `d = branches[b][i+1]`：接受当且仅当 `rand01() < p(d)`（q(d)=1 ⇒ `min(1, p/q) = p`）。
+- 拒绝时从残差 `(p−q)⁺` 采样 = 在 p 上剔除 d 后归一采样，即 `sample_excluding(d, temp)` 的 C++ 内联版。
+**实现三步**：
+1. 给 `prefill_tops_tree` 增加可选出参（或新增 `prefill_tops_tree_p`）：对每个节点额外返回①其后继草稿 token 的概率 `p_i(nodes[i+1])`（同分支且 i+1<D，分支末位填 -1）②该节点残差采样 `bonus_i`。logits 已在 kernel 外物化，只多两次行扫描。
+2. accept 段替换：逐分支累加连续接受长度（i=0 的参照是 `ref`），取 acc 最大者提交，再提交该分支最后处理节点的 `bonus` ⇒ 每次验证最多 `D+1` 个 token；全零接受时提交 root 节点的 `bonus`。
+3. `pos` 前进量 = 实际提交 token 数（含 bonus）——不要沿用现成的 `pos += bestAcc`；`ref` 的"下一步预测"语义改由 bonus 承担。
+**新增 PHP 面（必须成对，缺一必炸）**：`php_model_spec_tree_sample` 包装（`engine/src/model.cc`）+ `model.stub.php` 声明（`function model_spec_tree_sample(array $ids, int $n, int $bins, int $depth, float $temp, int $seed): string {}`）。函数开头用 `seed` 重置 `g_sess_rng` 以保证同种子可复现。
+**四个门禁（顺序即判据）**：
+- `SPEC-TREE-SAMPLE-DET`：同 seed 两次 → 输出逐字节相同。
+- `SPEC-TREE-SAMPLE-DIFF`：temp=0.8 下至少一个位置与贪心树输出不同（全同说明采样没进路径）。
+- `SPEC-TREE-SAMPLE-TEMP0`：temp=0 的输出与现有 `spec_tree_generate` 完全一致（回归护栏）。
+- `SPEC-TREE-WALL`：同温度、同 prompt、≥512 token，tree-on vs 单步 off 的 wall 对比 ⇒ FR-06 第一个"真实收益"数字。
+**构建纪律（每次重建前逐条核）**：清 `engine/build/gen/cache/ast`（动 C++ 再清 `build/gen`/`build/obj`）→ `Get-Process` 找孤儿引擎并 `Stop-Process -Force` → 核 exe mtime 前进且无 `SYCL_LINK_FAILED` → 构建与测量之间用 `&&`；任一时刻只允许一个引擎进程。
