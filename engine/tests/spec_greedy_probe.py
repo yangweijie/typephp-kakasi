@@ -25,6 +25,7 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 TOKENS = int(sys.argv[2]) if len(sys.argv) > 2 else 128
 BASE = "http://127.0.0.1:%d" % PORT
 URL = BASE + "/v1/chat/completions"
+MODE = sys.argv[4] if len(sys.argv) > 4 else "greedy"   # "greedy" (spec_k) or "sampled" (tree)
 
 # A prompt the model keeps extending at temperature 0. The first attempt used a periodic context
 # and the model answered it in 10-11 tokens - too short to compare drafting against, and the probe's
@@ -39,7 +40,13 @@ CTX = (sys.argv[3] if len(sys.argv) > 3 else
 def once(spec_k):
     body = {"messages": [{"role": "user", "content": CTX}],
             "max_tokens": TOKENS, "temperature": 0.0, "seed": 777}
-    if spec_k:
+    if isinstance(spec_k, tuple):
+        # Sampled tree: needs temp>0 (F273 - a greedy verifier can only ever accept one branch)
+        # and top_p left at 1.0, which the served branch requires.
+        body["temperature"] = 0.9
+        body["spec_bins"] = spec_k[0]
+        body["spec_depth"] = spec_k[1]
+    elif spec_k:
         body["spec_k"] = spec_k
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
@@ -63,24 +70,28 @@ def stats_of():
         return repr(exc)[:60]
 
 
-print("SPEC-GREEDY port=%d max_tokens=%d prompt_words=%d temp=0" % (PORT, TOKENS, len(CTX.split())))
+print("SPEC-GREEDY port=%d max_tokens=%d prompt_words=%d temp=0 mode=%s"
+      % (PORT, TOKENS, len(CTX.split()), MODE))
+CONFIGS = [(0, 8, 12, 16) if MODE == "greedy" else (0, (1, 6), (2, 6))]
 rows = []
-for spec_k in (0, 8, 12, 16):
+for spec_k in CONFIGS[0]:
     trials = [once(spec_k) for _ in range(3)]
     rates = [n / w for w, n in trials]
     lens = [n for _, n in trials]
     counters = stats_of() if spec_k else ""
     med = statistics.median(rates)
     rows.append((spec_k, med, max(rates), lens))
-    label = "plain" if spec_k == 0 else ("k=%d" % spec_k)
-    print("  %-6s median=%6.2f tok/s best=%6.2f tok/s lens=%s %s"
+    label = "plain" if spec_k == 0 else ("k=%d" % spec_k if not isinstance(spec_k, tuple)
+                                         else "tree(%d,%d)" % spec_k)
+    print("  %-10s median=%6.2f tok/s best=%6.2f tok/s lens=%s %s"
           % (label, med, max(rates), lens, counters))
 
 base_med = rows[0][1]
 valid = base_med > 0
 for spec_k, med, _best, lens in rows[1:]:
     ratio = med / base_med if base_med > 0 else 0.0
-    print("  speedup k=%-2d vs plain: %.3fx" % (spec_k, ratio))
+    name = "k=%s" % spec_k if not isinstance(spec_k, tuple) else "tree(%d,%d)" % spec_k
+    print("  speedup %-10s vs plain: %.3fx" % (name, ratio))
 short = [n for r in rows for n in r[3] if n < TOKENS * 0.9]
 print("SPEC-GREEDY: %s" % ("PASS measured" if valid and not short else
                             "FAIL invalid (early stop or zero rate; lengths or rates above)"))
