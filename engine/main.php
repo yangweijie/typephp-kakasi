@@ -3262,7 +3262,9 @@ function api_response_schema_array_object(string $body): string
     if ($block == "") {
         return "";
     }
-    $plan = api_top_leaves($block, 4);
+    // F395: same silent truncation as the all-string detector (F394) - the generators loop
+    // over the plan, so the cap was the only thing dropping leaves. Raised to 8.
+    $plan = api_top_leaves($block, 8);
     if ($plan == "") {
         return "";
     }
@@ -4445,7 +4447,9 @@ function api_response_schema_mixed_object(string $body): string
     if ($block == "") {
         return "";
     }
-    $plan = api_top_leaves($block, 4);
+    // F395: same silent truncation as the all-string detector (F394) - the generators loop
+    // over the plan, so the cap was the only thing dropping leaves. Raised to 8.
+    $plan = api_top_leaves($block, 8);
     if ($plan == "") {
         return "";
     }
@@ -11720,6 +11724,63 @@ function main(): void
         echo "SCHEMA-PROPS5: PASS (five string properties detected and all five emitted in order)\n";
     } else {
         echo "SCHEMA-PROPS5: FAIL detected=" . count($p5Props) . " shape=" . $p5Shape . "\n";
+    }
+    // SCHEMA-MIX5 (F395): the mixed-leaf detector carried the same cap-4 truncation as the
+    // all-string one. Five leaves alternating string and integer must all be detected and all
+    // emitted in schema order - detection and emission are separate assertions because the bug
+    // dropped leaves silently at the detection step while the generator was already generic.
+    $x5Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"mix5","schema":'
+        . '{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"integer"},'
+        . '"c":{"type":"string"},"d":{"type":"integer"},"e":{"type":"string"}}}}}}';
+    $x5Plan = api_response_schema_mixed_object($x5Body);
+    $x5N = $x5Plan == "" ? 0 : count(explode(",", $x5Plan));
+    $x5Ids = tok_chat("user", "Describe a city.") . "," . tok_chat_open("assistant");
+    $x5Out = $x5Plan == "" ? "" : api_object_mixed($x5Ids, $x5Plan, "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+    $x5Parts = explode(",", $x5Out);
+    $x5Base = count(explode(",", $x5Ids));
+    $x5Text = "";
+    for ($i = $x5Base; $i < count($x5Parts); $i++) {
+        $x5Text = $x5Text . gguf_token_str((int) $x5Parts[$i]);
+    }
+    $x5Text = str_replace("Ġ", " ", $x5Text);
+    $x5Shape = preg_match('/^\{"a":"[a-z ]*","b":-?(0|[1-9][0-9]*),"c":"[a-z ]*",'
+        . '"d":-?(0|[1-9][0-9]*),"e":"[a-z ]*"\}$/', $x5Text);
+    echo "SCHEMA-MIX5 detected=" . $x5N . " text=[" . $x5Text . "]\n";
+    if ($x5N == 5 && $x5Out != "" && $x5Shape == 1 && api_json_ok($x5Text) == 1) {
+        echo "SCHEMA-MIX5: PASS (five mixed leaves detected and emitted in order)\n";
+    } else {
+        echo "SCHEMA-MIX5: FAIL detected=" . $x5N . " shape=" . $x5Shape . "\n";
+    }
+
+    // SCHEMA-ARROBJ5 (F395): array-of-objects items had the same cap. Five leaves per element,
+    // two elements, every element carrying all five keys.
+    $y5Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"rows5","schema":'
+        . '{"type":"object","properties":{"rows":{"type":"array","items":{"type":"object",'
+        . '"properties":{"a":{"type":"string"},"b":{"type":"integer"},"c":{"type":"string"},'
+        . '"d":{"type":"integer"},"e":{"type":"string"}}}}}}}}}';
+    $y5Det = api_response_schema_array_object($y5Body);
+    $y5Split = explode("|", $y5Det);
+    $y5N = count($y5Split) == 2 ? count(explode(",", $y5Split[1])) : 0;
+    $y5Ids = tok_chat("user", "List two cities.") . "," . tok_chat_open("assistant");
+    $y5Out = "";
+    if (count($y5Split) == 2) {
+        $y5Out = api_array_object_value($y5Ids, $y5Split[0], $y5Split[1],
+            "abcdefghijklmnopqrstuvwxyz ", 2, 6, 0);
+    }
+    $y5Parts = explode(",", $y5Out);
+    $y5Base = count(explode(",", $y5Ids));
+    $y5Text = "";
+    for ($i = $y5Base; $i < count($y5Parts); $i++) {
+        $y5Text = $y5Text . gguf_token_str((int) $y5Parts[$i]);
+    }
+    $y5Text = str_replace("Ġ", " ", $y5Text);
+    $y5One = '\{"a":"[a-z ]*","b":-?(0|[1-9][0-9]*),"c":"[a-z ]*","d":-?(0|[1-9][0-9]*),"e":"[a-z ]*"\}';
+    $y5Shape = preg_match('/^\{"rows":\[' . $y5One . '(,' . $y5One . ')*\]\}$/', $y5Text);
+    echo "SCHEMA-ARROBJ5 detected=" . $y5N . " text=[" . $y5Text . "]\n";
+    if ($y5N == 5 && $y5Out != "" && $y5Shape == 1 && api_json_ok($y5Text) == 1) {
+        echo "SCHEMA-ARROBJ5: PASS (five leaves per element, every element complete)\n";
+    } else {
+        echo "SCHEMA-ARROBJ5: FAIL detected=" . $y5N . " shape=" . $y5Shape . "\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes

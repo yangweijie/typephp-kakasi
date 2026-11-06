@@ -619,3 +619,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 回归护栏 | `SCHEMA-SCOPE` 仍 PASS | `engine/run_f394b.log` |
 | 梯 | 自检 **167/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.536×**、哨兵 **0** | `engine/run_f394b.log`、`engine/gate_f394b.log` |
 | 缺口清单 | >2 属性截断、pattern 元字符、数值边界、required/minItems 等、oneOf 分支限制 | `findings.md` F394 |
+
+### F395（2026-11-06 18:19）——混合叶子与对象数组项上限 4→8；三门齐备
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 两处上限 | `api_top_leaves($block, 8)`（原 4，两处） | `engine/main.php`（:4448、:3265 附近） |
+| SCHEMA-MIX5 | detected=5，五叶子按序输出 | `engine/run_f395.log` |
+| SCHEMA-ARROBJ5 | detected=5，每项五键完整 | 同上 |
+| 回归护栏 | SCHEMA-PROPS5 / SCHEMA-SCOPE 仍 PASS | 同上 |
+| 梯 | 自检 **169/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.511×**、哨兵 **0** | `engine/run_f395.log`、`engine/gate_f395.log` |
