@@ -591,3 +591,13 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 开关确实生效 | 同一输入下两窗口的草稿行为不同（48/0 vs 0/0） | 上两行 |
 | 决定 | 默认保持 **3**；短窗口仅适用于已知重复性负载 | 本节 |
 | 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.500×**、哨兵 **0** | `engine/run_f391.log`、`engine/gate_f391c.log` |
+
+### F392（2026-11-06 17:21）——默认窗口 2 + 扩窗：1.865× / 1.012×；两次未生效被判据抓住
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 重复文本（扩窗生效） | **1.865×**（100% 接受，10.27 ms/token）vs 窗口 3 **1.758×** | `engine/spec_attrib_A2.log`、`engine/spec_attrib_A3.log` |
+| 非重复文本 | **1.012×**、白验 **48 → 16** vs 窗口 3 中性 | `engine/spec_attrib_B2.log`、`engine/spec_attrib_B3.log` |
+| 默认生效 | 启动横幅 `SPEC_WINDOW 2` | `engine/serve_f392h.log` |
+| 新门契约 | `SPEC-ADAPT: PASS wasted verifies bounded, total=1`；`SPEC-NEG` 仍 `drafting=off` | `engine/run_f392h.log` |
+| 两次"改了没生效" | 默认值与门判据各一次；由横幅与 grep 发现 | 本节 |
+| 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.543×**、哨兵 **0** | `engine/run_f392h.log`、`engine/gate_f392h.log` |

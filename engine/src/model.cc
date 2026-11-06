@@ -37,6 +37,8 @@ void set_attn_mode(int m);
 int attn_mode();
 // F369: the chunk count the last attention pass used.
 int attn_split_p();
+// F392: the drafter's lookup window in use (KAKASI_SPEC_WINDOW, default 3).
+int spec_window_value();
 int session_start(int backend, const std::vector<int>& ids);
 int session_next(int backend, double temp, double top_p);
 void session_seed(uint64_t seed);
@@ -144,6 +146,8 @@ php::Int php_model_set_attn_mode(php::Int m) {
 php::Int php_model_attn_mode() { return php::Int(model::attn_mode()); }
 // F369: how many KV chunks the last attention pass split its visible range into.
 php::Int php_model_attn_split_p() { return php::Int(model::attn_split_p()); }
+// F392: which lookup window this process is actually using.
+php::Int php_model_spec_window() { return php::Int(model::spec_window_value()); }
 php::Int php_model_session_start(php::Int backend, php::Str tokens) {
     const std::string csv(tokens.data(), tokens.length());
     return php::Int(model::session_start((int) backend, parse_ids(csv)));

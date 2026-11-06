@@ -2608,7 +2608,10 @@ std::vector<int> prefill_tops(int backend, const std::vector<int>& tokens, int p
 int spec_window() {
     static int w = -1;
     if (w < 0) {
-        w = 3;
+        // F392: default is the SHORT window; the widening rule (one wasted verify widens to 3 for
+        // the rest of the call) removes what made it dangerous. Measured: 1.865x vs 1.758x on
+        // text that repeats, 1.012x vs neutral on text that does not, wasted drafts 48 -> 16.
+        w = 2;
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -2647,7 +2650,7 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
     int produced = 0;
     const int eos = eos_id();
     int ref = (int) r[0];
-    const int m = spec_window();   // lookup window (F391: configurable, default 3)
+    int m = spec_window();         // lookup window (F391: configurable, default 3)
     // Adaptive: a verify that accepts nothing costs a full batched forward and buys nothing -
     // measured at 0.83x (slower than plain decoding) when the text never repeats. After a few
     // consecutive empty accepts, stop drafting for the rest of this call.
@@ -2729,7 +2732,19 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
             continue;
         }
         // Nothing matched: the draft was wasted, so take the one token we already know.
-        if (++misses >= 3) drafting = false;
+        // F392: a short window is only worth its risk while it is hitting. One wasted verify is
+        // enough evidence to prefer the longer default for the rest of this call - F391 measured a
+        // short window turning 48 wrong drafts into a 5.5% loss on text that does not repeat, and
+        // the existing three-miss shutoff was the only thing bounding that.
+        // F392: widen on the first miss, but keep counting misses so the shutoff still fires after
+        // the same three as before - the SPEC-ADAPT gate caught the first version advancing the
+        // counter only when it did not widen, which delayed the shutoff by one wasted verify.
+        if (m < 3) {
+            m = 3;
+        }
+        if (++misses >= 3) {
+            drafting = false;
+        }
         out.push_back(ref);
         ++produced;
         if (eos > 0 && ref == eos) break;
@@ -3254,6 +3269,11 @@ void set_spec_multiwin(int on) { g_spec_multiwin = on ? 1 : 0; }
 int spec_multiwin_on() { return g_spec_multiwin; }
 void set_spec_selfseed(int on) { g_spec_selfseed = on ? 1 : 0; }
 int spec_selfseed_on() { return g_spec_selfseed; }
+
+// F392: the drafter's lookup window in use, so a server can log it at startup. The window is a
+// behaviour knob whose failure mode is silent - a wrong value looks like "the drafter had
+// nothing to propose" - which is exactly the class of setting that must announce itself.
+int spec_window_value() { return spec_window(); }
 
 std::string spec_stats() {    char buf[220];
     std::snprintf(buf, sizeof(buf),

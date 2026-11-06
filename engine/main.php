@@ -6396,6 +6396,9 @@ function api_serve_par(int $port): void
     // F368: say which attention path this process will serve with. The F366 lesson is that a
     // switch that never reached the code leaves both sides of an A/B identical and the log silent.
     echo "ATTN_MODE " . model_attn_mode() . "\n";
+    // F392: the drafter window is a knob whose wrong value is silent - it looks like the drafter
+    // simply had nothing to propose - so the process states the value it is running with.
+    echo "SPEC_WINDOW " . model_spec_window() . "\n";
     // F375: the concurrency is decided here, BEFORE the banner that reports it and before the
     // region allocation that uses it. Both of those read $nslots, and in the first version of this
     // rewrite they ran above the assignment - so the sentinel had no effect and the log printed an
@@ -7014,6 +7017,9 @@ function api_serve(int $port): void
     }
     echo "API_LISTEN " . $port . "\n";
     echo "ATTN_MODE " . model_attn_mode() . "\n";
+    // F392: the drafter window is a knob whose wrong value is silent - it looks like the drafter
+    // simply had nothing to propose - so the process states the value it is running with.
+    echo "SPEC_WINDOW " . model_spec_window() . "\n";
 
     while (true) {
         // Same select-gating as the parallel slots: accept() on an idle listener raises a
@@ -12533,10 +12539,24 @@ function main(): void
     $st = model_spec_stats();
     echo "SPEC-ADAPT " . $st . "\n";
     $wasted = strpos($st, "verifies=0") === false && strpos($st, "accepted=0") !== false;
+    // F392: the old contract here - "no verify burned without an acceptance" - is now unreachable,
+    // and the reason is the fix rather than a regression: after one empty accept the drafter widens
+    // its lookup window, and on text with no repetition the wider window proposes nothing more, so
+    // there is no second verify to burn. What that contract was guarding still matters: the waste
+    // must be BOUNDED at one wasted verify per call. Assert that instead, so the gate still fails
+    // if the drafter ever goes back to burning a verify per step on this workload.
+    $vNum = 0;
+    foreach (explode(" ", $st) as $vTok) {
+        if (substr($vTok, 0, 9) == "verifies=") {
+            $vNum = (int) substr($vTok, 9);
+        }
+    }
+    $wasted = $wasted && $vNum > 1;
     if ($gNrRef == $gNrSpec && !$wasted) {
-        echo "SPEC-ADAPT: PASS (ids identical; no verify burned without acceptance)\n";
+        echo "SPEC-ADAPT: PASS (ids identical; wasted verifies bounded, total=" . $vNum . ")\n";
     } else {
         echo "SPEC-ADAPT: FAIL wasted=" . ($wasted ? "yes" : "no")
+            . " verifies=" . $vNum
             . " ids_equal=" . ($gNrRef == $gNrSpec ? "yes" : "no") . "\n";
     }
 
