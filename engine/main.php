@@ -12761,6 +12761,112 @@ function main(): void
             . " ratio=" . f360_x100($f360Ratio) . "\n";
     }
 
+
+    // BATCH-M3 (F373): what does a THIRD row cost? F360 could only prove the sharing for two rows
+    // because two rows was all the engine could make - the region table, the slot bounds and the
+    // shared-weight matvec were all fixed at two. This gate does what the old ones cannot: it
+    // asserts the step really carried three rows (a batch that quietly ran one conversation at a
+    // time would still satisfy a token comparison), it requires each batched conversation to equal
+    // the same conversation run alone with the same seed, and it prints the marginal cost per row
+    // for M=1..4, which is the quantity the batching claim actually rests on. Greedy on both sides,
+    // so any divergence is the pass and not the sampler.
+    $f373A = tok_encode("The capital of France is Paris and the largest ocean is the Pacific.");
+    $f373B = tok_encode("Water boils at one hundred degrees Celsius at normal pressure.");
+    $f373C = tok_encode("The planet closest to the sun is Mercury and the farthest is Neptune.");
+    $f373N = 8;
+    $f373Seed = 4242;
+    $f373Ref = "";
+    foreach (explode("|", $f373A . "|" . $f373B . "|" . $f373C) as $f373P) {
+        $f373S = "";
+        model_session_start(0, $f373P);
+        model_session_seed($f373Seed);
+        for ($f373i = 0; $f373i < $f373N; $f373i++) {
+            $f373t = model_session_next(0, 0.0, 1.0);
+            if ($f373t < 0) {
+                break;
+            }
+            $f373S = $f373S . ($f373S == "" ? "" : ",") . $f373t;
+        }
+        $f373Ref = $f373Ref . $f373S . ";";
+    }
+    $f373Parts = explode(";", $f373Ref);
+    $f373Sa = $f373Parts[0];
+    $f373Sb = $f373Parts[1];
+    $f373Sc = $f373Parts[2];
+    $f373Ba = "";
+    $f373Bb = "";
+    $f373Bc = "";
+    $f373Rows = 0;
+    $f373Cost = "";
+    if (model_batch_start_n(0, 256, 3) != 0) {
+        echo "BATCH-M3: FAIL batch_start_n(3) refused: " . model_last_error() . "\n";
+    } else {
+        model_batch_add(0, 0, $f373A, 0.0, 1.0, $f373Seed);
+        model_batch_add(0, 1, $f373B, 0.0, 1.0, $f373Seed);
+        model_batch_add(0, 2, $f373C, 0.0, 1.0, $f373Seed);
+        for ($f373i = 0; $f373i < $f373N; $f373i++) {
+            $f373r = model_batch_next(0);
+            if ($f373r <= 0) {
+                break;
+            }
+            if ($f373i == 0) {
+                $f373Rows = $f373r;
+            }
+            $f373tk = explode(",", model_batch_tokens());
+            $f373Ba = $f373Ba . ($f373Ba == "" ? "" : ",") . $f373tk[0];
+            $f373Bb = $f373Bb . ($f373Bb == "" ? "" : ",") . $f373tk[1];
+            $f373Bc = $f373Bc . ($f373Bc == "" ? "" : ",") . $f373tk[2];
+        }
+        model_batch_end();
+        $f373EqA = ($f373Sa == $f373Ba) ? 1 : 0;
+        $f373EqB = ($f373Sb == $f373Bb) ? 1 : 0;
+        $f373EqC = ($f373Sc == $f373Bc) ? 1 : 0;
+        $f373CntA = $f373Sa == "" ? 0 : count(explode(",", $f373Sa));
+        // Marginal cost: the same 8 greedy steps run with M regions, each holding one live
+        // conversation, warmed first. Reported, not asserted - correctness is the equality above;
+        // this is the number the next decision is taken from.
+        foreach (explode(",", "1,2,3,4") as $f373Ms) {
+            $f373M = (int) $f373Ms;
+            if (model_batch_start_n(0, 256, $f373M) != 0) {
+                $f373Cost = $f373Cost . " M=" . $f373M . ":refused";
+                break;
+            }
+            model_batch_add(0, 0, $f373A, 0.0, 1.0, $f373Seed);
+            if ($f373M >= 2) {
+                model_batch_add(0, 1, $f373B, 0.0, 1.0, $f373Seed);
+            }
+            if ($f373M >= 3) {
+                model_batch_add(0, 2, $f373C, 0.0, 1.0, $f373Seed);
+            }
+            if ($f373M >= 4) {
+                model_batch_add(0, 3, $f373A, 0.0, 1.0, $f373Seed);
+            }
+            for ($f373w = 0; $f373w < 3; $f373w++) {
+                model_batch_next(0);
+            }
+            $f373t0 = microtime(true);
+            for ($f373i = 0; $f373i < $f373N; $f373i++) {
+                if (model_batch_next(0) <= 0) {
+                    break;
+                }
+            }
+            $f373ms = (microtime(true) - $f373t0) * 1000.0;
+            $f373Cost = $f373Cost . " M=" . $f373M . " step_ms=" . f360_x100($f373ms / $f373N)
+                . " per_tok_ms=" . f360_x100($f373ms / ($f373N * $f373M));
+            model_batch_end();
+        }
+        if ($f373EqA == 1 && $f373EqB == 1 && $f373EqC == 1 && $f373Rows == 3 && $f373CntA >= 4) {
+            echo "BATCH-M3: PASS tokens=" . $f373CntA . " rows=" . $f373Rows
+                . " three batched conversations == each alone\n";
+        } else {
+            echo "BATCH-M3: FAIL eq_a=" . $f373EqA . " eq_b=" . $f373EqB . " eq_c=" . $f373EqC
+                . " rows=" . $f373Rows . " n=" . $f373CntA . "\n  single_a=" . $f373Sa
+                . "\n  batch_a=" . $f373Ba . "\n  single_b=" . $f373Sb . "\n  batch_b=" . $f373Bb
+                . "\n  single_c=" . $f373Sc . "\n  batch_c=" . $f373Bc . "\n";
+        }
+        echo "BATCH-M3-COST:" . $f373Cost . "\n";
+    }
+
     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to
     // 1.6e-2 (F34). If quantization is not reproducible, clearing residency and re-quantizing on
     // the SAME backend should move the logit by the same order; if it is reproducible, the gap

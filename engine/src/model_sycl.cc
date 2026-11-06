@@ -189,6 +189,10 @@ namespace {
     std::vector<std::vector<float>> g_row_logits;   // per-row logits of the last planned pass
     // The two batched conversations (F359). Each owns a contiguous KV region: session 0 lives in
     // rows [0, half), session 1 in [half, 2*half).
+    // F373: the region table used to be exactly two conversations wide, which is also why no
+    // measurement could ever say what a THIRD row costs - the claim that a step's fixed work is
+    // shared by its rows can only be tested by changing the row count.
+    const int kBatchSlotsMax = 8;
     struct BatchSess {
         bool active = false;
         bool done = false;
@@ -200,8 +204,9 @@ namespace {
         uint64_t rng = 12345;
         std::vector<float> logits;
         int last = -1;            // last token this session emitted (-1 after eos)
-    } g_bs[2];
+    } g_bs[kBatchSlotsMax];
     int g_bhalf = 0;              // rows per session region
+    int g_bslots = 2;             // regions the batch layer was started with (F373)
     // Rows reserved for the single-session path. The batch's two regions start AFTER this area,
     // so a request that still needs the single-session path (a constrained pass in the parallel
     // server) cannot overwrite a live conversation's cache rows. It has to be larger than one
@@ -353,36 +358,43 @@ namespace {
     // each weight element ONCE and dots it into two accumulators, so the weight traffic (the
     // largest read of a decode step) is shared instead of doubled. The accumulation order per row
     // is the one gemv uses, so a batched row is bit-identical to the same row decoded alone.
-    void gemv2(sycl::queue& q, const float* X, int K, Wt w, int N, float* Y, int ldy,
+    // F373: the two-row matvec generalized to MM rows. One work-group per OUTPUT row, MM
+    // accumulators per lane, and exactly one weight read per (row, k) however many batch rows
+    // share the step - that sharing is what batching a decode step is for, and it is the thing a
+    // third and fourth row were supposed to pay for but never could, because the engine could not
+    // make them. The k-partition and the butterfly reduction are unchanged from the two-row form,
+    // so a batched row stays bit-identical to the same row decoded alone (BATCH-EQ asserts it).
+    template <int MM>
+    void gemvM(sycl::queue& q, const float* X, int K, Wt w, int N, float* Y, int ldy,
                const float* bias) {
         constexpr int TG = 64;
         q.submit([&](sycl::handler& h) {
-            sycl::local_accessor<float, 2> red(sycl::range<2>(TG, 2), h);
+            sycl::local_accessor<float, 2> red(sycl::range<2>(TG, MM), h);
             h.parallel_for(sycl::nd_range<1>((size_t) N * TG, TG), [=](sycl::nd_item<1> item) {
                 const int row = (int) item.get_group(0);
                 const int lane = (int) item.get_local_id(0);
                 const size_t base = (size_t) row * (size_t) K;
-                float a0 = 0.0f;
-                float a1 = 0.0f;
+                float a[MM];
+                for (int m = 0; m < MM; ++m) a[m] = 0.0f;
                 for (int k = lane; k < K; k += TG) {
                     const float wv = wat(w, base + (size_t) k);
-                    a0 += X[k] * wv;
-                    a1 += X[(size_t) K + (size_t) k] * wv;
+                    for (int m = 0; m < MM; ++m) {
+                        a[m] += X[(size_t) m * (size_t) K + (size_t) k] * wv;
+                    }
                 }
-                red[lane][0] = a0;
-                red[lane][1] = a1;
+                for (int m = 0; m < MM; ++m) red[lane][m] = a[m];
                 item.barrier(sycl::access::fence_space::local_space);
                 for (int s = TG / 2; s > 0; s >>= 1) {
                     if (lane < s) {
-                        red[lane][0] += red[lane + s][0];
-                        red[lane][1] += red[lane + s][1];
+                        for (int m = 0; m < MM; ++m) red[lane][m] += red[lane + s][m];
                     }
                     item.barrier(sycl::access::fence_space::local_space);
                 }
                 if (lane == 0) {
                     const float bs = bias ? bias[row] : 0.0f;
-                    Y[(size_t) row] = red[0][0] + bs;
-                    Y[(size_t) ldy + (size_t) row] = red[0][1] + bs;
+                    for (int m = 0; m < MM; ++m) {
+                        Y[(size_t) m * (size_t) ldy + (size_t) row] = red[0][m] + bs;
+                    }
                 }
             });
         });
@@ -394,7 +406,11 @@ namespace {
         // path (F359/F360); prefill keeps the tiled GEMM, which is the right choice once M is
         // large. Either reads any of the three weight precisions via wat().
         if (M == 1) { gemv(q, X, K, w, N, Y, bias); return; }
-        if (M == 2) { gemv2(q, X, K, w, N, Y, ldy > 0 ? ldy : N, bias); return; }
+        // F373: up to four rows take the shared-weight matvec; past that the tiled GEMM is the
+        // better shape anyway, and the batch layer cannot produce more rows than it has regions.
+        if (M == 2) { gemvM<2>(q, X, K, w, N, Y, ldy > 0 ? ldy : N, bias); return; }
+        if (M == 3) { gemvM<3>(q, X, K, w, N, Y, ldy > 0 ? ldy : N, bias); return; }
+        if (M == 4) { gemvM<4>(q, X, K, w, N, Y, ldy > 0 ? ldy : N, bias); return; }
         // ldy (optional) is the distance between output rows: it lets one GEMM write several rows
         // of a wide output (the batched head writes nOut rows of `rows` logits each).
         const size_t stride = ldy > 0 ? (size_t) ldy : (size_t) N;
@@ -2337,11 +2353,12 @@ bool batch_prefill(int backend, int s, const std::vector<int>& ids) {
 // (its prompt plus the tokens it will generate), so the cache holds 2*cap rows. The two regions
 // are fixed for the lifetime of the batch, which is what lets a conversation be added or removed
 // at any moment without moving a single cache row.
-int batch_start(int backend, int cap) {
+int batch_start_n(int backend, int cap, int slots) {
     g_err.clear();
-    for (int s = 0; s < 2; ++s) g_bs[s] = BatchSess();
-    g_bhalf = 0;
     if (cap <= 0) { g_err = "batch: bad cap"; return -1; }
+    if (slots < 1 || slots > kBatchSlotsMax) { g_err = "batch: bad slot count"; return -1; }
+    for (int s = 0; s < slots; ++s) g_bs[s] = BatchSess();
+    g_bhalf = 0;
     const int D = (int) gguf::meta_num("qwen2.embedding_length");
     const int L = (int) gguf::meta_num("qwen2.block_count");
     const int NH = (int) gguf::meta_num("qwen2.attention.head_count");
@@ -2350,11 +2367,20 @@ int batch_start(int backend, int cap) {
     const int DKV = NKV * (D / NH);
     sycl::queue* qp = kakasi::queue_for(backend);
     if (!qp) { g_err = "batch: backend unavailable"; return -1; }
-    if (!ensure_kv(backend, *qp, g_bstage + 2 * cap, DKV, L, 0)) { g_err = "batch: kv alloc failed"; return -1; }
+    // F373: the cache is sized by the region count, so asking for more regions is what makes
+    // a three- or four-row step possible at all; the rows of a step never cross a region.
+    if (!ensure_kv(backend, *qp, g_bstage + slots * cap, DKV, L, 0)) {
+        g_err = "batch: kv alloc failed";
+        return -1;
+    }
     g_bhalf = cap;
-    for (int s = 0; s < 2; ++s) { g_bs[s].base = g_bstage + s * cap; g_bs[s].cap = cap; }
+    g_bslots = slots;
+    for (int s = 0; s < slots; ++s) { g_bs[s].base = g_bstage + s * cap; g_bs[s].cap = cap; }
     return 0;
 }
+
+// Two regions is what the 8001 server runs, and what every gate before F373 measured.
+int batch_start(int backend, int cap) { return batch_start_n(backend, cap, 2); }
 
 // Add a conversation to a slot: its prompt is prefilled into that slot's region and its sampling
 // parameters are remembered. A slot that still holds a conversation is replaced - the old rows
@@ -2363,7 +2389,7 @@ int batch_start(int backend, int cap) {
 int batch_add(int backend, int slot, const std::vector<int>& ids,
               double temp, double top_p, uint64_t seed) {
     g_err.clear();
-    if (slot < 0 || slot > 1) { g_err = "batch: bad slot"; return -1; }
+    if (slot < 0 || slot >= g_bslots) { g_err = "batch: bad slot"; return -1; }
     if (g_bhalf <= 0) { g_err = "batch: not started"; return -1; }
     if (ids.empty()) { g_err = "batch: empty prompt"; return -1; }
     if ((int) ids.size() > g_bhalf) { g_err = "batch: prompt longer than the slot"; return -1; }
@@ -2388,7 +2414,7 @@ int batch_add(int backend, int slot, const std::vector<int>& ids,
 
 // End one conversation; the slot becomes free for the next request.
 int batch_stop(int slot) {
-    if (slot < 0 || slot > 1) return -1;
+    if (slot < 0 || slot >= g_bslots) return -1;
     const int base = g_bstage + slot * g_bhalf;
     const int cap = g_bhalf;
     g_bs[slot] = BatchSess();
@@ -2399,7 +2425,7 @@ int batch_stop(int slot) {
 
 // End every conversation; the regions stay allocated.
 void batch_reset() {
-    for (int s = 0; s < 2; ++s) {
+    for (int s = 0; s < g_bslots; ++s) {
         const int base = g_bstage + s * g_bhalf;
         const int cap = g_bhalf;
         g_bs[s] = BatchSess();
@@ -2411,7 +2437,7 @@ void batch_reset() {
 // Seed one conversation's sampler (F359). The single-session path seeds with session_seed, so
 // the same seed must land on the same tokens in both paths for the comparison to mean anything.
 void batch_seed(int s, uint64_t seed) {
-    if (s < 0 || s > 1) return;
+    if (s < 0 || s >= g_bslots) return;
     g_bs[s].rng = seed;
 }
 
@@ -2423,7 +2449,7 @@ int batch_next(int backend) {
     const int eos = (int) gguf::meta_num("tokenizer.ggml.eos_token_id");
     std::vector<int> toks;
     std::vector<int> rowSess;
-    for (int s = 0; s < 2; ++s) {
+    for (int s = 0; s < g_bslots; ++s) {
         BatchSess& b = g_bs[s];
         if (!b.active || b.done) continue;
         // A conversation may never write past its own region: the row after the region belongs
@@ -2474,20 +2500,20 @@ int batch_next(int backend) {
 
 // The tokens the last step emitted, one per conversation (-1 when a conversation is not live).
 std::vector<int> batch_tokens() {
-    std::vector<int> out(2, -1);
-    for (int s = 0; s < 2; ++s) out[(size_t) s] = g_bs[s].last;
+    std::vector<int> out((size_t) g_bslots, -1);
+    for (int s = 0; s < g_bslots; ++s) out[(size_t) s] = g_bs[s].last;
     return out;
 }
 
 // The number of rows a conversation owns in the KV cache.
 int batch_len(int s) {
-    if (s < 0 || s > 1) return -1;
+    if (s < 0 || s >= g_bslots) return -1;
     return g_bs[s].len;
 }
 
 // End the batch and release the plan state.
 void batch_end() {
-    for (int s = 0; s < 2; ++s) g_bs[s] = BatchSess();
+    for (int s = 0; s < g_bslots; ++s) g_bs[s] = BatchSess();
     g_bhalf = 0;
     g_plan.on = false;
     g_plan.slot.clear();

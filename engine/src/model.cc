@@ -44,6 +44,8 @@ int session_len();
 bool session_save(int slot);
 // F359: two conversations in one forward pass.
 int batch_start(int backend, int cap);
+// F373: start the batch layer with `slots` KV regions so a step can carry 3 or 4 rows.
+int batch_start_n(int backend, int cap, int slots);
 int batch_add(int backend, int slot, const std::vector<int>& ids, double temp, double top_p, uint64_t seed);
 int batch_stop(int slot);
 void batch_reset();
@@ -164,6 +166,10 @@ php::Int php_model_session_restore(php::Int slot) {
 // each); batch_add prefills one conversation into a slot with its own temperature, nucleus and
 // seed; batch_next advances every live conversation by one token in a single pass and
 // batch_tokens reports the token each of them emitted ("t0,t1", -1 for a slot that produced none).
+// F373: the slot-count entry point, kept separate so every existing caller keeps two regions.
+php::Int php_model_batch_start_n(php::Int backend, php::Int cap, php::Int slots) {
+    return php::Int(model::batch_start_n((int) backend, (int) cap, (int) slots));
+}
 php::Int php_model_batch_start(php::Int backend, php::Int cap) {
     return php::Int(model::batch_start((int) backend, (int) cap));
 }

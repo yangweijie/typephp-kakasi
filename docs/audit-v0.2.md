@@ -395,3 +395,15 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 空闲不忙等 | 超时只在"无槽位要推进"时为 1 ms（`$tmo` 条件式） | `engine/main.php`（`api_serve_par` 的 select 处） |
 | 梯 | 自检 **162/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par **0** fairness **0**；哨兵 **0**；投机 greedy **1.843×**/sampled **1.462×** | `engine/run_f372.log`、`engine/gate_f372.log` |
 | scaling 数值下行不是退化 | **1.583×/1.658×**（睡眠时代 1.667–1.780）——分母（串行侧）变快 ⇒ 比值缩 | `engine/gate_f372.log`、`engine/chunk_gap_f372.log` |
+
+### F373（2026-11-06 02:07）——第三/第四行终于可测：**每 token 17.08 → 5.78 ms（2.96×）**，M=4 未见拐点
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 一步 1/2/3/4 行的成本 | step_ms **17.08 / 19.90 / 21.35 / 23.13**；per_tok_ms **17.08 / 9.95 / 7.11 / 5.78**（第一遍 19.48/18.83/19.81/22.38） | `engine/run_f373b.log`、`engine/run_f373.log`（`BATCH-M3-COST`） |
+| 三行批处理与单独逐 id 相同 | `BATCH-M3: PASS tokens=8 rows=3` | `engine/run_f373b.log` |
+| **一步确实带 3 行**（不是分批） | 判据 `rows == 3` 独立于相等性断言 | 同上 |
+| 门的形状判据救了一次 | 第一版 `FAIL eq_a=1 eq_b=1 eq_c=1 rows=3 n=1`：分隔符抄错（换行≠逗号），**两侧同错所以相等仍真** | `engine/run_f373.log` |
+| 批处理内核仍逐位等价 | `gemvM<MM>` 不改 k 划分与树形归约；`BATCH-EQ` 仍 PASS、`ATTN-MODE/SPLIT/ENGAGE` 全 PASS | `engine/run_f373b.log` |
+| 服务面零改动 | `batch_start` 旧入口仍固定 2 区域；`model_batch_start_n` 只被新门使用 | `engine/src/model_sycl.cc`、`engine/tests/../main.php`（BATCH-M3 段） |
+| 自检 | **163 PASS / 0 FAIL**、`RUN_EXIT=0` | `engine/run_f373b.log` |
+| 活梯（F373，服务面路径未变） | 8000 **115/0**；8001 par **0** fairness **0**；scaling **1.511×**；哨兵 **0**；服务文本与 F372 **逐字节相同**；每 token cadence **25.8 / 26.2 ms**（F372：25.3–26.4） | `engine/gate_f373.log`、`engine/chunk_gap_split_f373_r*_t0_9.json` |
