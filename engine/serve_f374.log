@@ -1,0 +1,11 @@
+WARM ms=1122.0850944519 err=
+ATTN_MODE 2
+API_LISTEN 8001 (parallel: streaming text only)
+PAR loop start
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=B tokens=60 reason=max

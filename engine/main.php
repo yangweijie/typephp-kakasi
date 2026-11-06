@@ -6350,8 +6350,25 @@ function api_par_trace(string $line): void
 // and advances each active stream by ONE token, parking/resuming KV via the snapshot primitive.
 // Scope is deliberately narrow - plain streaming text only (no tools/json/stop/n). The verified
 // api_serve stays untouched; this exists to show a long stream no longer starves a short one.
+// F374: warm the engine before the listener opens. The served probe measures the FIRST request of
+// a server process at 925-1618 ms to its first token and every later request at 75-105 ms
+// (engine/chunk_gap_f372_r1 vs r2/r3 and the same shape in f373/f369/f364e), because the first
+// prefill in a process pays the one-time upload of the resident weights - the self-test says the
+// same thing about its own numbers: "the first prefill in this process pays for uploading 290
+// tensors". Moving that to boot costs startup time the health probe already waits through, and
+// makes the first user request fast; the WARM line in the serve log is the proof it ran.
+function api_warm(int $backend): string
+{
+    $t = microtime(true);
+    model_generate($backend, tok_encode("Warm up."), 2);
+    return "WARM ms=" . ((microtime(true) - $t) * 1000.0) . " err=" . model_last_error() . "\n";
+}
+
 function api_serve_par(int $port): void
 {
+    // F374: warm first, THEN bind - a port that answers while the weights are still being
+    // uploaded is what made the first request slow, so "healthy" has to mean "warm".
+    echo api_warm(0);
     $srv = stream_socket_server("tcp://127.0.0.1:" . $port);
     if (!$srv) {
         echo "API_SOCK_FAIL\n";
@@ -7003,12 +7020,20 @@ Connection: close
                 $onB = 0;
             }
         }
-        usleep(2000);
+        // F374: this yield paced the loop back when the select above slept a whole timeout. With
+        // polling in place (F372) it is now the gap the coverage check kept reporting missing -
+        // engine/chunk_gap_split_f373 measured cadence 25.8 against pre+eng+post of 23.4, and 2 ms
+        // of that is exactly this call. While a slot needs stepping the forward pass is the pacer,
+        // so do not add a wait on top of it; keep the yield for the idle case it was written for.
+        if (!(($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0))) {
+            usleep(2000);
+        }
     }
 }
 
 function api_serve(int $port): void
 {
+    echo api_warm(0);   // F374: same reason as the two-slot server - bind only once warm
     $srv = stream_socket_server("tcp://127.0.0.1:" . $port);
     if (!$srv) {
         echo "API_SOCK_FAIL\n";

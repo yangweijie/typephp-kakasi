@@ -407,3 +407,16 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 服务面零改动 | `batch_start` 旧入口仍固定 2 区域；`model_batch_start_n` 只被新门使用 | `engine/src/model_sycl.cc`、`engine/tests/../main.php`（BATCH-M3 段） |
 | 自检 | **163 PASS / 0 FAIL**、`RUN_EXIT=0` | `engine/run_f373b.log` |
 | 活梯（F373，服务面路径未变） | 8000 **115/0**；8001 par **0** fairness **0**；scaling **1.511×**；哨兵 **0**；服务文本与 F372 **逐字节相同**；每 token cadence **25.8 / 26.2 ms**（F372：25.3–26.4） | `engine/gate_f373.log`、`engine/chunk_gap_split_f373_r*_t0_9.json` |
+
+### F374（2026-11-06 02:34）——两处纯等待去掉：首 token **1167→144 ms**、每 token **25.8→22.9 ms**、coverage **87–90%→97.8–99%**
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 首请求贵的是一次性进程内开销（改前） | TTFT **1214.2 / 1167.4 / 924.7 / 1618.3 ms** vs 后续 **75–105 ms** | `engine/chunk_gap_f372_r1_t0_9.json`、`…_f373_r1…`、`…_f369_r1…`、`…_f364e_r1…` |
+| 暖机确实执行并被记录（机制字段） | `WARM ms=1122.085 / 1087.305`，`err=` 空 | `engine/serve_par_f374.log`、`engine/serve_f374.log` |
+| 首请求 TTFT 改善 | **144.3 ms**（与后续 89–100 ms 同档） | `engine/chunk_gap_f374_r1_t0_9.json` |
+| 每 token 成本改善 | cadence **22.5 / 23.0 / 23.1 ms**（改前 25.3–26.4） | `engine/chunk_gap_split_f374_r*_t0_9.json` |
+| **归因判据（可推翻）命中** | coverage **97.79 / 97.79 / 98.95%**（改前 87.0–90.6%）⇒ 缺的 2.4 ms 确为循环尾 `usleep(2000)` | 同上 vs `engine/chunk_gap_split_f37{2,3}_r*_t0_9.json` |
+| 引擎步未被本轮触动（对照） | `BATCH-M3-COST` 每 token **5.61 ms**（F373 为 5.78） | `engine/run_f374.log` |
+| 累计（同一探针口径） | 每 token **47.6 → 25.8 → 22.9 ms（2.08×）**；首 token **1.2 s → 0.14 s** | F364/F372/F374 三批 split JSON |
+| 梯 | 自检 **163/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.542×**、哨兵 **0** | `engine/run_f374.log`、`engine/gate_f374.log` |
+| 未闭合 | 首请求仍比后续贵 ~55 ms；**CPU 未测**（"活跃期不忙等"是结构推断）；N 槽并发的 2.96× 仍未落到服务面 | 见 `findings.md` F374「边界」 |
