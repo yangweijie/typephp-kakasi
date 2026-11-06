@@ -3690,3 +3690,32 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **方法条（与 F394 的夹具错误同族，但更隐蔽）**：**门的夹具必须与线上格式同形**。紧凑 JSON 与 `json.dumps` 的空格差异足以让一个"看起来对"的检测器在线上全错；**双向断言 + 两种排版**是这类检测器的最低配置。
 **梯**：自检 **171 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.499×**；哨兵 **0**。
 **仍未实现（明确排队）**：`required`/`minItems`/`maxItems`/`minLength`/`maxLength`/`additionalProperties`；oneOf 分支仍受限（2–3 分支、首属性须 const）；pattern/边界的**真正实现**（现在只是"明确拒绝"，不是"支持"）。
+
+
+## F398：约束**支持表**落地 + 五个未实现关键字显式拒绝；`required` 只在"真子集"时拒绝；并修掉自己造成的 53 例回归
+**改动**：`api_schema_keywords_unsupported($body)` 返回第一个不被执行的关键字名；8000 校验 → **400 + 关键字名**。`required` 特殊处理：**生成器会输出全部声明属性**，所以"required = 全部属性"**构造上已满足**（接受）；只有 **required ⊂ 声明属性**（存在无法省略的可选属性）才拒绝。
+**新门 `SCHEMA-KEYWORDS`（8 例、双向、两种 JSON 排版）**：minItems/maxItems/additionalProperties 各被点名；`req_all=""`、`req_subset="required"`、`none=""`；**wire_all=""、wire_subset="required"** ⇒ PASS。
+**活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
+**自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
+⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据）
+| 约束 | 状态 | 证据 |
+|---|---|---|
+| 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
+| 混合叶子 ≤8 | **支持** | `SCHEMA-MIX5`（F395） |
+| 对象数组项 ≤8 叶子 | **支持** | `SCHEMA-ARROBJ5`（F395） |
+| 嵌套对象 ≤6 叶子、各层数组、顶层数组 | **支持** | `SCHEMA-NEST-OBJ`/`DEEP*`/`ARR*`/`TOPARR*` |
+| enum / const / bool | **支持** | `CONST-*`/`BOOL` |
+| pattern：字面、字面 alternation、`^…$`/`^(…)$` | **支持** | `SCHEMA-PAT-REJECT` 的 0 侧 + 活体 200 |
+| pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 的 1 侧 + 活体 400（F396） |
+| 数值边界：integer + 双边界 + 跨度 ≤15 | **支持** | `SCHEMA-BOUND-REJECT` 0 侧 + 活体 200 |
+| 数值边界：float / 单侧 / 跨度 >15 | **显式 400** | 同上 1 侧 + 活体 400（F397） |
+| minItems / maxItems / minLength / maxLength / additionalProperties | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398） |
+| required = 全部声明属性 | **支持**（构造上满足） | `SCHEMA-KEYWORDS` req_all + 活体 200 |
+| required ⊂ 声明属性 | **显式 400** | req_subset + 活体 400 |
+| tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
+| oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
+| $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
+| allOf | 支持合并 | `ALLOF` |
+**仍未实现（不装作支持）**：pattern/边界的**真正约束执行**（现在只是明确拒绝）、required 真子集的**省略语义**、oneOf 的更多分支。
+**梯**：自检 **172 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**（回归已修）；8001 `par` **0**、`fairness` **0**；scaling **1.510×**；哨兵 **0**。

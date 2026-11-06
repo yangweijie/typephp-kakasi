@@ -647,3 +647,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 门（双向 + 两种排版） | supported=0 float=1 onesided=1 wide=1 none=0 **wire_supported=0 wire_float=1** | `engine/run_f397b.log` |
 | 抓到的 bug | 第一版 `strpos('"type":"integer"')` 对带空格请求全拒；门夹具紧凑所以全绿 | `engine/schema_bounds_f397.log`（修前） |
 | 梯 | 自检 **171/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.499×**、哨兵 **0** | `engine/run_f397b.log`、`engine/gate_f397b.log` |
+
+### F398（2026-11-06 19:50）——支持表 + 关键字显式拒绝；53 例回归已修
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 关键字门（8 例、双向、两排版） | minItems/maxLength/addProps 点名；req_all="" req_subset=required；wire 同 | `engine/run_f398b.log` |
+| 活体四例 | req_all **200**、req_subset **400**、minItems **400**、**tool_req_subset 200** | `engine/schema_keywords_f398b.log` |
+| 回归（已修） | 扫全 body ⇒ tool required 误拒 ⇒ **SMOKE 115 → 62**；限定响应 schema 后 **115/0** | `engine/gate_f398.log` vs `engine/gate_f398b.log` |
+| 支持表 | 见 findings.md F398（逐行有门/活体证据） | `findings.md` |
+| 梯 | 自检 **172/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.510×**、哨兵 **0** | `engine/run_f398b.log`、`engine/gate_f398b.log` |

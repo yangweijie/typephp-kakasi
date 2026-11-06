@@ -5910,6 +5910,62 @@ function api_schema_bound_value(string $body, string $key, int $from): string
     return substr($body, $start, $i - $start);
 }
 
+// F398: which schema keywords does the decoder actually enforce? These five are not enforced at
+// all, so a request carrying them used to be answered with text that could violate the schema
+// while returning 200. They are refused with the keyword named, instead of silently ignored.
+// `required` is handled separately below, because refusing it outright would reject requests the
+// decoder already satisfies.
+function api_schema_keywords_unsupported(string $body): string
+{
+    foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties") as $kw) {
+        if (strpos($body, "\"" . $kw . "\"") !== false) {
+            return $kw;
+        }
+    }
+    // required: the generator emits EVERY declared property, so a schema that requires all of them
+    // is satisfied by construction. Only a strict subset - optional properties the decoder cannot
+    // omit - is a constraint it would silently break, and that is what gets refused.
+    $rp = strpos($body, "\"required\"");
+    if ($rp === false) {
+        return "";
+    }
+    $rb = strpos($body, "[", $rp);
+    if ($rb === false) {
+        return "required";
+    }
+    $re = strpos($body, "]", $rb);
+    if ($re === false) {
+        return "required";
+    }
+    $reqList = substr($body, $rb + 1, $re - $rb - 1);
+    $reqN = 0;
+    foreach (explode(",", $reqList) as $rq) {
+        $rq = str_replace("\"", "", $rq);
+        $rq = str_replace(" ", "", $rq);
+        if ($rq != "") {
+            $reqN++;
+        }
+    }
+    $pp = strpos($body, "\"properties\"");
+    if ($pp === false) {
+        return "required";
+    }
+    $bo = strpos($body, "{", $pp);
+    if ($bo === false) {
+        return "required";
+    }
+    $block = api_balance_block($body, $bo);
+    if ($block == "") {
+        return "required";
+    }
+    $plan = api_top_leaves($block, 64);
+    $declN = $plan == "" ? 0 : count(explode(",", $plan));
+    if ($reqN > 0 && $reqN < $declN) {
+        return "required";
+    }
+    return "";
+}
+
 function api_schema_bounds_unsupported(string $body): int
 {
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false) {
@@ -7300,19 +7356,33 @@ function api_serve(int $port): void
             } else {
                 $ids = api_history($body);
             }
+            // F398: the constraint checks below apply to the RESPONSE schema only. Scanning the whole
+            // body also matched tool parameter schemas, where `required` naming a subset is normal
+            // and is handled by the tool path - that refused 53 working smoke cases. Scope first.
+            $schBody = strpos($body, "\"json_schema\"") !== false
+                ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
-            } else if (api_schema_pattern_unsupported($body) == 1) {
+            } else if (api_schema_pattern_unsupported($schBody) == 1) {
                 // F396: a pattern the grammar cannot honour used to fall through to UNCONSTRAINED
                 // generation - the caller asked for a constraint and silently got none. Refuse it
                 // with a reason instead. Literal alternations (Paris|London, ^(A|B)$) stay supported.
                 $payload = "{\"error\":{\"message\":\"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
-            } else if (api_schema_bounds_unsupported($body) == 1) {
+            } else if (api_schema_bounds_unsupported($schBody) == 1) {
                 // F397: same rule as the pattern branch - a bound combination the grammar cannot
                 // enumerate (float, one-sided, or a span wider than 15) used to be served as
                 // unconstrained text. Refuse it with the reason instead.
                 $payload = "{\"error\":{\"message\":\"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else if (api_schema_keywords_unsupported($schBody) != "") {
+                // F398: minItems/maxItems/minLength/maxLength/additionalProperties are not enforced
+                // at all, and `required` is only honoured when it names every declared property.
+                // Naming the keyword in the refusal is the point - the caller learns which part of
+                // the schema could not be honoured instead of receiving text that ignores it.
+                $payload = "{\"error\":{\"message\":\"schema keyword not supported: "
+                    . api_schema_keywords_unsupported($schBody)
+                    . " (required is honoured only when it names every declared property)\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else {
                 $maxTok = api_max_tokens(api_num($body, "max_tokens",
@@ -11969,6 +12039,29 @@ function main(): void
     } else {
         echo "SCHEMA-BOUND-REJECT: FAIL
 ";
+    }
+
+    // SCHEMA-KEYWORDS (F398): the five unenforced keywords must be named, and `required` must be
+    // refused only when it is a strict subset - an all-required schema is already satisfied by the
+    // generator emitting every declared property, so refusing it would reject working requests.
+    // Both JSON spellings are covered, because a compact-only fixture hid a whitespace bug in F397.
+    $kwA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"minItems":1}');
+    $kwB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5}}}');
+    $kwC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":false}');
+    $kwD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","b"]}');
+    $kwE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"]}');
+    $kwF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}}}');
+    $kwG = api_schema_keywords_unsupported('{"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a", "b"]}');
+    $kwH = api_schema_keywords_unsupported('{"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a"]}');
+    echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] maxLength=[" . $kwB . "] addProps=[" . $kwC
+        . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
+        . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH . "]\n";
+    if ($kwA == "minItems" && $kwB == "maxLength" && $kwC == "additionalProperties"
+        && $kwD == "" && $kwE == "required" && $kwF == ""
+        && $kwG == "" && $kwH == "required") {
+        echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required refused only as a subset)\n";
+    } else {
+        echo "SCHEMA-KEYWORDS: FAIL\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes
