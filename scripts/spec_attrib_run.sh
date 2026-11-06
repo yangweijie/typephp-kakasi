@@ -67,8 +67,28 @@ PROMPT="List many English words, comma separated. Words: apple, banana, cherry, 
 for n in $(seq 1 "$PAIRS"); do
   for MODE in plain spec; do
     # F381: the plain control must decode from scratch. With the prefix cache on by default, the
-    # second plain request of a pair is served from the cache while the speculative one is not,
-    # so the pair would differ in two things instead of one and the measured gain would be a
-    # lower bound on speculation rather than its effect. prefix_cache=0 pins the control.
+    # second plain request of a pair is served from the cache while the speculative one is not, so
+    # the pair would differ in two things instead of one. prefix_cache=0 pins the control.
     if [ "$MODE" = "spec" ]; then EXTRA=",\"spec_k\":$K"; else EXTRA=",\"prefix_cache\":0"; fi
-    echo "SPEC_ATTRIB_DONE tag=$TAG"
+    python - "$PROMPT" "$MAXTOK" "$EXTRA" <<'PROBE_EOF' > /dev/null 2>&1
+import json, sys, urllib.request
+prompt, mt, extra = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+body = ('{"messages":[{"role":"user","content":' + json.dumps(prompt) + '}],'
+        '"max_tokens":' + str(mt) + ',"temperature":0.0' + extra + '}')
+req = urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions",
+                             data=body.encode(), headers={"Content-Type": "application/json"})
+urllib.request.urlopen(req, timeout=120).read()
+PROBE_EOF
+    echo "REQ done n=$n mode=$MODE"
+  done
+done
+
+powershell -NoProfile -Command 'Get-Process kakasi_engine_sycl -ErrorAction SilentlyContinue | Stop-Process -Force' >/dev/null 2>&1
+sleep 2
+rm -f "$EW/serve.on"
+
+# Judgement is a separate tool: it needs no shell-resolved path and cannot be broken by the
+# collector losing its working directory or its heredoc (F379/F380 saw both).
+echo "REPORT_CMD: python scripts/spec_attrib_report.py --since-line $BEFORE"
+python "/c/git/c/typephp-kakasi/scripts/spec_attrib_report.py" "$EW/spec_req.log" --since-line "$BEFORE"
+echo "SPEC_ATTRIB_DONE tag=$TAG"

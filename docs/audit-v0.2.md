@@ -491,3 +491,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 收益随接受率（三窗口） | 87.7% ⇒ 1.78×；50% ⇒ 1.337× / **1.272×** | 同上 + F377/F379 段 |
 | 仪器清理 | 删掉收集脚本里的内嵌分析块（三次抛 FileNotFoundError） | `scripts/spec_attrib_run.sh` |
 | 未改引擎 | 梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
+
+### F382（2026-11-06 11:26）——k 扫描：内部最优 k=4（1.238×），k=1 高接受率但更慢
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| k 曲线（配对，plain 关缓存） | k=1 0.912×（85.7%）、k=2 1.090×（66.7%）、**k=4 1.238×（50.0%）**、k=8 0.866×（33.3%） | `engine/spec_attrib_k{1,2,4,8}.log`、`engine/spec_req.log` |
+| 机制 | 收益 = f(每次 verify 提交的 token 数)；k=1 提交≈1（白付 draft），k=8 丢多 | 同上 |
+| 默认 k=4 有数据支撑 | 四点中最好 | 同上 |
+| 脚本缺陷（自伤，已修） | 删死代码切掉 `done`，HEAD 脚本坏；重写尾部 + `bash -n` 门 | `scripts/spec_attrib_run.sh` |
+| 未改引擎 | 梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
