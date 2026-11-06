@@ -536,3 +536,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **动作**：`SPECREQ` 行记录 `ids_len=`（引擎收到的提示 token 数）与 `cap=`（`$maxTok` 实际值），两条分支都记；同提示各 4 条比较。**判据**：`ids_len` 相同而 `got` 不同 ⇒ 真分歧；`ids_len` 不同 ⇒ 差异来自模板，服务面与自检本就不可比（需在服务面建"与自检同提示"的对照）。
 **随后**：按判定修一处；并把"服务面侧 spec/plain 在同一 `ids_len` 下 `got` 相同"做成门。
 **验收**：①`ids_len`/`cap` 逐条打印②判定成立并落一处修复③梯全绿（含 8000/8001）。
+
+
+## F388 计划（在模板化输入上区分"越过 eos"与"批验证数值分歧"）
+**F387 事实**：同 28-token 输入、同上限，plain 11 token、spec 24 token（两形状 plain 一致）。
+**动作**：自检里用 `tok_chat_open("assistant")` 拼出**与 served 相同的输入**，打印 `model_generate` 与 `model_spec_generate(k=4)` 的**完整 id 序列**；判据：**第 11 个 token 之前是否完全相同**。
+- 相同 ⇒ **接受块越过 eos**（修 `spec_generate`：接受块内截断到第一个 eos，而不是追加后检查 `out.back()`）；
+- 不同 ⇒ **批验证数值分歧**（先修数值一致性：批内归约顺序或 f16 KV 影响；在修好之前不只报收益）。
+**验收**：①两条序列逐 id 打印②按判据落一处修复③修复后 served `spec_k=4` 与 `spec_k=0` 在**同输入**下 `completion_tokens` 相同④梯全绿（含 8000/8001）。
+**顺位**：spec/plain 停止一致性 → k 自适应 → 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。

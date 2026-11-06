@@ -542,3 +542,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 未重跑 | 8000/8001 本轮未跑（仅加自检门） | 本行 |
 
 **补**：8000 **115/0**、8001 par **0** fairness **0**、scaling **1.555×**、哨兵 **0**（`engine/gate_f386c.log`）⇒ F386 二进制已过整条梯。
+
+### F387（2026-11-06 12:08）——真分歧：同输入下 spec 出 24 token、plain 出 11；两个引擎门未覆盖到
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 三形状对照（同进程/同提示/上限 48/temp 0） | `prefix_cache:0` **11**、`spec_k:0` **11**、`spec_k:4` **24**；三行 `prompt_tokens=28` | `engine/serve_f387.log`（本次实验输出） |
+| 结论 | 输入/上限/模板均非原因 ⇒ 差异在 `model_spec_generate` | 同上 |
+| 代码线索 | 接受块成批追加后才检查 `out.back()==eos`；或批验证 argmax 在 eos 位置不同 | `src/model_sycl.cc`（`spec_generate` eos 分支） |
+| 门为何漏 | `SPEC-EQ-LONG`/`SPEC-EQ-STOP` 的输入（裸提示、≤32）不触发 eos | `engine/run_f384b.log`、`engine/run_f386.log` |
+| 未改引擎 | 梯沿用 F386 绿 | `engine/run_f386.log`、`engine/gate_f386c.log` |
