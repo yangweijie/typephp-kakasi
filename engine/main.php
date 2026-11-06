@@ -5893,7 +5893,10 @@ function api_response_schema_string_props(string $body): array
     if ($block == "") {
         return $out;
     }
-    $plan = api_top_leaves($block, 3);
+    // F394: this cap used to be 3, and a fourth string key was dropped from the output object with
+    // no error - the generator below is arity-agnostic (it loops count($props)), so the truncation
+    // was purely the detector's budget. Raised to 8; SCHEMA-PROPS5 asserts five keys survive.
+    $plan = api_top_leaves($block, 8);
     if ($plan == "") {
         return $out;
     }
@@ -11690,6 +11693,33 @@ function main(): void
         echo "SCHEMA-MIX: PASS (string and number leaves assembled in schema order)\n";
     } else {
         echo "SCHEMA-MIX: FAIL shape=" . $mShape . "\n";
+    }
+
+    // SCHEMA-PROPS5 (F394): the flat all-string detector used to budget three leaves, so a schema
+    // with five string properties silently lost the last two - the request was accepted and the
+    // answer was simply missing keys. Two assertions, because the bug had two halves: the detector
+    // must SEE five properties, and the emitted object must CONTAIN all five in schema order.
+    $p5Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"five","schema":'
+        . '{"type":"object","properties":{'
+        . '"alpha":{"type":"string"},"beta":{"type":"string"},"gamma":{"type":"string"},'
+        . '"delta":{"type":"string"},"epsilon":{"type":"string"}}}}}}';
+    $p5Props = api_response_schema_string_props($p5Body);
+    $p5Ids = tok_chat("user", "Name five things.") . "," . tok_chat_open("assistant");
+    $p5Out = api_string_value_multi($p5Ids, $p5Props, "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+    $p5Parts = explode(",", $p5Out);
+    $p5Base = count(explode(",", $p5Ids));
+    $p5Text = "";
+    for ($i = $p5Base; $i < count($p5Parts); $i++) {
+        $p5Text = $p5Text . gguf_token_str((int) $p5Parts[$i]);
+    }
+    $p5Text = str_replace("Ġ", " ", $p5Text);
+    $p5Shape = preg_match('/^\{"alpha":"[a-z ]*","beta":"[a-z ]*","gamma":"[a-z ]*",'
+        . '"delta":"[a-z ]*","epsilon":"[a-z ]*"\}$/', $p5Text);
+    echo "SCHEMA-PROPS5 detected=" . count($p5Props) . " text=[" . $p5Text . "]\n";
+    if (count($p5Props) == 5 && $p5Out != "" && $p5Shape == 1 && api_json_ok($p5Text) == 1) {
+        echo "SCHEMA-PROPS5: PASS (five string properties detected and all five emitted in order)\n";
+    } else {
+        echo "SCHEMA-PROPS5: FAIL detected=" . count($p5Props) . " shape=" . $p5Shape . "\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes

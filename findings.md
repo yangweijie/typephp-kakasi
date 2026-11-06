@@ -3622,3 +3622,27 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 ⇒ 另一个观察：**半重复负载上接受率只有 33–37%，收益仍有 1.04–1.06×** ⇒ 收益与接受率的关系**不是线性**（F382 的"k=1 高接受率仍亏"已经说明这一点）；决定收益的仍是**每次 verify 提交多少 token**。
 **梯**：自检 **166 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.538×**；哨兵 **0**；`SPEC_WINDOW 2`。
 **边界**：每格 4 对；三个负载、单一 k=4；`win=` 记录的是**配置值**而非扩窗后的值（扩窗是调用内行为，日志里由 drafts/accepted 体现）。
+
+
+## F394：约束解码的**第一处静默截断修掉**——扁平全字符串对象的属性上限 3 → 8（此前第 4 个键被无声丢掉）
+**先盘点（读代码，不改）**：`api_schema_token_value`（main.php:5295）是各形状的共同出口；已支持的形状与门对应关系：
+| 形状 | 检测/生成 | 门 |
+|---|---|---|
+| 扁平全字符串对象（**上限曾为 3**） | `api_response_schema_string_props`:5867 → `api_string_value_multi`:593 | 仅活门 `chat-json-schema-multi-string`（2 属性），**无自检门** |
+| 混合叶子 2–4 | `api_response_schema_mixed_object`:4420 → `api_object_mixed`:4343 | `SCHEMA-MIX`（2 叶子） |
+| 嵌套对象单路径 ≤6 叶子 | :2929 → `api_nested_object_value`:2722 | `SCHEMA-NEST-OBJ`、`SCHEMA-DEEP…DEEP200` |
+| 属性内数组 / 顶层数组（string/number/bool） | :765/:833、:1314/:1229/:1209 | `SCHEMA-ARR`、`ARR-NUM`、`ARR2..ARR7`、`TOPARR*` |
+| 对象数组（叶子 ≤4） | :3224 → `api_array_object_value`:3000 | `SCHEMA-ARR-OBJ`（2 叶子）、`SCHEMA-SCOPE` |
+| enum/const/bool/有界整数（有限域） | `api_schema_candidates`:5583 → `api_constrained`:433 | `CONST-NUM/FLOAT/BOOL/SCI/MULT/EXCL` |
+| oneOf/anyOf/$ref/allOf | :5817、`api_schema_flatten_choices`:5106、`api_schema_resolve_refs`:5469 | `ONEOF`、`REF`、`EXTREF`、`ALLOF` |
+**缺口（按"静默程度"排）**：
+1. **>2 属性被静默截断**：`api_top_leaves`:2529 的 `while ($i < $n && $count < $maxN)` 只取前 N 个叶子、**不报错**；全字符串上限 3（:5896）、混合 4（:4448）、对象数组项 4（:3265）。
+2. **`pattern` 只支持 `^(a|b)$` 与字面 alternation**；真元字符在嵌套/扁平/混合/数组四处**全部 bail ⇒ 无约束自由生成**（:2944、:5878、:4429、:3233）。
+3. **`minimum/maximum` 只支持"整数 + 双边界 + 跨度 ≤15"**（:5743–5762）；浮点边界、单边界、跨度 >15 ⇒ `continue`，各语法检测器 bail ⇒ **边界被静默忽略**。
+4. **`required`/`minItems`/`maxLength`/`additionalProperties` 完全未实现**（全文件无这些关键字的处理）。
+5. oneOf/anyOf 只支持 2–3 分支、首属性必须 const、每分支 ≤2 属性。
+**本轮修的是第 1 条里最小的一处**：`:5896` 的 **3 → 8**。生成器本来就与元数无关（`api_string_value_multi`:613 按 `count($props)` 循环、预算按叶子计），所以**截断纯粹是检测器的预算**。
+**新门 `SCHEMA-PROPS5`（两条判据，因为缺陷有两半）**：①**检测器必须看到 5 个属性**（`count(api_response_schema_string_props($body)) == 5`）②**输出对象必须含全部 5 个键且按 schema 顺序**（正则 + `api_json_ok`）。
+**结果**：`SCHEMA-PROPS5 detected=5 text=[{"alpha":…,"beta":…,"gamma":…,"delta":…,"epsilon":…}]` ⇒ **PASS**；自检 **167 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.536×**；哨兵 **0**；`SCHEMA-SCOPE` 仍绿（嵌套块不受影响）。
+**门的夹具错误（被门自己抓住）**：第一版夹具用了 `{"response_schema":…}`，而检测器要求 `"json_schema"` 包裹 + `"schema"` 对象 ⇒ `detected=0` 直接 FAIL。**这正是"形状判据"的价值**：若只断言"输出是合法 JSON"，这个错夹具会被当成通过。改成真实的 `response_format.json_schema.schema` 形状后通过。
+**下一轮（F395）**：同一类的下一处——**混合叶子上限 4（:4448）与对象数组项上限 4（:3265）**，各配一个"检测到 N 个 / 输出含 N 个"的门；再往后是 `pattern` 与数值边界的**静默忽略**（那两处需要先决定"拒绝请求"还是"实现约束"，不能继续无声放行）。

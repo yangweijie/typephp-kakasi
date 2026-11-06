@@ -609,3 +609,13 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 半重复负载 | 窗口 2 **1.064×**（37.5%）vs 窗口 3 **1.035×**（33.3%） | `engine/spec_attrib_S{2,3}.log` |
 | 三负载汇总 | 高度重复 1.865 vs 1.758（+6.1%）；无重复 1.012 vs 中性；半重复 1.064 vs 1.035（+2.8%） | 上 + `engine/spec_attrib_{A2,A3,B2,B3}.log` |
 | 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.538×**、哨兵 **0** | `engine/run_f393.log`、`engine/gate_f393.log` |
+
+### F394（2026-11-06 18:05）——全字符串属性上限 3→8；`SCHEMA-PROPS5` 双判据通过
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 修复 | `api_top_leaves($block, 8)`（原 3） | `engine/main.php:5899` |
+| 新门 | `SCHEMA-PROPS5 detected=5`，五键按序输出，`api_json_ok=1` | `engine/run_f394b.log` |
+| 夹具错误（门抓住） | 第一版 `response_schema` 包裹 ⇒ detected=0 FAIL | `engine/run_f394.log` |
+| 回归护栏 | `SCHEMA-SCOPE` 仍 PASS | `engine/run_f394b.log` |
+| 梯 | 自检 **167/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.536×**、哨兵 **0** | `engine/run_f394b.log`、`engine/gate_f394b.log` |
+| 缺口清单 | >2 属性截断、pattern 元字符、数值边界、required/minItems 等、oneOf 分支限制 | `findings.md` F394 |
