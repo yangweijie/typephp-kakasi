@@ -384,3 +384,14 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 缺的 8% 的结构解释 | A 的 `post` 在 A 的 trace 处结束，B 槽处理发生在其后 ⇒ **待用 B 行的 `post` 核**，不作结论 | `engine/par_trace.log`（同批行） |
 | 装表不改变行为 | 服务文本与 F369 **逐字节相同**（148 字符，同 seed） | `engine/chunk_gap_f369_r1_t0_9.json` vs `engine/chunk_gap_f370_r1_t0_9.json` |
 | 梯（带戳构建） | 自检 **162/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par **0** fairness **0**；scaling **1.780×**；哨兵 **0** | `engine/run_f370.log`、`engine/gate_f370.log` |
+
+### F372（2026-11-06 01:39）——去掉每 token 的 select 睡眠：**服务面 32.6 → 25.8 ms/token（1.26×）**，机制字段自证
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 睡眠确实被去掉 | `sel` **6.75/5.67/6.15 → 0.032/0.031/0.030** ms；`pre` 6.99 → **0.034** | `engine/chunk_gap_split_f371_r*_t0_9.json` vs `engine/chunk_gap_split_f372_r*_t0_9.json` |
+| 收益来自去等待而非漂移 | cadence **32.6/34.4/32.7 → 25.3/26.4/25.8**（降 6.5–7.9 ms ≈ `sel` 降幅），同期 `eng`/`s1` 未变 | 同上 |
+| 采样成本重新可见 | temp 0.0：cadence **21.6/22.2**、`eng` 18.4/18.9 ⇒ 采样 **3.6–4.8 ms**（F369 的"temp 差≈0"是被睡眠抖动淹掉） | `engine/chunk_gap_split_f372_r{4,5}_t0_0.json` |
+| 每 token 的新账 | sel 0.03 ＋ eng **22.9**（s1 15.4＋s2≈2.2＋采样≈4＋**回拷/簿记≈1.3**）＋ post 0.11 ＋ B 槽≈2.4 ＝ **25.8 ms** | 同上（`coverage_pct` 88–91%） |
+| 空闲不忙等 | 超时只在"无槽位要推进"时为 1 ms（`$tmo` 条件式） | `engine/main.php`（`api_serve_par` 的 select 处） |
+| 梯 | 自检 **162/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par **0** fairness **0**；哨兵 **0**；投机 greedy **1.843×**/sampled **1.462×** | `engine/run_f372.log`、`engine/gate_f372.log` |
+| scaling 数值下行不是退化 | **1.583×/1.658×**（睡眠时代 1.667–1.780）——分母（串行侧）变快 ⇒ 比值缩 | `engine/gate_f372.log`、`engine/chunk_gap_f372.log` |

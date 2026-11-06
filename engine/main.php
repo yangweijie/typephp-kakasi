@@ -6408,7 +6408,14 @@ function api_serve_par(int $port): void
         $rd = [$srv];
         $wr = [];
         $ex = [];
-        $sel = stream_select($rd, $wr, $ex, 0, 1000);
+        // F372: F371 measured this wait at 5.7-6.8 ms per iteration - the loop asks for 1000
+        // microseconds and Windows resolves the sleep far more coarsely, so a served token paid
+        // ~6 ms of pure waiting while a stream was already being generated. While a slot needs
+        // stepping the pass itself paces the loop, so poll instead of sleeping; when every slot is
+        // idle the timeout stays at 1 ms, so an idle server does not turn into a busy wait.
+        // The `sel` field in the trace is what proves which of the two happened.
+        $tmo = (($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0)) ? 0 : 1000;
+        $sel = stream_select($rd, $wr, $ex, 0, $tmo);
         $c = ($sel !== false && $sel > 0) ? stream_socket_accept($srv, 0) : $srv;
         $tSel1 = microtime(true);   // F371: end of select+accept, the first half of `pre`
         if ($c !== false && $c !== $srv) {
