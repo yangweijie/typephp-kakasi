@@ -519,3 +519,5 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 自伤（已修） | 裸 `
 ` ⇒ `Fatal error: Undefined constant "n"`、`RUN_EXIT=255` | `engine/run_f384.log` |
 | 未重跑 | 8000/8001 门禁本轮**未跑**（改动只加自检门与 echo） | 本行即声明 |
+
+**补**：8000 **115/0**、8001 par **0** fairness **0**、scaling **1.499×**、哨兵 **0**（`engine/gate_f384c.log`）⇒ F384 的二进制已过整条梯，"未重跑"作废。
