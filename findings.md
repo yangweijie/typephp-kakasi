@@ -3517,3 +3517,18 @@ BANNER: ATTN_MODE 2 PAR slots=2          THRU_EXIT=0 streams=4 slots=4
 **为什么之前的门没抓到**：`SPEC-EQ-LONG` / `SPEC-EQ-STOP` 用的是**裸提示**（≤32 token 上限下都不触发 eos），而服务面这条提示在第 11 个 token 处就 eos ⇒ **门用的输入恰好落在"没有停止行为"的区域**。**这再次印证 F386 的教训：门的输入必须覆盖被测行为发生的区域。**
 **下一步（F388，具体到函数）**：①在**经模板处理的同一输入**上打印 `model_generate` 与 `model_spec_generate(k=4)` 的**完整 id 序列**（引擎门里用 `tok_chat_open` 拼出同样输入即可）②若两条序列在第 11 个 token 后仍相同、直到 eos 之后才多出 token ⇒ 是**接受块越过 eos**（修 `spec_generate` 的追加逻辑）③若第 11 个 token 就不同 ⇒ 是**批验证数值分歧**（要先修数值一致性，再谈收益）。
 **梯**：本轮**未改引擎**（只跑实验）⇒ 沿用 F386 的绿：自检 165/0、8000 115/0、8001 par/fairness 0、scaling 1.555×、哨兵 0。
+
+
+## F388：**缺陷被证据钉死**——投机把 eos **之后的文本**也吐出去了（plain 的输出是 spec 的真前缀，第 44 字符起才分叉）
+**实验（不重建，同一服务进程、同一模板化输入、上限 48、temp 0）**：
+| 形状 | completion_tokens | 正文 |
+|---|---|---|
+| `spec_k:0`（plain） | **10** | `The quick brown fox jumps over the lazy dog.` |
+| `spec_k:4`（投机） | **24** | 同上 **+ `
+Human: A dog is playing in the park.`** |
+**比较结果**：`same_prefix_chars=44 first_diff_char=-1 prefix_equal=1` ⇒ **spec 的前 44 个字符与 plain 完全相同**，之后 spec 多出 37 个字符（含一个换行后开始"新的一轮对话"）。
+⇒ **候选 2（批验证在 eos 处数值分歧）被排除**：若 argmax 在 eos 位置翻转，前缀就不会逐字符相同。**确认候选 1：接受块越过 eos**——`spec_generate` 的接受块按 `take = min(acc, n_new - produced)` 成批追加，**追加完才检查 `out.back() == eos`**，于是 eos 落在块内部时，它后面的 token 一起被写出。
+**这是用户可见的正确性缺陷，不是性能问题**：投机响应会把**结束序列之后的文本**（在这里是下一轮 `Human:` 开头的内容）当成本轮回答返回。**任何"投机 1.27–1.78×"的收益数字都要在这个缺陷修好之后重新确认**——收益是在一条**行为不正确**的路径上量出来的。
+**修法（已定位到一处）**：`src/model_sycl.cc` 的 `spec_generate`：算出 `take` 之后，**在接受块内找到第一个 eos 并把 `take` 截断到它（含）**，再走既有的 `out.back()==eos` 提前退出。
+**该加的判据（F389）**：用**会很快到 eos 的模板化输入**（这条提示就够）断言 **`plain` 的输出是 `spec` 输出的前缀，且 `spec` 在 eos 之后没有 token**；现有两个门（`SPEC-EQ-LONG`/`SPEC-EQ-STOP`）用的是裸提示、上限 ≤32，**结构上到不了 eos**，所以两次都漏了。
+**梯**：本轮**未改引擎**（只跑实验）⇒ 沿用 F386 的绿：自检 165/0、8000 115/0、8001 par/fairness 0、哨兵 0。

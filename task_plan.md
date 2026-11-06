@@ -545,3 +545,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 - 不同 ⇒ **批验证数值分歧**（先修数值一致性：批内归约顺序或 f16 KV 影响；在修好之前不只报收益）。
 **验收**：①两条序列逐 id 打印②按判据落一处修复③修复后 served `spec_k=4` 与 `spec_k=0` 在**同输入**下 `completion_tokens` 相同④梯全绿（含 8000/8001）。
 **顺位**：spec/plain 停止一致性 → k 自适应 → 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。
+
+
+## F389 计划（修 `spec_generate` 越过 eos + 加会到 eos 的判据 + 复核收益）
+**缺陷（F388 已证）**：`spec_generate` 按 `take` 成批追加接受块，**追加后才查 `out.back()==eos`** ⇒ eos 在块内时把其后 token 也写出（实测多 13 个 token、含下一轮 `Human:` 文本）。
+**动作**：①`spec_generate` 里在追加前**把 `take` 截断到块内第一个 eos（含）**，随后既有 `out.back()==eos` 提前退出逻辑自然生效；②**新门 `SPEC-STOP-EOS`**：用**会很快 eos 的模板化输入**断言"`plain` 输出是 `spec` 输出的前缀"且"`spec` 在 eos 后没有 token"（现有两门结构上到不了 eos）；③修好后**重跑 F382/F383 的 k 曲线**（收益是在缺陷路径上量的，必须复核）。
+**验收**：①新门绿②`spec_k>0` 与 `spec_k=0` 在同输入下 `completion_tokens` 相同③k 曲线复核数字与修复前并列④梯全绿（自检/8000/8001/哨兵）。
+**顺位**：修越界 → 收益复核 → k 自适应 → 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。

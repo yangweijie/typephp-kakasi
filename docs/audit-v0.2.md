@@ -551,3 +551,14 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 代码线索 | 接受块成批追加后才检查 `out.back()==eos`；或批验证 argmax 在 eos 位置不同 | `src/model_sycl.cc`（`spec_generate` eos 分支） |
 | 门为何漏 | `SPEC-EQ-LONG`/`SPEC-EQ-STOP` 的输入（裸提示、≤32）不触发 eos | `engine/run_f384b.log`、`engine/run_f386.log` |
 | 未改引擎 | 梯沿用 F386 绿 | `engine/run_f386.log`、`engine/gate_f386c.log` |
+
+### F388（2026-11-06 12:10）——确认：投机越过 eos（plain 输出为 spec 真前缀；数值分歧排除）
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 文本比较 | `same_prefix_chars=44 first_diff_char=-1 prefix_equal=1`；plain 10 token / spec 24 token | `engine/serve_f388.log` |
+| spec 多出的内容 | `
+Human: A dog is playing in the park.`（下一轮文本） | 同上 |
+| 结论 | 接受块成批追加后才查 `out.back()==eos` ⇒ **eos 在块内时带出后续 token**；数值分歧排除 | `src/model_sycl.cc`（`spec_generate`） |
+| 影响 | 用户可见；**F377–F383 的收益需修复后复核** | 本行 |
+| 门为何两次都漏 | 两个引擎门用裸提示、上限 ≤32，**到不了 eos** | `engine/run_f384b.log`、`engine/run_f386.log` |
+| 未改引擎 | 梯沿用 F386 绿 | `engine/gate_f386c.log` |
