@@ -1,0 +1,28 @@
+{
+ "rows": 240,
+ "dropped_segments": 122,
+ "seg_engine_plus_writeA_ms": {
+  "n": 58,
+  "min": 26.1,
+  "median": 30.9,
+  "mean": 32.155,
+  "p90": 42.8,
+  "max": 45.4
+ },
+ "seg_writeB_ms": {
+  "n": 59,
+  "min": 0.2,
+  "median": 0.3,
+  "mean": 0.31,
+  "p90": 0.4,
+  "max": 1.2
+ },
+ "iteration_cadence_ms": {
+  "n": 58,
+  "min": 26.4,
+  "median": 31.2,
+  "mean": 32.457,
+  "p90": 43.5,
+  "max": 45.6
+ }
+}

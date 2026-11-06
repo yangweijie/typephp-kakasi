@@ -1,0 +1,54 @@
+==[1/4] SYCL objects via icx==
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2058,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 2058 |                 dW = {dStream, false};
+      |                                ^~~~~
+1 warning generated.
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2058,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 2058 |                 dW = {dStream, false};
+      |                                ^~~~~
+1 warning generated.
+==[2/4] tpc: PHP + bridge==
+Initialized platform/backend: Windows + MSVC (cl)
+prepare: src\gguf.stub.php
+prepare: src\backend.stub.php
+prepare: src\ops.stub.php
+prepare: src\model.stub.php
+prepare: src\tokenizer.stub.php
+prepare: main.php
+prepare completed: 6 source files in total
+convert: main.php
+generate arginfo file: main.php
+Starting parallel compilation with 4 jobs for 11 files
+[1/11] 10% php\tpc_v0.9.5_windows_x64\phpx\src\misc\ps_title.c [cache]
+[2/11] 19% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_runtime.cc [cache]
+[3/11] 28% php\tpc_v0.9.5_windows_x64\phpx\src\misc\php_cli_process_title.c [cache]
+[4/11] 37% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_main.cc [cache]
+[5/11] 46% src\backend.cc
+[6/11] 55% src\gguf.cc
+[7/11] 64% extension-kakasi_engine.cc
+[8/11] 73% src\ops.cc
+[9/11] 82% src\tokenizer.cc
+[10/11] 91% src\model.cc
+[11/11] 100% \main.cc
+Successfully compiled 11 files
+link "@C:\git\c\typephp-kakasi\engine\build\gen\cache\link\kakasi_engine.exe.rsp" /OUT:"C:\git\c\typephp-kakasi\engine/build/kakasi_engine.exe" /LIBPATH:"C:\git\php\tpc_v0.9.5_windows_x64\phpx\lib" /LIBPATH:"C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib" /LIBPATH:"C:\Program Files (x86)\Intel\oneAPI\compiler\latest\lib" /NODEFAULTLIB:LIBCMT /nologo "C:\git\php\tpc_v0.9.5_windows_x64\phpx\lib\phpx.lib" "C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib\php8ts.lib" "C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib\php8embed.lib" "user32.lib" "gdi32.lib" "kernel32.lib" "gmp.lib" "gmpxx.lib" "mpfr.lib" "libmpdec-4.0.1.dll.lib" "libmpdec++-4.0.1.dll.lib" "sycl.lib" "ur_loader.lib" "tbb12.lib"
+   Creating library C:\git\c\typephp-kakasi\engine\build\kakasi_engine.lib and object C:\git\c\typephp-kakasi\engine\build\kakasi_engine.exp
+Build successful: C:\git\c\typephp-kakasi\engine/build/kakasi_engine.exe
+==[3/4] final link via icx (runs sycl-post-link)==
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+icx  -fsycl /Qstd=c++17 /EHsc C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\gguf.cc.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\backend.cc.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\ops.cc.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\model.cc.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\tokenizer.cc.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\generated\\\main.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\generated\extension-kakasi_engine.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\shared\typephp_runtime.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\kakasi_engine\typephp_main.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\shared\php_cli_process_title.obj C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\shared\ps_title.obj C:\git\c\typephp-kakasi\engine\build\obj\sycl_backend.obj C:\git\c\typephp-kakasi\engine\build\obj\ops_sycl.obj C:\git\c\typephp-kakasi\engine\build\obj\model_sycl.obj -o build\kakasi_engine_sycl.exe -link /LIBPATH:C:\git\php\tpc_v0.9.5_windows_x64\phpx\lib /LIBPATH:C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib "/LIBPATH:C:\Program Files (x86)\Intel\oneAPI\compiler\latest\lib" /NODEFAULTLIB:LIBCMT phpx.lib php8ts.lib php8embed.lib user32.lib gdi32.lib kernel32.lib gmp.lib gmpxx.lib mpfr.lib libmpdec-4.0.1.dll.lib libmpdec++-4.0.1.dll.lib sycl.lib ur_loader.lib tbb12.lib
+icx: warning: argument unused during compilation: '-EHsc' [-Wunused-command-line-argument]
+   Creating library build\kakasi_engine_sycl.lib and object build\kakasi_engine_sycl.exp
+==[4/4] run==
+SKIPPED_RUN 

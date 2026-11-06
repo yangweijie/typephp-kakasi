@@ -350,3 +350,14 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 模式 2 下的 8001 双流 scaling | **1.822×**（模式 0 的同一轮基线是 1.625×） | `engine/gate_f367m2.log`、`engine/gate_f365.log` |
 | 模式 2 下的服务面投机比（只报告，不是门） | greedy **1.634×** / sampled **1.408×**（模式 0 是 2.841×/2.071×）⇒ **基线每步变便宜，drafting 的相对优势随之缩小** | 同上 |
 | 边界 | 自检里 `switch` 之后的段落会把模式恢复成 0（sweep 收尾设 0），所以模式 2 下的自检只覆盖 sweep 之前的 OPS/FORWARD/GENERATE/SAMPLING/SAMPLER-DIST；**服务端从不调用该开关 ⇒ 活门禁整个跑在模式 2 上**，这部分才是提默认的依据 | `engine/main.php`（sweep 的 `model_set_attn_mode(0)`） |
+
+### F368（2026-11-06 00:35）——split-KV 提为默认，全梯绿，服务面单流仍有 1.03× 的未解释缺口
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 默认已是 split-KV，且服务端自证 | `ATTN_MODE 2` / `ATTN_MODE 0` 两个服务日志各自一行 | `engine/serve_f368b2.log`、`engine/serve_f368b0.log` |
+| 引擎每步（会话路径，两遍取优者） | L=8 13.5/13.0 无倒退；L=64 **24.7 → 16.0**；L=256 **66.5 → 18.2** ms | `engine/run_f368.log`（`PERF sweep L=…`） |
+| 自检（默认=2，sweep 之后的段也在模式 2 下跑） | **162 PASS / 0 FAIL**、`RUN_EXIT=0`、`ATTN-ENGAGE` PASS | `engine/run_f368.log` |
+| 活门禁 | 8000 **115/0**；8001 par **0** fairness **0**；scaling **1.837×**；哨兵 0 | `engine/gate_f368.log` |
+| 双流 scaling 同构建 A/B | 模式 0 **1.577×** → 模式 2 **1.920×**（另一批 1.617 → 1.850） | `engine/chunk_gap_f368b0.log`、`engine/chunk_gap_f368b2.log` |
+| **未解释缺口** | 单流每 token cadence 31.9 → **30.9**（1.03×），同期引擎自量 24.7 → 16.0（1.54×） | `engine/chunk_gap_split_f368b{0,2}_r*.json` 与 `engine/run_f368.log` |
+| 投机服务面比（只报告） | greedy **1.660×** / sampled **1.424×**（模式 0 时代 2.841/2.071）⇒ 基线每步变便宜，drafting 相对优势缩小 | `engine/gate_f368.log` |

@@ -41,7 +41,10 @@ namespace {
     // every pass), 2 = split-KV (the range cut into chunks, one work item each, then combined).
     // All three live in this binary so they can be measured in one process; 0 and 1 are
     // arithmetically identical, 2 groups the same sum differently on purpose.
-    int g_attn_mode = 0;
+    // F368: shipped default. Split-KV measured 3.89x on the block stage at L=256 and 1.73x at
+    // L=64, and ranges too short to split (P=1) now fall through to the score-cache path, so this
+    // is the faster branch at every length. KAKASI_ATTN_MODE=0 pins the old behaviour for A/B.
+    int g_attn_mode = 2;
     // The server reads the same switch from the environment, so the served path can be A/B'd
     // in this binary too: KAKASI_ATTN_MODE=1 starts it on the pre-F365 kernel.
     struct AttnModeFromEnv {
@@ -56,7 +59,7 @@ namespace {
 #endif
             if (e && e[0] != '\0') {
                 const int m = std::atoi(e);
-                g_attn_mode = (m >= 0 && m <= 5) ? m : 0;
+                g_attn_mode = (m >= 0 && m <= 5) ? m : 2;
             }
         }
     };
@@ -1120,7 +1123,7 @@ int weight_prec() { return g_wprec; }
 // F365/F366 A/B switch: 0 = score cache, 1 = the pre-F365 three-pass kernel, 2 = split-KV.
 // 0 and 1 compute the same values in the same order; 2 groups the same sum differently, so it
 // is checked by the greedy token rather than by bit-equality.
-void set_attn_mode(int m) { g_attn_mode = (m >= 0 && m <= 5) ? m : 0; }
+void set_attn_mode(int m) { g_attn_mode = (m >= 0 && m <= 5) ? m : 2; }
 int attn_mode() { return g_attn_mode; }
 
 // Backend fingerprint for `engine doctor` (FR-04): what the runtime actually sees, not what the
@@ -1814,7 +1817,11 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             Dev ao(&ql, (size_t) T * D);
             // F366: mode 2 runs the split-KV kernel instead - one work item per (token, head,
             // chunk) plus a combine - as long as this device has a partial buffer to write into.
-            const bool useSplit = (g_attn_mode == 2) && (pc != nullptr);
+            // F366/F368: mode 2 runs the split-KV kernel - but only where there is more than one
+            // chunk to spread. With P=1 the split path costs a second kernel launch and a partial
+            // round trip and buys nothing (measured: L=8 was 3% SLOWER than the score cache), so
+            // short ranges fall through to the mode-0 path and are then bit-identical to it.
+            const bool useSplit = (g_attn_mode == 2) && (pc != nullptr) && (splitP > 1);
             if (kv.f16) {
                 if (useSplit) {
                     attention_split(ql, att.p, (const sycl::half*) kv.k[(size_t) l],

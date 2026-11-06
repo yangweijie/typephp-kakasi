@@ -6358,6 +6358,9 @@ function api_serve_par(int $port): void
         return;
     }
     stream_set_blocking($srv, false);
+    // F368: say which attention path this process will serve with. The F366 lesson is that a
+    // switch that never reached the code leaves both sides of an A/B identical and the log silent.
+    echo "ATTN_MODE " . model_attn_mode() . "\n";
     echo "API_LISTEN " . $port . " (parallel: streaming text only)\n";
     echo "PAR loop start\n";
     // F359: the two batch regions are allocated once, each holding `cap` KV rows. A prompt plus
@@ -6981,6 +6984,7 @@ function api_serve(int $port): void
         return;
     }
     echo "API_LISTEN " . $port . "\n";
+    echo "ATTN_MODE " . model_attn_mode() . "\n";
 
     while (true) {
         // Same select-gating as the parallel slots: accept() on an idle listener raises a
@@ -9319,6 +9323,7 @@ function main(): void
     $swpFail = 0;
     $swpFailS = 0;
     $swpEng = 0;
+    $swpPrev = model_attn_mode();   // the mode the engine booted in = the shipped one
     // F365/F366 A/B: the attention paths all live in this binary, so for every context length
     // they are measured back to back, twice each. The pairing is the point: separate sweeps
     // would compare two moments in time, and the machine drifts (an earlier sweep showed s1 at
@@ -9371,7 +9376,7 @@ function main(): void
                 $swpTokS = $swpTokm;
             }
         }
-        model_set_attn_mode(0);
+        model_set_attn_mode($swpPrev);
         if ($swpTok0 != $swpTok1) {
             $swpFail = $swpFail + 1;
         }
@@ -9461,7 +9466,7 @@ function main(): void
         }
         echo "PERF ablate m" . $abMode . ":" . $abOut . "\n";
     }
-    model_set_attn_mode(0);
+    model_set_attn_mode($swpPrev);
     echo "PERF ablate note: m4 collapses the V read-modify-writes, m5 drops the dot chain; "
         . "modes 4 and 5 produce garbage output by design and are not used by any gate\n";
     // F367 discipline gate: a switch that is not proven to reach the code cannot be measured.
