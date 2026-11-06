@@ -6410,6 +6410,7 @@ function api_serve_par(int $port): void
         $ex = [];
         $sel = stream_select($rd, $wr, $ex, 0, 1000);
         $c = ($sel !== false && $sel > 0) ? stream_socket_accept($srv, 0) : $srv;
+        $tSel1 = microtime(true);   // F371: end of select+accept, the first half of `pre`
         if ($c !== false && $c !== $srv) {
             // A socket accepted from a non-blocking listener is non-blocking too, so fread would
             // return "" before the body arrives. Make the client blocking with a timeout.
@@ -6794,6 +6795,7 @@ Connection: close
                 }
             }
         }
+        $tPre1 = microtime(true);   // F371: everything before this was request handling / slot tail
         // One forward pass for the whole batch (F359): every live conversation advances by one
         // token in the SAME pass, so two concurrent streams cost one forward pass instead of two.
         // The stop conditions are decided BEFORE the pass, so a conversation that is already
@@ -6869,7 +6871,10 @@ Connection: close
                             . " sp=" . model_attn_split_p()
                             . " pre=" . (($tEng0 - $tIter0) * 1000.0)
                             . " eng=" . (($tEng1 - $tEng0) * 1000.0)
-                            . " post=" . ((microtime(true) - $tEng1) * 1000.0));
+                            . " post=" . ((microtime(true) - $tEng1) * 1000.0)
+                            . " sel=" . (($tSel1 - $tIter0) * 1000.0)
+                            . " mid=" . (($tPre1 - $tSel1) * 1000.0)
+                            . " tail=" . (($tEng0 - $tPre1) * 1000.0));
                     }
                 }
             }
@@ -6949,7 +6954,10 @@ Connection: close
                             . " sp=" . model_attn_split_p()
                             . " pre=" . (($tEng0 - $tIter0) * 1000.0)
                             . " eng=" . (($tEng1 - $tEng0) * 1000.0)
-                            . " post=" . ((microtime(true) - $tEng1) * 1000.0));
+                            . " post=" . ((microtime(true) - $tEng1) * 1000.0)
+                            . " sel=" . (($tSel1 - $tIter0) * 1000.0)
+                            . " mid=" . (($tPre1 - $tSel1) * 1000.0)
+                            . " tail=" . (($tEng0 - $tPre1) * 1000.0));
                     }
                 }
             }

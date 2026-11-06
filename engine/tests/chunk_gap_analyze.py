@@ -46,6 +46,10 @@ if n == 0:
 step_re = re.compile(r"^([0-9.]+) STEP %s n=([0-9]+)(.*)$" % slot)
 
 
+def fv_get(row, key):
+    return row[7].get(key) if len(row) > 7 else None
+
+
 def fields(rest):
     out = {}
     for part in rest.split():
@@ -69,7 +73,7 @@ with open(trace_path, "r", encoding="utf-8", errors="replace") as f:
             fv = fields(m.group(3))
             server.append((int(m.group(2)), float(m.group(1)),
                            fv.get("s1"), int(fv["sp"]) if "sp" in fv else None,
-                           fv.get("pre"), fv.get("eng"), fv.get("post")))
+                           fv.get("pre"), fv.get("eng"), fv.get("post"), fv))
 
 if len(server) < n:
     print("SHORT_TRACE have=%d want=%d slot=%s start=%d" % (len(server), n, slot, start_line))
@@ -135,6 +139,14 @@ out = {
                            / stats(server_gap)["median"], 2)
                      if parts_ms and server_gap else None),
     "pre_ms": stats([r[4] / 1000.0 for r in steps if r[4] is not None]),
+    # F371: `pre` split three ways - select+accept, the request-handling block, and the
+    # slot tail (previous slot's writes and bookkeeping). Sum must equal pre.
+    # F371: the three fields are written in ms by the server, and stats() scales seconds, so
+    # they are divided here like pre/eng/post are. (The first version of this line forgot that and
+    # reported sel as ~6700 ms for a 2 s run - caught because that is longer than the wall clock.)
+    "sel_ms": stats([fv_get(r, "sel") / 1000.0 for r in steps if fv_get(r, "sel") is not None]),
+    "mid_ms": stats([fv_get(r, "mid") / 1000.0 for r in steps if fv_get(r, "mid") is not None]),
+    "tail_ms": stats([fv_get(r, "tail") / 1000.0 for r in steps if fv_get(r, "tail") is not None]),
     "eng_ms": stats([r[5] / 1000.0 for r in steps if r[5] is not None]),
     "post_ms": stats([r[6] / 1000.0 for r in steps if r[6] is not None]),
     "residual_ms": (round(stats(server_gap)["median"] - stats([x / 1000.0 for x in s1_ms])["median"], 3)
