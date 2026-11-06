@@ -1,0 +1,4 @@
+supported  status=200 body={"id":"chatcmpl-1","object":"chat.completion","created":0,"model":"qwen2","choices":[{"index":0,"message":{"role":"assistant","content":"{\"n\":1}"},"finish_reason":"stop
+float      status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}
+onesided   status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}
+wide       status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}

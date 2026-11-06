@@ -3673,3 +3673,20 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **仍未处理（明确排队，不做无声承诺）**：`minimum/maximum` 的非支持组合（浮点边界、单边界、跨度 >15）**仍然静默放行**；`required`/`minItems`/`maxLength`/`additionalProperties` 仍未实现；oneOf 分支仍受限。**下一轮先给数值边界做同样的显式拒绝**。
 **方法条（本轮第三次遇到）**：**模式替换"打印成功"但文件没改**——这次是门的拼接（helper 进去了、门没进去），靠 `grep -c` 发现。**规则已固化：任何模式替换之后立刻 grep 目标文本；用 Read+Edit 做精确替换更可靠。**
 **梯**：自检 **170 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.551×**；哨兵 **0**。
+
+
+## F397：数值边界的**静默放行也改成显式 400**——并且活体检查抓到一个"门绿但线上全拒"的真 bug
+**改动**：`api_schema_bounds_unsupported($body)`：逐对取 `minimum`/`maximum`，判定**浮点边界、只有一侧、跨度 >15、类型不是 integer** 为不支持；8000 校验加一条 `else if` → **400 + 原因**。受支持的组合（integer + 双边界 + 跨度 ≤15）不变。
+**新门 `SCHEMA-BOUND-REJECT`（双向 + 两种 JSON 排版）**：supported=0、float=1、onesided=1、wide=1、none=0，**wire_supported=0、wire_float=1** ⇒ PASS。
+**活体双向验证（`engine/schema_bounds_f397b.log`）**：
+| 请求 | 状态 | 响应 |
+|---|---|---|
+| integer 1..5（支持） | **200** | `{"n":1}`（仍被约束） |
+| number 1.5..5.5 | **400** | "numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15" |
+| integer 只有 minimum | **400** | 同上 |
+| integer 0..100（跨度 100） | **400** | 同上 |
+**被抓住的 bug（本轮最有价值的一条）**：第一版检测器用 `strpos($body, '"type":"integer"')` 找类型，**而真实请求是 `json.dumps` 出来的 `"type": "integer"`（冒号后有空格）** ⇒ **所有带边界的请求都被拒，包括受支持的**。自检门当时**全绿**，因为门的夹具是**紧凑 JSON**。**是活体的双向检查（支持的那条也必须 200）把它抓出来的**——只测"不支持的被拒"会完全看不见这个 bug。
+⇒ 修法：类型判定改 `preg_match('/"type"\s*:\s*"integer"/')`；**门同时覆盖紧凑与带空格两种排版**（`wire_supported` / `wire_float`），使这类回归以后进不了门。
+**方法条（与 F394 的夹具错误同族，但更隐蔽）**：**门的夹具必须与线上格式同形**。紧凑 JSON 与 `json.dumps` 的空格差异足以让一个"看起来对"的检测器在线上全错；**双向断言 + 两种排版**是这类检测器的最低配置。
+**梯**：自检 **171 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.499×**；哨兵 **0**。
+**仍未实现（明确排队）**：`required`/`minItems`/`maxItems`/`minLength`/`maxLength`/`additionalProperties`；oneOf 分支仍受限（2–3 分支、首属性须 const）；pattern/边界的**真正实现**（现在只是"明确拒绝"，不是"支持"）。

@@ -638,3 +638,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 状态码错误（已修） | 第一版 200 + error body；改 `$status="400 Bad Request"` | `engine/schema_reject_f396.log`（复验） |
 | 仍静默放行 | 数值边界非支持组合（下一轮显式拒绝） | `findings.md` F396 |
 | 梯 | 自检 **170/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.551×**、哨兵 **0** | `engine/run_f396c.log`、`engine/gate_f396c.log` |
+
+### F397（2026-11-06 19:20）——数值边界显式拒绝；空格 bug 由活体双向检查抓出
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 支持的组合 | **200**，`{"n":1}`（受约束） | `engine/schema_bounds_f397b.log` |
+| 不支持的三种组合 | **400** + 原因（float / 单侧 / 跨度 100） | 同上 |
+| 门（双向 + 两种排版） | supported=0 float=1 onesided=1 wide=1 none=0 **wire_supported=0 wire_float=1** | `engine/run_f397b.log` |
+| 抓到的 bug | 第一版 `strpos('"type":"integer"')` 对带空格请求全拒；门夹具紧凑所以全绿 | `engine/schema_bounds_f397.log`（修前） |
+| 梯 | 自检 **171/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.499×**、哨兵 **0** | `engine/run_f397b.log`、`engine/gate_f397b.log` |

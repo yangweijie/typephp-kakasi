@@ -5872,6 +5872,87 @@ function api_schema_charset(): string
 // supported forms are a literal, an alternation of literals, and the same wrapped in ^...$ or
 // ^(...)$ - everything else (classes, quantifiers, groups, escapes) currently bails out of every
 // grammar detector and would be served as unconstrained text. This says so up front instead.
+// F397: which numeric bounds can the constrained decoder actually honour? Only an integer leaf
+// with BOTH bounds and a span of at most 15 is enumerated into candidates; a float bound, a
+// one-sided bound or a wider span bails out of every grammar detector and used to be served as
+// unconstrained text. This recognises those cases so the request can be refused with a reason
+// instead of quietly ignoring the constraint the caller asked for.
+function api_schema_bound_value(string $body, string $key, int $from): string
+{
+    $p = strpos($body, $key, $from);
+    if ($p === false) {
+        return "";
+    }
+    $c = strpos($body, ":", $p);
+    if ($c === false) {
+        return "";
+    }
+    $i = $c + 1;
+    $n = strlen($body);
+    while ($i < $n && (substr($body, $i, 1) == " " || substr($body, $i, 1) == "\t")) {
+        $i++;
+    }
+    $start = $i;
+    if ($i < $n && substr($body, $i, 1) == "-") {
+        $i++;
+    }
+    while ($i < $n) {
+        $ch = substr($body, $i, 1);
+        if (($ch >= "0" && $ch <= "9") || $ch == ".") {
+            $i++;
+        } else {
+            break;
+        }
+    }
+    if ($i == $start) {
+        return "";
+    }
+    return substr($body, $start, $i - $start);
+}
+
+function api_schema_bounds_unsupported(string $body): int
+{
+    if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false) {
+        return 0;
+    }
+    // Walk every minimum and pair it with the maximum that follows it, so a schema with several
+    // bounded leaves is judged on each pair rather than only the first.
+    $off = 0;
+    $pairs = 0;
+    while (true) {
+        $p = strpos($body, "\"minimum\"", $off);
+        if ($p === false) {
+            break;
+        }
+        $mn = api_schema_bound_value($body, "\"minimum\"", $p);
+        $mx = api_schema_bound_value($body, "\"maximum\"", $p);
+        $off = $p + 9;
+        if ($mn == "" || $mx == "") {
+            return 1;                       // one-sided, or unparseable
+        }
+        if (strpos($mn, ".") !== false || strpos($mx, ".") !== false) {
+            return 1;                       // float bounds are not enumerated
+        }
+        // F397: whitespace-tolerant on purpose. The first version searched for the compact
+        // "type":"integer" and the self-test fixture was compact too, so the gate passed while every
+        // real request - json.dumps emits "type": "integer" with a space - was rejected, including
+        // the supported ones. The live two-direction check is what caught it.
+        if (preg_match('/"type"\s*:\s*"integer"/', $body) != 1) {
+            return 1;                       // number, or no declared type
+        }
+        $span = (int) $mx - (int) $mn;
+        if ($span < 0 || $span > 15) {
+            return 1;                       // too wide to enumerate
+        }
+        $pairs++;
+    }
+    // A maximum with no minimum anywhere is one-sided too.
+    if ($pairs == 0 && strpos($body, "\"maximum\"") !== false) {
+        return 1;
+    }
+    return 0;
+}
+
 function api_schema_pattern_unsupported(string $body): int
 {
     if (strpos($body, "\"pattern\"") === false) {
@@ -7226,6 +7307,12 @@ function api_serve(int $port): void
                 // generation - the caller asked for a constraint and silently got none. Refuse it
                 // with a reason instead. Literal alternations (Paris|London, ^(A|B)$) stay supported.
                 $payload = "{\"error\":{\"message\":\"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else if (api_schema_bounds_unsupported($body) == 1) {
+                // F397: same rule as the pattern branch - a bound combination the grammar cannot
+                // enumerate (float, one-sided, or a span wider than 15) used to be served as
+                // unconstrained text. Refuse it with the reason instead.
+                $payload = "{\"error\":{\"message\":\"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else {
                 $maxTok = api_max_tokens(api_num($body, "max_tokens",
@@ -11856,6 +11943,32 @@ function main(): void
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
     } else {
         echo "SCHEMA-PAT-REJECT: FAIL\n";
+    }
+
+    // SCHEMA-BOUND-REJECT (F397): same two-direction rule as the pattern gate. The supported
+    // combination (integer, both bounds, span <= 15) must stay accepted, and each unsupported
+    // combination must be recognised, because the served path now refuses them instead of
+    // generating unconstrained text.
+    $bdA = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":5}}}}}');
+    $bdB = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":5.5}}}}}');
+    $bdC = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1}}}}}');
+    $bdD = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100}}}}}');
+    $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
+    // F397: the same two cases as they arrive on the wire, with spaces after the colons - the
+    // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
+    $bdF = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5}}}}}');
+    $bdG = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 5.5}}}}}');
+    echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=" . $bdC
+        . " wide=" . $bdD . " none=" . $bdE
+        . " wire_supported=" . $bdF . " wire_float=" . $bdG . "
+";
+    if ($bdA == 0 && $bdB == 1 && $bdC == 1 && $bdD == 1 && $bdE == 0
+        && $bdF == 0 && $bdG == 1) {
+        echo "SCHEMA-BOUND-REJECT: PASS (supported combination kept, unsupported ones flagged)
+";
+    } else {
+        echo "SCHEMA-BOUND-REJECT: FAIL
+";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes
