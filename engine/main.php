@@ -6857,7 +6857,8 @@ Connection: close
                         $rsA = 4;
                     } else if ($emitA != "") {
                         $snA++;
-                        api_par_trace("STEP A n=" . $snA);
+                        api_par_trace("STEP A n=" . $snA . " s1=" . model_stage_at(1)
+                            . " sp=" . model_attn_split_p());
                     }
                 }
             }
@@ -6933,7 +6934,8 @@ Connection: close
                         $rsB = 4;
                     } else if ($emitB != "") {
                         $snB++;
-                        api_par_trace("STEP B n=" . $snB);
+                        api_par_trace("STEP B n=" . $snB . " s1=" . model_stage_at(1)
+                            . " sp=" . model_attn_split_p());
                     }
                 }
             }

@@ -1,0 +1,53 @@
+{
+ "slot": "A",
+ "tokens": 60,
+ "server_gap_ms": {
+  "n": 59,
+  "min": 20.9,
+  "median": 31.1,
+  "mean": 29.997,
+  "p90": 35.8,
+  "max": 46.9
+ },
+ "client_gap_ms": {
+  "n": 59,
+  "min": 20.861,
+  "median": 31.036,
+  "mean": 29.994,
+  "p90": 35.849,
+  "max": 46.939
+ },
+ "lag_ms": {
+  "n": 60,
+  "min": -0.266,
+  "median": -0.09,
+  "mean": -0.079,
+  "p90": 0.044,
+  "max": 0.086
+ },
+ "client_wall_ms": 1769.665,
+ "server_span_ms": 1769.8,
+ "lag_sum_ms": -4.719,
+ "lag_negative_count": 0,
+ "step_numbers_contiguous": [
+  1,
+  60
+ ],
+ "first_server_ts": 1793925955.2524,
+ "first_client_ts": 1793925955.252375,
+ "engine_s1_ms": {
+  "n": 60,
+  "min": 11.451,
+  "median": 13.985,
+  "mean": 13.945,
+  "p90": 15.251,
+  "max": 17.433
+ },
+ "split_p_values": [
+  2,
+  3,
+  4,
+  5
+ ],
+ "residual_ms": 17.115
+}

@@ -45,6 +45,9 @@ namespace {
     // L=64, and ranges too short to split (P=1) now fall through to the score-cache path, so this
     // is the faster branch at every length. KAKASI_ATTN_MODE=0 pins the old behaviour for A/B.
     int g_attn_mode = 2;
+    // F369: the chunk count the last attention pass actually used, so a served trace line can
+    // carry the branch it took instead of leaving the reader to infer it from a timing delta.
+    int g_split_p = 1;
     // The server reads the same switch from the environment, so the served path can be A/B'd
     // in this binary too: KAKASI_ATTN_MODE=1 starts it on the pre-F365 kernel.
     struct AttnModeFromEnv {
@@ -1125,6 +1128,7 @@ int weight_prec() { return g_wprec; }
 // is checked by the greedy token rather than by bit-equality.
 void set_attn_mode(int m) { g_attn_mode = (m >= 0 && m <= 5) ? m : 2; }
 int attn_mode() { return g_attn_mode; }
+int attn_split_p() { return g_split_p; }
 
 // Backend fingerprint for `engine doctor` (FR-04): what the runtime actually sees, not what the
 // build hoped for.
@@ -1686,6 +1690,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         if (splitP < 1) splitP = 1;
     }
     const int partStride = HD + 2;
+    g_split_p = splitP;
     if (theta <= 0.0) theta = 1000000.0;
     const int eIdx = gguf::find_tensor("token_embd.weight");
     if (eIdx < 0 || HD > 128) { g_err = "no token_embd.weight or head too wide"; return {}; }

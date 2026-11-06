@@ -35,6 +35,8 @@ function model_weight_prec(): int {}
 // grouped differently).
 function model_set_attn_mode(int $m): int {}
 function model_attn_mode(): int {}
+// F369: chunk count of the last attention pass (1 = not split).
+function model_attn_split_p(): int {}
 function model_session_start(int $backend, string $tokens): int {}
 function model_session_next(int $backend, float $temp, float $top_p): int {}
 function model_session_len(): int {}

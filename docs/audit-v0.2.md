@@ -361,3 +361,15 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 双流 scaling 同构建 A/B | 模式 0 **1.577×** → 模式 2 **1.920×**（另一批 1.617 → 1.850） | `engine/chunk_gap_f368b0.log`、`engine/chunk_gap_f368b2.log` |
 | **未解释缺口** | 单流每 token cadence 31.9 → **30.9**（1.03×），同期引擎自量 24.7 → 16.0（1.54×） | `engine/chunk_gap_split_f368b{0,2}_r*.json` 与 `engine/run_f368.log` |
 | 投机服务面比（只报告） | greedy **1.660×** / sampled **1.424×**（模式 0 时代 2.841/2.071）⇒ 基线每步变便宜，drafting 相对优势缩小 | `engine/gate_f368.log` |
+
+### F369（2026-11-06 00:47）——服务面 residual 第一次被量出来：**比引擎设备段还大，并且会吸收设备侧的节省**
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 服务面每 token 拆分（模式 2，发布默认） | cadence **30.8**（30.8/30.6/31.1）＝ `s1` **13.98** ＋ residual **16.95** ms | `engine/chunk_gap_split_f369_r*_t0_9.json` |
+| 同口径模式 0 | cadence **31.3**（31.0/31.3/31.3）＝ `s1` **18.29** ＋ residual **12.94** ms | `engine/chunk_gap_split_f369m0_r*_t0_9.json` |
+| ⇒ split 在服务路径上确实省了设备时间 | `s1` **18.29 → 13.98（−4.3 ms，1.31×）** | 上两行 |
+| ⇒ 但省下的时间被宿主侧吸收 | residual **+4.0 ms**，cadence 只动 1.02× | 上两行 |
+| 服务侧的分块数 | `sp = 2,3,4,5`（`g_split_p` 无条件记录"算出的分块数"，故模式 0 也非空；证明走没走要看 `ATTN_MODE`） | `engine/serve_f369.log`、`engine/chunk_gap_split_f369*_r1_t0_9.json` |
+| temp 0.9 与 temp 0.0 的 cadence 差在模式 2 下几乎为 0 | 30.8 vs 30.8（F364 同口径是 47.6 vs 43.6＝4.0 ms）⇒ **采样不再是服务面大头** | `engine/chunk_gap_split_f369_r{1,4}_t0_9.json`、`…_r4_t0_0.json` |
+| 自检（装表后） | **162 PASS / 0 FAIL**、`RUN_EXIT=0`、三项 ATTN 门 PASS | `engine/run_f369.log` |
+| 双流 scaling（发布默认） | **1.861×** | `engine/chunk_gap_f369.log` |
