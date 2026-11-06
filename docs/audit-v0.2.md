@@ -628,3 +628,13 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | SCHEMA-ARROBJ5 | detected=5，每项五键完整 | 同上 |
 | 回归护栏 | SCHEMA-PROPS5 / SCHEMA-SCOPE 仍 PASS | 同上 |
 | 梯 | 自检 **169/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.511×**、哨兵 **0** | `engine/run_f395.log`、`engine/gate_f395.log` |
+
+### F396（2026-11-06 18:56）——pattern 元字符显式拒绝（400 + 原因）；支持形式不变
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 不支持的 pattern | **400** + "…not supported; use a literal or an alternation of literals" | `engine/schema_reject_f396.log` |
+| 支持的 pattern | **200**，`{"city":"Paris"}`（仍受约束） | 同上 |
+| 双向门 | `SCHEMA-PAT-REJECT literal=0 wrapped=0 class=1 quant=1 none=0` ⇒ PASS | `engine/run_f396c.log` |
+| 状态码错误（已修） | 第一版 200 + error body；改 `$status="400 Bad Request"` | `engine/schema_reject_f396.log`（复验） |
+| 仍静默放行 | 数值边界非支持组合（下一轮显式拒绝） | `findings.md` F396 |
+| 梯 | 自检 **170/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.551×**、哨兵 **0** | `engine/run_f396c.log`、`engine/gate_f396c.log` |

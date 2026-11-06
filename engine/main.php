@@ -5868,6 +5868,57 @@ function api_schema_charset(): string
 
 // A schema whose values are all free-form strings has no finite candidate set. Detect that shape
 // (1..3 string properties, no enum/const/pattern) so the charset grammar can fill them.
+// F396: does this request carry a string pattern the constrained decoder cannot honour? The
+// supported forms are a literal, an alternation of literals, and the same wrapped in ^...$ or
+// ^(...)$ - everything else (classes, quantifiers, groups, escapes) currently bails out of every
+// grammar detector and would be served as unconstrained text. This says so up front instead.
+function api_schema_pattern_unsupported(string $body): int
+{
+    if (strpos($body, "\"pattern\"") === false) {
+        return 0;
+    }
+    $off = 0;
+    while (true) {
+        $p = strpos($body, "\"pattern\"", $off);
+        if ($p === false) {
+            break;
+        }
+        $c = strpos($body, ":", $p);
+        if ($c === false) {
+            break;
+        }
+        $q1 = strpos($body, "\"", $c);
+        if ($q1 === false) {
+            break;
+        }
+        $q2 = strpos($body, "\"", $q1 + 1);
+        if ($q2 === false) {
+            break;
+        }
+        $pat = substr($body, $q1 + 1, $q2 - $q1 - 1);
+        $off = $q2 + 1;
+        $core = $pat;
+        $clen = strlen($core);
+        if ($clen >= 4 && substr($core, 0, 2) == "^(" && substr($core, $clen - 2, 2) == ")$") {
+            $core = substr($core, 2, $clen - 4);
+        } else {
+            if (substr($core, 0, 1) == "^") {
+                $core = substr($core, 1);
+            }
+            $clen = strlen($core);
+            if ($clen > 0 && substr($core, $clen - 1, 1) == "$") {
+                $core = substr($core, 0, $clen - 1);
+            }
+        }
+        foreach (explode(" ", ". * + ? [ ] { } ( ) \ ^ $") as $mch) {
+            if ($mch != "" && strpos($core, $mch) !== false) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 function api_response_schema_string_props(string $body): array
 {
     $out = [];
@@ -7170,6 +7221,12 @@ function api_serve(int $port): void
             }
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+            } else if (api_schema_pattern_unsupported($body) == 1) {
+                // F396: a pattern the grammar cannot honour used to fall through to UNCONSTRAINED
+                // generation - the caller asked for a constraint and silently got none. Refuse it
+                // with a reason instead. Literal alternations (Paris|London, ^(A|B)$) stay supported.
+                $payload = "{\"error\":{\"message\":\"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else {
                 $maxTok = api_max_tokens(api_num($body, "max_tokens",
                     api_num($body, "max_completion_tokens",
@@ -11781,6 +11838,24 @@ function main(): void
         echo "SCHEMA-ARROBJ5: PASS (five leaves per element, every element complete)\n";
     } else {
         echo "SCHEMA-ARROBJ5: FAIL detected=" . $y5N . " shape=" . $y5Shape . "\n";
+    }
+
+    // SCHEMA-PAT-REJECT (F396): the two supported pattern forms must stay accepted and the
+    // unsupported ones must be recognised, because the served path now refuses the latter with a
+    // reason instead of quietly generating unconstrained text. Both directions are asserted - a
+    // detector that rejected everything would also "fix" the silent fallback, by breaking the
+    // supported cases.
+    $prA = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"Paris|London"}}}}}');
+    $prB = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"^(New York|Los Angeles)$"}}}}}');
+    $prC = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"^[A-Z][a-z]+$"}}}}}');
+    $prD = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"ab+c"}}}}}');
+    $prE = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string"}}}}}');
+    echo "SCHEMA-PAT-REJECT literal=" . $prA . " wrapped=" . $prB . " class=" . $prC
+        . " quant=" . $prD . " none=" . $prE . "\n";
+    if ($prA == 0 && $prB == 0 && $prC == 1 && $prD == 1 && $prE == 0) {
+        echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
+    } else {
+        echo "SCHEMA-PAT-REJECT: FAIL\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes

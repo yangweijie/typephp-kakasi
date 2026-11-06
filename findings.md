@@ -3659,3 +3659,17 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **自检 169 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.511×**；哨兵 **0**。
 **这三处的共同教训（写进方法条）**：**"生成器是通用的、检测器有预算"是一种特别隐蔽的缺陷组合**——请求被接受、答案看起来合法、只是**少了几个键**；只有"检测到 N"与"输出含 N"**两条都断言**才能抓住它，单看输出 JSON 合法或单看检测器返回值都会漏。
 **仍未处理（F394 清单里的其余项，按静默程度排）**：`pattern` 元字符与数值边界**静默放行**（应显式拒绝或实现）、`required`/`minItems` 等未实现、oneOf 分支限制。**下一轮先做"显式拒绝"**：不支持的约束必须返回 400 + 原因，而不是当作无约束生成。
+
+
+## F396：`pattern` 的**静默放行改成显式 400**——不支持的正则不再被当作"无约束"生成
+**改动**：新增 `api_schema_pattern_unsupported($body)`：逐个取出 `"pattern"` 值，剥掉受支持的包裹（`^…$`、`^(…)$`），若剩下含 `. * + ? [ ] { } ( ) \ ^ $` 任一元字符则判为不支持（`|` 允许，因为字面 alternation 是受支持的）。8000 的请求校验里加一条 `else if`：**返回 400 + 原因**，不再落到无约束生成。
+**支持范围不变（活体双向验证，`engine/schema_reject_f396.log`）**：
+| 请求 | 状态 | 响应 |
+|---|---|---|
+| `pattern:"^[A-Z][a-z]+$"`（不支持） | **400** | `{"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals",…}}` |
+| `pattern:"^(Paris|London)$"`（支持） | **200** | `{"city":"Paris"}`（仍被约束） |
+**新门 `SCHEMA-PAT-REJECT`（双向断言）**：字面 alternation=0、`^(…)$`=0、字符类=1、量词=1、无 pattern=0 ⇒ **PASS**。**两个方向都要断言**：一个"全部拒绝"的检测器也能"修好"静默放行，但会把受支持的用法一起弄坏。
+**过程中被抓住的一个错误**：第一版拒绝走的是既有错误分支，**HTTP 状态是 200**（body 里是 error）——活体检查打印 `status=200` 才发现；改用既有的 `$status` 变量置 `"400 Bad Request"` 后复验为 **400**。**教训：错误响应的"形状"包括状态码，不只看 body。**
+**仍未处理（明确排队，不做无声承诺）**：`minimum/maximum` 的非支持组合（浮点边界、单边界、跨度 >15）**仍然静默放行**；`required`/`minItems`/`maxLength`/`additionalProperties` 仍未实现；oneOf 分支仍受限。**下一轮先给数值边界做同样的显式拒绝**。
+**方法条（本轮第三次遇到）**：**模式替换"打印成功"但文件没改**——这次是门的拼接（helper 进去了、门没进去），靠 `grep -c` 发现。**规则已固化：任何模式替换之后立刻 grep 目标文本；用 Read+Edit 做精确替换更可靠。**
+**梯**：自检 **170 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.551×**；哨兵 **0**。
