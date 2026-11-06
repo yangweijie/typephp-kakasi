@@ -562,3 +562,14 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 影响 | 用户可见；**F377–F383 的收益需修复后复核** | 本行 |
 | 门为何两次都漏 | 两个引擎门用裸提示、上限 ≤32，**到不了 eos** | `engine/run_f384b.log`、`engine/run_f386.log` |
 | 未改引擎 | 梯沿用 F386 绿 | `engine/gate_f386c.log` |
+
+### F389（2026-11-06 15:46）——修复验证：eos 越界消失；k 复核 1.309×（k=4）
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 服务面修复验证 | plain **10 token / 44 字符**；spec **11 token / 同一段 44 字符**（多 1 个为 eos） | `engine/spec_stop_f389.log` |
+| 新门 | `SPEC-STOP-EOS: PASS plain_n=11 spec_n=11`（`drafts=8 accepted=7`） | `engine/run_f389b.log` |
+| 门的第一版误绿 | 近似模板两侧都跑满 48 ⇒ 未到 eos（第 4 次同类错误） | `engine/run_f389.log` |
+| 修复后 k 曲线 | k=1 **0.942×**（100% 接受率）、**k=4 1.309×**、k=8 1.204× | `engine/spec_attrib_Q{1,4,8}.log` |
+| 未鼓包 | 四个 spec 请求均产出 44 token（与 plain 相同）⇒ 越界不再发生 | 同上 |
+| 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.519×**、哨兵 **0** | `engine/run_f389b.log`、`engine/gate_f389c.log` |
+| 待办 | spec/plain 的 `completion_tokens` 差 1（eos 计数口径） | 本行 |

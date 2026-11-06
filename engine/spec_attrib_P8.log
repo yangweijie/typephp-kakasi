@@ -1,0 +1,14 @@
+SENTINEL_OK attempt=1
+HEALTH_POLL 0: no answer (engine alive: 1)
+REQ done n=1 mode=plain
+REQ done n=1 mode=spec
+REQ done n=2 mode=plain
+REQ done n=2 mode=spec
+REQ done n=3 mode=plain
+REQ done n=3 mode=spec
+REQ done n=4 mode=plain
+REQ done n=4 mode=spec
+REPORT_CMD: python scripts/spec_attrib_report.py --since-line 416
+SPEC-ATTRIB rows=8 since=416
+SPEC-ATTRIB NO_DRAFTS the drafter proposed nothing on this workload, so there is no speculative path to compare against and no gain is reported (a prompt-lookup drafter needs a repeated tail to have candidates)
+SPEC_ATTRIB_DONE tag=P8

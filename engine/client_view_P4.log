@@ -1,0 +1,8 @@
+CLIENT mode=plain text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=spec text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=plain text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=spec text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=plain text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=spec text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=plain text_chars=89 prompt_tokens=16 completion_tokens=32
+CLIENT mode=spec text_chars=89 prompt_tokens=16 completion_tokens=32

@@ -2675,7 +2675,22 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
         if (acc > 0) {
             // Never emit more than the caller asked for: a wide draft can accept past n_new,
             // which would break the max_tokens contract (and differ from plain decoding).
-            const int take = std::min(acc, n_new - produced);
+            int take = std::min(acc, n_new - produced);
+            // F389: an eos INSIDE the accepted block has to end the run there. Appending the
+            // whole block and only then testing out.back() let the tokens after eos be
+            // emitted - measured as a speculative response that continued into the next
+            // turn's "Human:" text while plain decoding stopped at the sentence. Clamping
+            // to the first eos (inclusive) makes the early exit below fire on the same token
+            // plain decoding stops on; pos/kv_compact stay consistent because this always
+            // breaks immediately afterwards.
+            if (eos > 0) {
+                for (int i = 0; i < take; ++i) {
+                    if (draft[(size_t) i] == eos) {
+                        take = i + 1;
+                        break;
+                    }
+                }
+            }
             for (int i = 0; i < take; ++i) out.push_back(draft[(size_t) i]);
             produced += take;
             pos += acc;
@@ -2863,7 +2878,16 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
         }
 
         if (bestAcc > 0) {
-            const int take = std::min(bestAcc, n_new - produced);
+            int take = std::min(bestAcc, n_new - produced);
+            // F389: same rule as the chain path - stop at an eos inside the accepted block.
+            if (eos > 0) {
+                for (int i = 0; i < take; ++i) {
+                    if (branches[(size_t) bestB][(size_t) i] == eos) {
+                        take = i + 1;
+                        break;
+                    }
+                }
+            }
             for (int i = 0; i < take; ++i) out.push_back(branches[(size_t) bestB][(size_t) i]);
             produced += take;
             if (bestB > 0) { ++g_spec_alt; if (g_spec_fix) kv_compact(backend, pos, pos + bestB * D, bestAcc); }

@@ -9596,6 +9596,44 @@ function main(): void
     } else {
         echo "SPEC-EQ-STOP: FAIL caps_that_differ=" . $f386Bad . $f386Out . "\n";
     }
+    // SPEC-STOP-EOS (F389): the only input that reaches eos on this model quickly, and the one the
+    // served path actually uses, is the templated prompt. Both earlier gates used raw prompts with
+    // small caps, where the stream never hits eos - which is how a speculative response that kept
+    // emitting past eos survived two rounds of gates. The assertion is the shape of the bug: plain
+    // and speculative must produce the SAME token sequence, so if speculative carries anything past
+    // eos the two differ in length and the test fails.
+    // F389: the input has to be the one the SERVED path builds, not an approximation of it. The
+    // first version of this gate concatenated tok_encode(prompt) with the assistant header, ran
+    // the full 48-token cap on both sides, and passed - from a region where eos never occurs,
+    // the fourth time in this project that a gate was fitted outside the behaviour it claims to
+    // cover. api_history is what the handler calls, so the gate now sees the same ids.
+    $f389Body = "{\"messages\":[{\"role\":\"user\",\"content\":\"Repeat this sentence as many times as you like: the quick brown fox jumps over the lazy dog.\"}],\"max_tokens\":48,\"temperature\":0.0}";
+    $f389Prompt = api_history($f389Body) . "," . tok_chat_open("assistant");
+    $f389Plain = model_generate(0, $f389Prompt, 48);
+    $f389Spec = model_spec_generate(0, $f389Prompt, 48, 4);
+    $f389Pv = explode(",", $f389Plain);
+    $f389Sv = explode(",", $f389Spec);
+    $f389Bn = count(explode(",", $f389Prompt));
+    $f389Pn = count($f389Pv) - $f389Bn;
+    $f389Sn = count($f389Sv) - $f389Bn;
+    $f389Ptext = api_text(implode(",", array_slice($f389Pv, $f389Bn)));
+    $f389Stext = api_text(implode(",", array_slice($f389Sv, $f389Bn)));
+    if ($f389Ptext == $f389Stext) {
+        echo "SPEC-STOP-EOS: PASS plain_n=" . $f389Pn . " spec_n=" . $f389Sn
+            . " identical sequences (" . model_spec_stats() . ")" . "\n";
+    } else {
+        $f389Min = $f389Pn < $f389Sn ? $f389Pn : $f389Sn;
+        $f389First = -1;
+        for ($f389i = 0; $f389i < $f389Min; $f389i++) {
+            if ($f389Pv[$f389Bn + $f389i] != $f389Sv[$f389Bn + $f389i]) {
+                $f389First = $f389i;
+                break;
+            }
+        }
+        echo "SPEC-STOP-EOS: FAIL plain_n=" . $f389Pn . " spec_n=" . $f389Sn
+            . " first_diff=" . $f389First . " (speculative carried " . ($f389Sn - $f389Pn)
+            . " extra tokens past plain)" . "\n";
+    }
     echo "PERF ablate note: m4 collapses the V read-modify-writes, m5 drops the dot chain; "
         . "modes 4 and 5 produce garbage output by design and are not used by any gate\n";
     // F367 discipline gate: a switch that is not proven to reach the code cannot be measured.

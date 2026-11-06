@@ -3532,3 +3532,25 @@ Human: A dog is playing in the park.`** |
 **修法（已定位到一处）**：`src/model_sycl.cc` 的 `spec_generate`：算出 `take` 之后，**在接受块内找到第一个 eos 并把 `take` 截断到它（含）**，再走既有的 `out.back()==eos` 提前退出。
 **该加的判据（F389）**：用**会很快到 eos 的模板化输入**（这条提示就够）断言 **`plain` 的输出是 `spec` 输出的前缀，且 `spec` 在 eos 之后没有 token**；现有两个门（`SPEC-EQ-LONG`/`SPEC-EQ-STOP`）用的是裸提示、上限 ≤32，**结构上到不了 eos**，所以两次都漏了。
 **梯**：本轮**未改引擎**（只跑实验）⇒ 沿用 F386 的绿：自检 165/0、8000 115/0、8001 par/fairness 0、哨兵 0。
+
+
+## F389：**eos 越界已修**——服务面 spec 与 plain 现在吐出**同一段文本**（44 字符），k 曲线复核：**k=4 1.309×**、k=1 仍亏（0.942×）
+**修法**（`src/model_sycl.cc`，**两条投机路径都改**）：接受块追加**之前**先把 `take` 截断到块内**第一个 eos（含）**，随后既有的 `out.back()==eos` 提前退出自然生效。`pos`/`kv_compact` 不受影响——截断必然立刻 `break`，不会再用到位置推进。
+**服务面验证（改后，真实请求）**：
+| 形状 | completion_tokens | 正文 |
+|---|---|---|
+| `spec_k:0` | 10 | `The quick brown fox jumps over the lazy dog.`（44 字符） |
+| `spec_k:4` | **11** | **同一段 44 字符**（多出的 1 个 token 是 eos 本身，`generate()` 不把它计入） |
+⇒ **F388 的越界消失**：不再出现 `
+Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
+**新门 `SPEC-STOP-EOS`**：用 **`api_history($body) . tok_chat_open("assistant")`** 构造**与处理器完全相同的输入**（这是唯一能在这条模型上快速触发 eos 的输入），断言两侧**文本相同**。`PASS plain_n=11 spec_n=11 identical`（`drafts=8 accepted=7` ⇒ 门确实走过了投机路径）。
+**门的自我更正（第 4 次同类错误）**：第一版门用 `tok_encode(prompt) + assistant 头` 近似模板，**两侧都跑满 48 上限 ⇒ 又落在"没有 eos 行为"的区域而误绿**；改用 `api_history` 后才真正覆盖。**判据：门报的数字必须与它要覆盖的行为相关——`plain_n == cap` 就是"没到 eos"的警报。**
+**修复后 k 曲线复核**（同提示、plain 关缓存、交替各 4 条、上限 48；四个 spec 请求都产出 **44 token**，与 plain 一致 ⇒ 修复生效）：
+| k | 接受率 | spec ms/token | plain ms/token | 收益 | 修复前 |
+|---|---|---|---|---|---|
+| 1 | **100.0%** | 21.15 | 19.91 | **0.942×（仍亏）** | 0.962× |
+| 4 | 87.5% | **15.15** | 19.83 | **1.309×** | 1.360× |
+| 8 | 87.5% | 16.64 | 20.05 | 1.204× | （未测同形状） |
+⇒ **结论不变、量级微调**：最优点仍是 **k=4**，**k=1 即使 100% 接受率仍然亏**（每次 verify 只提交 ~1 token），与 F382/F383 的机制一致；数值从 1.360× 变 1.309× 是因为**修复后接受的 token 不再包含 eos 之后的部分**（分母与接受率都变了）——**这正是"必须在缺陷修复后复核"的意义**。
+**梯**：自检 **166 PASS / 0 FAIL**（新增 `SPEC-STOP-EOS`）、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.519×**；哨兵 **0**。
+**边界**：`completion_tokens` 在两条路径上差 1（spec 的 id 序列含 eos，`generate()` 不含）——**文本一致但用量计数不同**，是下一轮要统一的小口径问题；k 只测 1/4/8、单一提示、temp 0。
