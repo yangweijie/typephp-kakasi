@@ -9561,6 +9561,41 @@ function main(): void
             . " " . model_spec_stats() . "\n";
         echo "  plain: " . $f384Plain . \n . "  spec : " . $f384Spec . "\n";
     }
+    // SPEC-EQ-STOP (F386): the F384 gate compared 48 tokens of content on a prompt that never
+    // reached eos, so by construction it could not see how either generator STOPS - and the served
+    // path showed plain stopping at 11 tokens while speculation ran to 24. This walks small caps
+    // across that eos boundary on the same prompt and prints where each side stopped, which is the
+    // only way to tell a stop-condition difference from a content difference.
+    $f386Prompt = tok_encode("Repeat this sentence as many times as you like: the quick brown fox jumps over the lazy dog.");
+    $f386Base = count(explode(",", $f386Prompt));
+    $f386Out = "";
+    $f386Bad = 0;
+    foreach (explode(",", "4,8,12,16,32") as $f386Ns) {
+        $f386N = (int) $f386Ns;
+        $f386P = explode(",", model_generate(0, $f386Prompt, $f386N));
+        $f386S = explode(",", model_spec_generate(0, $f386Prompt, $f386N, 4));
+        $f386Pn = count($f386P) - $f386Base;
+        $f386Sn = count($f386S) - $f386Base;
+        $f386Mn = $f386Pn < $f386Sn ? $f386Pn : $f386Sn;
+        $f386Diff = -1;
+        for ($f386i = 0; $f386i < $f386Mn; $f386i++) {
+            if ($f386P[$f386Base + $f386i] != $f386S[$f386Base + $f386i]) {
+                $f386Diff = $f386i;
+                break;
+            }
+        }
+        if ($f386Pn != $f386Sn || $f386Diff >= 0) {
+            $f386Bad = $f386Bad + 1;
+        }
+        $f386Out = $f386Out . " cap=" . $f386N . " plain_n=" . $f386Pn
+            . " spec_n=" . $f386Sn . " first_diff=" . $f386Diff . " |";
+    }
+    if ($f386Bad == 0) {
+        echo "SPEC-EQ-STOP: PASS every cap stopped at the same place with the same ids"
+            . $f386Out . "\n";
+    } else {
+        echo "SPEC-EQ-STOP: FAIL caps_that_differ=" . $f386Bad . $f386Out . "\n";
+    }
     echo "PERF ablate note: m4 collapses the V read-modify-writes, m5 drops the dot chain; "
         . "modes 4 and 5 produce garbage output by design and are not used by any gate\n";
     // F367 discipline gate: a switch that is not proven to reach the code cannot be measured.
