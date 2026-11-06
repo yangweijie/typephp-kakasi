@@ -345,3 +345,5 @@
 1793966904.0838 SPECREQ mode=greedy k=4 want=48 got=24 cache=-2 drafts=12 accepted=8 verifies=3 alt_branch=0 max_branches=0 drafting=on ms=346.79102897644
 1793966988.2556 SPECREQ mode=plain k=0 want=48 got=10 cache=0 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=212.86678314209
 1793966988.6087 SPECREQ mode=greedy k=4 want=48 got=24 cache=-2 drafts=12 accepted=8 verifies=3 alt_branch=0 max_branches=0 drafting=on ms=335.72793006897
+1793967077.8759 SPECREQ mode=plain k=0 want=48 got=10 cache=0 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=212.2220993042
+1793967078.2403 SPECREQ mode=greedy k=4 want=48 got=24 cache=-2 drafts=12 accepted=8 verifies=3 alt_branch=0 max_branches=0 drafting=on ms=344.91610527039
