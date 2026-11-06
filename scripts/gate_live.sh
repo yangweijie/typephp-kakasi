@@ -8,6 +8,16 @@
 # "SMOKE_EXIT=1 / FAIRNESS FAIL" numbers that looked like engine defects but were a harness bug.
 # Two rules are now encoded here: the server is always started with cwd=engine, and a health probe
 # timeout ABORTS the chain instead of running tests against a port nobody listens on.
+#
+# Runtime knobs the engine reads from the environment (both logged at startup, so a run can be read
+# back without guessing):
+#   KAKASI_ATTN_MODE    attention path: 0 = score cache, 1 = three-pass recompute, 2 = split-KV
+#                       (default 2, the shipped path). Logged as "ATTN_MODE <n>".
+#   KAKASI_SPEC_WINDOW  prompt-lookup drafter window, 1..6 (default 2). One empty accept widens it
+#                       to 3 for the rest of the call, which is what makes the short window safe on
+#                       text that does not repeat. Logged as "SPEC_WINDOW <n>". Measured across
+#                       three workloads: 1.865x vs 1.758x repetitive, 1.012x vs neutral
+#                       non-repetitive, 1.064x vs 1.035x semi-repetitive (F391-F393).
 set -u
 R=/c/git/c/typephp-kakasi
 E=$R/engine
