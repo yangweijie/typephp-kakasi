@@ -6376,7 +6376,7 @@ function api_spec_req(string $mode, int $k, int $want, int $got, int $cache,
     if ($f !== false) {
         fwrite($f, microtime(true) . " SPECREQ mode=" . $mode . " k=" . $k
             . " want=" . $want . " got=" . $got . " cache=" . $cache . " "
-            . model_spec_stats()
+            . " win=" . model_spec_window() . " " . model_spec_stats()
             . " ms=" . $ms . "\n");
         fclose($f);
     }

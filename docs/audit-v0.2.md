@@ -601,3 +601,11 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 新门契约 | `SPEC-ADAPT: PASS wasted verifies bounded, total=1`；`SPEC-NEG` 仍 `drafting=off` | `engine/run_f392h.log` |
 | 两次"改了没生效" | 默认值与门判据各一次；由横幅与 grep 发现 | 本节 |
 | 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.543×**、哨兵 **0** | `engine/run_f392h.log`、`engine/gate_f392h.log` |
+
+### F393（2026-11-06 17:36）——win= 进请求级记录；三负载复核默认 2+扩窗
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 新字段 | `SPECREQ … win=2/3 …`（与当次 KAKASI_SPEC_WINDOW 一致） | `engine/spec_req.log`（S2/S3 段） |
+| 半重复负载 | 窗口 2 **1.064×**（37.5%）vs 窗口 3 **1.035×**（33.3%） | `engine/spec_attrib_S{2,3}.log` |
+| 三负载汇总 | 高度重复 1.865 vs 1.758（+6.1%）；无重复 1.012 vs 中性；半重复 1.064 vs 1.035（+2.8%） | 上 + `engine/spec_attrib_{A2,A3,B2,B3}.log` |
+| 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.538×**、哨兵 **0** | `engine/run_f393.log`、`engine/gate_f393.log` |
