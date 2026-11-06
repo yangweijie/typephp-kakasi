@@ -1,0 +1,16 @@
+SENTINEL_OK attempt=1
+HEALTH_POLL 0: no answer (engine alive: 1)
+REQ done n=1 mode=plain
+REQ done n=1 mode=spec
+REQ done n=2 mode=plain
+REQ done n=2 mode=spec
+REQ done n=3 mode=plain
+REQ done n=3 mode=spec
+REQ done n=4 mode=plain
+REQ done n=4 mode=spec
+REPORT_CMD: python scripts/spec_attrib_report.py --since-line 161
+SPEC-ATTRIB rows=8 since=161
+SPEC-ATTRIB greedy         req= 4 tokens=  72 drafts=  56 accepted=  48 acc=  85.7%  ms/token n=4 min=25.81 med=26.05 p75=26.27 max=26.27
+SPEC-ATTRIB plain/cache=-2 req= 4 tokens=  72 drafts=n/a (counters are per speculative call)  ms/token n=4 min=22.72 med=23.67 p75=23.77 max=23.77
+SPEC-ATTRIB gain greedy_vs_plain/cache=-2=0.907x (25.99 vs 23.58 ms/token)
+SPEC_ATTRIB_DONE tag=L1

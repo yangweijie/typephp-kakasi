@@ -62,8 +62,12 @@ if ! curl -s -m 3 "http://127.0.0.1:8000/health" | grep -q status; then
   echo "HEALTH_TIMEOUT port=8000"; tail -5 "$EW/serve_spec_$TAG.log"; exit 2
 fi
 
+# F383: the prompt is a workload input, not a constant. The previous run raised max_tokens to 192
+# and changed nothing, because this prompt reaches eos at 18 tokens whatever the cap is - so the
+# workload axis was never actually varied. The default stays the one the gates use, and a
+# caller can pass a longer, more repetitive one (arg 5).
 BEFORE=$(wc -l < "$EW/spec_req.log" 2>/dev/null || echo 0)
-PROMPT="List many English words, comma separated. Words: apple, banana, cherry, apple, banana, cherry, apple, banana, cherry."
+PROMPT=${5:-"List many English words, comma separated."}
 for n in $(seq 1 "$PAIRS"); do
   for MODE in plain spec; do
     # F381: the plain control must decode from scratch. With the prefix cache on by default, the

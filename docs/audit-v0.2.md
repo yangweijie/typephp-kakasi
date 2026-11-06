@@ -500,3 +500,13 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 默认 k=4 有数据支撑 | 四点中最好 | 同上 |
 | 脚本缺陷（自伤，已修） | 删死代码切掉 `done`，HEAD 脚本坏；重写尾部 + `bash -n` 门 | `scripts/spec_attrib_run.sh` |
 | 未改引擎 | 梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
+
+### F383（2026-11-06 11:30）——k 在第二负载复核：最优点仍为 4（1.360×）；k=1 在 100% 接受率下仍 0.962×
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 门禁提示 k 曲线 | k=1 0.912×、**k=4 1.238×**、k=8 0.866× | `engine/spec_attrib_k{1,4,8}.log` |
+| 重复句 k 曲线 | k=1 **0.962×（100% 接受率）**、**k=4 1.360×（66.7%）** | `engine/spec_attrib_X{1,4}.log` |
+| 机制 | 收益 = f(每次 verify 提交 token 数)；k=1 提交≈1 ⇒ 草稿为纯开销 | 同上 |
+| 仪器缺陷（已修） | 提示词写死、参数未接；同一份数字三轮逐位相同既是复现也是"参数没到"的症状 | `scripts/spec_attrib_run.sh` |
+| **未解释异常** | 重复句：spec 24 token/请求 vs plain 11（应逐 token 相同）⇒ 停止条件接缝待查 | `engine/spec_req.log`（X4 窗口 got 字段） |
+| 未改引擎 | 梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
