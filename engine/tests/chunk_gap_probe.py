@@ -38,7 +38,9 @@ body = json.dumps({
 req = urllib.request.Request("http://127.0.0.1:%d/v1/chat/completions" % PORT,
                              data=body, headers={"Content-Type": "application/json"})
 t_open = time.time()
-resp = urllib.request.urlopen(req, timeout=300)
+# F376: 300 s turned a stalled server into twenty silent minutes. A served token costs tens
+# of ms, so sixty seconds of no response means something is wrong and the run should say so.
+resp = urllib.request.urlopen(req, timeout=60)
 arrivals = []
 for raw in resp:
     line = raw.decode("utf-8", "replace").strip()
