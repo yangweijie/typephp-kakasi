@@ -1085,3 +1085,12 @@
 - **机制钉住**：k=1 每 verify 只提交 ~1 token ⇒ 草稿那趟 pure overhead，**100% 接受率也救不回来**。
 - **未解释异常（记录）**：重复句负载上 spec 每请求 24 token、plain 只 11 token（应逐 token 相同）⇒ 下一轮先查 spec 与 plain 的停止条件接缝。
 - **未改引擎** ⇒ 梯沿用 F379 绿：自检 163/0、8000 115/0、8001 par/fairness 0、哨兵 0。
+
+
+## ▶ 状态（F384，2026-11-06 11:49）——引擎侧证据：spec 与贪心在同提示上**逐 id 相同**（48/48）；F383 的异常定位到服务面
+- **新门 `SPEC-EQ-LONG`**：同提示、`model_generate` vs `model_spec_generate(k=4)`、上限 48，比长度＋逐 id＋首个分歧位置。**PASS**（48 == 48，ids 相同；drafts=44 accepted=44 verifies=11）⇒ **引擎排除**。
+- **自检 164 PASS / 0 FAIL**（比 163 多这一项）、`RUN_EXIT=0`。**本轮未重跑 8000/8001 门禁**（改动只加自检门与 echo），**如实标注未重跑**。
+- **自伤并修**：新门 echo 写成字符串外的裸 `
+` ⇒ `Fatal error: Undefined constant "n"`、`RUN_EXIT=255`；修成 `"
+"` 后绿。**教训：模板含反斜杠时，"编译通过"不等于语义对**。
+- **下一步**：服务面 `got` 的来源（前缀长度减法、两条路径实际的 `max_tokens`）。

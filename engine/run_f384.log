@@ -1,0 +1,102 @@
+model: qwen2 layers=24 hidden=896
+gguf v3 tensors=290 kv=26 align=32 data_start=5947680 avail=391859712 sum_bytes=391859712 max_end=391859712 ACCOUNTING=PASS
+picked f32=0 q8_0=1 q5_0=5 q4_k=46 q6_k=10 of 290
+backends validated: 3/3
+  b0 deq_f32 PASS x3 (last=0)
+  b0 deq_q5 PASS x3 (last=0)
+  b0 deq_q4 PASS x3 (last=0)
+  b0 deq_q6 PASS x3 (last=0)
+  b0 gemm_q5 PASS x3 (last=7.5869787501731E-7)
+  b0 gemm_q4 PASS x3 (last=4.173769104429E-6)
+  b0 rms PASS x3 (last=5.9604644775391E-7)
+  b0 deq_q8_0(embd) EXACT (301.068 ms)
+  b1 deq_f32 PASS x3 (last=0)
+  b1 deq_q5 PASS x3 (last=0)
+  b1 deq_q4 PASS x3 (last=0)
+  b1 deq_q6 PASS x3 (last=0)
+  b1 gemm_q5 PASS x3 (last=7.5869787501731E-7)
+  b1 gemm_q4 PASS x3 (last=4.173769104429E-6)
+  b1 rms PASS x3 (last=1.1920928955078E-7)
+  b1 deq_q8_0(embd) EXACT (217.475 ms)
+  b2 deq_f32 PASS x3 (last=0)
+  b2 deq_q5 PASS x3 (last=0)
+  b2 deq_q4 PASS x3 (last=0)
+  b2 deq_q6 PASS x3 (last=0)
+  b2 gemm_q5 PASS x3 (last=7.5869787501731E-7)
+  b2 gemm_q4 PASS x3 (last=4.173769104429E-6)
+  b2 rms PASS x3 (last=1.1920928955078E-7)
+  b2 deq_q8_0(embd) EXACT (190.1114 ms)
+OPS: PASS
+  b0 forward PASS top1=12095 logit=16.377742767334 (1069.0460205078 ms)
+  b1 forward PASS top1=12095 logit=16.361446380615 (4953.015089035 ms)
+  backend-drift PASS |b1-b0| logit = 0.01629638671875
+FORWARD: PASS (oracle ' Paris')
+gen ids(11): 785,6722,315,9625,374,12095,13,1084,374,279,7772
+decoded: The capital of France is Paris. It is the largest
+GENERATE: PASS (step-1 matches oracle; n=11)
+perf: prefill=969.3334 ms, decode steps=101.0373 ms
+  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
+  samp[greedy-equiv] PASS
+  samp[tiny-nucleus] PASS first-nucleus=1
+  samp[determinism] PASS
+  samp[spread] PASS (seed7 gives 17 ids, seed8 differs=yes)
+  sampled decode: The capital of France is:ĊA) ParisĊB) MarseilleĊC) Lyons
+SAMPLING: PASS
+  sampler[dist] PASS draws=200 mism=0 amb=0 grid=0 exact=0 ids=44
+SAMPLER-DIST: PASS
+  step2 ours=13 top=20.221126556396 second=19.923446655273 comma_logit=19.923446655273 comma_rank=2
+long prompt tokens: 84 -> ids after gen: 88
+LONGCTX: PASS (generated past the old 64-token limit)
+  tok[0] PASS ids=785
+  tok[1] PASS ids=785,6722,315,9625,374
+  tok[2] PASS ids=40,2776,537,2704
+  tok[3] PASS ids=785,6722,315,9625,374,12095,13
+  tok[4] PASS ids=64,220
+  tok[5] PASS ids=64,256
+  tok[6] PASS ids=64,262
+  tok[7] PASS ids=262
+  tok[8] PASS ids=64,220,293
+  tok[9] PASS ids=64,11,220,293
+  tok[10] PASS ids=64,198,65
+  tok[11] PASS ids=64,2233
+  tok[12] PASS ids=64,624,65
+  tok[13] PASS ids=64,271,65
+  tok[14] PASS ids=64,715
+  tok[15] PASS ids=14990,2303,14615
+  tok[16] PASS ids=16,15,15
+  tok[17] PASS ids=16,17,18,19,20
+  tok[18] PASS ids=15007,944
+  tok[19] PASS ids=785,3349,374,400,18,13,20,15,13
+TOKENIZER: PASS (20 cases vs llama-tokenize)
+  chat[template] PASS
+  chat[ctrl-0] PASS ids=151644
+  chat[ctrl-1] PASS ids=1796,151645,198
+  chat[turn] PASS ids=151644,872,198,13048,151645,198
+  chat[e2e] prompt=151644,872,198,785,6722,315,9625,374,151645,198 -> <|im_start|>userĊThe capital of France is<|im_end|>Ċ<|im_start|>userĊWhat are the
+CHAT: PASS
+PIPELINE decoded: The capital of France is Paris. It
+PIPELINE: text-in/text-out OK
+parity tokens: 274
+PERF steady: prefill(5 tok)=37.3121 ms  prefill(200 tok)=449.0148 ms  decode=246.2715 ms over 15 steps
+PERF tok/s (decode, steady) = 60.908387694069
+PERF stages(1 tok): s0=0.2134 s1=8.9669 s2=2.0764 (s0=emb+rope s1=24 blocks s2=norm+lm_head)
+PERF stages(5 tok): s0=0.1127 s1=37.5044 s2=2.5293
+PERF sweep L=8: m0: s1=10.8042 step=13.057231903076 s1=14.5009 step=17.848968505859 tok=3283 | m1: s1=12.5184 step=14.957189559937 s1=14.4579 step=16.976118087769 tok=3283 | m2: s1=11.2989 step=13.690948486328 s1=10.6473 step=12.91298866272 tok=3283 |
+PERF sweep L=32: m0: s1=20.0839 step=22.7370262146 s1=22.4825 step=25.099992752075 tok=279 | m1: s1=23.9125 step=26.479959487915 s1=25.8364 step=28.48219871521 tok=279 | m2: s1=12.1116 step=14.541149139404 s1=15.4107 step=17.904043197632 tok=279 |
+PERF sweep L=64: m0: s1=24.454 step=26.946067810059 s1=24.3425 step=26.727199554443 tok=6722 | m1: s1=35.9679 step=38.542985916138 s1=38.6055 step=42.010068893433 tok=6722 | m2: s1=16.5662 step=19.315004348755 s1=18.7755 step=21.221876144409 tok=6722 |
+PERF sweep L=128: m0: s1=45.1334 step=48.888921737671 s1=45.4757 step=48.535823822021 tok=315 | m1: s1=64.3923 step=66.803932189941 s1=64.7396 step=67.641973495483 tok=315 | m2: s1=16.8839 step=19.51003074646 s1=19.319 step=21.906852722168 tok=315 |
+PERF sweep L=256: m0: s1=65.6846 step=68.266153335571 s1=67.0353 step=69.636106491089 tok=374 | m1: s1=106.8717 step=109.29298400879 s1=111.3255 step=113.7809753418 tok=374 | m2: s1=18.0697 step=20.989894866943 s1=25.734 step=28.402090072632 tok=374 |
+ATTN-MODE: PASS (score cache and three-pass sample the same tokens)
+ATTN-SPLIT: PASS (split-KV agrees with the score cache on the greedy token)
+PERF kv-sweep f16=0: L=8 s1=13.592 step=15.998840332031 tok=3283 | L=64 s1=16.3098 step=18.873929977417 tok=6722 | L=256 s1=16.5456 step=19.24204826355 tok=374 |
+PERF kv-sweep f16=1: L=8 s1=10.6258 step=13.274192810059 tok=3283 | L=64 s1=15.2152 step=19.44899559021 tok=6722 | L=256 s1=17.6302 step=20.312070846558 tok=374 |
+PERF ablate m0: L=8: s1=13.2304 step=15.753030776978 s1=17.017 step=19.60301399231 | L=64: s1=25.1483 step=27.643918991089 s1=29.675 step=32.118797302246 | L=256: s1=68.6556 step=71.88606262207 s1=61.9923 step=64.443826675415 |
+PERF ablate m4: L=8: s1=9.9931 step=12.213945388794 s1=10.2614 step=12.696981430054 | L=64: s1=17.0234 step=19.909143447876 s1=20.8107 step=23.31018447876 | L=256: s1=42.1999 step=44.689893722534 s1=39.7342 step=42.119026184082 |
+PERF ablate m5: L=8: s1=10.0437 step=12.310028076172 s1=14.6266 step=17.390966415405 | L=64: s1=27.8552 step=30.606031417847 s1=25.1591 step=27.707099914551 | L=256: s1=43.8931 step=46.475172042847 s1=40.4572 step=45.807123184204 |
+
+Fatal error: Uncaught Error: Undefined constant "n" in C:\git\c\typephp-kakasi\engine\main.php:8924
+Stack trace:
+#0 C:\git\c\typephp-kakasi\engine\main.php(8924): main()
+#1 {main}
+  thrown in C:\git\c\typephp-kakasi\engine\main.php on line 8924
+==RUN_EXIT=255== 

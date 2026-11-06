@@ -510,3 +510,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 仪器缺陷（已修） | 提示词写死、参数未接；同一份数字三轮逐位相同既是复现也是"参数没到"的症状 | `scripts/spec_attrib_run.sh` |
 | **未解释异常** | 重复句：spec 24 token/请求 vs plain 11（应逐 token 相同）⇒ 停止条件接缝待查 | `engine/spec_req.log`（X4 窗口 got 字段） |
 | 未改引擎 | 梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
+
+### F384（2026-11-06 11:49）——引擎侧排除：spec 与贪心同提示逐 id 相同；F383 异常归到服务面
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 新门 `SPEC-EQ-LONG` | **PASS produced=48 ids identical**（两侧同为 48 个 token，无提前 eos；drafts=44 accepted=44 verifies=11） | `engine/run_f384b.log` |
+| 自检 | **164 PASS / 0 FAIL**、`RUN_EXIT=0` | 同上 |
+| 自伤（已修） | 裸 `
+` ⇒ `Fatal error: Undefined constant "n"`、`RUN_EXIT=255` | `engine/run_f384.log` |
+| 未重跑 | 8000/8001 门禁本轮**未跑**（改动只加自检门与 echo） | 本行即声明 |

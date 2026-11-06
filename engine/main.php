@@ -9526,6 +9526,41 @@ function main(): void
         echo "PERF ablate m" . $abMode . ":" . $abOut . "\n";
     }
     model_set_attn_mode($swpPrev);
+
+    // SPEC-EQ-LONG (F384): the F383 attribution run showed the speculative path producing 24 tokens
+    // where plain greedy produced 11 on the same prompt, temperature and cap. Speculative greedy is
+    // defined as numerically identical to plain greedy - every accepted token is the model's own
+    // argmax at that position - and the existing negative control checks that on the self-test's
+    // own prompt. This checks it on the workload where the difference showed up, and prints the
+    // first divergence instead of only a verdict, because "they differ" without a position is not
+    // actionable.
+    $f384Prompt = tok_encode("Repeat this sentence as many times as you like: the quick brown fox jumps over the lazy dog.");
+    $f384N = 48;
+    $f384Plain = model_generate(0, $f384Prompt, $f384N);
+    $f384Spec = model_spec_generate(0, $f384Prompt, $f384N, 4);
+    $f384Pv = explode(",", $f384Plain);
+    $f384Sv = explode(",", $f384Spec);
+    $f384Base = count(explode(",", $f384Prompt));
+    $f384Pn = count($f384Pv) - $f384Base;
+    $f384Sn = count($f384Sv) - $f384Base;
+    $f384First = -1;
+    $f384Min = $f384Pn < $f384Sn ? $f384Pn : $f384Sn;
+    for ($f384i = 0; $f384i < $f384Min; $f384i++) {
+        if ($f384Pv[$f384Base + $f384i] != $f384Sv[$f384Base + $f384i]) {
+            $f384First = $f384i;
+            break;
+        }
+    }
+    $f384SamePrefix = $f384First < 0;
+    if ($f384Pn == $f384Sn && $f384SamePrefix) {
+        echo "SPEC-EQ-LONG: PASS produced=" . $f384Pn . " ids identical and same length"
+            . " (" . model_spec_stats() . ")" . "\n";
+    } else {
+        echo "SPEC-EQ-LONG: FAIL plain_n=" . $f384Pn . " spec_n=" . $f384Sn
+            . " same_prefix=" . ($f384SamePrefix ? 1 : 0) . " first_diff=" . $f384First
+            . " " . model_spec_stats() . "\n";
+        echo "  plain: " . $f384Plain . \n . "  spec : " . $f384Spec . "\n";
+    }
     echo "PERF ablate note: m4 collapses the V read-modify-writes, m5 drops the dot chain; "
         . "modes 4 and 5 produce garbage output by design and are not used by any gate\n";
     // F367 discipline gate: a switch that is not proven to reach the code cannot be measured.
