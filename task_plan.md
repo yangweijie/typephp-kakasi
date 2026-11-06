@@ -472,3 +472,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **动作**：①修 `scripts/spec_attrib_run.sh` 的启动（`HEALTH_TIMEOUT`：先查残留引擎进程与端口占用，health 轮询打印每次失败原因，别静默 200 s）②跑 6 plain + 6 greedy（同提示、同 max_tokens，**用 `got` 作分母**）与 6 sampled-plain + 6 tree（temp>0）③**把 tree 组按 `drafting=on/off` 与 `got` 分层**，回答"关闭草稿后仍付的 tree 开销"是不是真的（F377 的一条观察）。
 **验收**：①每轮 12 条记录、两组各 6 条、`got` 非零 ②收益用**中位 ms/token**、并给出两组分布③`drafting=off` 层的数字与 `drafting=on` 层并列打印④梯不回退。
 **顺位**：balanced 归因 → 真草稿源 → 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。
+
+
+## F379 计划（把对照做干净：缓存分支装同一行，或请求关掉前缀缓存；再把 greedy/tree 放在同一提示下各测一轮）
+**F378 结论**：收益 = f(接受率)。同二进制同提示，接受率 87.7% ⇒ 1.78×；50% ⇒ ≈0；`drafts=0` ⇒ 恒等于无投机。
+**动作**：①给**前缀缓存分支**装同一行 `SPECREQ`（`mode=plain cache=<hit>`），或在对照请求里带 `prefix_cache:0`，二者至少做一样——现在 plain 组在缓存路径上**根本没有记录**，这是本轮最重要的一处混淆；②同一提示下各跑 6 条 greedy(k=4)、6 条 tree(bins=2,depth=3)、6 条 plain，**三组同分钟**，用 `got` 作分母；③报告里按 `drafting=on/off` 与接受率分桶（观察项：tree 关草稿后比纯解码慢）。
+**验收**：①三组各有 6 条记录（结构判据）②中位 ms/token 与四分位并列③`NO_DRAFTS` 时不出收益④梯不回退。
+**顺位**：干净对照 → 真草稿源（提高接受率本身就是收益）→ 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。

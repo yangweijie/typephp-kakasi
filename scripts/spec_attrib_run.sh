@@ -13,37 +13,57 @@
 set -u
 R=/c/git/typephp-kakasi
 E=$R/engine
+EW="C:/git/c/typephp-kakasi/engine"   # F378: the POSIX mount blips here; Windows paths keep working
 TAG=${1:-f377}
 PAIRS=${2:-6}
 MAXTOK=${3:-24}
 K=${4:-4}
 export PATH="/c/Program Files (x86)/Intel/oneAPI/compiler/latest/bin:/c/Program Files (x86)/Intel/oneAPI/tbb/latest/bin:$PATH"
 
-LOCK="$E/spec_attrib.lock"
+LOCK="$EW/spec_attrib.lock"
 if [ -e "$LOCK" ]; then
   echo "LOCKED by $(cat "$LOCK" 2>/dev/null) - another spec_attrib_run is running, refusing"
   exit 4
 fi
 echo "$$" > "$LOCK"
-trap 'rm -f "$LOCK" "$E/serve.on"' EXIT
+trap 'rm -f "$LOCK" "$EW/serve.on"' EXIT
 
 powershell -NoProfile -Command 'Get-Process kakasi_engine_sycl -ErrorAction SilentlyContinue | Stop-Process -Force' >/dev/null 2>&1
 sleep 2
-rm -f "$E/serve.on" "$E/serve.par.on" "$E/serve.par4.on"
-printf 'on' > "$E/serve.on"
-( cd "$E" && exec ./build/kakasi_engine_sycl.exe ) > "$E/serve_spec_$TAG.log" 2>&1 &
+rm -f "$EW/serve.on" "$EW/serve.par.on" "$EW/serve.par4.on"
+# F378: the first version of this script reported HEALTH_TIMEOUT with no explanation. Two
+# things made that silent: the sentinel write was never checked (a flaky mount makes it fail
+# quietly), and nothing looked for a listener that was already there. Both are checked now,
+# and every poll says why it failed.
+if curl -s -m 2 "http://127.0.0.1:8000/health" | grep -q status; then
+  echo "PORT_BUSY 8000 already answers /health before this script started"; exit 5
+fi
+# F378: this host s POSIX mount blips - the same write that works a second ago can fail with
+# "No such file or directory" for a directory that exists. Retry through the Windows path form
+# before giving up, and say which attempt succeeded so the next reader is not surprised.
+EW="C:/git/c/typephp-kakasi/engine"
+for try in 1 2 3 4 5; do
+  printf 'on' > "$EW/serve.on" 2>/dev/null
+  if [ -f "$EW/serve.on" ]; then echo "SENTINEL_OK attempt=$try"; break; fi
+  echo "SENTINEL_RETRY attempt=$try"; sleep 2
+done
+if [ ! -f "$EW/serve.on" ]; then
+  echo "SENTINEL_WRITE_FAILED $EW/serve.on"; exit 6
+fi
+( cd "$EW" && exec ./build/kakasi_engine_sycl.exe ) > "$EW/serve_spec_$TAG.log" 2>&1 &
 
 i=0
 while [ $i -lt 40 ]; do
   if curl -s -m 3 "http://127.0.0.1:8000/health" | grep -q status; then break; fi
+  echo "HEALTH_POLL $i: no answer (engine alive: $(powershell -NoProfile -Command "(Get-Process kakasi_engine_sycl -ErrorAction SilentlyContinue | Measure-Object).Count" 2>/dev/null))"
   sleep 5; i=$((i+1))
 done
 if ! curl -s -m 3 "http://127.0.0.1:8000/health" | grep -q status; then
-  echo "HEALTH_TIMEOUT port=8000"; tail -5 "$E/serve_spec_$TAG.log"; exit 2
+  echo "HEALTH_TIMEOUT port=8000"; tail -5 "$EW/serve_spec_$TAG.log"; exit 2
 fi
 
-BEFORE=$(wc -l < "$E/spec_req.log" 2>/dev/null || echo 0)
-PROMPT="List many English words, comma separated."
+BEFORE=$(wc -l < "$EW/spec_req.log" 2>/dev/null || echo 0)
+PROMPT="List many English words, comma separated. Words: apple, banana, cherry, apple, banana, cherry, apple, banana, cherry."
 for n in $(seq 1 "$PAIRS"); do
   for MODE in plain spec; do
     if [ "$MODE" = "spec" ]; then EXTRA=",\"spec_k\":$K"; else EXTRA=""; fi
@@ -62,13 +82,19 @@ done
 
 powershell -NoProfile -Command 'Get-Process kakasi_engine_sycl -ErrorAction SilentlyContinue | Stop-Process -Force' >/dev/null 2>&1
 sleep 2
-rm -f "$E/serve.on"
+rm -f "$EW/serve.on"
 
 python - "$E" "$BEFORE" "$TAG" <<'PYEOF'
 import sys, statistics
 E, before, tag = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 rows = []
-with open(E + "/spec_req.log", "r", encoding="utf-8", errors="replace") as f:
+import time as _t
+path = E + "/spec_req.log"
+for _try in range(5):
+    if __import__("os").path.exists(path):
+        break
+    _t.sleep(2)
+with open(path, "r", encoding="utf-8", errors="replace") as f:
     for i, line in enumerate(f):
         if i < before:
             continue
@@ -131,6 +157,12 @@ def per_token_median(g):
     vals = [num(r["ms"]) / num(r.get("got")) for r in g if num(r.get("got"))]
     return statistics.median(vals) if vals else 0.0
 
+total_drafts = sum(num(r.get("drafts")) for r in rows)
+if total_drafts == 0:
+    print("SPEC-ATTRIB NO_DRAFTS - the drafter proposed nothing on this prompt, so there is"
+          " no speculative path to compare against; no gain is reported. A prompt-lookup"
+          " drafter needs a repeated tail to have candidates (F378).")
+    sys.exit(0)
 if "plain" in groups and "greedy" in groups:
     pv, gv = per_token_median(groups["plain"]), per_token_median(groups["greedy"])
     print("SPEC-ATTRIB served_gain greedy_vs_plain=%.3fx (ms/token %.2f vs %.2f)"

@@ -455,3 +455,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 口径错误（已修） | 初版用 `want` 作分母 ⇒ 假的 "投机慢 8 倍" | `scripts/spec_attrib_run.sh` 注释 |
 | 梯 | 自检 **163/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.559x**、哨兵 **0** | `engine/run_f377b.log`、`engine/gate_f377b.log` |
 | 未完成 | 独立 harness `HEALTH_TIMEOUT`，balanced 样本未取 | `engine/spec_attrib_f377c.log` |
+
+### F378（2026-11-06 11:03）——收益是接受率的函数：87.7% → 1.78×，50% → 0
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 高接受率组的收益 | 87.7%（1683/1920）⇒ **10.47 vs 18.62 ms/token ＝ 1.78×** | `engine/spec_req.log`（F377 段） |
+| 低接受率组无收益 | **50.0%（72/144）、19.06 ms/token**（17.83–20.27） | 同上（f378b 段） |
+| 草稿器在无重复提示上不提任何草稿 | `drafts=0`，24 token / 480 ms ≈ 20 ms/token | 同上（f378 段） |
+| plain 组未被记录（前缀缓存分支无表） | 12 条请求中 plain 0 条；serve 日志 `cache=0`/`cache=-1` 交替 | `engine/serve_spec_f378b.log` |
+| 路径抖动（三种形态，均改为 `C:/` + 重试） | `SENTINEL_WRITE_FAILED`、`engine alive: 0`、`FileNotFoundError` | `engine/spec_attrib_f378.log`、`scripts/spec_attrib_run.sh` |

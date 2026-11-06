@@ -1,0 +1,18 @@
+SENTINEL_OK attempt=1
+HEALTH_POLL 0: no answer (engine alive: 1)
+REQ done n=1 mode=plain
+REQ done n=1 mode=spec
+REQ done n=2 mode=plain
+REQ done n=2 mode=spec
+REQ done n=3 mode=plain
+REQ done n=3 mode=spec
+REQ done n=4 mode=plain
+REQ done n=4 mode=spec
+REQ done n=5 mode=plain
+REQ done n=5 mode=spec
+REQ done n=6 mode=plain
+REQ done n=6 mode=spec
+Traceback (most recent call last):
+  File "<stdin>", line 10, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: 'C:/git/typephp-kakasi/engine/spec_req.log'
+SPEC_ATTRIB_DONE tag=f378b

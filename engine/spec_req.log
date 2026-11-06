@@ -42,3 +42,15 @@
 1793962104.4175 SPECREQ mode=tree k=2 want=128 got=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1618.5290813446
 1793962106.0559 SPECREQ mode=tree k=2 want=128 got=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1614.2160892487
 1793962107.6944 SPECREQ mode=tree k=2 want=128 got=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1613.2929325104
+1793962936.9751 SPECREQ mode=greedy k=4 want=24 got=24 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=484.67302322388
+1793962938.2575 SPECREQ mode=greedy k=4 want=24 got=24 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=486.45114898682
+1793962939.4965 SPECREQ mode=greedy k=4 want=24 got=24 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=444.51189041138
+1793962940.7887 SPECREQ mode=greedy k=4 want=24 got=24 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=480.82494735718
+1793962942.0488 SPECREQ mode=greedy k=4 want=24 got=24 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=485.01992225647
+1793962943.3303 SPECREQ mode=greedy k=4 want=24 got=24 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=471.24004364014
+1793962988.911 SPECREQ mode=greedy k=4 want=24 got=18 drafts=24 accepted=12 verifies=6 alt_branch=0 max_branches=0 drafting=on ms=320.96910476685
+1793962989.9892 SPECREQ mode=greedy k=4 want=24 got=18 drafts=24 accepted=12 verifies=6 alt_branch=0 max_branches=0 drafting=on ms=335.59489250183
+1793962991.1004 SPECREQ mode=greedy k=4 want=24 got=18 drafts=24 accepted=12 verifies=6 alt_branch=0 max_branches=0 drafting=on ms=335.55507659912
+1793962992.2401 SPECREQ mode=greedy k=4 want=24 got=18 drafts=24 accepted=12 verifies=6 alt_branch=0 max_branches=0 drafting=on ms=339.27798271179
+1793962993.3628 SPECREQ mode=greedy k=4 want=24 got=18 drafts=24 accepted=12 verifies=6 alt_branch=0 max_branches=0 drafting=on ms=331.946849823
+1793962994.4425 SPECREQ mode=greedy k=4 want=24 got=18 drafts=24 accepted=12 verifies=6 alt_branch=0 max_branches=0 drafting=on ms=343.09887886047

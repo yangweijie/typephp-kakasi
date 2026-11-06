@@ -1,0 +1,15 @@
+WARM ms=1266.6010856628 err=
+API_LISTEN 8000
+ATTN_MODE 2
+SESSION request completion=17 reason=complete json=off tools=none seed=12345 cache=0
+SESSION request completion=18 reason=complete json=off tools=none seed=12345 cache=-1
+SESSION request completion=17 reason=complete json=off tools=none seed=12345 cache=0
+SESSION request completion=18 reason=complete json=off tools=none seed=12345 cache=-1
+SESSION request completion=17 reason=complete json=off tools=none seed=12345 cache=0
+SESSION request completion=18 reason=complete json=off tools=none seed=12345 cache=-1
+SESSION request completion=17 reason=complete json=off tools=none seed=12345 cache=0
+SESSION request completion=18 reason=complete json=off tools=none seed=12345 cache=-1
+SESSION request completion=17 reason=complete json=off tools=none seed=12345 cache=0
+SESSION request completion=18 reason=complete json=off tools=none seed=12345 cache=-1
+SESSION request completion=17 reason=complete json=off tools=none seed=12345 cache=0
+SESSION request completion=18 reason=complete json=off tools=none seed=12345 cache=-1
