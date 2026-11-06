@@ -1,0 +1,44 @@
+1793961371.5407 SPECREQ mode=plain k=0 want=48 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=252.04300880432
+1793961371.792 SPECREQ mode=plain k=0 want=48 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=250.84090232849
+1793961372.8882 SPECREQ mode=tree k=2 want=40 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=684.55410003662
+1793961373.5638 SPECREQ mode=tree k=2 want=40 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=660.80904006958
+1793961376.5755 SPECREQ mode=tree k=1 want=64 drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off ms=1580.0650119781
+1793961378.1805 SPECREQ mode=tree k=2 want=64 drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off ms=1588.1748199463
+1793961379.7784 SPECREQ mode=tree k=2 want=64 drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off ms=1587.9991054535
+1793961479.4898 SPECREQ mode=greedy k=8 want=192 drafts=204 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2000.0500679016
+1793961481.5197 SPECREQ mode=greedy k=8 want=192 drafts=204 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2005.3989887238
+1793961483.5389 SPECREQ mode=greedy k=8 want=192 drafts=204 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2003.762960434
+1793961485.5961 SPECREQ mode=greedy k=12 want=192 drafts=216 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2022.087097168
+1793961487.6442 SPECREQ mode=greedy k=12 want=192 drafts=216 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2029.2718410492
+1793961489.6817 SPECREQ mode=greedy k=12 want=192 drafts=216 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2013.237953186
+1793961491.7561 SPECREQ mode=greedy k=16 want=192 drafts=220 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2033.6179733276
+1793961493.795 SPECREQ mode=greedy k=16 want=192 drafts=220 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2018.7230110168
+1793961495.8353 SPECREQ mode=greedy k=16 want=192 drafts=220 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2019.9518203735
+1793961503.9991 SPECREQ mode=tree k=1 want=128 drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on ms=1507.7879428864
+1793961505.5192 SPECREQ mode=tree k=1 want=128 drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on ms=1501.3401508331
+1793961507.0565 SPECREQ mode=tree k=1 want=128 drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on ms=1512.6900672913
+1793961508.6728 SPECREQ mode=tree k=2 want=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1611.3078594208
+1793961510.3134 SPECREQ mode=tree k=2 want=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1619.8918819427
+1793961511.9511 SPECREQ mode=tree k=2 want=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1621.101140976
+1793961967.6121 SPECREQ mode=plain k=0 want=48 got=14 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=260.73312759399
+1793961967.8656 SPECREQ mode=plain k=0 want=48 got=14 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=253.14092636108
+1793961968.9702 SPECREQ mode=tree k=2 want=40 got=40 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=661.61799430847
+1793961969.6406 SPECREQ mode=tree k=2 want=40 got=40 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=666.83578491211
+1793961972.5652 SPECREQ mode=tree k=1 want=64 got=64 drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off ms=1576.8101215363
+1793961974.1743 SPECREQ mode=tree k=2 want=64 got=64 drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off ms=1586.9951248169
+1793961975.7807 SPECREQ mode=tree k=2 want=64 got=64 drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off ms=1583.0798149109
+1793962075.395 SPECREQ mode=greedy k=8 want=192 got=192 drafts=204 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=1983.5259914398
+1793962077.4065 SPECREQ mode=greedy k=8 want=192 got=192 drafts=204 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=1986.5250587463
+1793962079.411 SPECREQ mode=greedy k=8 want=192 got=192 drafts=204 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=1978.8901805878
+1793962081.4265 SPECREQ mode=greedy k=12 want=192 got=192 drafts=216 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2010.7140541077
+1793962083.4691 SPECREQ mode=greedy k=12 want=192 got=192 drafts=216 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2023.5900878906
+1793962085.4889 SPECREQ mode=greedy k=12 want=192 got=192 drafts=216 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2002.1328926086
+1793962087.5428 SPECREQ mode=greedy k=16 want=192 got=192 drafts=220 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2026.7810821533
+1793962089.5785 SPECREQ mode=greedy k=16 want=192 got=192 drafts=220 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2021.2581157684
+1793962091.6383 SPECREQ mode=greedy k=16 want=192 got=192 drafts=220 accepted=187 verifies=33 alt_branch=0 max_branches=0 drafting=on ms=2031.1601161957
+1793962099.7177 SPECREQ mode=tree k=1 want=128 got=128 drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on ms=1504.5900344849
+1793962101.2485 SPECREQ mode=tree k=1 want=128 got=128 drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on ms=1504.3759346008
+1793962102.768 SPECREQ mode=tree k=1 want=128 got=128 drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on ms=1503.2711029053
+1793962104.4175 SPECREQ mode=tree k=2 want=128 got=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1618.5290813446
+1793962106.0559 SPECREQ mode=tree k=2 want=128 got=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1614.2160892487
+1793962107.6944 SPECREQ mode=tree k=2 want=128 got=128 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1613.2929325104

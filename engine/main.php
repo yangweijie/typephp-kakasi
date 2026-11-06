@@ -6364,6 +6364,22 @@ function api_warm(int $backend): string
     return "WARM ms=" . ((microtime(true) - $t) * 1000.0) . " err=" . model_last_error() . "\n";
 }
 
+// F377: per-request speculation attribution. The engine resets its counters at the start of
+// every speculative call, so the stats read immediately after a call belong to THAT request -
+// which is what turns "the whole run averaged 1.6x" into "this request drafted N, accepted M,
+// verified V". Plain requests are logged too, with mode=plain, so the harness can compare two
+// groups measured in the same minutes instead of against last week number.
+function api_spec_req(string $mode, int $k, int $want, int $got, float $ms): void
+{
+    $f = fopen("spec_req.log", "a");
+    if ($f !== false) {
+        fwrite($f, microtime(true) . " SPECREQ mode=" . $mode . " k=" . $k
+            . " want=" . $want . " got=" . $got . " " . model_spec_stats()
+            . " ms=" . $ms . "\n");
+        fclose($f);
+    }
+}
+
 function api_serve_par(int $port): void
 {
     // F374: warm first, THEN bind - a port that answers while the weights are still being
@@ -8336,6 +8352,8 @@ function api_serve(int $port): void
                 $out = "";
                 $text = "";
                 $genN = 0;
+                $specUsed = 0;              // F377: did this request take a speculative path?
+                $tGen0 = microtime(true);   // F377: the window the per-request line reports on
                 $cacheHit = -1;
                 $jsonOk = $jsonMode ? 0 : 1;
                 $stopCut = 0;
@@ -8344,13 +8362,23 @@ function api_serve(int $port): void
                         $out = $enumOut;
                         $jsonOk = 1;      // the constraint already decided the tokens
                     } else if ($specK > 0 && $temp <= 0.0) {
+                        $tSp = microtime(true);
                         $out = model_spec_generate(0, $ids, $maxTok, $specK);
+                        api_spec_req("greedy", $specK, $maxTok,
+                                     count(explode(",", $out)) - count(explode(",", $ids)),
+                                     (microtime(true) - $tSp) * 1000.0);
+                        $specUsed = 1;
                     } else if ($specBins > 0 && $jsonMode == 0 && $temp > 0.0 && $topp >= 1.0) {
                         // FR-06 served path: a tree only pays off once verification SAMPLES
                         // (F273), so this branch is gated on temp>0 and no nucleus truncation -
                         // top_p<1 would filter the very tail the residual draws from.
+                        $tSp = microtime(true);
                         $out = model_spec_tree_sample(0, $ids, $maxTok, $specBins, $specDepth,
                                                       $temp, $seed);
+                        api_spec_req("tree", $specBins, $maxTok,
+                                     count(explode(",", $out)) - count(explode(",", $ids)),
+                                     (microtime(true) - $tSp) * 1000.0);
+                        $specUsed = 1;
                     } else if ($jsonMode == 0 && $prefixCache == 1) {
                         // Reuse the SSD prefix cache: cache_prefill leaves the session at the
                         // prompt tail, so decoding (greedy or sampled) continues from there.
@@ -8376,9 +8404,19 @@ function api_serve(int $port): void
                             }
                         }
                     } else {
+                        $tSp = microtime(true);
                         $out = $temp > 0.0
                             ? model_generate_sampled(0, $ids, $maxTok, $temp, $topp, $seed)
                             : model_generate(0, $ids, $maxTok);
+                        // F377: the undrafted comparison group, measured in the same minutes
+                        // as the drafted one - the served spec gain is the difference between
+                        // these two groups, not between today and a number from last week.
+                        // F377: the denominator has to be the tokens actually produced, not the
+                        // requested cap - a request that stops at eos is not a faster engine, and
+                        // mixing the two made the first table read as if speculation were 8x slower.
+                        api_spec_req("plain", 0, $maxTok,
+                                     count(explode(",", $out)) - count(explode(",", $ids)),
+                                     (microtime(true) - $tSp) * 1000.0);
                     }
                     if ($out == "") {
                         break;

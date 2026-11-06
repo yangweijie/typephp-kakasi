@@ -442,3 +442,16 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 逐流内容（四槽） | 并发 vs 单独：**48 / 62 / 76 / 96 字节，四条 identical=1** | `engine/content_f376g_par*.json`、`engine/content_f376g_ser*.json` |
 | 四槽确实在用 | `PAR slots=4`、`STEP_SLOTS: A B C D`、`STEP_COUNTS ... 258 C 264 D` | `engine/par_slots_f376fair.log`、`engine/par_slots_f376b4.log` |
 | harness 缺陷（已修） | 裸 wait 等后台服务；无单实例护栏互杀；无数据误报 FAIL differing=4；探针 300 s 超时 | `scripts/par_content_check.sh`、`engine/tests/chunk_gap_probe.py` |
+
+### F377（2026-11-06 10:53）——按请求的投机归因：接受率 87.7%（贪心）/ 72.5%（tree），服务面 **1.78×**（同分钟对照）
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 每请求记录存在且字段齐 | 22 行含 `got=`（mode/k/want/got/drafts/accepted/verifies/drafting/ms） | `engine/spec_req.log` |
+| 贪心接受率与耗时 | 9 请求、drafts 1920、accepted 1683（**87.7%**）、**10.47 ms/token**（10.31–10.58） | 同上 |
+| 纯解码对照（同分钟） | 2 请求、**18.62 ms/token**（18.08–18.62） | 同上 |
+| 服务面收益（按实际产出 token） | **1.78×** | 上两行之比 |
+| 仪器自检 | plain 18.6 ms/token 与引擎步进 17–19 ms 独立吻合 | 上 + `engine/run_f377b.log` |
+| 观察（不下结论） | `drafting=off` 的 tree 请求 24.6–24.8 ms/token，比纯解码更慢 | 同上 |
+| 口径错误（已修） | 初版用 `want` 作分母 ⇒ 假的 "投机慢 8 倍" | `scripts/spec_attrib_run.sh` 注释 |
+| 梯 | 自检 **163/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.559x**、哨兵 **0** | `engine/run_f377b.log`、`engine/gate_f377b.log` |
+| 未完成 | 独立 harness `HEALTH_TIMEOUT`，balanced 样本未取 | `engine/spec_attrib_f377c.log` |

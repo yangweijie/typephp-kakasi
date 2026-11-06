@@ -465,3 +465,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **下一轮（F377）做什么**：投机解码在服务面的收益目前只有**整场平均比值**（greedy 1.76–2.84x、sampled 1.41–2.07x，随基线变快而波动），**没有按请求归因**（哪个请求用了草稿、接受率多少、每 token 代价）。动作＝把 `spec_stats` 的计数与 `par_trace.log` 的 STEP 行按请求 id 对齐，报告"接受率 / 每 token 引擎时间 / 草稿来源"三者，并给出**分布**（中位+四分位）而不是均值。
 **验收**：①每个请求都能对上它的 spec 计数（结构判据：请求数 == 统计条数）②报告里同时给"有草稿"与"无草稿"两组，**差值作为投机收益**（抗漂移口径）③不得回退既有门④输出可被后续门复用（打印成机器可读行）。
 **顺位**：per-request spec 归因 → 真草稿源 → 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。
+
+
+## F378 计划（把 balanced 样本拿到，并把 tree 组按 drafting/got 拆开）
+**F377 已落地**：三条路径的按请求记录（含 `got`）、贪心接受率 87.7%、服务面 1.78×（同分钟对照，但 plain 仅 2 条）。
+**动作**：①修 `scripts/spec_attrib_run.sh` 的启动（`HEALTH_TIMEOUT`：先查残留引擎进程与端口占用，health 轮询打印每次失败原因，别静默 200 s）②跑 6 plain + 6 greedy（同提示、同 max_tokens，**用 `got` 作分母**）与 6 sampled-plain + 6 tree（temp>0）③**把 tree 组按 `drafting=on/off` 与 `got` 分层**，回答"关闭草稿后仍付的 tree 开销"是不是真的（F377 的一条观察）。
+**验收**：①每轮 12 条记录、两组各 6 条、`got` 非零 ②收益用**中位 ms/token**、并给出两组分布③`drafting=off` 层的数字与 `drafting=on` 层并列打印④梯不回退。
+**顺位**：balanced 归因 → 真草稿源 → 多属性对象项 / pattern 与数值界限 / 分片多卡 / FR-05。
