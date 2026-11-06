@@ -6396,6 +6396,12 @@ function api_serve_par(int $port): void
     $holdA = "";
     $holdB = "";
     while (true) {
+        // F370: the three stamps below split one served iteration into "before the forward pass"
+        // (accept, select, request and slot bookkeeping), "the forward pass itself as the host sees
+        // it" and "everything after it: token to text, escaping, SSE framing, the write, the trace".
+        // pre+eng+post has to equal the A-to-A cadence, and it is only a real check because the
+        // three durations come from three separate stamps.
+        $tIter0 = microtime(true);
         // stream_select avoids calling accept() on an empty listener, which raises a PHP-level
         // "Accept failed" warning on every timeout. When nothing is readable, $c points at the
         // listener itself (same resource type) and the request block below is skipped.
@@ -6813,7 +6819,9 @@ Connection: close
             }
         }
         if (($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0)) {
+            $tEng0 = microtime(true);
             $rows = model_batch_next(0);
+            $tEng1 = microtime(true);
             if ($rows > 0) {
                 $tk = explode(",", model_batch_tokens());
                 $tokA = (int) $tk[0];
@@ -6858,7 +6866,10 @@ Connection: close
                     } else if ($emitA != "") {
                         $snA++;
                         api_par_trace("STEP A n=" . $snA . " s1=" . model_stage_at(1)
-                            . " sp=" . model_attn_split_p());
+                            . " sp=" . model_attn_split_p()
+                            . " pre=" . (($tEng0 - $tIter0) * 1000.0)
+                            . " eng=" . (($tEng1 - $tEng0) * 1000.0)
+                            . " post=" . ((microtime(true) - $tEng1) * 1000.0));
                     }
                 }
             }
@@ -6935,7 +6946,10 @@ Connection: close
                     } else if ($emitB != "") {
                         $snB++;
                         api_par_trace("STEP B n=" . $snB . " s1=" . model_stage_at(1)
-                            . " sp=" . model_attn_split_p());
+                            . " sp=" . model_attn_split_p()
+                            . " pre=" . (($tEng0 - $tIter0) * 1000.0)
+                            . " eng=" . (($tEng1 - $tEng0) * 1000.0)
+                            . " post=" . ((microtime(true) - $tEng1) * 1000.0));
                     }
                 }
             }

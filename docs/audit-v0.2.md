@@ -373,3 +373,14 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | temp 0.9 与 temp 0.0 的 cadence 差在模式 2 下几乎为 0 | 30.8 vs 30.8（F364 同口径是 47.6 vs 43.6＝4.0 ms）⇒ **采样不再是服务面大头** | `engine/chunk_gap_split_f369_r{1,4}_t0_9.json`、`…_r4_t0_0.json` |
 | 自检（装表后） | **162 PASS / 0 FAIL**、`RUN_EXIT=0`、三项 ATTN 门 PASS | `engine/run_f369.log` |
 | 双流 scaling（发布默认） | **1.861×** | `engine/chunk_gap_f369.log` |
+
+### F370（2026-11-06 01:03）——服务每 token 拆成 pre 7–8 ms / eng 20.2 ms / post **0.09 ms**，覆盖率 92%
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 输出侧不是对象 | `post` **0.087 / 0.088 / 0.089** ms（3 次） | `engine/chunk_gap_split_f370_r{1,2,3}_t0_9.json` |
+| 引擎调用内、stage 标记外 | `eng` 20.2 − `s1` 14.0 = **6.2 ms**（含 s2≈2.2 ⇒ 未命名 ≈4 ms：logits 回拷 / 采样 / 批路径簿记） | 同上（`eng_ms`、`engine_s1_ms`） |
+| **最大的意外** | **`pre` = 7.26 / 8.05 / 8.06 ms**——迭代起点到引擎调用之间，**与模型无关，且比采样与 PHP 都大** | 同上（`pre_ms`） |
+| 装表完整性判据（非恒等式） | `coverage_pct` = **92.3–92.6%**（三项来自三个独立戳） | 同上 |
+| 缺的 8% 的结构解释 | A 的 `post` 在 A 的 trace 处结束，B 槽处理发生在其后 ⇒ **待用 B 行的 `post` 核**，不作结论 | `engine/par_trace.log`（同批行） |
+| 装表不改变行为 | 服务文本与 F369 **逐字节相同**（148 字符，同 seed） | `engine/chunk_gap_f369_r1_t0_9.json` vs `engine/chunk_gap_f370_r1_t0_9.json` |
+| 梯（带戳构建） | 自检 **162/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par **0** fairness **0**；scaling **1.780×**；哨兵 **0** | `engine/run_f370.log`、`engine/gate_f370.log` |

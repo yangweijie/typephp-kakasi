@@ -38,12 +38,27 @@ if n == 0:
     print("NO_CLIENT_TOKENS")
     sys.exit(1)
 
-# F369: the served STEP line now also carries the engine's own block-stage time and the
-# chunk count the attention used, so one cadence can be split into "engine" and "the rest"
-# instead of only being compared against another build. The fields are optional so the
-# analyzer still reads traces produced by an older binary.
-step_re = re.compile(
-    r"^([0-9.]+) STEP %s n=([0-9]+)(?: s1=([0-9.eE+-]+) sp=([0-9]+))?$" % slot)
+# F369/F370: the served STEP line carries the engine's own marks (s1), the chunk count the
+# attention computed (sp) and, since F370, three durations that split one served iteration into
+# "before the forward pass" (pre), "the forward pass as the host sees it" (eng) and "everything
+# after it" (post). Fields are parsed by key rather than by an anchored pattern, so a trace from an
+# older binary - or one with fields added later - still pairs.
+step_re = re.compile(r"^([0-9.]+) STEP %s n=([0-9]+)(.*)$" % slot)
+
+
+def fields(rest):
+    out = {}
+    for part in rest.split():
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        try:
+            out[k] = float(v)
+        except ValueError:
+            pass
+    return out
+
+
 server = []
 with open(trace_path, "r", encoding="utf-8", errors="replace") as f:
     for idx, line in enumerate(f):
@@ -51,9 +66,10 @@ with open(trace_path, "r", encoding="utf-8", errors="replace") as f:
             continue
         m = step_re.match(line.strip())
         if m:
+            fv = fields(m.group(3))
             server.append((int(m.group(2)), float(m.group(1)),
-                         float(m.group(3)) if m.group(3) else None,
-                         int(m.group(4)) if m.group(4) else None))
+                           fv.get("s1"), int(fv["sp"]) if "sp" in fv else None,
+                           fv.get("pre"), fv.get("eng"), fv.get("post")))
 
 if len(server) < n:
     print("SHORT_TRACE have=%d want=%d slot=%s start=%d" % (len(server), n, slot, start_line))
@@ -87,6 +103,9 @@ lag = [client_ts[i] - server_ts[i] for i in range(n)]
 
 # F369 attribution: the engine's own marks for the steps that were paired with tokens.
 s1_ms = [r[2] for r in steps if r[2] is not None]
+# F370: one iteration's three durations, in ms, for the rows that carry all of them.
+parts_ms = [r[4] + r[5] + r[6] for r in steps
+            if None not in (r[4], r[5], r[6])]
 sp_vals = sorted(set(r[3] for r in steps if r[3] is not None))
 out = {
     "slot": slot,
@@ -106,6 +125,18 @@ out = {
     # engine did not spend inside the block stage: sampling, PHP, framing, writes.
     "engine_s1_ms": stats([x / 1000.0 for x in s1_ms]),
     "split_p_values": sp_vals,
+    # F370: the three iteration durations (ms) and the completeness check. pre+eng+post
+    # must land on the A-to-A cadence if the stamps cover the whole iteration - that is the
+    # only assertion here, and it fails loudly when a stamp is missing or mis-placed.
+    "parts_sum_ms": stats([x / 1000.0 for x in parts_ms]),
+    # coverage: what fraction of the measured A-to-A cadence the three stamps account for.
+    # Anything well below 100 means an un-stamped block; above 100 means double counting.
+    "coverage_pct": (round(100.0 * stats([x / 1000.0 for x in parts_ms])["median"]
+                           / stats(server_gap)["median"], 2)
+                     if parts_ms and server_gap else None),
+    "pre_ms": stats([r[4] / 1000.0 for r in steps if r[4] is not None]),
+    "eng_ms": stats([r[5] / 1000.0 for r in steps if r[5] is not None]),
+    "post_ms": stats([r[6] / 1000.0 for r in steps if r[6] is not None]),
     "residual_ms": (round(stats(server_gap)["median"] - stats([x / 1000.0 for x in s1_ms])["median"], 3)
                     if s1_ms and server_gap else None),
 }
