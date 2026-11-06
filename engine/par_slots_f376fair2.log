@@ -1,0 +1,17 @@
+BANNER: ATTN_MODE 2 PAR slots=4 
+THRU_EXIT=0 streams=4 slots=4
+THROUGHPUT port=8001 tokens=60 streams=4 spec=off temp=0.9
+  serial     : chunks=61 wall=1.25s rate=48.74 tok/s 
+  concurrent : chunks=244 wall=2.29s rate=106.78 tok/s errors=0
+  scaling    : 2.191x (1.000 = no parallel gain, 4.000 = perfect)
+THROUGHPUT: PASS measured
+EXTRA: python /c/git/c/typephp-kakasi/engine/tests/fairness_test.py 8001 160 4; python /c/git/c/typephp-kakasi/engine/tests/fairness_test.py 8001 160 2
+port=8001 streams=4 longs=[(2.28, 0.06, 101), (2.3, 0.12, 101), (2.3, 0.18, 101)] short=(0.18, 0.08, 4)
+FAIRNESS: PASS (short stream finished well before the long ones)
+port=8001 streams=2 longs=[(1.75, 0.07, 101)] short=(0.15, 0.08, 4)
+FAIRNESS: PASS (short stream finished well before the long ones)
+EXTRA_EXIT=0
+STEP_SLOTS: A B C D 
+STEP_COUNTS:   39918 A   17578 B     419 C     328 D 
+SENTINELS_LEFT=0
+PAR_SLOTS_DONE tag=f376fair2 slots=4 streams=4

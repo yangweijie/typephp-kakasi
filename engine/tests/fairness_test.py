@@ -1,10 +1,16 @@
 """Fairness probe: does a long streaming request starve a short one?
 
-Usage: python fairness_test.py [port] [long_tokens]
+Usage: python fairness_test.py [port] [long_tokens] [streams]
 
-Starts a long stream, then 0.4 s later a short stream. Under a serialized server the short
-one finishes right after the long one; under cooperative interleaving it should finish much
-earlier. Prints both latencies plus time-to-first-chunk.
+Starts `streams` - 1 long streams, then 0.4 s later one short stream. Under a serialized server
+the short one finishes right after the long ones; under cooperative interleaving it should finish
+much earlier. Prints every latency plus time-to-first-chunk.
+
+F376: `streams` defaults to 2, which is exactly the pair this probe has always measured, so the
+existing gate keeps its meaning. The N-stream form is what makes "fair" a claim about the served
+path rather than about a special case of two: with four slots, three long conversations must not
+starve a fourth, short one. It needs a server with at least `streams` slots - otherwise the extra
+requests are refused and the run says so instead of quietly measuring a pair.
 """
 import json
 import sys
@@ -14,6 +20,7 @@ import urllib.request
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8001
 LONG = int(sys.argv[2]) if len(sys.argv) > 2 else 160
+STREAMS = int(sys.argv[3]) if len(sys.argv) > 3 else 2
 URL = "http://127.0.0.1:%d/v1/chat/completions" % PORT
 res = {}
 
@@ -55,18 +62,30 @@ run("warmup", 2, 0.0)
 time.sleep(0.3)
 res.clear()
 
-tL = threading.Thread(target=run, args=("long", LONG, 0.0))
-tS = threading.Thread(target=run, args=("short", 4, 0.4))
-tL.start()
-tS.start()
-tL.join()
-tS.join()
+threads = []
+labels = []
+for i in range(max(1, STREAMS - 1)):
+    lbl = "long" if STREAMS == 2 else "long%d" % i
+    labels.append(lbl)
+    threads.append(threading.Thread(target=run, args=(lbl, LONG, 0.0)))
+labels.append("short")
+threads.append(threading.Thread(target=run, args=("short", 4, 0.4)))
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
 
-longr = res.get("long", ("?", "?", 0))
+longs = [res.get(l, ("?", "?", 0)) for l in labels if l.startswith("long")]
 shortr = res.get("short", ("?", "?", 0))
-print("port=%d long=%s short=%s" % (PORT, longr, shortr))
-ok = (isinstance(longr[0], float) and isinstance(shortr[0], float)
-      and shortr[0] < 1.2 and shortr[0] < longr[0] - 0.5)
-print("FAIRNESS: " + ("PASS (short stream finished well before the long one)"
-                      if ok else "FAIL (short waited for the long stream)"))
+print("port=%d streams=%d longs=%s short=%s" % (PORT, STREAMS, longs, shortr))
+refused = [l for l in longs if not isinstance(l[0], float)]
+if refused:
+    # A slot the server does not have is a configuration error, not a fairness result.
+    print("FAIRNESS: NOSUITE streams=%d refused_or_failed=%d (needs >= %d slots)"
+          % (STREAMS, len(refused), STREAMS))
+    sys.exit(3)
+ok = (isinstance(shortr[0], float) and shortr[0] < 1.2
+      and shortr[0] < min(r[0] for r in longs) - 0.5)
+print("FAIRNESS: " + ("PASS (short stream finished well before the long ones)"
+                      if ok else "FAIL (short waited for the long streams)"))
 sys.exit(0 if ok else 1)

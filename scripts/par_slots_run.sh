@@ -15,6 +15,7 @@ TAG=${1:-f375}
 SLOTS=${2:-2}
 STREAMS=${3:-2}
 TOKENS=${4:-60}
+EXTRA=${5:-}
 export PATH="/c/Program Files (x86)/Intel/oneAPI/compiler/latest/bin:/c/Program Files (x86)/Intel/oneAPI/tbb/latest/bin:$PATH"
 
 powershell -NoProfile -Command 'Get-Process kakasi_engine_sycl -ErrorAction SilentlyContinue | Stop-Process -Force' >/dev/null 2>&1
@@ -49,6 +50,15 @@ grep -E "serial|concurrent|scaling|THROUGHPUT|error" "$E/par_slots_${TAG}_s${STR
 # Which slots actually advanced, and how many tokens each produced. The trace line is
 # "<epoch> STEP <slot> n=<k> ...", so the slot is field 3 - field 2 is the literal "STEP", and a
 # probe reading it would report the same words for every run whatever the server did.
+# An optional command run against the same server (F376: fairness at N streams), so a probe
+# that needs a specific slot count does not re-implement the start/health/stop dance - and
+# its start-up races - of this script.
+if [ -n "${EXTRA:-}" ]; then
+  echo "EXTRA: $EXTRA"
+  eval "$EXTRA"
+  echo "EXTRA_EXIT=$?"
+fi
+
 echo "STEP_SLOTS: $(awk '$2=="STEP"{print $3}' "$E/par_trace.log" 2>/dev/null | sort -u | tr '\n' ' ')"
 echo "STEP_COUNTS: $(awk '$2=="STEP"{print $3}' "$E/par_trace.log" 2>/dev/null | sort | uniq -c | tr '\n' ' ')"
 

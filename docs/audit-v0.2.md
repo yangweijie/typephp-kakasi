@@ -432,3 +432,13 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 探针自身缺陷 | awk 取字段 2 打印的是字面量 `STEP`；改为字段 3 | `scripts/par_slots_run.sh` |
 | 两路梯 | 自检 **163/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par **0** fairness **0**；哨兵 **0** | `engine/run_f375b.log`、`engine/gate_f375b.log` |
 | **验收未覆盖** | ②逐流内容对照未测；③公平判据仍是两路 ⇒ 不声称"N 路公平" | 本节 + `engine/tests/fairness_test.py`（未改） |
+
+### F376（2026-11-06 04:05）——N 路公平与逐流内容补齐：F375 的五条验收全部达成
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| N 路公平（streams=4） | 三条长流 **2.28 / 2.30 / 2.30 s（各 101 chunk）**，短流 **0.18 s、TTFT 0.08 s** ⇒ PASS | `engine/par_slots_f376fair2.log` |
+| 两路控制不变 | streams=2：长 1.75 s、短 0.15 s ⇒ PASS | 同上 |
+| 槽位不足不是"不公平" | `NOSUITE` + 需要的最少槽位数 | `engine/tests/fairness_test.py`（`refused` 分支） |
+| 逐流内容（四槽） | 并发 vs 单独：**48 / 62 / 76 / 96 字节，四条 identical=1** | `engine/content_f376g_par*.json`、`engine/content_f376g_ser*.json` |
+| 四槽确实在用 | `PAR slots=4`、`STEP_SLOTS: A B C D`、`STEP_COUNTS ... 258 C 264 D` | `engine/par_slots_f376fair.log`、`engine/par_slots_f376b4.log` |
+| harness 缺陷（已修） | 裸 wait 等后台服务；无单实例护栏互杀；无数据误报 FAIL differing=4；探针 300 s 超时 | `scripts/par_content_check.sh`、`engine/tests/chunk_gap_probe.py` |
