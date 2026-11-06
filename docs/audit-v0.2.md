@@ -474,3 +474,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 机制 | 命中请求在 PHP 里逐 token `model_session_next`；`model_generate` 是批内一次调用 | `engine/main.php`（前缀缓存分支） |
 | plain 行计数残留 | 旧报告据陈旧计数算出 `acc=38.9%`；报告现只对 drafted 组打印接受率 | `scripts/spec_attrib_report.py` |
 | 梯 | 自检 **163/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.522×**、哨兵 **0** | `engine/run_f379.log`、`engine/gate_f379.log` |
+
+### F380（2026-11-06 11:20）——撤回 F379 的缓存命中归因：配对实验显示命中更快
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 同提示 miss → hit（短） | TTFT 105.8 → **87.2 ms**；decode 16.94 → **17.09 ms/token** | `engine/cache_hit_f380.log` |
+| 同提示 miss → hit（长，约 471 tok） | TTFT **826.7 → 73.5 ms（11.3×）**；decode 22.61 → **22.17** | 同上 |
+| 撤回的旧结论 | "命中路 60.5 ms/token ≈ 从头解码 3 倍"（F379）——**组内构成差异，不是机制** | `findings.md` F379 与本节 |
+| 错因（方法） | 按 `cache=` 标签分组 ≠ 对照；配对（同提示同进程只改命中）才是 | 本节 |
+| 引擎未改 | 只新增探针；梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
