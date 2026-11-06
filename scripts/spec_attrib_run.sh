@@ -74,14 +74,25 @@ for n in $(seq 1 "$PAIRS"); do
     # second plain request of a pair is served from the cache while the speculative one is not, so
     # the pair would differ in two things instead of one. prefix_cache=0 pins the control.
     if [ "$MODE" = "spec" ]; then EXTRA=",\"spec_k\":$K"; else EXTRA=",\"prefix_cache\":0"; fi
-    python - "$PROMPT" "$MAXTOK" "$EXTRA" <<'PROBE_EOF' > /dev/null 2>&1
+    # F385: report what the CLIENT saw as well as what the engine recorded. F383 read a 24-vs-11
+    # token difference off the engine s got field while the engine-side gate says both paths emit
+    # the same ids, so one of the two views is wrong and the only way to tell is to print both.
+    python - "$PROMPT" "$MAXTOK" "$EXTRA" "$MODE" <<'PROBE_EOF' >> "$EW/client_view_$TAG.log" 2>&1
 import json, sys, urllib.request
-prompt, mt, extra = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+prompt, mt, extra, mode = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
 body = ('{"messages":[{"role":"user","content":' + json.dumps(prompt) + '}],'
         '"max_tokens":' + str(mt) + ',"temperature":0.0' + extra + '}')
 req = urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions",
                              data=body.encode(), headers={"Content-Type": "application/json"})
-urllib.request.urlopen(req, timeout=120).read()
+raw = urllib.request.urlopen(req, timeout=120).read().decode("utf-8", "replace")
+try:
+    js = json.loads(raw)
+    txt = js["choices"][0]["message"].get("content") or ""
+    usage = js.get("usage", {})
+    print("CLIENT mode=%s text_chars=%d prompt_tokens=%s completion_tokens=%s"
+          % (mode, len(txt), usage.get("prompt_tokens"), usage.get("completion_tokens")))
+except Exception as exc:
+    print("CLIENT mode=%s unparsed bytes=%d err=%s" % (mode, len(raw), exc))
 PROBE_EOF
     echo "REQ done n=$n mode=$MODE"
   done

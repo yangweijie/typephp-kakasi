@@ -521,3 +521,12 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 未重跑 | 8000/8001 门禁本轮**未跑**（改动只加自检门与 echo） | 本行即声明 |
 
 **补**：8000 **115/0**、8001 par **0** fairness **0**、scaling **1.499×**、哨兵 **0**（`engine/gate_f384c.log`）⇒ F384 的二进制已过整条梯，"未重跑"作废。
+
+### F385（2026-11-06 11:56）——服务面 spec/plain 产出长度分歧复现；记录准确，接缝在处理器
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 客户端视图 | plain **11** completion tokens（44 字符）/ spec **24**（81 字符），同提示 temp 0 上限 48 | `engine/client_view_Z4.log` |
+| 引擎记录与之一致 | plain 44 tokens / 4 条 = 11；spec 96 / 4 = 24 | `engine/spec_attrib_Z4.log` |
+| 引擎级门仍为相同 | F384 `SPEC-EQ-LONG: PASS produced=48 ids identical`（上限 48） | `engine/run_f384b.log` |
+| 结论 | 生成器无分歧 ⇒ 差异在**服务面两条分支的输入或上限** | 上三行 |
+| 影响 | `ms/token` 以各自 `got` 归一，k 曲线结论不变；**服务面缺一致性门** | 本行 |
