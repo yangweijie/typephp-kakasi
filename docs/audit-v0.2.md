@@ -573,3 +573,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 未鼓包 | 四个 spec 请求均产出 44 token（与 plain 相同）⇒ 越界不再发生 | 同上 |
 | 梯 | 自检 **166/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.519×**、哨兵 **0** | `engine/run_f389b.log`、`engine/gate_f389c.log` |
 | 待办 | spec/plain 的 `completion_tokens` 差 1（eos 计数口径） | 本行 |
+
+### F390（2026-11-06 15:47）——k 自适应条件不成立；1 token 差为计数口径
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 最优点三窗口一致 | F382 1.238× / F383 1.360× / F389 1.309×，**均为 k=4** | `engine/spec_attrib_k4.log`、`engine/spec_attrib_X4.log`、`engine/spec_attrib_Q4.log` |
+| 自适应的前提 | "最优点跨负载移动"——**未发生** | 上三行 |
+| 1 token 差来源 | `$genN = count(explode(out)) - $promptN`；两生成器均含 eos ⇒ 口径差 | `engine/main.php:8435`、`src/model_sycl.cc:1351` |
+| 决定 | 不加自适应；不改 eos 输出契约（记录为已知口径差） | 本节 |
+| 未改引擎 | 梯沿用 F389 绿 | `engine/run_f389b.log`、`engine/gate_f389c.log` |
