@@ -483,3 +483,11 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 撤回的旧结论 | "命中路 60.5 ms/token ≈ 从头解码 3 倍"（F379）——**组内构成差异，不是机制** | `findings.md` F379 与本节 |
 | 错因（方法） | 按 `cache=` 标签分组 ≠ 对照；配对（同提示同进程只改命中）才是 | 本节 |
 | 引擎未改 | 只新增探针；梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
+
+### F381（2026-11-06 11:22）——配对设计下的投机收益：1.272× @ 50% 接受率（控制组从头解码）
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 配对窗口（同提示同进程交替，plain 关缓存） | greedy **50.0%（72/144）、18.56 ms/token**；plain **23.70** ⇒ **1.272×** | `engine/spec_req.log`（f381 窗口）、`engine/spec_attrib_f381.log` |
+| 收益随接受率（三窗口） | 87.7% ⇒ 1.78×；50% ⇒ 1.337× / **1.272×** | 同上 + F377/F379 段 |
+| 仪器清理 | 删掉收集脚本里的内嵌分析块（三次抛 FileNotFoundError） | `scripts/spec_attrib_run.sh` |
+| 未改引擎 | 梯沿用 F379 绿 | `engine/run_f379.log`、`engine/gate_f379.log` |
