@@ -6369,12 +6369,14 @@ function api_warm(int $backend): string
 // which is what turns "the whole run averaged 1.6x" into "this request drafted N, accepted M,
 // verified V". Plain requests are logged too, with mode=plain, so the harness can compare two
 // groups measured in the same minutes instead of against last week number.
-function api_spec_req(string $mode, int $k, int $want, int $got, float $ms): void
+function api_spec_req(string $mode, int $k, int $want, int $got, int $cache,
+                      float $ms): void
 {
     $f = fopen("spec_req.log", "a");
     if ($f !== false) {
         fwrite($f, microtime(true) . " SPECREQ mode=" . $mode . " k=" . $k
-            . " want=" . $want . " got=" . $got . " " . model_spec_stats()
+            . " want=" . $want . " got=" . $got . " cache=" . $cache . " "
+            . model_spec_stats()
             . " ms=" . $ms . "\n");
         fclose($f);
     }
@@ -8366,7 +8368,7 @@ function api_serve(int $port): void
                         $out = model_spec_generate(0, $ids, $maxTok, $specK);
                         api_spec_req("greedy", $specK, $maxTok,
                                      count(explode(",", $out)) - count(explode(",", $ids)),
-                                     (microtime(true) - $tSp) * 1000.0);
+                                     -2, (microtime(true) - $tSp) * 1000.0);
                         $specUsed = 1;
                     } else if ($specBins > 0 && $jsonMode == 0 && $temp > 0.0 && $topp >= 1.0) {
                         // FR-06 served path: a tree only pays off once verification SAMPLES
@@ -8377,11 +8379,16 @@ function api_serve(int $port): void
                                                       $temp, $seed);
                         api_spec_req("tree", $specBins, $maxTok,
                                      count(explode(",", $out)) - count(explode(",", $ids)),
-                                     (microtime(true) - $tSp) * 1000.0);
+                                     -2, (microtime(true) - $tSp) * 1000.0);
                         $specUsed = 1;
                     } else if ($jsonMode == 0 && $prefixCache == 1) {
                         // Reuse the SSD prefix cache: cache_prefill leaves the session at the
                         // prompt tail, so decoding (greedy or sampled) continues from there.
+                        // F379: timed and recorded. F378 found the plain control group empty
+                        // because unspeculated requests are served HERE, on a branch that
+                        // carried no trace line, so the comparison silently measured
+                        // speculation against the prefix-cache path instead of plain decoding.
+                        $tSp = microtime(true);
                                 $cacheHit = model_cache_prefill(0, $ids, $pcPath);
                         if ($cacheHit < 0) {
                             $out = $temp > 0.0
@@ -8403,6 +8410,9 @@ function api_serve(int $port): void
                                 model_cache_store(0, $ids, $pcPath);
                             }
                         }
+                        api_spec_req("plain", 0, $maxTok,
+                                     count(explode(",", $out)) - count(explode(",", $ids)),
+                                     $cacheHit, (microtime(true) - $tSp) * 1000.0);
                     } else {
                         $tSp = microtime(true);
                         $out = $temp > 0.0
@@ -8416,7 +8426,7 @@ function api_serve(int $port): void
                         // mixing the two made the first table read as if speculation were 8x slower.
                         api_spec_req("plain", 0, $maxTok,
                                      count(explode(",", $out)) - count(explode(",", $ids)),
-                                     (microtime(true) - $tSp) * 1000.0);
+                                     -2, (microtime(true) - $tSp) * 1000.0);
                     }
                     if ($out == "") {
                         break;

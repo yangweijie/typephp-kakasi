@@ -464,3 +464,13 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 草稿器在无重复提示上不提任何草稿 | `drafts=0`，24 token / 480 ms ≈ 20 ms/token | 同上（f378 段） |
 | plain 组未被记录（前缀缓存分支无表） | 12 条请求中 plain 0 条；serve 日志 `cache=0`/`cache=-1` 交替 | `engine/serve_spec_f378b.log` |
 | 路径抖动（三种形态，均改为 `C:/` + 重试） | `SENTINEL_WRITE_FAILED`、`engine alive: 0`、`FileNotFoundError` | `engine/spec_attrib_f378.log`、`scripts/spec_attrib_run.sh` |
+
+### F379（2026-11-06 11:17）——配平对照：greedy 1.337×（50% 接受率）；**前缀缓存命中路 60.5 ms/token ≈ 从头解码的 3 倍**
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 配平窗口（同提示同限同分钟） | greedy 50.0%（72/144）、**18.57 ms/token**；plain 缓存命中 **24.82** ⇒ **1.337×** | `engine/spec_req.log`（f379 段）、`engine/spec_attrib_f379.log` |
+| 收益随接受率变 | 50% ⇒ 1.34×（本轮）vs 87.7% ⇒ 1.78×（F377 长探测） | 同上 + F377 段 |
+| **缓存命中路更贵** | `plain/cache=0` 26 条：**60.49 ms/token**（21.88–68.14）vs `cache=-2` 21.94、greedy 17.83 | 同上（全程报告） |
+| 机制 | 命中请求在 PHP 里逐 token `model_session_next`；`model_generate` 是批内一次调用 | `engine/main.php`（前缀缓存分支） |
+| plain 行计数残留 | 旧报告据陈旧计数算出 `acc=38.9%`；报告现只对 drafted 组打印接受率 | `scripts/spec_attrib_report.py` |
+| 梯 | 自检 **163/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.522×**、哨兵 **0** | `engine/run_f379.log`、`engine/gate_f379.log` |
