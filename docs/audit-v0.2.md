@@ -540,3 +540,5 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 自检 | **165 PASS / 0 FAIL**、`RUN_EXIT=0` | 同上 |
 | 前提更正 | 自检用**裸提示**、服务面用**加模板提示** ⇒ 两边从来不是同一提示 | `engine/main.php`（`tok_chat_open`）与门内 `tok_encode` |
 | 未重跑 | 8000/8001 本轮未跑（仅加自检门） | 本行 |
+
+**补**：8000 **115/0**、8001 par **0** fairness **0**、scaling **1.555×**、哨兵 **0**（`engine/gate_f386c.log`）⇒ F386 二进制已过整条梯。
