@@ -2601,6 +2601,31 @@ std::vector<int> prefill_tops(int backend, const std::vector<int>& tokens, int p
     return out;
 }
 
+// F391: the prompt-lookup drafter matches a fixed three-token tail. A shorter window finds more
+// matches (more drafts, lower accuracy), a longer one finds fewer but better ones, so the window
+// is a workload-dependent trade - it is a runtime setting here so two values can be measured in
+// one binary, and the value in use is logged by the serve record's drafting counters.
+int spec_window() {
+    static int w = -1;
+    if (w < 0) {
+        w = 3;
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
+        const char* e = std::getenv("KAKASI_SPEC_WINDOW");
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
+        if (e && e[0] != ' ') {
+            const int v = std::atoi(e);
+            if (v >= 1 && v <= 6) w = v;
+        }
+    }
+    return w;
+}
+
 // Greedy speculative decoding with a prompt-lookup drafter: propose the tokens that followed the
 // last occurrence of the current tail, verify all of them in ONE batched forward, keep the
 // matching prefix. Numerically identical to generate() because every accepted token came from
@@ -2622,7 +2647,7 @@ std::vector<int> spec_generate(int backend, std::vector<int> ids, int n_new, int
     int produced = 0;
     const int eos = eos_id();
     int ref = (int) r[0];
-    const int m = 3;   // lookup window
+    const int m = spec_window();   // lookup window (F391: configurable, default 3)
     // Adaptive: a verify that accepts nothing costs a full batched forward and buys nothing -
     // measured at 0.83x (slower than plain decoding) when the text never repeats. After a few
     // consecutive empty accepts, stop drafting for the rest of this call.
