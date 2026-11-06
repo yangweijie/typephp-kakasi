@@ -9318,6 +9318,7 @@ function main(): void
     // can be compared directly.
     $swpFail = 0;
     $swpFailS = 0;
+    $swpEng = 0;
     // F365/F366 A/B: the attention paths all live in this binary, so for every context length
     // they are measured back to back, twice each. The pairing is the point: separate sweeps
     // would compare two moments in time, and the machine drifts (an earlier sweep showed s1 at
@@ -9341,7 +9342,14 @@ function main(): void
         $swpTokS = -1;
         foreach (explode(",", "0,1,2") as $swpModeLs) {
             $swpMode = (int) $swpModeLs;
-            model_set_attn_mode($swpMode);
+            // F367 discipline: prove the switch reached the code before reading anything off it.
+            // The first split-KV measurement was worthless because set_attn_mode clamped every
+            // value but 1 back to 0, so "mode 2" was mode 0 measured against mode 0 - and no
+            // timing or token comparison can see that, because both sides ran the same path.
+            $swpGot = model_set_attn_mode($swpMode);
+            if ($swpGot != $swpMode) {
+                $swpEng = $swpEng + 1;
+            }
             $swpS1 = "";
             $swpTokm = -1;
             for ($swpR = 0; $swpR < 2; $swpR++) {
@@ -9415,6 +9423,53 @@ function main(): void
         echo "PERF kv-sweep f16=" . $kvOn . ":" . $kvOut . "\n";
     }
     model_set_kv_f16(0);
+
+    // F367: F366 left two suspects for the 0.212 ms per context token that is still there - the
+    // 64-long dependent FMA chain of the dot, and the 64 global read-modify-writes of the V
+    // accumulator - because both are per (position, head) instruction work, which is what the
+    // three A/Bs said the cost follows. Each ablation removes exactly ONE of them and keeps the
+    // other (and keeps the loads, which F366 already ruled out). The output of modes 4 and 5 is
+    // meaningless on purpose, so nothing here is asserted about tokens: the claim is only
+    // "removing this loop removes this much of the slope".
+    foreach (explode(",", "0,4,5") as $abModeLs) {
+        $abMode = (int) $abModeLs;
+        if (model_set_attn_mode($abMode) != $abMode) {
+            $swpEng = $swpEng + 1;
+        }
+        $abOut = "";
+        foreach (explode(",", "8,64,256") as $abLs) {
+            $abL = (int) $abLs;
+            $abCtx = "";
+            $abAt = 0;
+            for ($abK = 0; $abK < $abL; $abK++) {
+                $abT = $pv[$abAt];
+                $abAt = $abAt + 1;
+                if ($abAt >= $np) {
+                    $abAt = 0;
+                }
+                $abCtx = $abK == 0 ? $abT : $abCtx . "," . $abT;
+            }
+            $abS1 = "";
+            for ($abR = 0; $abR < 2; $abR++) {
+                model_session_start(0, $abCtx);
+                $abT0 = microtime(true);
+                model_session_next(0, 0.0, 1.0);
+                $abMs = (microtime(true) - $abT0) * 1000.0;
+                $abS1 = $abS1 . " s1=" . model_stage_at(1) . " step=" . $abMs;
+            }
+            $abOut = $abOut . " L=" . $abL . ":" . $abS1 . " |";
+        }
+        echo "PERF ablate m" . $abMode . ":" . $abOut . "\n";
+    }
+    model_set_attn_mode(0);
+    echo "PERF ablate note: m4 collapses the V read-modify-writes, m5 drops the dot chain; "
+        . "modes 4 and 5 produce garbage output by design and are not used by any gate\n";
+    // F367 discipline gate: a switch that is not proven to reach the code cannot be measured.
+    if ($swpEng == 0) {
+        echo "ATTN-ENGAGE: PASS (every attention mode requested is the one the engine reports)\n";
+    } else {
+        echo "ATTN-ENGAGE: FAIL " . $swpEng . " mode requests did not take effect\n";
+    }
 
     // Long-context prefill point: the baseline only had 5/200 tokens, which is not enough to say
     // anything about scaling. 512 tokens is the next meaningful step on this model.

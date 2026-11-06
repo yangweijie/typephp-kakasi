@@ -54,7 +54,10 @@ namespace {
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
-            if (e && e[0] != '\0') g_attn_mode = (std::atoi(e) == 1) ? 1 : 0;
+            if (e && e[0] != '\0') {
+                const int m = std::atoi(e);
+                g_attn_mode = (m >= 0 && m <= 5) ? m : 0;
+            }
         }
     };
     AttnModeFromEnv g_attn_mode_from_env;
@@ -569,9 +572,12 @@ namespace {
                    const uint32_t* tree = nullptr,
                    const int* lo = nullptr, const int* hi = nullptr) {
         // F365 A/B: mode 0 computes each score once and reuses it; mode 1 recomputes it in every
-        // pass (the pre-F365 kernel). The branch is uniform across the work items, so it costs
-        // one predicate per (token, head) and nothing per iteration.
-        const int threePass = g_attn_mode;
+        // pass (the pre-F365 kernel); modes 4 and 5 are the F367 timing-only ablations below.
+        // The branch is uniform across the work items, so it costs one predicate per
+        // (token, head) and nothing per iteration.
+        const int attnMode = g_attn_mode;
+        const bool ablateV = (attnMode == 4);    // V accumulator loop -> one global RMW per position
+        const bool ablateDot = (attnMode == 5);  // dot chain -> arithmetic, no K read
         q.parallel_for(sycl::range<2>(T, NH), [=](sycl::item<2> it) {
             const int b = (int) it.get_id(0);
             const int h = (int) it.get_id(1);
@@ -585,7 +591,7 @@ namespace {
             float* orow = O + ((size_t) b * NH + h) * HD;
             float mx = -1e30f;
             float sum = 0.0f;
-            if (threePass) {
+            if (attnMode == 1) {
                 for (int j = first; j <= last; ++j) {
                     if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
                     const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
@@ -615,9 +621,16 @@ namespace {
             }
             for (int j = first; j <= last; ++j) {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
-                const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
                 float s = 0.0f;
-                for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
+                if (!ablateDot) {
+                    const KVt* krow = K + ((size_t) j * NKV + kv) * HD;
+                    for (int d = 0; d < HD; ++d) s += qrow[d] * (float) krow[d];
+                } else {
+                    // F367 ablation (timing only, the numbers it makes are meaningless): drop the
+                    // 64-long dependent FMA chain and the K load, keep everything else - the store
+                    // to the scratch, the max, the exp in the two later loops.
+                    s = (float) (j - first) * 0.125f;
+                }
                 s *= scale;
                 srow[j - first] = s;
                 mx = sycl::max(mx, s);
@@ -631,7 +644,14 @@ namespace {
                 if (masked && j >= pos && !((allow >> (j - pos)) & 1u)) continue;
                 const KVt* vrow = V + ((size_t) j * NKV + kv) * HD;
                 const float w = sycl::exp(srow[j - first] - mx) / sum;
-                for (int d = 0; d < HD; ++d) orow[d] += w * (float) vrow[d];
+                if (!ablateV) {
+                    for (int d = 0; d < HD; ++d) orow[d] += w * (float) vrow[d];
+                } else {
+                    // F367 ablation (timing only): keep the V read and the weight, collapse the
+                    // 64 global read-modify-writes per position into one. This is the loop that
+                    // cannot live in registers because HD is a runtime value.
+                    orow[0] += w * (float) vrow[0];
+                }
             }
         });
     }
@@ -1100,7 +1120,7 @@ int weight_prec() { return g_wprec; }
 // F365/F366 A/B switch: 0 = score cache, 1 = the pre-F365 three-pass kernel, 2 = split-KV.
 // 0 and 1 compute the same values in the same order; 2 groups the same sum differently, so it
 // is checked by the greedy token rather than by bit-equality.
-void set_attn_mode(int m) { g_attn_mode = (m == 1) ? 1 : 0; }
+void set_attn_mode(int m) { g_attn_mode = (m >= 0 && m <= 5) ? m : 0; }
 int attn_mode() { return g_attn_mode; }
 
 // Backend fingerprint for `engine doctor` (FR-04): what the runtime actually sees, not what the
