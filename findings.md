@@ -3719,3 +3719,15 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | allOf | 支持合并 | `ALLOF` |
 **仍未实现（不装作支持）**：pattern/边界的**真正约束执行**（现在只是明确拒绝）、required 真子集的**省略语义**、oneOf 的更多分支。
 **梯**：自检 **172 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**（回归已修）；8001 `par` **0**、`fairness` **0**；scaling **1.510×**；哨兵 **0**。
+
+
+## F399：`minLength`/`maxLength` 从"显式拒绝"变成**真正支持**（扁平全字符串对象），并且是**按字符**而不是按 token 计数
+**实现**：①`api_response_schema_string_bounds($body)` 按 plan 顺序给出每个属性的 `min:max`；②`api_string_value_multi` 新增可选 `$bounds`，每一步**按剩余字符预算过滤可选 token**——低于 min 时不提供闭引号，达到 max 时只提供能装下的 token（装不下就只给闭引号）；③四个调用点都传入 bounds（非该形状时检测器返回 ""，行为不变）；④`api_schema_keywords_unsupported` 只在 **`api_schema_flat_all_string`** 为真时放行这两个关键字，**其他形状仍然拒绝**。
+**第一版的真 bug（被门抓住）**：只在步前检查计数，**一个多字符 token 直接越过 max**（`maxLength:2` 却输出 5 个字符）⇒ 改为**按 token 的字符长度过滤候选**。修后 `maxonly=[0:2] len2=1`。
+**门的更新（旧期望被新行为证伪）**：`SCHEMA-KEYWORDS` 原来断言 `maxLength` 一律被拒；现在扁平全字符串是**受支持**的，所以期望改为 `flat_maxLength=[]`，并**新增 `mixed_maxLength=[maxLength]`** 保证放行没有泄漏到其他形状。**这是"行为变了就要改门、而不是让门继续绿"的正例。**
+**新门 `SCHEMA-LEN`（检查输出而不是状态码）**：`bounds=[3:6] len=5`、`maxonly=[0:2] len2=1`、`mixed_refusal=[minLength]` ⇒ **PASS**。
+**活体双向（`engine/schema_len_f399b.log`）**：`minLength:3,maxLength:6` → **200，`{"word":"Hello"}`（5 字符，界内）**；`maxLength:2` → **200，`{"word":"A"}`（1 字符，界内）** ⇒ **VERDICT: PASS**。
+**两个过程问题（都记下来）**：①一次链接失败 `LNK1104 cannot open …exe` 是**残留引擎进程锁住文件**（杀掉进程后重建即过）——与既往同类；②第一版活体探针的正则只写 `[a-z ]`，把 `Hello`/`A` 判成"没匹配"（len=-1），**是探针错不是引擎错**；改成 `[A-Za-z ]` 后复验通过。**判据：探针报"没数据"时先怀疑探针的匹配面。**
+**支持表更新**：`minLength`/`maxLength`（扁平全字符串对象）由"显式 400"改为**支持**；其他形状仍为"显式 400"。
+**梯**：自检 **173 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.545×**；哨兵 **0**。
+**边界**：min 的满足受 `maxSteps` 预算限制（步数用尽会兜底闭引号）；只覆盖扁平全字符串形状；数组/混合/嵌套形状的长度约束仍拒绝。

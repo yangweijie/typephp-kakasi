@@ -1214,3 +1214,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **方法条**：拒绝类改动必须同时验证"受支持用法不被误伤"；**扫描范围本身是要断言的性质**（误伤面在同一请求的另一份 schema）。
 - **支持表**已写进 findings.md F398（每行有门或活体证据）。
 - **梯**：**172/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.510×**、哨兵 **0**。
+
+
+## ▶ 状态（F399，2026-11-06 20:30）——`minLength`/`maxLength` **真正支持**（扁平全字符串），按字符过滤候选 token
+- **实现**：bounds 检测器 + 生成器按**剩余字符预算**过滤候选；四个调用点接入；拒绝只在扁平全字符串形状放行。
+- **第一版 bug**：多字符 token 越过 max（门抓住）⇒ 改为按 token 字符长度过滤；`maxonly len2=1`。
+- **门更新**：`SCHEMA-KEYWORDS` 旧期望被新行为证伪 ⇒ `flat_maxLength=[]` + 新增 `mixed_maxLength=[maxLength]`；新门 `SCHEMA-LEN` 检查**输出长度**。
+- **活体**：3..6 → `Hello`(5)；max2 → `A`(1) ⇒ PASS。
+- **过程问题**：残留进程锁 exe（LNK1104）；探针正则只匹配小写导致误判"没数据"。
+- **梯**：**173/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.545×**、哨兵 **0**。

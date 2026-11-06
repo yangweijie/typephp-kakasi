@@ -590,7 +590,7 @@ function api_string_value_nested(string $ids, string $outer, string $inner, stri
 // quote, emit charset tokens until the closing quote, then force the separator for the next key
 // (or the final brace). Every forced piece is a literal, so the object stays well-formed even if
 // a value hits the step budget and must be closed by the grammar.
-function api_string_value_multi(string $ids, array $props, string $charset, int $maxSteps, int $useCache = 1): string
+function api_string_value_multi(string $ids, array $props, string $charset, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     if (count($props) == 0) {
         return "";
@@ -619,8 +619,48 @@ function api_string_value_multi(string $ids, array $props, string $charset, int 
             $s = $s . "," . $sep;
         }
         $closed = 0;
+        // F399: length bounds are enforced by restricting what each step may choose - below the
+        // minimum the closing quote is not offered, at the maximum nothing else is. Characters are
+        // counted rather than steps, because one token can carry several.
+        $len = 0;
+        $bMin = 0;
+        $bMax = 0;
+        if ($bounds != "") {
+            $bp = explode(",", $bounds);
+            if ($pi < count($bp)) {
+                $bv = explode(":", $bp[$pi]);
+                if (count($bv) == 2) {
+                    $bMin = (int) $bv[0];
+                    $bMax = (int) $bv[1];
+                }
+            }
+        }
         for ($d = 0; $d < $maxSteps; $d++) {
-            $nx = model_session_next_allowed(0, $stepIds);
+            $allow = $stepIds;
+            if ($bMax > 0) {
+                // F399: a single token can carry several characters, so "stop at the max" has to
+                // filter the offered tokens by how many characters they would add - the first
+                // version only checked the count before the step and let one token overshoot.
+                $remain = $bMax - $len;
+                if ($remain <= 0) {
+                    $allow = $quoteIds;
+                } else {
+                    $fit = "";
+                    foreach (explode(",", $charsetIds) as $cid) {
+                        $tl = strlen(str_replace("Ġ", " ", gguf_token_str((int) $cid)));
+                        if ($tl > 0 && $tl <= $remain) {
+                            $fit = $fit . ($fit == "" ? "" : ",") . $cid;
+                        }
+                    }
+                    if ($len >= $bMin) {
+                        $fit = $fit . ($fit == "" ? "" : ",") . $quoteIds;
+                    }
+                    $allow = $fit == "" ? $quoteIds : $fit;
+                }
+            } else if ($len < $bMin) {
+                $allow = $charsetIds;
+            }
+            $nx = model_session_next_allowed(0, $allow);
             if ($nx < 0) {
                 break;
             }
@@ -629,6 +669,7 @@ function api_string_value_multi(string $ids, array $props, string $charset, int 
                 $closed = 1;
                 break;
             }
+            $len = $len + strlen(str_replace("Ġ", " ", gguf_token_str($nx)));
         }
         if ($closed == 0) {
             $cq = api_constrained_continue(["\""], 4);
@@ -5445,7 +5486,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $scProp = api_response_schema_string_props($body);
         if (count($scProp) > 0) {
             $scOut = api_string_value_multi($ids, $scProp,
-                api_schema_charset(), 16, 1);
+                api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
         } else {
             $scNestNum = api_response_schema_nested_number($body);
             if ($scNestNum != "") {
@@ -5910,6 +5951,68 @@ function api_schema_bound_value(string $body, string $key, int $from): string
     return substr($body, $start, $i - $start);
 }
 
+// F399: per-property string length bounds for a flat all-string object, in plan order, as
+// "min:max" pairs (0 = unconstrained on that side). Only this shape is honoured; other shapes keep
+// refusing the keywords, because their generators do not step strings the same way.
+function api_response_schema_string_bounds(string $body): string
+{
+    $props = api_response_schema_string_props($body);
+    if (count($props) == 0) {
+        return "";
+    }
+    $schema = api_json_object_after($body, "schema");
+    if ($schema == "") {
+        return "";
+    }
+    $out = "";
+    for ($i = 0; $i < count($props); $i++) {
+        $key = "\"" . $props[$i] . "\"";
+        $p = strpos($schema, $key);
+        $mn = 0;
+        $mx = 0;
+        if ($p !== false) {
+            $bo = strpos($schema, "{", $p);
+            $bc = $bo === false ? false : strpos($schema, "}", $bo);
+            if ($bo !== false && $bc !== false) {
+                $leaf = substr($schema, $bo, $bc - $bo + 1);
+                $mn = (int) api_schema_bound_value($leaf, "\"minLength\"", 0);
+                $mx = (int) api_schema_bound_value($leaf, "\"maxLength\"", 0);
+            }
+        }
+        $out = $out . ($i == 0 ? "" : ",") . $mn . ":" . $mx;
+    }
+    return $out;
+}
+
+// F399: is this schema a flat object whose leaves are all strings? That is the only shape whose
+// generator can honour minLength/maxLength, so it is the only one allowed past the refusal.
+function api_schema_flat_all_string(string $schema): int
+{
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        if (count($kv) != 2 || $kv[1] != "s") {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 // F398: which schema keywords does the decoder actually enforce? These five are not enforced at
 // all, so a request carrying them used to be answered with text that could violate the schema
 // while returning 200. They are refused with the keyword named, instead of silently ignored.
@@ -5918,9 +6021,15 @@ function api_schema_bound_value(string $body, string $key, int $from): string
 function api_schema_keywords_unsupported(string $body): string
 {
     foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties") as $kw) {
-        if (strpos($body, "\"" . $kw . "\"") !== false) {
-            return $kw;
+        if (strpos($body, "\"" . $kw . "\"") === false) {
+            continue;
         }
+        // F399: minLength/maxLength are honoured for a flat all-string object, whose stepper can
+        // restrict the closing quote; every other shape still refuses them rather than ignoring.
+        if (($kw == "minLength" || $kw == "maxLength") && api_schema_flat_all_string($body) == 1) {
+            continue;
+        }
+        return $kw;
     }
     // required: the generator emits EVERY declared property, so a schema that requires all of them
     // is satisfied by construction. Only a strict subset - optional properties the decoder cannot
@@ -6973,7 +7082,7 @@ Connection: close
                                     $scProp = api_response_schema_string_props($body);
                                     if (count($scProp) > 0) {
                                         $scOut = api_string_value_multi($ids, $scProp,
-                                            api_schema_charset(), 16, 1);
+                                            api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
                                     } else {
                                         // Nested number first (see the non-stream path).
                                         $scNestNum = api_response_schema_nested_number($body);
@@ -8053,7 +8162,7 @@ function api_serve(int $port): void
                             $sProps = api_response_schema_string_props($body);
                             if (count($sProps) > 0) {
                                 $sJOut = api_string_value_multi($ids, $sProps, api_schema_charset(),
-                                    16, $prefixCache);
+                                    16, $prefixCache, api_response_schema_string_bounds($body));
                             } else {
                                 $sNestNum = api_response_schema_nested_number($body);
                                 if ($sNestNum != "") {
@@ -8426,7 +8535,7 @@ function api_serve(int $port): void
                         $strProps = api_response_schema_string_props($body);
                         if (count($strProps) > 0) {
                             $enumOut = api_string_value_multi($ids, $strProps, api_schema_charset(),
-                                16, $prefixCache);
+                                16, $prefixCache, api_response_schema_string_bounds($body));
                             $jsonMode = 1;
                         } else {
                             // Nested number first: its inner property would otherwise match the
@@ -12046,22 +12155,76 @@ function main(): void
     // generator emitting every declared property, so refusing it would reject working requests.
     // Both JSON spellings are covered, because a compact-only fixture hid a whitespace bug in F397.
     $kwA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"minItems":1}');
+    // F399: maxLength on a flat all-string object is now HONOURED, so it is no longer a refusal;
+    // the same keyword on a mixed shape still is, because that stepper cannot enforce it.
     $kwB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5}}}');
+    $kwI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5},"b":{"type":"integer"}}}');
     $kwC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":false}');
     $kwD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","b"]}');
     $kwE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"]}');
     $kwF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}}}');
     $kwG = api_schema_keywords_unsupported('{"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a", "b"]}');
     $kwH = api_schema_keywords_unsupported('{"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a"]}');
-    echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] maxLength=[" . $kwB . "] addProps=[" . $kwC
+    echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
+        . "] mixed_maxLength=[" . $kwI . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH . "]\n";
-    if ($kwA == "minItems" && $kwB == "maxLength" && $kwC == "additionalProperties"
+    if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == "additionalProperties"
         && $kwD == "" && $kwE == "required" && $kwF == ""
         && $kwG == "" && $kwH == "required") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required refused only as a subset)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";
+    }
+    // SCHEMA-LEN (F399): length bounds are now enforced for a flat all-string object, so the gate
+    // checks the EMITTED length, not just that the request was accepted - a bounds feature that
+    // only changes the status code would pass a weaker test. The third case keeps the refusal for
+    // shapes whose stepper cannot honour lengths, so the relaxation cannot leak to them.
+    $lnBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"len","schema":'
+        . '{"type":"object","properties":{"word":{"type":"string","minLength":3,"maxLength":6}}}}}}';
+    $lnProps = api_response_schema_string_props($lnBody);
+    $lnBounds = api_response_schema_string_bounds($lnBody);
+    $lnIds = tok_chat("user", "Say a word.") . "," . tok_chat_open("assistant");
+    $lnOut = api_string_value_multi($lnIds, $lnProps, "abcdefghijklmnopqrstuvwxyz", 12, 0, $lnBounds);
+    $lnParts = explode(",", $lnOut);
+    $lnBase = count(explode(",", $lnIds));
+    $lnText = "";
+    for ($i = $lnBase; $i < count($lnParts); $i++) {
+        $lnText = $lnText . gguf_token_str((int) $lnParts[$i]);
+    }
+    $lnText = str_replace("Ġ", " ", $lnText);
+    $lnVal = "";
+    $lnMatch = [];
+    if (preg_match('/"word":"([a-z]*)"/', $lnText, $lnMatch) == 1) {
+        $lnVal = $lnMatch[1];
+    }
+    $lnLen = strlen($lnVal);
+    $lnBody2 = '{"response_format":{"type":"json_schema","json_schema":{"name":"len2","schema":'
+        . '{"type":"object","properties":{"word":{"type":"string","maxLength":2}}}}}}';
+    $lnProps2 = api_response_schema_string_props($lnBody2);
+    $lnBounds2 = api_response_schema_string_bounds($lnBody2);
+    $lnOut2 = api_string_value_multi($lnIds, $lnProps2, "abcdefghijklmnopqrstuvwxyz", 12, 0, $lnBounds2);
+    $lnParts2 = explode(",", $lnOut2);
+    $lnText2 = "";
+    for ($i = $lnBase; $i < count($lnParts2); $i++) {
+        $lnText2 = $lnText2 . gguf_token_str((int) $lnParts2[$i]);
+    }
+    $lnText2 = str_replace("Ġ", " ", $lnText2);
+    $lnVal2 = "";
+    $lnMatch2 = [];
+    if (preg_match('/"word":"([a-z]*)"/', $lnText2, $lnMatch2) == 1) {
+        $lnVal2 = $lnMatch2[1];
+    }
+    $lnLen2 = strlen($lnVal2);
+    $lnMixed = api_schema_keywords_unsupported('{"type":"object","properties":'
+        . '{"a":{"type":"string","minLength":3},"b":{"type":"integer"}}}');
+    echo "SCHEMA-LEN bounds=[" . $lnBounds . "] len=" . $lnLen . " maxonly=[" . $lnBounds2
+        . "] len2=" . $lnLen2 . " mixed_refusal=[" . $lnMixed . "]\n";
+    if ($lnBounds == "3:6" && $lnLen >= 3 && $lnLen <= 6 && $lnOut != ""
+        && $lnBounds2 == "0:2" && $lnLen2 <= 2 && $lnOut2 != "" && $lnMixed == "minLength") {
+        echo "SCHEMA-LEN: PASS (emitted lengths inside bounds; other shapes still refused)\n";
+    } else {
+        echo "SCHEMA-LEN: FAIL\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes

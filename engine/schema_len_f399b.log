@@ -1,0 +1,3 @@
+min3max6  status=200 len=5 in[3,6]=True text={"word":"Hello"}
+max2      status=200 len=1 in[0,2]=True text={"word":"A"}
+VERDICT: PASS - served lengths inside bounds

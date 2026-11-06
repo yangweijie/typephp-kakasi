@@ -1,0 +1,2 @@
+min3max6  status=200 len=-1 in[3,6]=False text={"word":"Hello"}
+max2      status=200 len=-1 in[0,2]=False text={"word":"A"}

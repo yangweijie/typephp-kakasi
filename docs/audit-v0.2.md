@@ -656,3 +656,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 回归（已修） | 扫全 body ⇒ tool required 误拒 ⇒ **SMOKE 115 → 62**；限定响应 schema 后 **115/0** | `engine/gate_f398.log` vs `engine/gate_f398b.log` |
 | 支持表 | 见 findings.md F398（逐行有门/活体证据） | `findings.md` |
 | 梯 | 自检 **172/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.510×**、哨兵 **0** | `engine/run_f398b.log`、`engine/gate_f398b.log` |
+
+### F399（2026-11-06 20:30）——minLength/maxLength 真正支持（扁平全字符串）；按字符预算过滤
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 新门（检查输出长度） | `bounds=[3:6] len=5`、`maxonly=[0:2] len2=1`、`mixed_refusal=[minLength]` | `engine/run_f399c.log` |
+| 关键字门更新 | `flat_maxLength=[]`（支持）、`mixed_maxLength=[maxLength]`（仍拒） | 同上 |
+| 活体双向 | 3..6 → **200 `Hello`(5)**；max2 → **200 `A`(1)** ⇒ PASS | `engine/schema_len_f399b.log` |
+| 第一版 bug（已修） | 多字符 token 越过 max（len2=5）⇒ 按字符过滤后 len2=1 | `engine/run_f399.log` vs `run_f399c.log` |
+| 梯 | 自检 **173/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.545×**、哨兵 **0** | `engine/run_f399c.log`、`engine/gate_f399c.log` |
