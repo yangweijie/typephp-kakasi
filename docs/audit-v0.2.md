@@ -420,3 +420,15 @@ scripts\run-kakasi.bat            rem 只跑（需二进制已构建）
 | 累计（同一探针口径） | 每 token **47.6 → 25.8 → 22.9 ms（2.08×）**；首 token **1.2 s → 0.14 s** | F364/F372/F374 三批 split JSON |
 | 梯 | 自检 **163/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.542×**、哨兵 **0** | `engine/run_f374.log`、`engine/gate_f374.log` |
 | 未闭合 | 首请求仍比后续贵 ~55 ms；**CPU 未测**（"活跃期不忙等"是结构推断）；N 槽并发的 2.96× 仍未落到服务面 | 见 `findings.md` F374「边界」 |
+
+### F375（2026-11-06 03:11）——服务面并发可配：**N=4 → 85.56 tok/s、scaling 2.069×**；缺陷由 F368 的横幅抓出
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 并发数确实生效（形状） | `PAR slots=4`；`STEP_SLOTS: A B C D`；`STEP_COUNTS: ... 60 C 60 D` | `engine/par_slots_f375b4.log` |
+| 四路并发的服务面吞吐 | concurrent **244 chunks / errors=0 / 85.56 tok/s**；scaling **2.069x** | `engine/par_slots_f375b4.log`、`engine/par_slots_f375b4_s4.log` |
+| 两路默认未被改写（控制） | `PAR slots=2`；122 chunks / errors=0 / 62.75 tok/s / **1.539x** | `engine/par_slots_f375b2.log`、`engine/par_slots_f375b2_s2.log` |
+| **use-before-assign 缺陷的发现方式** | 首轮 N=4 报 `PAR slots=2` **且 errors=2 且 chunks 与两路相同（122）** | `engine/par_slots_f375q.log`（缺陷版本的原样记录，故意保留） |
+| 修正 | `$nslots` 的决定移到 banner 与 `model_batch_start_n` **之前** | `engine/main.php`（`api_serve_par` 开头） |
+| 探针自身缺陷 | awk 取字段 2 打印的是字面量 `STEP`；改为字段 3 | `scripts/par_slots_run.sh` |
+| 两路梯 | 自检 **163/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par **0** fairness **0**；哨兵 **0** | `engine/run_f375b.log`、`engine/gate_f375b.log` |
+| **验收未覆盖** | ②逐流内容对照未测；③公平判据仍是两路 ⇒ 不声称"N 路公平" | 本节 + `engine/tests/fairness_test.py`（未改） |

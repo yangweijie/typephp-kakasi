@@ -12,5 +12,6 @@ rem Serve flags are read at startup: a leftover serve.on turns this self-test in
 rem server that never exits (observed once as a 9 minute run full of accept warnings).
 if exist serve.on del serve.on
 if exist serve.par.on del serve.par.on
+if exist serve.par4.on del serve.par4.on
 build\kakasi_engine_sycl.exe > %1 2>&1
 echo ==RUN_EXIT=%ERRORLEVEL%== >> %1

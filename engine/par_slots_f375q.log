@@ -1,0 +1,10 @@
+BANNER: ATTN_MODE 2 PAR slots=2 
+THRU_EXIT=0 streams=4 slots=4
+THROUGHPUT port=8001 tokens=60 streams=4 spec=off temp=0.9
+  serial     : chunks=61 wall=1.50s rate=40.79 tok/s 
+  concurrent : chunks=122 wall=1.95s rate=62.68 tok/s errors=2
+  scaling    : 1.537x (1.000 = no parallel gain, 4.000 = perfect)
+THROUGHPUT: FAIL one=61 many=122 errs=2
+STEP_SLOTS: ACCEPT START STEP 
+SENTINELS_LEFT=0
+PAR_SLOTS_DONE tag=f375q slots=4 streams=4

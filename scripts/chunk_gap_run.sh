@@ -17,7 +17,7 @@ export PATH="/c/Program Files (x86)/Intel/oneAPI/compiler/latest/bin:/c/Program 
 
 powershell -NoProfile -Command 'Get-Process kakasi_engine_sycl -ErrorAction SilentlyContinue | Stop-Process -Force' >/dev/null 2>&1
 sleep 2
-rm -f "$E/serve.on" "$E/serve.par.on"
+rm -f "$E/serve.on" "$E/serve.par.on" "$E/serve.par4.on"
 printf 'on' > "$E/serve.par.on"
 ( cd "$E" && exec ./build/kakasi_engine_sycl.exe ) > "$E/serve_$TAG.log" 2>&1 &
 

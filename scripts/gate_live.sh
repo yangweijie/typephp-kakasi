@@ -32,7 +32,7 @@ wait_health() { # $1=port $2=max polls
 
 stop_all() {
   kill_engine
-  rm -f "$E/serve.on" "$E/serve.par.on"
+  rm -f "$E/serve.on" "$E/serve.par.on" "$E/serve.par4.on"
 }
 
 # ---------- 8000: single-slot API ----------

@@ -6378,40 +6378,46 @@ function api_serve_par(int $port): void
     // F368: say which attention path this process will serve with. The F366 lesson is that a
     // switch that never reached the code leaves both sides of an A/B identical and the log silent.
     echo "ATTN_MODE " . model_attn_mode() . "\n";
+    // F375: the concurrency is decided here, BEFORE the banner that reports it and before the
+    // region allocation that uses it. Both of those read $nslots, and in the first version of this
+    // rewrite they ran above the assignment - so the sentinel had no effect and the log printed an
+    // undefined value while four streams still landed on two slots. Order is part of the fix.
+    // Default stays 2 so the existing parity and fairness gates measure exactly what they measured
+    // before; serve.par4.on asks for four regions and four slots.
+    $nslots = 2;
+    if (file_exists("serve.par4.on")) {
+        $nslots = 4;
+    }
     echo "API_LISTEN " . $port . " (parallel: streaming text only)\n";
+    // F375: the slot count has to be visible in the log, not inferred from behaviour -
+    // F366 showed a setting that never reached the code leaves every measurement silent.
+    echo "PAR slots=" . $nslots . "\n";
     echo "PAR loop start\n";
     // F359: the two batch regions are allocated once, each holding `cap` KV rows. A prompt plus
     // the tokens it may generate has to fit in one region; requests that do not fit are refused
     // instead of overwriting the other conversation's rows.
     $cap = 4096;
-    if (model_batch_start(0, $cap) != 0) {
+    if (model_batch_start_n(0, $cap, $nslots) != 0) {
         echo "PAR_BATCH_FAIL\n";
         return;
     }
-    $onA = 0;
-    $onB = 0;
-    $kA = 1;
-    $kB = 1;
-    $mxA = 0;
-    $mxB = 0;
-    $teA = 0.0;
-    $teB = 0.0;
-    $tpA = 0.0;
-    $tpB = 0.0;
-    $sdA = 0;
-    $sdB = 0;
-    $bgA = 0;
-    $bgB = 0;
-    $t0A = 0.0;
-    $t0B = 0.0;
-    $rsA = 0;
-    $rsB = 0;
-    $snA = 0;
-    $snB = 0;
-    $stopA = "";
-    $stopB = "";
-    $holdA = "";
-    $holdB = "";
+    // $socks holds the listener as a placeholder so the array stays one homogeneous type - a
+    // socket in it is only ever used while that slot is occupied.
+    $slotTag = explode(",", "A,B,C,D");
+    $on = [0, 0, 0, 0];
+    $skind = [1, 1, 1, 1];
+    $smx = [0, 0, 0, 0];
+    $ste = [0.0, 0.0, 0.0, 0.0];
+    $stp = [0.0, 0.0, 0.0, 0.0];
+    $ssd = [0, 0, 0, 0];
+    $sbg = [0, 0, 0, 0];
+    $st0 = [0.0, 0.0, 0.0, 0.0];
+    $srs = [0, 0, 0, 0];
+    $ssn = [0, 0, 0, 0];
+    $sstop = ["", "", "", ""];
+    $shold = ["", "", "", ""];
+    $socks = [$srv, $srv, $srv, $srv];
+    $toks = [-1, -1, -1, -1];
     while (true) {
         // F370: the three stamps below split one served iteration into "before the forward pass"
         // (accept, select, request and slot bookkeeping), "the forward pass itself as the host sees
@@ -6431,7 +6437,13 @@ function api_serve_par(int $port): void
         // stepping the pass itself paces the loop, so poll instead of sleeping; when every slot is
         // idle the timeout stays at 1 ms, so an idle server does not turn into a busy wait.
         // The `sel` field in the trace is what proves which of the two happened.
-        $tmo = (($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0)) ? 0 : 1000;
+        $need = 0;   // F375: does any live slot still need a step this iteration?
+        for ($s = 0; $s < $nslots; $s++) {
+            if ($on[$s] == 1 && $srs[$s] == 0) {
+                $need = 1;
+            }
+        }
+        $tmo = $need == 1 ? 0 : 1000;
         $sel = stream_select($rd, $wr, $ex, 0, $tmo);
         $c = ($sel !== false && $sel > 0) ? stream_socket_accept($srv, 0) : $srv;
         $tSel1 = microtime(true);   // F371: end of select+accept, the first half of `pre`
@@ -6517,12 +6529,19 @@ Connection: close
                 $schemaCands = api_response_schema_candidates($body);
                 $slot = -1;
                 if ($bad == 0) {
-                    $slot = $onA == 0 ? 0 : ($onB == 0 ? 1 : -1);
+                    // F375: the first free slot, whatever the count. Previously hard-coded to
+                    // "A then B", which is the same rule for two slots.
+                    for ($s = 0; $s < $nslots; $s++) {
+                        if ($on[$s] == 0 && $slot < 0) {
+                            $slot = $s;
+                        }
+                    }
                 }
                 if ($bad == 1 || $slot < 0) {
                     $payload = $bad == 1
                         ? "{\"error\":{\"message\":\"parallel mode: streaming text only (no tools/json/n; one stop sequence max)\",\"type\":\"invalid_request_error\"}}"
-                        : "{\"error\":{\"message\":\"parallel mode: two streams at a time\",\"type\":\"server_error\"}}";
+                        : "{\"error\":{\"message\":\"parallel mode: " . $nslots
+                          . " streams at a time\",\"type\":\"server_error\"}}";
                     $code = $bad == 1 ? "400 Bad Request" : "503 Service Unavailable";
                     fwrite($c, "HTTP/1.1 " . $code . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
@@ -6560,33 +6579,19 @@ Connection: close
                             fclose($c);
                         } else {
                             api_par_trace("START slot=" . $slot . " kind=" . $kind . " mx=" . $mxv);
-                            if ($slot == 0) {
-                                $cA = $c;
-                                $onA = 1;
-                                $kA = $kind;
-                                $mxA = $mxv;
-                                $teA = $tev;
-                                $tpA = $tpv;
-                                $bgA = $bgv;
-                                $t0A = microtime(true);
-                                $rsA = 0;
-                                $snA = 0;
-                                $stopA = $stopV;
-                                $holdA = "";
-                            } else {
-                                $cB = $c;
-                                $onB = 1;
-                                $kB = $kind;
-                                $mxB = $mxv;
-                                $teB = $tev;
-                                $tpB = $tpv;
-                                $bgB = $bgv;
-                                $t0B = microtime(true);
-                                $rsB = 0;
-                                $snB = 0;
-                                $stopB = $stopV;
-                                $holdB = "";
-                            }
+                            $socks[$slot] = $c;
+                            $on[$slot] = 1;
+                            $skind[$slot] = $kind;
+                            $smx[$slot] = $mxv;
+                            $ste[$slot] = $tev;
+                            $stp[$slot] = $tpv;
+                            $ssd[$slot] = $sdv;
+                            $sbg[$slot] = $bgv;
+                            $st0[$slot] = microtime(true);
+                            $srs[$slot] = 0;
+                            $ssn[$slot] = 0;
+                            $sstop[$slot] = $stopV;
+                            $shold[$slot] = "";
                             $modelId = api_esc(gguf_meta_str("general.architecture"));
                             fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
                                      . "Cache-Control: no-cache\r\nConnection: close\r\n\r\n");
@@ -6806,12 +6811,11 @@ Connection: close
                                 echo "SESSION par schema slot=" . $slot . " bytes=" . strlen($scText) . "\n";
                                 // The constrained pass answered this request on the single-session
                                 // path, so the batch slot it was given is free again.
+                                // F375: the constrained answer frees the slot it was handed,
+                                // and it never occupies a slot across iterations - with the
+                                // slots in arrays this is one assignment, not two branches.
                                 model_batch_stop($slot);
-                                if ($slot == 0) {
-                                    $onA = 0;
-                                } else {
-                                    $onB = 0;
-                                }
+                                $on[$slot] = 0;
                                 fclose($c);
                             }
                         }
@@ -6824,208 +6828,159 @@ Connection: close
         // token in the SAME pass, so two concurrent streams cost one forward pass instead of two.
         // The stop conditions are decided BEFORE the pass, so a conversation that is already
         // finished is not stepped again.
-        $tokA = -1;
-        $tokB = -1;
-        if ($onA == 1) {
-            if ($bgA > 0 && (microtime(true) - $t0A) * 1000.0 > $bgA) {
-                $rsA = 3;
-                model_batch_stop(0);
-            } else if ($snA >= $mxA) {
-                $rsA = 2;
-                model_batch_stop(0);
+        for ($s = 0; $s < $nslots; $s++) {
+            $toks[$s] = -1;
+        }
+        // F375: one loop per rule instead of two copies of it. A slot that has hit its timeout or
+        // its max_tokens is stopped BEFORE the pass so it is not stepped again - the same order the
+        // two-slot code used, where A was checked before B.
+        for ($s = 0; $s < $nslots; $s++) {
+            if ($on[$s] == 1) {
+                if ($sbg[$s] > 0 && (microtime(true) - $st0[$s]) * 1000.0 > $sbg[$s]) {
+                    $srs[$s] = 3;
+                    model_batch_stop($s);
+                } else if ($ssn[$s] >= $smx[$s]) {
+                    $srs[$s] = 2;
+                    model_batch_stop($s);
+                }
             }
         }
-        if ($onB == 1) {
-            if ($bgB > 0 && (microtime(true) - $t0B) * 1000.0 > $bgB) {
-                $rsB = 3;
-                model_batch_stop(1);
-            } else if ($snB >= $mxB) {
-                $rsB = 2;
-                model_batch_stop(1);
+        // Re-evaluated AFTER the stop checks above: the original code gated the pass on the current
+        // rs values, while the select timeout at the top of the iteration used the previous ones.
+        // Keeping those two moments separate is what preserves when a pass is skipped.
+        $needStep = 0;
+        for ($s = 0; $s < $nslots; $s++) {
+            if ($on[$s] == 1 && $srs[$s] == 0) {
+                $needStep = 1;
             }
         }
-        if (($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0)) {
+        if ($needStep == 1) {
             $tEng0 = microtime(true);
             $rows = model_batch_next(0);
             $tEng1 = microtime(true);
             if ($rows > 0) {
                 $tk = explode(",", model_batch_tokens());
-                $tokA = (int) $tk[0];
-                $tokB = (int) $tk[1];
+                for ($s = 0; $s < $nslots; $s++) {
+                    $toks[$s] = (int) $tk[$s];
+                }
             }
         }
-        if ($onA == 1) {
-            if ($rsA == 0) {
-                $t = $tokA;
-                if ($t < 0) {
-                    $rsA = 1;
-                } else {
-                    $piece = api_text("" . $t);
-                    $emitA = $piece;
-                    if ($stopA != "") {
-                        $holdA = $holdA . $piece;
-                        $cutA = strpos($holdA, $stopA);
-                        if ($cutA !== false) {
-                            $emitA = substr($holdA, 0, $cutA);
-                            $rsA = 5;
-                        } else {
-                            $keepA = strlen($stopA) - 1;
-                            $emitA = strlen($holdA) > $keepA ? substr($holdA, 0, strlen($holdA) - $keepA) : "";
-                            $holdA = $keepA > 0 ? substr($holdA, strlen($holdA) - $keepA) : "";
-                        }
-                    }
-                    $w = 1;
-                    if ($emitA != "") {
-                        if ($kA == 1) {
-                            $w = fwrite($cA, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                           . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                           . "\"delta\":{\"content\":\"" . api_esc($emitA) . "\"},"
-                                           . "\"finish_reason\":null}]}\n\n");
-                        } else {
-                            $w = fwrite($cA, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-                                           . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
-                                           . api_esc($emitA) . "\"}}\n\n");
-                        }
-                    }
-                    if ($w < 1) {
-                        $rsA = 4;
-                    } else if ($emitA != "") {
-                        $snA++;
-                        api_par_trace("STEP A n=" . $snA . " s1=" . model_stage_at(1)
-                            . " sp=" . model_attn_split_p()
-                            . " pre=" . (($tEng0 - $tIter0) * 1000.0)
-                            . " eng=" . (($tEng1 - $tEng0) * 1000.0)
-                            . " post=" . ((microtime(true) - $tEng1) * 1000.0)
-                            . " sel=" . (($tSel1 - $tIter0) * 1000.0)
-                            . " mid=" . (($tPre1 - $tSel1) * 1000.0)
-                            . " tail=" . (($tEng0 - $tPre1) * 1000.0));
-                    }
-                }
-            }
-            if ($rsA != 0) {
-                if ($rsA != 5 && $holdA != "") {
-                    if ($kA == 1) {
-                        fwrite($cA, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                  . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                  . "\"delta\":{\"content\":\"" . api_esc($holdA) . "\"},"
-                                  . "\"finish_reason\":null}]}\n\n");
+        // F375: ONE emission body for every slot - this is the block that used to exist twice, once
+        // per conversation. The loop order IS the write order, so slot 0 is served before slot 1
+        // exactly as A was written before B; that ordering is what fairness_test.py observes, and
+        // saying so here makes it a property of the loop rather than an accident of two copies that
+        // could drift apart.
+        for ($s = 0; $s < $nslots; $s++) {
+            if ($on[$s] == 1) {
+                if ($srs[$s] == 0) {
+                    $t = $toks[$s];
+                    if ($t < 0) {
+                        $srs[$s] = 1;
                     } else {
-                        fwrite($cA, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-                                  . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
-                                  . api_esc($holdA) . "\"}}\n\n");
+                        $piece = api_text("" . $t);
+                        $emit = $piece;
+                        if ($sstop[$s] != "") {
+                            $shold[$s] = $shold[$s] . $piece;
+                            $cut = strpos($shold[$s], $sstop[$s]);
+                            if ($cut !== false) {
+                                $emit = substr($shold[$s], 0, $cut);
+                                $srs[$s] = 5;
+                            } else {
+                                $keep = strlen($sstop[$s]) - 1;
+                                $emit = strlen($shold[$s]) > $keep
+                                    ? substr($shold[$s], 0, strlen($shold[$s]) - $keep) : "";
+                                $shold[$s] = $keep > 0
+                                    ? substr($shold[$s], strlen($shold[$s]) - $keep) : "";
+                            }
+                        }
+                        $w = 1;
+                        if ($emit != "") {
+                            if ($skind[$s] == 1) {
+                                $w = fwrite($socks[$s],
+                                           "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                           . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                           . "\"delta\":{\"content\":\"" . api_esc($emit) . "\"},"
+                                           . "\"finish_reason\":null}]}\n\n");
+                            } else {
+                                $w = fwrite($socks[$s],
+                                           "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
+                                           . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
+                                           . api_esc($emit) . "\"}}\n\n");
+                            }
+                        }
+                        if ($w < 1) {
+                            $srs[$s] = 4;
+                        } else if ($emit != "") {
+                            $ssn[$s] = $ssn[$s] + 1;
+                            api_par_trace("STEP " . $slotTag[$s] . " n=" . $ssn[$s]
+                                . " s1=" . model_stage_at(1)
+                                . " sp=" . model_attn_split_p()
+                                . " pre=" . (($tEng0 - $tIter0) * 1000.0)
+                                . " eng=" . (($tEng1 - $tEng0) * 1000.0)
+                                . " post=" . ((microtime(true) - $tEng1) * 1000.0)
+                                . " sel=" . (($tSel1 - $tIter0) * 1000.0)
+                                . " mid=" . (($tPre1 - $tSel1) * 1000.0)
+                                . " tail=" . (($tEng0 - $tPre1) * 1000.0));
+                        }
                     }
-                    $snA++;
                 }
-                if ($kA == 1) {
-                    $fin = ($rsA == 2 || $rsA == 3) ? "length" : "stop";
-                    fwrite($cA, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                if ($srs[$s] != 0) {
+                    if ($srs[$s] != 5 && $shold[$s] != "") {
+                        if ($skind[$s] == 1) {
+                            fwrite($socks[$s],
+                                  "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                  . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                  . "\"delta\":{\"content\":\"" . api_esc($shold[$s]) . "\"},"
+                                  . "\"finish_reason\":null}]}\n\n");
+                        } else {
+                            fwrite($socks[$s],
+                                  "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
+                                  . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
+                                  . api_esc($shold[$s]) . "\"}}\n\n");
+                        }
+                        $ssn[$s] = $ssn[$s] + 1;
+                    }
+                    if ($skind[$s] == 1) {
+                        $fin = ($srs[$s] == 2 || $srs[$s] == 3) ? "length" : "stop";
+                        fwrite($socks[$s],
+                              "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
                               . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
                               . "\"delta\":{},\"finish_reason\":\"" . $fin . "\"}]}\n\n");
-                    fwrite($cA, "data: [DONE]\n\n");
-                } else {
-                    $stopr = ($rsA == 5) ? "stop_sequence" : (($rsA == 2 || $rsA == 3) ? "max_tokens" : "end_turn");
-                    fwrite($cA, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n");
-                    fwrite($cA, "event: message_delta\ndata: {\"type\":\"message_delta\","
-                              . "\"delta\":{\"stop_reason\":\"" . $stopr . "\"},\"usage\":{\"output_tokens\":"
-                              . $snA . "}}\n\n");
-                    fwrite($cA, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
-                }
-                $why = $rsA == 1 ? "eos" : ($rsA == 2 ? "max" : ($rsA == 3 ? "timeout" : ($rsA == 5 ? "stop" : "client-gone")));
-                echo "SESSION par slot=A tokens=" . $snA . " reason=" . $why . "\n";
-                model_batch_stop(0);
-                fclose($cA);
-                $onA = 0;
-            }
-        }
-        if ($onB == 1) {
-            if ($rsB == 0) {
-                $t = $tokB;
-                if ($t < 0) {
-                    $rsB = 1;
-                } else {
-                    $piece = api_text("" . $t);
-                    $emitB = $piece;
-                    if ($stopB != "") {
-                        $holdB = $holdB . $piece;
-                        $cutB = strpos($holdB, $stopB);
-                        if ($cutB !== false) {
-                            $emitB = substr($holdB, 0, $cutB);
-                            $rsB = 5;
-                        } else {
-                            $keepB = strlen($stopB) - 1;
-                            $emitB = strlen($holdB) > $keepB ? substr($holdB, 0, strlen($holdB) - $keepB) : "";
-                            $holdB = $keepB > 0 ? substr($holdB, strlen($holdB) - $keepB) : "";
-                        }
-                    }
-                    $w = 1;
-                    if ($emitB != "") {
-                        if ($kB == 1) {
-                            $w = fwrite($cB, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                           . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                           . "\"delta\":{\"content\":\"" . api_esc($emitB) . "\"},"
-                                           . "\"finish_reason\":null}]}\n\n");
-                        } else {
-                            $w = fwrite($cB, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-                                           . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
-                                           . api_esc($emitB) . "\"}}\n\n");
-                        }
-                    }
-                    if ($w < 1) {
-                        $rsB = 4;
-                    } else if ($emitB != "") {
-                        $snB++;
-                        api_par_trace("STEP B n=" . $snB . " s1=" . model_stage_at(1)
-                            . " sp=" . model_attn_split_p()
-                            . " pre=" . (($tEng0 - $tIter0) * 1000.0)
-                            . " eng=" . (($tEng1 - $tEng0) * 1000.0)
-                            . " post=" . ((microtime(true) - $tEng1) * 1000.0)
-                            . " sel=" . (($tSel1 - $tIter0) * 1000.0)
-                            . " mid=" . (($tPre1 - $tSel1) * 1000.0)
-                            . " tail=" . (($tEng0 - $tPre1) * 1000.0));
-                    }
-                }
-            }
-            if ($rsB != 0) {
-                if ($rsB != 5 && $holdB != "") {
-                    if ($kB == 1) {
-                        fwrite($cB, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                                  . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                                  . "\"delta\":{\"content\":\"" . api_esc($holdB) . "\"},"
-                                  . "\"finish_reason\":null}]}\n\n");
+                        fwrite($socks[$s], "data: [DONE]\n\n");
                     } else {
-                        fwrite($cB, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-                                  . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
-                                  . api_esc($holdB) . "\"}}\n\n");
-                    }
-                    $snB++;
-                }
-                if ($kB == 1) {
-                    $fin = ($rsB == 2 || $rsB == 3) ? "length" : "stop";
-                    fwrite($cB, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
-                              . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
-                              . "\"delta\":{},\"finish_reason\":\"" . $fin . "\"}]}\n\n");
-                    fwrite($cB, "data: [DONE]\n\n");
-                } else {
-                    $stopr = ($rsB == 5) ? "stop_sequence" : (($rsB == 2 || $rsB == 3) ? "max_tokens" : "end_turn");
-                    fwrite($cB, "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n");
-                    fwrite($cB, "event: message_delta\ndata: {\"type\":\"message_delta\","
+                        $stopr = ($srs[$s] == 5) ? "stop_sequence"
+                            : (($srs[$s] == 2 || $srs[$s] == 3) ? "max_tokens" : "end_turn");
+                        fwrite($socks[$s],
+                              "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n");
+                        fwrite($socks[$s],
+                              "event: message_delta\ndata: {\"type\":\"message_delta\","
                               . "\"delta\":{\"stop_reason\":\"" . $stopr . "\"},\"usage\":{\"output_tokens\":"
-                              . $snB . "}}\n\n");
-                    fwrite($cB, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+                              . $ssn[$s] . "}}\n\n");
+                        fwrite($socks[$s], "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+                    }
+                    $why = $srs[$s] == 1 ? "eos"
+                        : ($srs[$s] == 2 ? "max"
+                        : ($srs[$s] == 3 ? "timeout" : ($srs[$s] == 5 ? "stop" : "client-gone")));
+                    echo "SESSION par slot=" . $slotTag[$s] . " tokens=" . $ssn[$s]
+                        . " reason=" . $why . "\n";
+                    model_batch_stop($s);
+                    fclose($socks[$s]);
+                    $on[$s] = 0;
                 }
-                $why = $rsB == 1 ? "eos" : ($rsB == 2 ? "max" : ($rsB == 3 ? "timeout" : ($rsB == 5 ? "stop" : "client-gone")));
-                echo "SESSION par slot=B tokens=" . $snB . " reason=" . $why . "\n";
-                model_batch_stop(1);
-                fclose($cB);
-                $onB = 0;
             }
         }
-        // F374: this yield paced the loop back when the select above slept a whole timeout. With
-        // polling in place (F372) it is now the gap the coverage check kept reporting missing -
-        // engine/chunk_gap_split_f373 measured cadence 25.8 against pre+eng+post of 23.4, and 2 ms
-        // of that is exactly this call. While a slot needs stepping the forward pass is the pacer,
-        // so do not add a wait on top of it; keep the yield for the idle case it was written for.
-        if (!(($onA == 1 && $rsA == 0) || ($onB == 1 && $rsB == 0))) {
+        // F375 faithfulness note: $need was computed at the TOP of this iteration (that is what the
+        // select timeout has to use), but the yield here was evaluated on the END-of-iteration
+        // state in the two-slot code - after a slot may have finished or a new request arrived.
+        // Reusing $need here would have shifted the 2 ms by one iteration in exactly those two
+        // cases, so re-evaluate now rather than inherit the earlier moment.
+        $needNow = 0;
+        for ($s = 0; $s < $nslots; $s++) {
+            if ($on[$s] == 1 && $srs[$s] == 0) {
+                $needNow = 1;
+            }
+        }
+        if ($needNow == 0) {
             usleep(2000);
         }
     }
