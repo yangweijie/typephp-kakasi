@@ -73,17 +73,39 @@ cases = [
      lambda code, txt: (code == 200 and val_of(txt, "code") is not None
                         and re.match(r"^[A-Z]{3}$", val_of(txt, "code")) is not None
                         and isinstance(val_of(txt, "city"), str))),
-    ("range_quant_refuse", "Give the SKU.",
+    # F409 flipped this one too: {4,6} is the LAST segment (nothing follows before $), so the
+    # range is served and the value honours it.
+    ("range_sku_served", "Give the SKU.",
      {"type": "object", "properties": {"sku": {"type": "string", "pattern": "^SKU-[0-9]{4,6}$"}}},
-     lambda code, txt: code == 400 and "pattern" in txt),
-    ("star_refuse", "Give the tag.",
+     lambda code, txt: code == 200 and val_of(txt, "sku") is not None
+     and re.match(r"^SKU-[0-9]{4,6}$", val_of(txt, "sku")) is not None),
+    # F409 flipped this one: the star on the LAST segment is served - the close is reachable from
+    # the first position, so the walk stays unambiguous.
+    ("star_served", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]+$"}}},
-     lambda code, txt: code == 400 and "pattern" in txt),
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[a-z]+$", val_of(txt, "tag")) is not None),
     ("unanchored_refuse", "Give the number.",
      {"type": "object", "properties": {"num": {"type": "string", "pattern": "[0-9]{3}"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
     ("negated_class_refuse", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[^a-z]{2}$"}}},
+     lambda code, txt: code == 400 and "pattern" in txt),
+    # F409: the {n,m} range and the plus on the LAST segment - the value length walks between the
+    # bounds; a quantifier beside a FOLLOWING segment still refuses (that walk needs a real NFA).
+    ("range_last_served", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^X[abc]{2,4}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^X[abc]{2,4}$", val_of(txt, "tag")) is not None),
+    ("plus_digits_served", "Give the number.",
+     {"type": "object", "properties": {"num": {"type": "string", "pattern": "^[0-9]+$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "num") is not None
+     and re.match(r"^[0-9]+$", val_of(txt, "num")) is not None),
+    ("nonlast_range_refuse", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]{2,4}[0-9]{3}$"}}},
+     lambda code, txt: code == 400 and "pattern" in txt),
+    ("nonlast_star_refuse", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]+[0-9]{2}$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
     ("literal_alt_regression", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string", "pattern": "^(Paris|London)$"}}},

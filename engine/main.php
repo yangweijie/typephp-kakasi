@@ -4681,22 +4681,70 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                     }
                     $s = $s . "," . $lp;
                 } else if ($tag == "c") {
-                    $xpos = strpos($seg, "x");
-                    if ($xpos === false || $xpos < 2) {
+                    // F404/F409: a counted class segment - "c<n>x<chars>" is exact, "c<min>-<max>x"
+                    // a range, "c<min>-x" unbounded (the * and + shorthands). The walk offers the
+                    // class characters until the minimum is reached, then the class characters AND
+                    // the closing quote together (the quote is a distinct token, so the walk stays
+                    // unambiguous) - but the walk never EMITS the quote itself: breaking without
+                    // it lets the tail's closing quote close the value, exactly like the exact
+                    // walk always has. The ids are pre-filtered to single characters, so each
+                    // step is exactly one character.
+                    $slen = strlen($seg);
+                    $p2 = 1;
+                    while ($p2 < $slen && $seg[$p2] >= "0" && $seg[$p2] <= "9") {
+                        $p2++;
+                    }
+                    if ($p2 == 1) {
                         return "";
                     }
-                    $cnt = (int) substr($seg, 1, $xpos - 1);
-                    $cids = api_pattern_class_ids(substr($seg, $xpos + 1));
-                    if ($cids == "" || $cnt < 1 || $cnt > 16) {
+                    $dmin = (int) substr($seg, 1, $p2 - 1);
+                    $dmax = $dmin;                      // no dash: exact
+                    if ($p2 < $slen && $seg[$p2] == "-") {
+                        $p2++;
+                        $ds = $p2;
+                        while ($p2 < $slen && $seg[$p2] >= "0" && $seg[$p2] <= "9") {
+                            $p2++;
+                        }
+                        // A dash with no digits spells the unbounded forms; a dash with digits is
+                        // the range's maximum.
+                        $dmax = $p2 > $ds ? (int) substr($seg, $ds, $p2 - $ds) : -1;
+                    }
+                    if ($p2 >= $slen || $seg[$p2] != "x") {
                         return "";
                     }
-                    for ($d = 0; $d < $cnt; $d++) {
-                        $pnx = model_session_next_allowed(0, $cids);
+                    $cids = api_pattern_class_ids(substr($seg, $p2 + 1));
+                    $qids = api_punct_ids("\"");
+                    if ($cids == "" || $qids == "" || $dmin < 0 || $dmin > 16) {
+                        return "";
+                    }
+                    if ($dmax >= 0 && $dmax < $dmin) {
+                        return "";
+                    }
+                    $budget = $dmax >= 0 ? $dmax : 16;
+                    $got = 0;
+                    $cdone = 0;
+                    for ($d = 0; $d <= $budget && $cdone == 0; $d++) {
+                        if ($got < $dmin) {
+                            $cAllow = $cids;
+                        } else if ($dmax >= 0 && $got >= $dmax) {
+                            $cdone = 1;                 // at the maximum: the value ends here
+                            break;
+                        } else {
+                            $cAllow = $cids . "," . $qids;
+                        }
+                        $pnx = model_session_next_allowed(0, $cAllow);
                         if ($pnx < 0) {
                             return "";
                         }
+                        if (strpos("," . $qids . ",", "," . $pnx . ",") !== false) {
+                            $cdone = 1;                 // the model chose to close: the tail emits it
+                            break;
+                        }
                         $s = $s . "," . $pnx;
+                        $got++;
                     }
+                    // The budget running out ends the value too - the tail's closing quote closes
+                    // it; emitting one here would put a stray second quote on the wire.
                 } else {
                     return "";
                 }
@@ -7234,12 +7282,15 @@ function api_pattern_class_chars(string $body): string
     return $out;
 }
 
-// F404: the anchored class/count pattern forms the flat mixed stepper can honour. The pattern must
-// be ^...$ anchored, and the core a concatenation of literal runs (JSON-safe text) and character
-// classes with an exact count - a bare class counts one, {n} counts n (1..16). No {n,m}, no * + ?,
-// no negation, no alternation beside a class, no escapes - those keep the explicit 400. Returns
-// the segment spec for the stepper ("l<text>~c<n>x<chars>") or "" when the pattern is a pure
-// literal (F282's alternation machinery owns those) or is not implemented.
+// F404/F409: the anchored class/count pattern forms the flat mixed stepper can honour. The pattern
+// must be ^...$ anchored, and the core a concatenation of literal runs (JSON-safe text) and
+// character classes with a quantifier - a bare class counts one, {n} counts exactly n (anywhere),
+// and F409 adds {n,m} ranges and the * + ? shorthands on the LAST segment only, where the closing
+// quote is a distinct token and the walk stays unambiguous; a range beside a following segment
+// would need a real NFA walk and keeps the explicit 400. No negation, no alternation beside a
+// class, no escapes. Returns the segment spec for the stepper ("l<text>~c<n>x<chars>" with the
+// range spelled "c<min>-<max>x<chars>", an absent max meaning unbounded) or "" when the pattern is
+// a pure literal (F282's alternation machinery owns those) or is not implemented.
 function api_schema_pattern_spec(string $pat): string
 {
     $n = strlen($pat);
@@ -7268,20 +7319,52 @@ function api_schema_pattern_spec(string $pat): string
                 return "";
             }
             $i = $close + 1;
-            $count = 1;
+            $qMin = 1;
+            $qMax = 1;
+            $qExact = 1;
             if ($i < $len && $core[$i] == "{") {
                 $brace = strpos($core, "}", $i);
                 if ($brace === false) {
                     return "";
                 }
                 $num = substr($core, $i + 1, $brace - $i - 1);
-                if (preg_match('/^[0-9]{1,2}$/', $num) != 1 || (int) $num < 1 || (int) $num > 16) {
+                $parts = explode(",", $num);
+                if (count($parts) > 2
+                    || preg_match('/^[0-9]{1,2}$/', $parts[0]) != 1
+                    || (int) $parts[0] < 1 || (int) $parts[0] > 16) {
                     return "";
                 }
-                $count = (int) $num;
+                $qMin = (int) $parts[0];
+                if (count($parts) == 2) {
+                    if (preg_match('/^[0-9]{1,2}$/', $parts[1]) != 1
+                        || (int) $parts[1] > 16 || (int) $parts[1] < $qMin) {
+                        return "";
+                    }
+                    $qMax = (int) $parts[1];
+                    $qExact = $qMax == $qMin ? 1 : 0;
+                }
                 $i = $brace + 1;
+            } else if ($i < $len && ($core[$i] == "+" || $core[$i] == "*" || $core[$i] == "?")) {
+                // A max of 0 spells the unbounded forms: + is "c1-", * is "c0-".
+                if ($core[$i] == "+") {
+                    $qMin = 1;
+                    $qMax = 0;
+                } else if ($core[$i] == "*") {
+                    $qMin = 0;
+                    $qMax = 0;
+                } else {
+                    $qMin = 0;
+                    $qMax = 1;
+                }
+                $qExact = 0;
+                $i++;
             }
-            $segs[] = "c" . $count . "x" . $chars;
+            // F409: a non-exact quantifier is honoured only when nothing follows - the closing
+            // quote is the one token that can end the segment, so the walk stays unambiguous.
+            if ($qExact == 0 && $i < $len) {
+                return "";
+            }
+            $segs[] = "c" . $qMin . ($qExact == 1 ? "" : "-" . ($qMax > 0 ? $qMax : "")) . "x" . $chars;
             $hasClass = 1;
         } else {
             if (strpos("[]{}", $ch) !== false) {
@@ -13364,21 +13447,40 @@ function main(): void
     // F404: the anchored class/count forms are now HONOURED, so they are no longer a refusal -
     // the quantifier range, the star, the unanchored class and the negated class all still are,
     // in the same gate, both directions.
+    // F409: {n,m} ranges and the * + ? shorthands are honoured on the LAST segment (the closing
+    // quote is a distinct token, so the walk stays unambiguous) - prH (star) and prK (last-segment
+    // range) moved from 1 to 0, while a range or star beside a FOLLOWING segment still refuses
+    // (that walk needs a real NFA), and the unanchored/negated forms keep their refusals.
     $prF = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}');
+    // F409 flipped prG too: `[0-9]{4,6}` is the LAST segment (nothing follows before $), so the
+    // range is served - the non-last range lives in prAP below.
     $prG = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^SKU-[0-9]{4,6}$"}}}}}');
     $prH = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+$"}}}}}');
     $prI = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"[0-9]{3}"}}}}}');
     $prJ = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^a-z]{2}$"}}}}}');
     $prK = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^X[abc]{2,4}$"}}}}}');
+    $prAO = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+[0-9]{2}$"}}}}}');
+    $prAP = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]{2,4}[0-9]{3}$"}}}}}');
+    // F409 bisect: the live request path hands the gate the BARE schema (spaced, with the type
+    // key) - if one of these returns 1 while prH returns 0, the difference is in the body shape,
+    // not the pattern.
+    $prAQ = api_schema_pattern_unsupported('{"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]+$"}}}');
+    $prAR = api_schema_pattern_unsupported('{"type":"object","properties":{"tag":{"type":"string","pattern":"^[a-z]+$"}}}');
+    $prAS = api_schema_pattern_unsupported('{"properties": {"tag": {"type": "string", "pattern": "^[a-z]+$"}}}');
+    // F409 flipped prC too: `^[A-Z][a-z]+$` is a literal run plus a LAST-segment star, which the
+    // walk now serves - the still-refused counterparts are the non-last quantifiers above.
     $prC = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"^[A-Z][a-z]+$"}}}}}');
     $prD = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"ab+c"}}}}}');
     $prE = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string"}}}}}');
     echo "SCHEMA-PAT-REJECT literal=" . $prA . " wrapped=" . $prB . " counted=["
-        . $prF . "] range=[ " . $prG . "] star=[ " . $prH . "] unanchored=[ " . $prI
-        . "] negated=[ " . $prJ . "] mixed_alt=[ " . $prK . "] class=" . $prC
-        . " quant=" . $prD . " none=" . $prE . "\n";
-    if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 1 && $prH == 1 && $prI == 1
-        && $prJ == 1 && $prK == 1 && $prC == 1 && $prD == 1 && $prE == 0) {
+        . $prF . "] lastrange=[" . $prG . "] star=[" . $prH . "] unanchored=[ " . $prI
+        . "] negated=[ " . $prJ . "] lastrange2=[" . $prK . "] star_nonlast=[ " . $prAO
+        . "] range_nonlast=[ " . $prAP . "] bare_spaced=[" . $prAQ . "] bare_compact=["
+        . $prAR . "] bare_notype=[" . $prAS . "] class=[" . $prC
+        . "] quant=" . $prD . " none=" . $prE . "\n";
+    if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 1
+        && $prJ == 1 && $prK == 0 && $prAO == 1 && $prAP == 1 && $prC == 0 && $prD == 1 && $prE == 0
+        && $prAQ == 0 && $prAR == 0 && $prAS == 0) {
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
     } else {
         echo "SCHEMA-PAT-REJECT: FAIL\n";
@@ -13391,7 +13493,14 @@ function main(): void
     $spA = api_schema_pattern_spec('^[A-Z]{3}$');
     $spB = api_schema_pattern_spec('^X[abc]{2}$');
     $spC = api_schema_pattern_spec('^Paris$');
-    $spD = api_schema_pattern_spec('^[a-z]{2,4}$');
+    // F409 repurposed this one: a range beside a FOLLOWING segment still yields no spec (the walk
+    // would need a real NFA); the served last-segment range lives in spE below.
+    $spD = api_schema_pattern_spec('^[a-z]{2,4}[0-9]{3}$');
+    // F409: the range and the star spell out in the spec, and the emitted value honours them - the
+    // length walks between the bounds, the star's close is reachable from the first position. The
+    // emissions live after the pw block below, where $pvBase exists.
+    $spE = api_schema_pattern_spec('^[a-z]{2,4}$');
+    $spF = api_schema_pattern_spec('^[a-z]+$');
     $pvBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"pat1","schema":'
         . '{"type":"object","properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}';
     $pvPlan = api_response_schema_mixed_object($pvBody);
@@ -13420,14 +13529,44 @@ function main(): void
     $pwText = str_replace("Ġ", " ", $pwText);
     $pwCode = preg_match('/"code":"X[abc]{2}"/', $pwText) == 1 ? 1 : 0;
     $pwCity = strpos($pwText, "\"city\":\"") !== false ? 1 : 0;
+    // F409: the range and the star, emitted - the value length walks between the bounds and the
+    // star's close is reachable from the first position.
+    $pzBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"pat3","schema":'
+        . '{"type":"object","properties":{"tag":{"type":"string","pattern":"^[a-z]{2,4}$"}}}}}';
+    $pzPlan = api_response_schema_mixed_object($pzBody);
+    $pzOut = api_object_mixed($pvIds, $pzPlan, "abcdefghijklmnopqrstuvwxyz", 16, 0);
+    $pzText = "";
+    $pzParts = explode(",", $pzOut);
+    for ($i = $pvBase; $i < count($pzParts); $i++) {
+        $pzText = $pzText . gguf_token_str((int) $pzParts[$i]);
+    }
+    $pzText = str_replace("Ġ", " ", $pzText);
+    $pzMatch = preg_match('/"tag":"[a-z]{2,4}"/', $pzText) == 1 ? 1 : 0;
+    $psBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"pat4","schema":'
+        . '{"type":"object","properties":{"tag":{"type":"string","pattern":"^[a-z]+$"}}}}}';
+    $psPlan = api_response_schema_mixed_object($psBody);
+    $psOut = api_object_mixed($pvIds, $psPlan, "abcdefghijklmnopqrstuvwxyz", 16, 0);
+    $psText = "";
+    $psParts = explode(",", $psOut);
+    for ($i = $pvBase; $i < count($psParts); $i++) {
+        $psText = $psText . gguf_token_str((int) $psParts[$i]);
+    }
+    $psText = str_replace("Ġ", " ", $psText);
+    $psMatch = preg_match('/"tag":"[a-z]+"/', $psText) == 1 ? 1 : 0;
     echo "SCHEMA-PAT-IMPL spec3=[" . $spA . "] spec_lit=[ " . $spB . "] pure_literal=[" . $spC
         . "] range=[" . $spD . "] plan=[" . $pvPlan . "] out=[" . $pvText . "] match=" . $pvMatch
         . "] plan2=[" . $pwPlan . "] refuse2=[" . $pwRefuse . "] out2=[" . $pwText
-        . "] code2=" . $pwCode . " city2=" . $pwCity . "]\n";
+        . "] code2=" . $pwCode . " city2=" . $pwCity
+        . "] spec_range=[" . $spE . "] spec_star=[" . $spF . "] planz=[" . $pzPlan
+        . "] outz=[" . $pzText . "] matchz=" . $pzMatch . "] plans=[" . $psPlan
+        . "] outs=[" . $psText . "] matchs=" . $psMatch . "]\n";
     if ($spA == "c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $spB == "lX~c2xabc" && $spC == "" && $spD == ""
+        && $spE == "c2-4xabcdefghijklmnopqrstuvwxyz" && $spF == "c1-xabcdefghijklmnopqrstuvwxyz"
         && $pvPlan == "code:p:c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $pvMatch == 1 && api_json_ok($pvText) == 1
         && $pwPlan == "code:p:lX~c2xabc,city:s" && $pwRefuse == "" && $pwCode == 1
-        && $pwCity == 1 && api_json_ok($pwText) == 1) {
+        && $pwCity == 1 && api_json_ok($pwText) == 1
+        && $pzPlan == "tag:p:c2-4xabcdefghijklmnopqrstuvwxyz" && $pzMatch == 1 && api_json_ok($pzText) == 1
+        && $psPlan == "tag:p:c1-xabcdefghijklmnopqrstuvwxyz" && $psMatch == 1 && api_json_ok($psText) == 1) {
         echo "SCHEMA-PAT-IMPL: PASS (emitted values match the pattern; multi-leaf keeps every key)\n";
     } else {
         echo "SCHEMA-PAT-IMPL: FAIL\n";

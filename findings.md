@@ -3845,3 +3845,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **被证伪的期望**：kwQ（对象数组 maxItems:3）由 `[maxItems]` 翻转为 `[]`（写入器现在计数）；活体用例 3 同步翻转（400 → 200 计数内）；SCHEMA-COUNT 的 c3A 由 "" 翻转为 "0:3"。仍拒对照：坏界（min9>max2）、多叶 ao、2D 数组界。
 **F408 完成（补记）**：自检 **177/0**（SCHEMA-COUNT ao 例 + SCHEMA-KEYWORDS kwQ 翻转 + 4 新例）；8000 **115/0**、8001 par/fairness **0**、scaling **1.495×**、哨兵 **0**（`engine/selftest_f408c.log`、`engine/api_smoke_f408.log`、`engine/par_smoke_f408.log`、`engine/fairness_f408.log`、`engine/throughput_f408.log`、`engine/schema_count_f408c.log`、`engine/schema_required_f408.log`、`engine/schema_pattern_f408.log`、`engine/schema_bounds_f408.log`）。活体 16 例全绿：ao 2/2 → `{"rows":[{"n":"2"},{"n":"2"}]}` 恰 2 项；坏界 400；原用例 3（对象数组 maxItems:3）被证伪翻转为 200 计数内。required 13 例、pattern 10 例、bounds 8 例复跑不回退。
 **留拒（排队）**：多叶 ao（ao 写入器只发该键，混合步进器无 ao 分支）、`{n,m}` 区间量词、嵌套叶子的带界数组。
+
+## F409：pattern 元字符第二批——`{n,m}` 区间与 `* + ?`（**仅末段**），编码 `c<min>-<max>x<chars>`
+**实现**：spec 解析器加量化符（`{n,m}`/`+`/`*`/`?`），**非精确量化符只允许在末段**——闭引号是独立 token，走位无歧义；非末段区间需要真 NFA，维持显式 400。编码：exact `c<n>x`、区间 `c<min>-<max>x`、无界 `c<min>-x`（max 缺席）。写入器统一走位：低于 min 只给类字符；min≤got<max 给**类字符 ∪ 闭引号**（模型选引号即结束，**走位不发射引号**——尾部 $pcq 负责）；到 max 只走引号；预算耗尽同样由尾部闭合。
+**过程中的弯路（全部被门/活体抓住）**：①构建连续失败三次才被发现——pvBase 定义顺序（TPC 要求先定义后使用）与一次编辑吞掉 foreach 闭合括号（T_ELSE 语法错），期间两次"177/0"是 **F408 旧二进制**的数字；②无横线形式初版被当成 ∞ ⇒ exact 断裂（EYX 变 16 字符）⇒ 无横线 = dmax=dmin，**仅"横线无数字"是 ∞**；③计数分支自己发射闭引号与尾部 $pcq 重复 ⇒ 线上出现杂散 `""` ⇒ 走位永不发射引号。**记法：门红先查二进制出身（本轮 BUILD_EXIT=1 被我读成 0）——"177/0"不属于任何一个还没编译成功的轮次；值里的杂散字符（`""`）是发射路径重复的指纹。**
+**被证伪翻转（均有说明）**：prH（`^[a-z]+$` 末段星号）、prG（`^SKU-[0-9]{4,6}$` 末段区间）、prK、prC（`^[A-Z][a-z]+$` 字面量+末段星号）、spD（改造为非末段仍拒的证明）、活体 star/range/plus 三例翻转为 200+值匹配。仍拒：非末段量化符（prAO/prAP）、非锚定、否定类、2D。
+**活体 13 例全绿**：`^[a-z]{2,4}$` 值长 2..4、`^[0-9]+$`、`^X[abc]{2,4}$`、`^SKU-[0-9]{4,6}$` 全匹配；非末段 400。
+**留拒（排队）**：非末段量化符（需 NFA 走位）、否定类、非锚定、嵌套带界数组。
