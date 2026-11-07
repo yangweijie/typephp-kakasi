@@ -154,9 +154,12 @@ cases = [
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]{2,4}[0-9]{3}$"}}},
      lambda code, txt: code == 200 and val_of(txt, "tag") is not None
      and re.match(r"^[a-z]{2,4}[0-9]{3}$", val_of(txt, "tag")) is not None),
-    ("nonlast_star0_refuse", "Give the tag.",
+    # F417 flipped this one: a minimum of ZERO beside a follower is served by the same walk (the
+    # segment emits nothing and the next one follows - "99" matches [a-z]*[0-9]{2}).
+    ("nonlast_star0_served", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]*[0-9]{2}$"}}},
-     lambda code, txt: code == 400 and "pattern" in txt),
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[a-z]*[0-9]{2}$", val_of(txt, "tag")) is not None),
     ("literal_alt_regression", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string", "pattern": "^(Paris|London)$"}}},
      lambda code, txt: code == 200 and val_of(txt, "city") in ("Paris", "London")),

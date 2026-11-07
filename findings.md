@@ -3899,3 +3899,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **F416 完成（补记）**：自检 **177/0**（prAV/prAT 翻转 + prAX 部分否定含 ^ 对照）、8000 **115/0**、8001 par/fairness **0**、scaling **1.540×**、哨兵 **0**（`engine/selftest_f416.log`、`engine/api_smoke_f416.log`、`engine/par_smoke_f416.log`、`engine/fairness_f416.log`、`engine/throughput_f416.log`、`engine/schema_pattern_f416.log`、`engine/schema_required_f416.log`、`engine/schema_bounds_f416.log`、`engine/schema_count_f416.log`）。活体 20 例全绿：`\D{3}` → 值全非数字、`[^A-Za-z0-9 .-]{2}` → 值含 `^` 或 `_`（部分否定随字母表扩展）、真空补集 400。required/bounds/count 复跑不回退。
 **记法**：**值字母表的每次扩展都有否定类涟漪——空补集夹具必须随字母表同步更新（F413/F416 连续两轮同一模式）；补集字母表是"值字母表"的单一事实来源，扩展时两处必须同步。**
 **留拒（排队）**：非末段 min=0（epsilon）、body 内字面量 `^`（类外的——锚点歧义）、其他转义（`\b` 等非字符类语义）。
+
+## F417（进行中）：解除 **min=0 非末段**（同机制服务）+ **断言类拒绝归档**
+**分析**：排队项"body 内字面量 `^`"经语义分析归档——**模式中间的 `^`/`$` 是锚点断言而非字面量**（无多行标志下 `a^b` 永不匹配 = 不可满足）⇒ 现行拒绝**正确**（任何发射都违反约束），无需工作；`\b` 等位置断言同理维持拒绝。**min=0 非末段**则可由同一最小计数机制服务（`[a-z]*` 发 0 字符后进下一段——`"99"` 匹配 `[a-z]*[0-9]{2}` ✓）⇒ 解析器的 min≥1 限制解除（检查变为纯断言语法拒绝）。
+**门/活体**：prAY 翻转（min=0 非末段服务）+ 断言类（prD `ab+c` 等）仍拒对照；活体翻转 1 例。
+**记法**：**排队项先做语义分析再决定实现——"字面量 ^"是错误解读（正则语义是断言），不可满足约束的诚实行为是拒绝而非字面量解读；解除限制前先问机制是否天然覆盖。**
+**F417 完成（补记）**：自检 **177/0**（prAY 翻转 + 断言类仍拒对照）、8000 **115/0**、8001 par/fairness **0**、scaling **1.468×**、哨兵 **0**（`engine/selftest_f417c.log`、`engine/api_smoke_f417c.log`、`engine/par_smoke_f417c.log`、`engine/fairness_f417c.log`、`engine/throughput_f417c.log`、`engine/schema_pattern_f417c.log`、`engine/schema_required_f417c.log`、`engine/schema_bounds_f417c.log`、`engine/schema_count_f417c.log`）。活体 21 例全绿：min=0 非末段 `^[a-z]*[0-9]{2}$` → 值匹配（星号段发 0 字符后进下一段）；断言类（`ab+c` 的中间 `+` 等非类转义）仍拒。required/bounds/count 复跑不回退。过程一次 LNK1104（残留进程锁）杀后重建。
+**记法**：**排队项先做正则语义分析——"body 内字面量 ^/$"与"\b"是锚点/位置断言而非字面量（无多行标志下中间断言永不匹配 = 不可满足），现行拒绝正确归档；min=0 非末段则被既有最小计数机制天然覆盖，解除限制即可。** 另：编辑自己的旧检查时方向写反（删 min≥1 例外写成全拒绝）⇒ 改动"拒绝检查"时先读当前条件再决定删除/保留。

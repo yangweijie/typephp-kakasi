@@ -7636,14 +7636,14 @@ function api_schema_pattern_spec(string $pat): string
                 $qExact = 0;
                 $i++;
             }
-            // F415: a non-exact quantifier beside a FOLLOWING segment is served by emitting the
-            // MINIMUM - the count lands inside the bounds, so the value is one valid match (the
-            // same subset argument the numeric bounds use), and the walk continues with the next
-            // segment - no NFA needed. Only a minimum of zero (an epsilon transition) still
-            // refuses.
-            if ($qExact == 0 && $i < $len && $qMin < 1) {
-                return "";
-            }
+            // F415/F417: a non-exact quantifier beside a FOLLOWING segment is served by emitting
+            // the MINIMUM - the count lands inside the bounds, so the value is one valid match
+            // (the same subset argument the numeric bounds use), and the walk continues with the
+            // next segment - no NFA needed. A minimum of zero is served by the same walk (the
+            // segment emits nothing and the next one follows); what KEEPS refusing is the
+            // assertion syntax - a mid-pattern ^ or $ (an anchor that can never match mid-string,
+            // so the pattern is unsatisfiable) and the non-class escapes, both refused in the
+            // branches above.
             $segs[] = "c" . $qMin . ($qExact == 1 ? "" : "-" . ($qMax > 0 ? $qMax : "")) . "x" . $chars;
             $hasClass = 1;
         } else if ($ch == "\\" && $i + 1 < $len) {
@@ -7724,9 +7724,9 @@ function api_schema_pattern_spec(string $pat): string
                 $qExact = 0;
                 $i++;
             }
-            if ($qExact == 0 && $i < $len) {
-                return "";
-            }
+            // F415/F417: the non-exact quantifier is served regardless of position (the minimum
+            // emission lands inside the bounds); the assertion syntax is refused in the branches
+            // above.
             $segs[] = "c" . $qMin . ($qExact == 1 ? "" : "-" . ($qMax > 0 ? $qMax : "")) . "x" . $chars;
             $hasClass = 1;
         } else {
@@ -13843,10 +13843,10 @@ function main(): void
     $prAV = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\D{3}$"}}}}}');
     $prAW = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^a\\\\b$"}}}}}');
     $prK = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^X[abc]{2,4}$"}}}}}');
-    // F415 flipped prAO and prAP: a quantifier beside a FOLLOWING segment is served by emitting
-    // the minimum (the count lands inside the bounds - the subset argument), so the star-non-last
-    // and range-non-last forms are served; only a minimum of ZERO beside a follower (an epsilon
-    // transition) keeps refusing.
+    // F417 flipped prAY: a minimum of ZERO beside a follower is served by the same walk (the
+    // segment emits nothing and the next one follows - "99" matches [a-z]*[0-9]{2}); what KEEPS
+    // refusing is the assertion syntax (a mid-pattern ^ or $ can never match mid-string, so the
+    // pattern is unsatisfiable) and the non-class escapes.
     $prAO = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+[0-9]{2}$"}}}}}');
     $prAP = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]{2,4}[0-9]{3}$"}}}}}');
     $prAY = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]*[0-9]{2}$"}}}}}');
@@ -13870,7 +13870,7 @@ function main(): void
         . "] neg_underscore=[" . $prAX . "] escape=[" . $prAU . "] esc_upper_D=[" . $prAV . "] esc_backslash=[" . $prAW
         . "] quant=" . $prD . " none=" . $prE . "\n";
     if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 0
-        && $prJ == 0 && $prK == 0 && $prAO == 0 && $prAP == 0 && $prAY == 1
+        && $prJ == 0 && $prK == 0 && $prAO == 0 && $prAP == 0 && $prAY == 0
         && $prC == 0 && $prD == 1 && $prE == 0
         && $prAT == 1 && $prAX == 0 && $prAU == 0 && $prAV == 0 && $prAW == 1
         && $prAQ == 0 && $prAR == 0 && $prAS == 0) {
