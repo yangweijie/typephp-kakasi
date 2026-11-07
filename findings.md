@@ -3878,3 +3878,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **F413 完成（补记）**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.536×**、哨兵 **0**（`engine/selftest_f413d2.log`、`engine/api_smoke_f413d2.log`、`engine/par_smoke_f413d2.log`、`engine/fairness_f413d2.log`、`engine/throughput_f413d2.log`、`engine/schema_pattern_f413d2.log`、`engine/schema_required_f413d2.log`、`engine/schema_bounds_f413d2.log`、`engine/schema_count_f413d2.log`）。活体 18 例全绿：`\d{3}` → 恰 3 位数字、`\w+` → 词字符、`\D`/字面量反斜杠 400、部分否定（下划线补集）200、真空补集 400。required/bounds/count 复跑不回退。
 **记法补一条**：**pattern 门工作在线材原文上——JSON 转义使 `\d` 在线材是 `\d`；解析器必须同时接受单反斜杠（进程内夹具拼写）与双反斜杠（线材拼写）两种形式，且逐拼写核对步进长度。** 另：字母表扩展有**连带效应**——`\w` 加下划线后，旧"空补集"夹具的补集非空（剩下划线）而被合法服务，"真空补集"改用全排除形式。
 **留拒（排队）**：非末段量化符（NFA）、body 内字面量 `^`、其他转义（`\D`/`\`/`\b`）、多叶嵌套带界。
+
+## F414（进行中）：数组界扩到**多叶嵌套**（同一嵌套对象内多个带界数组，逐叶验证 + 总量 occurrence）
+**实现**：`api_schema_nested_array_bounds` 的叶层规则从"恰一个 ~ 叶子"放宽为**逐叶验证**——每个带 ~ 叶子独立抽取与验证（max0/min>max/min>8），**总和 occurrence**（所有带界叶子的 minItems/maxItems 出现次数之和 == 全 schema 的出现次数，界在带界叶子之外的任何位置仍拒）；其余叶子为嵌套步进器可发射的任意 kind；检测器单一返回值取第一个带界叶子的界（仅门信号——步进器从 plan 自带编码读取各自的界）。嵌套步进器无需改动（逐叶独立解析 F407 编码）。
+**门**：SCHEMA-COUNT 加双带界数组嵌套例（two_bounds=[2:2]、two_nums=2、two_tags=3、stray 界仍拒）。
+**F414 完成（补记）**：自检 **177/0**（two_bounds=[2:2] two_kw=[] two_stray=[] two_nums=2 two_tags=3）、8000 **115/0**、8001 par/fairness **0**、scaling **1.609×**、哨兵 **0**（`engine/selftest_f414.log`、`engine/api_smoke_f414.log`、`engine/par_smoke_f414.log`、`engine/fairness_f414.log`、`engine/throughput_f414.log`、`engine/schema_count_f414.log`、`engine/schema_required_f414.log`、`engine/schema_pattern_f414.log`、`engine/schema_bounds_f414.log`）。活体 22 例全绿：双带界数组嵌套（nums 2/2 + tags 3/3）两计数同时兑现；游离界 400。required/pattern/bounds 复跑不回退。
+**记法**：多叶带界的 occurrence 检查从"单叶 == 全 schema"改为"**带界叶子出现次数之和 == 全 schema**"——逐叶验证 + 总量核算，界在任何带界叶子之外的位置（游离界）都保持拒绝。

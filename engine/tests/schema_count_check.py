@@ -24,6 +24,8 @@ spaced wire spelling - the one that hid a whitespace bug in F397.
  18. F410: multi-leaf ao, required names the sibling -> 400 naming required
  19. F411: nested object, array min 2 / max 2 -> 200, 2 items inside the nesting
  20. F411: nested object, unservable bounds  -> 400 naming minItems
+ 21. F414: TWO counted arrays in one nested object -> 200, both counts honoured
+ 22. F414: a stray bound on the enclosing object -> 400 naming minItems
 Case 4 is the leak test: a bound outside the array would be relaxed by the shape check and enforced
 by nothing. Case 3 predates F408 - with the counting now implemented it stays refused only because
 its bounds are unservable (min 9 > max 3 would be... it has only maxItems: 3, which IS servable
@@ -220,6 +222,26 @@ cases = [
                                                                          "minItems": 9,
                                                                          "maxItems": 2,
                                                                          "items": {"type": "integer"}}}}}},
+     lambda code, txt: code == 400 and "minItems" in txt, ask),
+    # F414: TWO counted arrays in one nested object - both element counts honoured; a stray bound
+    # on the enclosing object (outside any counted leaf) keeps the refusal.
+    ("nested_two_count", "Give the numbers and tags.",
+     {"type": "object", "properties": {"outer": {"type": "object",
+                                                 "properties": {"nums": {"type": "array",
+                                                                         "minItems": 2,
+                                                                         "maxItems": 2,
+                                                                         "items": {"type": "integer"}},
+                                                                "tags": {"type": "array",
+                                                                         "minItems": 3,
+                                                                         "maxItems": 3,
+                                                                         "items": {"type": "string"}}}}}},
+     lambda code, txt: (code == 200 and (n_nested_items(txt, "outer", "nums") or 0) == 2
+                        and (n_nested_items(txt, "outer", "tags") or 0) == 3), ask),
+    ("nested_stray_refuse", "Give the numbers.",
+     {"type": "object", "minItems": 2,
+      "properties": {"outer": {"type": "object",
+                               "properties": {"nums": {"type": "array",
+                                                       "items": {"type": "integer"}}}}}},
      lambda code, txt: code == 400 and "minItems" in txt, ask),
 ]
 

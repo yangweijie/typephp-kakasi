@@ -6763,9 +6763,14 @@ function api_schema_nested_array_bounds(string $schema): string
         }
         $plan = api_top_leaves($block, 6);
         if ($plan != "") {
-            // The leaf level: exactly one counted leaf, the bounds inside it, everything else a
-            // kind the nested stepper emits.
-            $bIdx = -1;
+            // The leaf level: F414 - EVERY counted leaf is validated individually and the schema's
+            // bound occurrences must all sit inside counted leaves (a bound anywhere else would be
+            // relaxed but enforced nowhere); the other leaves are kinds the nested stepper emits.
+            // The detector's single return carries the first counted leaf's bounds - the gate-only
+            // signal; the stepper reads each leaf's bounds from the plan itself.
+            $sumOcc = 0;
+            $bCount = 0;
+            $firstBounds = "";
             $leaves = explode(",", $plan);
             for ($li = 0; $li < count($leaves); $li++) {
                 $lkv = explode(":", $leaves[$li]);
@@ -6776,38 +6781,38 @@ function api_schema_nested_array_bounds(string $schema): string
                 if ($apfx != "a" && $apfx != "an" && $apfx != "af" && $apfx != "ab") {
                     continue;
                 }
-                if ($bIdx >= 0) {
+                $kv = explode(":", $leaves[$li]);
+                $kp = strpos($block, "\"" . $kv[0] . "\"");
+                $vo = strpos($block, "{", $kp);
+                $leaf = api_balance_block($block, $vo);
+                if ($leaf == "") {
                     return "";
                 }
-                $bIdx = $li;
+                $sumOcc += substr_count($leaf, "\"minItems\"") + substr_count($leaf, "\"maxItems\"");
+                $bmn = [];
+                $bmx = [];
+                $hMin = preg_match('/"minItems"\s*:\s*([0-9]+)/', $leaf, $bmn) == 1;
+                $hMax = preg_match('/"maxItems"\s*:\s*([0-9]+)/', $leaf, $bmx) == 1;
+                if (!$hMin && !$hMax) {
+                    return "";
+                }
+                $tMin = $hMin ? (int) $bmn[1] : 0;
+                $tMax = $hMax ? (int) $bmx[1] : 0;
+                if (($hMax && $tMax < 1) || ($tMax > 0 && $tMin > $tMax) || $tMin > 8) {
+                    return "";
+                }
+                $bCount++;
+                if ($firstBounds == "") {
+                    $firstBounds = $tMin . ":" . $tMax;
+                }
             }
-            if ($bIdx < 0) {
+            if ($bCount == 0) {
                 return "";
             }
-            $kv = explode(":", $leaves[$bIdx]);
-            $kp = strpos($block, "\"" . $kv[0] . "\"");
-            $vo = strpos($block, "{", $kp);
-            $leaf = api_balance_block($block, $vo);
-            if ($leaf == "") {
+            if ($sumOcc != substr_count($schema, "\"minItems\"") + substr_count($schema, "\"maxItems\"")) {
                 return "";
             }
-            if (substr_count($leaf, "\"minItems\"") + substr_count($leaf, "\"maxItems\"")
-                != substr_count($schema, "\"minItems\"") + substr_count($schema, "\"maxItems\"")) {
-                return "";
-            }
-            $bmn = [];
-            $bmx = [];
-            $hMin = preg_match('/"minItems"\s*:\s*([0-9]+)/', $leaf, $bmn) == 1;
-            $hMax = preg_match('/"maxItems"\s*:\s*([0-9]+)/', $leaf, $bmx) == 1;
-            if (!$hMin && !$hMax) {
-                return "";
-            }
-            $tMin = $hMin ? (int) $bmn[1] : 0;
-            $tMax = $hMax ? (int) $bmx[1] : 0;
-            if (($hMax && $tMax < 1) || ($tMax > 0 && $tMin > $tMax) || $tMin > 8) {
-                return "";
-            }
-            return $tMin . ":" . $tMax;
+            return $firstBounds;
         }
         $cm = [];
         if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s',
@@ -14418,6 +14423,33 @@ function main(): void
     if (preg_match('/"nums":\[([^\]]*)\]/', $c9Text, $c9M) == 1) {
         $c9N = $c9M[1] == "" ? 0 : count(explode(",", $c9M[1]));
     }
+    // F414: TWO counted arrays in one nested object - every counted leaf is validated and the
+    // schema's bound occurrences must all sit inside counted leaves; a stray bound outside (on
+    // the enclosing object) keeps the refusal.
+    $c10Sch = '{"type":"object","properties":{"outer":{"type":"object","properties":{"nums":'
+        . '{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer"}},'
+        . '"tags":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"string"}}}}}}';
+    $c10Bounds = api_schema_array_element_bounds($c10Sch);
+    $c10Kw = api_schema_keywords_unsupported($c10Sch);
+    $c10Stray = api_schema_array_element_bounds('{"type":"object","minItems":2,"properties":{"outer":'
+        . '{"type":"object","properties":{"nums":{"type":"array","items":{"type":"integer"}}}}}}');
+    $c10Ids = tok_chat("user", "Give the numbers and tags.") . "," . tok_chat_open("assistant");
+    $c10Out = api_nested_object_value($c10Ids, "outer", "nums:an~2~2,tags:a~3~3", "abcdefghijklmnopqrstuvwxyz", 6, 0);
+    $c10Parts = explode(",", $c10Out);
+    $c10Base = count(explode(",", $c10Ids));
+    $c10Text = "";
+    for ($i = $c10Base; $i < count($c10Parts); $i++) {
+        $c10Text = $c10Text . gguf_token_str((int) $c10Parts[$i]);
+    }
+    $c10Text = str_replace("Ġ", " ", $c10Text);
+    $c10Nums = -1;
+    $c10Tags = -1;
+    if (preg_match('/"nums":\[([^\]]*)\]/', $c10Text, $c10MN) == 1) {
+        $c10Nums = $c10MN[1] == "" ? 0 : count(explode(",", $c10MN[1]));
+    }
+    if (preg_match('/"tags":\[([^\]]*)\]/', $c10Text, $c10MT) == 1) {
+        $c10Tags = $c10MT[1] == "" ? 0 : count(explode(",", $c10MT[1]));
+    }
     echo "SCHEMA-COUNT bounds=[" . $cnBounds . "] n=" . $cnN . "] text=[" . $cnText
         . "] num_bounds=[" . $c2Bounds . "] num_prop=[" . $c2Prop . "] num_n=" . $c2N
         . "] num_text=[" . $c2Text . "] obj_bounds=[" . $c3A . "] refuse_ceiling=[" . $c3B
@@ -14433,7 +14465,9 @@ function main(): void
         . "] ao_bounds=[" . $c8Bounds . "] ao_det=[" . $c8Det . "] ao_n=" . $c8N
         . "] ao_text=[" . $c8Text . "] ao_kw=[" . $c8Kw . "] ao_kw_bad=[" . $c8KwBad
         . "] nested_bounds=[" . $c9Bounds . "] nested_n=" . $c9N . "] nested_text=[" . $c9Text
-        . "] nested_kw=[" . $c9Kw . "] nested_kw_bad=[" . $c9KwBad . "]\n";
+        . "] nested_kw=[" . $c9Kw . "] nested_kw_bad=[" . $c9KwBad
+        . "] two_bounds=[" . $c10Bounds . "] two_kw=[" . $c10Kw . "] two_stray=[" . $c10Stray
+        . "] two_nums=" . $c10Nums . " two_tags=" . $c10Tags . " two_text=[" . $c10Text . "]\n";
     if ($cnBounds == "3:4" && $cnN >= 3 && $cnN <= 4 && api_json_ok($cnText) == 1
         && $c2Bounds == "2:2" && $c2N == 2 && api_json_ok($c2Text) == 1
         && $c3A == "0:3" && $c3B == "" && $c3C == "" && $c3D == "0:4"
@@ -14448,7 +14482,9 @@ function main(): void
         && $c8Bounds == "2:2" && $c8Kw == "" && $c8KwBad == "minItems"
         && $c8N == 2 && api_json_ok($c8Text) == 1
         && $c9Bounds == "2:2" && $c9Kw == "" && $c9KwBad == "minItems"
-        && $c9N == 2 && api_json_ok($c9Text) == 1) {
+        && $c9N == 2 && api_json_ok($c9Text) == 1
+        && $c10Bounds == "2:2" && $c10Kw == "" && $c10Stray == ""
+        && $c10Nums == 2 && $c10Tags == 3 && api_json_ok($c10Text) == 1) {
         echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-COUNT: FAIL\n";
