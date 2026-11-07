@@ -22,6 +22,8 @@ spaced wire spelling - the one that hid a whitespace bug in F397.
  17. F410: multi-leaf ao, min 2 / max 2      -> 200, 2 items, only the ao key (the sibling is
      optional and legally omitted)
  18. F410: multi-leaf ao, required names the sibling -> 400 naming required
+ 19. F411: nested object, array min 2 / max 2 -> 200, 2 items inside the nesting
+ 20. F411: nested object, unservable bounds  -> 400 naming minItems
 Case 4 is the leak test: a bound outside the array would be relaxed by the shape check and enforced
 by nothing. Case 3 predates F408 - with the counting now implemented it stays refused only because
 its bounds are unservable (min 9 > max 3 would be... it has only maxItems: 3, which IS servable
@@ -68,6 +70,13 @@ def n_top_items(text):
 def keys_of(text):
     try:
         return sorted(json.loads(text).keys())
+    except Exception:
+        return None
+
+
+def n_nested_items(text, outer, key):
+    try:
+        return len(json.loads(text)[outer][key])
     except Exception:
         return None
 
@@ -196,6 +205,22 @@ cases = [
                                        "note": {"type": "string"}},
       "required": ["rows", "note"]},
      lambda code, txt: code == 400 and "required" in txt, ask),
+    # F411: the bounds on an array INSIDE a nested object - the nested stepper counts with the
+    # plan-carried bounds and the emitted value keeps the nesting.
+    ("nested_min2_max2", "Give the numbers.",
+     {"type": "object", "properties": {"outer": {"type": "object",
+                                                 "properties": {"nums": {"type": "array",
+                                                                         "minItems": 2,
+                                                                         "maxItems": 2,
+                                                                         "items": {"type": "integer"}}}}}},
+     lambda code, txt: code == 200 and (n_nested_items(txt, "outer", "nums") or 0) == 2, ask),
+    ("nested_bad_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"outer": {"type": "object",
+                                                 "properties": {"nums": {"type": "array",
+                                                                         "minItems": 9,
+                                                                         "maxItems": 2,
+                                                                         "items": {"type": "integer"}}}}}},
+     lambda code, txt: code == 400 and "minItems" in txt, ask),
 ]
 
 bad = 0

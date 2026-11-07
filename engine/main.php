@@ -2970,6 +2970,25 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
             return "";
         }
         $ty = $kv[1];
+        // F411: the counted array form ("a~min~max", F407's encoding) travels in the nested plan
+        // too - split the bounds off and let the array branch count with them.
+        $nMin = 0;
+        $nMax = 0;
+        $nBounded = 0;
+        $tPos = strpos($ty, "~");
+        if ($tPos !== false) {
+            $nty = substr($ty, 0, $tPos);
+            $brest = explode("~", substr($ty, $tPos + 1));
+            if (count($brest) == 2 && ($nty == "a" || $nty == "an" || $nty == "af" || $nty == "ab")) {
+                $nMin = (int) $brest[0];
+                $nMax = (int) $brest[1];
+                if ($nMin < 0 || $nMin > 8 || ($nMax > 0 && $nMin > $nMax)) {
+                    return "";
+                }
+                $nBounded = 1;
+                $ty = $nty;
+            }
+        }
         if ($k > 0) {
             $sep = ",\"" . $kv[0] . "\":";
             if ($ty == "s" || $ty == "e") {
@@ -3048,6 +3067,9 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
         } else if ($ty == "a" || $ty == "an" || $ty == "af" || $ty == "ab" || $ty == "ao") {
             // Nested array leaf (F286 for strings, F290 for numbers). The separator already
             // emitted "key":, so this only has to produce [items] using continuations.
+            // F411: the counted form raises the budget to the bounds - below the minimum the
+            // close is not offered, at the maximum only the close is (F400's counting, one level
+            // inside the nested object); an unbounded leaf keeps the old budget of three.
             $commaIds = api_punct_ids(",");
             $bracketIds = api_punct_ids("]");
             $aopen = $ty == "a" ? "[\"" : "[";
@@ -3057,8 +3079,15 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
                 return "";
             }
             $s = $s . "," . $aop;
+            $aBudget = 3;
+            if ($nBounded == 1) {
+                $aBudget = $nMax > 0 ? $nMax : 3;
+                if ($nMin > $aBudget) {
+                    $aBudget = $nMin;
+                }
+            }
             $itemsDone = 0;
-            for ($it = 0; $it < 3; $it++) {
+            for ($it = 0; $it < $aBudget && $itemsDone == 0; $it++) {
                 if ($it > 0 && ($ty == "a" || $ty == "ao")) {
                     $aopen2 = $ty == "a" ? "\"" : ",{\"" . (count($kv) > 2 ? $kv[2] : "") . "\":\"";
                     $aop2 = api_constrained_continue([$aopen2], 16);
@@ -3107,7 +3136,21 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
                     $s = $s . "," . $anum;
                 }
                 $endIds = $commaIds . "," . $bracketIds;
-                $anx2 = model_session_next_allowed(0, $it < 2 ? $endIds : $bracketIds);
+                // F411: the counted form filters the boundary tokens - below the minimum the
+                // array cannot close, at the maximum only the close is reachable. An UNBOUNDED
+                // leaf keeps the old behaviour exactly: the last budgeted element offers only
+                // the close, so the forced close can never follow a comma.
+                $aOffer = $endIds;
+                if ($nBounded == 1) {
+                    if ($it + 1 < $nMin) {
+                        $aOffer = $commaIds;
+                    } else if ($it + 1 >= $aBudget) {
+                        $aOffer = $bracketIds;
+                    }
+                } else if ($it >= $aBudget - 1) {
+                    $aOffer = $bracketIds;
+                }
+                $anx2 = model_session_next_allowed(0, $aOffer);
                 if ($anx2 < 0) {
                     break;
                 }
@@ -6675,6 +6718,111 @@ function api_schema_array_object_bounds(string $schema): string
     return $tMin . ":" . $tMax;
 }
 
+// F411: element-count bounds for a bounded array INSIDE a nested object - the nested path steps
+// the plan with the same counting (the ~ encoding travels in the nested plan), so the rule mirrors
+// api_response_schema_nested_object's descent: find the deepest properties block that has leaves,
+// and honour the shape when exactly one leaf is a counted array with the bounds inside it. The
+// nested detector's own exclusions (numeric bounds, metacharacter patterns) are mirrored, since a
+// schema they refuse never reaches the nested stepper and the bounds would be relaxed but
+// enforced nowhere.
+function api_schema_nested_array_bounds(string $schema): string
+{
+    if (api_schema_is_object($schema) != 1) {
+        return "";
+    }
+    if (preg_match('/"(minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $mpat = [];
+    if (preg_match('/"pattern"\s*:\s*"([^"]*)"/', $schema, $mpat) == 1
+        && preg_match('/^\^?[A-Za-z0-9 _.\-|]+\$?$/', $mpat[1]) != 1) {
+        return "";
+    }
+    $pm = [];
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s',
+        $schema, $pm) != 1) {
+        return "";
+    }
+    $ip = strpos($schema, $pm[0]);
+    if ($ip === false) {
+        return "";
+    }
+    $win = substr($schema, $ip, 8000);
+    for ($depth = 0; $depth < 256; $depth++) {
+        $pp = strpos($win, "\"properties\"");
+        if ($pp === false) {
+            return "";
+        }
+        $bo = strpos($win, "{", $pp);
+        if ($bo === false) {
+            return "";
+        }
+        $block = api_balance_block($win, $bo);
+        if ($block == "") {
+            return "";
+        }
+        $plan = api_top_leaves($block, 6);
+        if ($plan != "") {
+            // The leaf level: exactly one counted leaf, the bounds inside it, everything else a
+            // kind the nested stepper emits.
+            $bIdx = -1;
+            $leaves = explode(",", $plan);
+            for ($li = 0; $li < count($leaves); $li++) {
+                $lkv = explode(":", $leaves[$li]);
+                if (count($lkv) != 2 || strpos($lkv[1], "~") === false) {
+                    continue;
+                }
+                $apfx = substr($lkv[1], 0, strpos($lkv[1], "~"));
+                if ($apfx != "a" && $apfx != "an" && $apfx != "af" && $apfx != "ab") {
+                    continue;
+                }
+                if ($bIdx >= 0) {
+                    return "";
+                }
+                $bIdx = $li;
+            }
+            if ($bIdx < 0) {
+                return "";
+            }
+            $kv = explode(":", $leaves[$bIdx]);
+            $kp = strpos($block, "\"" . $kv[0] . "\"");
+            $vo = strpos($block, "{", $kp);
+            $leaf = api_balance_block($block, $vo);
+            if ($leaf == "") {
+                return "";
+            }
+            if (substr_count($leaf, "\"minItems\"") + substr_count($leaf, "\"maxItems\"")
+                != substr_count($schema, "\"minItems\"") + substr_count($schema, "\"maxItems\"")) {
+                return "";
+            }
+            $bmn = [];
+            $bmx = [];
+            $hMin = preg_match('/"minItems"\s*:\s*([0-9]+)/', $leaf, $bmn) == 1;
+            $hMax = preg_match('/"maxItems"\s*:\s*([0-9]+)/', $leaf, $bmx) == 1;
+            if (!$hMin && !$hMax) {
+                return "";
+            }
+            $tMin = $hMin ? (int) $bmn[1] : 0;
+            $tMax = $hMax ? (int) $bmx[1] : 0;
+            if (($hMax && $tMax < 1) || ($tMax > 0 && $tMin > $tMax) || $tMin > 8) {
+                return "";
+            }
+            return $tMin . ":" . $tMax;
+        }
+        $cm = [];
+        if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s',
+            $block, $cm) != 1) {
+            return "";
+        }
+        $ci = strpos($block, $cm[0]);
+        if ($ci === false) {
+            return "";
+        }
+        $win = substr($block, $ci, 20000);
+    }
+    return "";
+}
+
 // F400: element-count bounds for the scalar-array shape whose generator steps element by element
 // and can therefore restrict the closing bracket by count. The honoured shape is deliberately
 // narrow: one properties block, exactly one "type":"array" in the whole schema (so no nested rank),
@@ -6727,6 +6875,12 @@ function api_schema_array_element_bounds(string $schema): string
             // the same rules as the scalar arrays, "" keeps the refusal.
             return api_schema_array_object_bounds($schema);
         }
+    }
+    // F411: a bounded array inside a NESTED object - the nested rule runs before the
+    // one-properties-block rule, which a nested shape inherently violates.
+    $nb = api_schema_nested_array_bounds($schema);
+    if ($nb != "") {
+        return $nb;
     }
     if (preg_match_all('/"properties"\s*:/', $schema) != 1
         || preg_match_all('/"type"\s*:\s*"array"/', $schema) != 1) {
@@ -14063,6 +14217,28 @@ function main(): void
             $c8Walk--;
         }
     }
+    // F411: the bounds on an array INSIDE a nested object - the nested plan carries the counted
+    // kind ("nums:an~2~2") and the nested stepper counts with it; the emitted value keeps the
+    // nesting, and the shapes nobody honours (an unservable pair) still refuse.
+    $c9Sch = '{"type":"object","properties":{"outer":{"type":"object","properties":{"nums":'
+        . '{"type":"array","minItems":2,"maxItems":2,"items":{"type":"integer"}}}}}}';
+    $c9Bounds = api_schema_array_element_bounds($c9Sch);
+    $c9Kw = api_schema_keywords_unsupported($c9Sch);
+    $c9KwBad = api_schema_keywords_unsupported('{"type":"object","properties":{"outer":{"type":"object",'
+        . '"properties":{"nums":{"type":"array","minItems":9,"maxItems":2,"items":{"type":"integer"}}}}}}');
+    $c9Ids = tok_chat("user", "Give the numbers.") . "," . tok_chat_open("assistant");
+    $c9Out = api_nested_object_value($c9Ids, "outer", "nums:an~2~2", "abcdefghijklmnopqrstuvwxyz", 6, 0);
+    $c9Parts = explode(",", $c9Out);
+    $c9Base = count(explode(",", $c9Ids));
+    $c9Text = "";
+    for ($i = $c9Base; $i < count($c9Parts); $i++) {
+        $c9Text = $c9Text . gguf_token_str((int) $c9Parts[$i]);
+    }
+    $c9Text = str_replace("Ġ", " ", $c9Text);
+    $c9N = -1;
+    if (preg_match('/"nums":\[([^\]]*)\]/', $c9Text, $c9M) == 1) {
+        $c9N = $c9M[1] == "" ? 0 : count(explode(",", $c9M[1]));
+    }
     echo "SCHEMA-COUNT bounds=[" . $cnBounds . "] n=" . $cnN . "] text=[" . $cnText
         . "] num_bounds=[" . $c2Bounds . "] num_prop=[" . $c2Prop . "] num_n=" . $c2N
         . "] num_text=[" . $c2Text . "] obj_bounds=[" . $c3A . "] refuse_ceiling=[" . $c3B
@@ -14076,7 +14252,9 @@ function main(): void
         . "] multi_keys=" . $c7Keys . "] multi_text=[" . $c7Text . "] multi_refuse=["
         . $c7Refuse . "] multi_refuse_bad=[" . $c7RefuseBad
         . "] ao_bounds=[" . $c8Bounds . "] ao_det=[" . $c8Det . "] ao_n=" . $c8N
-        . "] ao_text=[" . $c8Text . "] ao_kw=[" . $c8Kw . "] ao_kw_bad=[" . $c8KwBad . "]\n";
+        . "] ao_text=[" . $c8Text . "] ao_kw=[" . $c8Kw . "] ao_kw_bad=[" . $c8KwBad
+        . "] nested_bounds=[" . $c9Bounds . "] nested_n=" . $c9N . "] nested_text=[" . $c9Text
+        . "] nested_kw=[" . $c9Kw . "] nested_kw_bad=[" . $c9KwBad . "]\n";
     if ($cnBounds == "3:4" && $cnN >= 3 && $cnN <= 4 && api_json_ok($cnText) == 1
         && $c2Bounds == "2:2" && $c2N == 2 && api_json_ok($c2Text) == 1
         && $c3A == "0:3" && $c3B == "" && $c3C == "" && $c3D == "0:4"
@@ -14089,7 +14267,9 @@ function main(): void
         && $c7RefuseBad == "minItems" && $c7N == 2 && $c7Keys == 2
         && api_json_ok($c7Text) == 1
         && $c8Bounds == "2:2" && $c8Kw == "" && $c8KwBad == "minItems"
-        && $c8N == 2 && api_json_ok($c8Text) == 1) {
+        && $c8N == 2 && api_json_ok($c8Text) == 1
+        && $c9Bounds == "2:2" && $c9Kw == "" && $c9KwBad == "minItems"
+        && $c9N == 2 && api_json_ok($c9Text) == 1) {
         echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-COUNT: FAIL\n";
