@@ -1270,3 +1270,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **175/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**；哨兵 **0**。
 - **留拒（排队）**：数组叶子的 required 子集、`{mode:e,flag:b}` 全必需（门钉住为已知过度拒绝，后续按"先证键集合再放行"取消）。
 - **下一轮顺位**：pattern 元字符实现 → 数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。
+
+
+## ▶ 状态（F404，2026-11-07 15:40）——pattern 元字符**真正实现**（锚定 class+count）；门抓到"字符串内大括号破坏叶子启发式"的隐藏缺陷并修掉
+- **实现**：`api_schema_pattern_spec` 解析 `^...$` 内的字面量段+精确计数字符类段（`{n}`/裸类=1，n≤16，类解析期展开同族区间）；spec 编码 `l<text>~c<n>x<chars>`；plan 新 kind `p:`（api_top_leaves 先于 F282 分支）；`api_object_mixed` p 分支逐段发射（类字符走 `api_pattern_class_ids`——**单字符过滤**，多字符 token 会超发）；混合检测器移出 pattern 排除 + 接受单叶 p plan；关键字门 fullEmission 计入 p。四链经混合检测器自动支持。
+- **门抓住的真缺陷**：`^[A-Z]{3}$` 的 `{3}` 使叶子值大括数=2 ⇒ "一大括号=扁平叶子"启发式把整个叶子丢出 plan（SCHEMA-PAT-IMPL 第一版 plan=[] FAIL）⇒ 修法：**先剥 JSON 字符串内容再数大括号**（三处形状判定全改），kind/pattern 正则仍在原值上跑。记法：**括号计数启发式必须剥字符串——schema 字符串值可合法含任何括号**。
+- **门**：`SCHEMA-PAT-REJECT` 11 例双向（counted 放行、range/star/unanchored/negated/mixed_alt 仍拒）；新门 `SCHEMA-PAT-IMPL`（发射值 preg_match 匹配模式 + 多叶全必需全键）——**状态码门对"值不符合模式"是绿的，值匹配才是验收面**。
+- **活体**：10 例双向全绿（`engine/schema_pattern_f404.log`）——`{"code":"EYX"}`、`{"sku":"SKU-1234"}`、`{"tag":"Xaa"}` 逐一匹配；四种未实现形式 400 点名 pattern；F282 字面量交替不回退。required 13 例复跑全绿（`engine/schema_required_f404.log`）。
+- **梯**：自检 **176/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.499×**；哨兵 **0**。
+- **留拒（排队）**：`{n,m}` 区间量词、`* + ?`、否定类、非锚定类、嵌套叶子类 pattern、pattern 同叶 minLength/maxLength。
+- **下一轮顺位**：数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。

@@ -3805,3 +3805,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **留拒（排队）**：数组叶子的 required 子集（服务其实正确但按窄判据仍拒）；`{mode:e, flag:b}` 全必需（候选层本可全键服务，按窄规则拒绝）——两者都用门钉住为已知过度拒绝，留给后续轮次按"先证键集合再放行"逐步取消。
 **梯**：自检 **175/0**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 `PAR_EXIT=0`、`FAIR_EXIT=0`；scaling **1.536×**；哨兵 **0**（`engine/selftest_f403b.log`、`engine/api_smoke_f403b.log`、`engine/par_smoke_f403b.log`、`engine/fairness_f403b.log`、`engine/throughput_f403b.log`、`engine/schema_required_f403c.log`）。
 **方法条**：**"required 被满足"是关于服务路径发射集合的命题，不是关于关键字 exists 的命题**——同一关键字在不同形状上要分别回答"这条路径发哪些键"；门必须对每个形状双向断言键集合，而不是断言状态码。
+
+## F404：pattern 元字符**真正实现**（锚定 class+count 形式），并修掉"字符串内大括号破坏叶子形状启发式"的隐藏缺陷
+**实现范围**：`^...$` 锚定、核心 = 字面量段（JSON 安全字符）与**字符类段**的拼接，类段可带**精确计数** `{n}`（裸类=1，n≤16）——如 `^[A-Z]{3}$`、`^SKU-[0-9]{4}$`、`^X[abc]{2}$`。`{n,m}` 区间、`* + ?`、非锚定、否定类、类旁代 `|`、转义一律维持显式 400（`SCHEMA-PAT-REJECT` 双向钉住）。类展开在解析期完成（`a-z`/`0-9`/`A-Z` 同族区间），spec 编码为 `l<text>~c<n>x<chars>`（无冒号/波浪号/逗号冲突）。
+**集成路径（plan 新 kind `p:`）**：`api_top_leaves` 的 pattern 分支先于 F282 字面量交替（纯字面量仍归 e:）；`api_object_mixed` 新增 p 分支（头/分隔符带引号、逐段发射：字面量 constrained_continue、类字符从**单字符 id 集**逐步选取、收尾引号）；混合检测器把 `pattern` 移出排除正则并接受**单叶 p plan**（其余单叶形状仍走各自生成器）；关键字门 fullEmission 把 `p` 计入可步进 kind 并把 `pattern` 移出其排除正则（多叶 pattern+字符串全必需 → 全键服务）。四个调度链经混合检测器自动获得支持，无需改动。
+**关键修正一（单字符过滤）**：`gguf_charset_ids` 的原始集可含**多字符 token**（如 "ABC"），计数段会发出超出 n 的字符——照 `api_punct_ids` 的口径只留"解码恰为一字符且在类内"的 id（`api_pattern_class_ids`）。
+**关键修正二（本轮门抓到的真缺陷）**：`^[A-Z]{3}$` 里的 `{3}` 给叶子值添了一个大括号 ⇒ `substr_count($val,"{")==2`，"一大括号=扁平叶子"启发式把整个叶子**从 plan 里丢掉**（混合 plan 为空、required 全必需误报"未声明"）。修法：先剥掉 JSON 字符串内容再数大括号（`valPlain`），三处形状判定（==2 数组叶 / ==4 对象数组 / ==1 扁平）全部改用剥壳计数；kind 正则与 pattern 提取仍在原始值上跑。**记法：基于括号计数的形状启发式，必须先剥字符串内容——schema 的字符串值可以合法含有任何括号。**
+**门**：`SCHEMA-PAT-REJECT` 11 例双向（counted=[0] 放行；range/star/unanchored/negated/mixed_alt=[1] 仍拒）；新门 `SCHEMA-PAT-IMPL`（176 项之一）：spec 断言 + **发射值 preg_match 匹配模式**（`{"code":"EYX"}` ↔ `^[A-Z]{3}$`；多叶 `{"code":"Xaa","city":...}` ↔ `^X[abc]{2}$` 且全必需全键）——状态码门对"值不符合模式"是绿的，值匹配才是这个特性的验收面。
+**活体 10 例双向全绿（`engine/schema_pattern_f404.log`）**：三个模式值逐一匹配、多叶含/不含 required 全键、四种未实现形式 400 点名 pattern、F282 字面量交替不回退。
+**留拒（排队）**：`{n,m}` 区间量词（F399 的字符预算机制可复用）、`* + ?`、否定类、非锚定类、类旁 `|`、嵌套叶子里的类 pattern（嵌套路径的排除未动）、minLength/maxLength 与 pattern 同叶（由 flat-all-string 门拒绝）。
+**梯**：自检 **176/0**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 `PAR_EXIT=0`、`FAIR_EXIT=0`；scaling **1.499×**；哨兵 **0**（`engine/selftest_f404b.log`、`engine/api_smoke_f404.log`、`engine/par_smoke_f404.log`、`engine/fairness_f404.log`、`engine/throughput_f404.log`、`engine/schema_pattern_f404.log`、`engine/schema_required_f404.log`）。
+**方法条**：plan kind 的词表扩展（p:）沿用了"键名来自 plan、形状决定生成器"的既有论证；每加一个 kind，所有对 kind 做成员判断的谓词（mixed_omittable、addprops honoured、exotic/fullEmission、单叶规则）都要**逐一复核**——本轮 p 在 required 子集路径仍拒（窄）、在全必需路径放行（可步进），两处都配了断言。

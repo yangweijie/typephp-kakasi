@@ -2667,12 +2667,18 @@ function api_top_leaves(string $block, int $maxN): string
         if ($val == "") {
             break;
         }
+        // F404: braces inside JSON string values - a pattern's {3} quantifier, a brace enum value -
+        // must not count toward the leaf-shape heuristics below, or a pattern leaf reads as a
+        // two-brace object and is dropped from the plan entirely. Strip the string contents first,
+        // then count; the kind regexes still run on the raw value.
+        $valPlain = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '""', $val);
+        $valBraces = substr_count($valPlain, "{");
         // Depth-1 leaves are flat objects: a nested object has more than its own opening brace.
         // A leaf holding an array of strings has exactly one extra brace (its items object), so
         // it is a leaf too - without this the key was dropped (F286).
         $arrOk = 0;
         $arrTy = "";
-        if (substr_count($val, "{") == 2) {
+        if ($valBraces == 2) {
             if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val) == 1
                 || preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*\[[^\]]*"string"[^\]]*\]/', $val) == 1) {
                 $arrOk = 1;
@@ -2694,14 +2700,14 @@ function api_top_leaves(string $block, int $maxN): string
         // Object arrays carry exactly three braces (the value, its items object and that
         // object's properties). The exact count matters: an ancestor's subtree also contains
         // "items", and matching it would put the array under the wrong key (F296 round B).
-        if ($arrOk == 0 && substr_count($val, "{") == 4) {
+        if ($arrOk == 0 && $valBraces == 4) {
             $mo2 = [];
             if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{\s*"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val, $mo2) == 1) {
                 $arrOk = 1;
                 $arrTy = "ao:" . $mo2[1];
             }
         }
-        if (substr_count($val, "{") == 1 || $arrOk == 1) {
+        if ($valBraces == 1 || $arrOk == 1) {
             $m = [];
             if ($arrOk == 1) {
                 $out = $out == "" ? $key . ":" . $arrTy : $out . "," . $key . ":" . $arrTy;
@@ -2751,6 +2757,15 @@ function api_top_leaves(string $block, int $maxN): string
                 } else if (preg_match('/"const"\s*:\s*(-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)/', $val, $mc) == 1
                            && $mk != "s") {
                     $mk = "en:" . $mc[1];
+                } else if ($mk == "s"
+                           && preg_match('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $val, $mps) == 1
+                           && ($pSpec = api_schema_pattern_spec($mps[1])) != "") {
+                    // F404: an anchored class/count pattern the flat mixed stepper can honour
+                    // carries its segment spec in the plan (key:p:spec) - the stepper emits
+                    // exactly the literal runs and counted classes. minLength/maxLength beside
+                    // such a pattern stay refused via the flat-all-string gate, and the
+                    // unimplemented metacharacter forms keep the explicit 400.
+                    $mk = "p:" . $pSpec;
                 } else if ($mk == "s" && preg_match('/"pattern"\s*:\s*"\^?([A-Za-z0-9 _.\-|]+)\$?"/', $val, $mp) == 1) {
                     // A plain-literal alternation ("Paris|London") is a finite set; anything with
                     // real regex metacharacters falls through untouched (F282).
@@ -4457,11 +4472,16 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
     $stepIds = $charsetIds . "," . $quoteIds;
     $q = "," . $quoteIds . ",";
     $first = explode(":", $items[0]);
-    if (count($first) != 2) {
+    $fTy = "";
+    if (count($first) == 2) {
+        $fTy = $first[1];
+    } else if (count($first) == 3 && $first[1] == "p") {
+        $fTy = "p";
+    } else {
         return "";
     }
     $head = "{\"" . $first[0] . "\":";
-    if ($first[1] == "s") {
+    if ($fTy == "s" || $fTy == "p") {
         $head = $head . "\"";
     }
     $s = api_constrained($ids, [$head], 64, $useCache);
@@ -4470,13 +4490,19 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
     }
     for ($k = 0; $k < count($items); $k++) {
         $kv = explode(":", $items[$k]);
-        if (count($kv) != 2) {
+        $ty = "";
+        $pSpec = "";
+        if (count($kv) == 2) {
+            $ty = $kv[1];
+        } else if (count($kv) == 3 && $kv[1] == "p") {
+            $ty = "p";
+            $pSpec = $kv[2];
+        } else {
             return "";
         }
-        $ty = $kv[1];
         if ($k > 0) {
             $sep = ",\"" . $kv[0] . "\":";
-            if ($ty == "s") {
+            if ($ty == "s" || $ty == "p") {
                 $sep = $sep . "\"";
             }
             $sp = api_constrained_continue([$sep], 32);
@@ -4512,6 +4538,46 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
             if ($bb != "") {
                 $s = $s . "," . $bb;
             }
+        } else if ($ty == "p") {
+            // F404: the class/count pattern kind - emit exactly the literal runs and counted
+            // classes the spec carries, then the closing quote. Every segment is a fixed shape,
+            // so the emitted string matches the pattern by construction; a class character is
+            // picked from the class charset alone, so no quote or off-class character can leak
+            // into the value.
+            foreach (explode("~", $pSpec) as $seg) {
+                $tag = substr($seg, 0, 1);
+                if ($tag == "l") {
+                    $lp = api_constrained_continue([substr($seg, 1)], 32);
+                    if ($lp == "") {
+                        return "";
+                    }
+                    $s = $s . "," . $lp;
+                } else if ($tag == "c") {
+                    $xpos = strpos($seg, "x");
+                    if ($xpos === false || $xpos < 2) {
+                        return "";
+                    }
+                    $cnt = (int) substr($seg, 1, $xpos - 1);
+                    $cids = api_pattern_class_ids(substr($seg, $xpos + 1));
+                    if ($cids == "" || $cnt < 1 || $cnt > 16) {
+                        return "";
+                    }
+                    for ($d = 0; $d < $cnt; $d++) {
+                        $pnx = model_session_next_allowed(0, $cids);
+                        if ($pnx < 0) {
+                            return "";
+                        }
+                        $s = $s . "," . $pnx;
+                    }
+                } else {
+                    return "";
+                }
+            }
+            $pcq = api_constrained_continue(["\""], 4);
+            if ($pcq == "") {
+                return "";
+            }
+            $s = $s . "," . $pcq;
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 6);
             if ($body != "") {
@@ -4537,10 +4603,15 @@ function api_response_schema_mixed_object(string $body): string
     if ($schema == "") {
         return "";
     }
-    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+    // F404: `pattern` left the exclusion - the anchored class/count forms become p: plan kinds
+    // the mixed stepper emits; enum/const leaves and numeric bounds still disqualify.
+    if (preg_match('/"(enum|const|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
         return "";
     }
     // Scan only the top-level properties block: a nested object's leaves must not be pulled up.
+    // F404: `pattern` is no longer a blanket exclusion here - the anchored class/count forms
+    // become p: plan kinds the mixed stepper emits; enum/const leaves and numeric bounds still
+    // disqualify the schema.
     if (api_schema_is_object($schema) != 1) {
         return "";
     }
@@ -4563,15 +4634,22 @@ function api_response_schema_mixed_object(string $body): string
         return "";
     }
     $items = explode(",", $plan);
-    if (count($items) < 2) {
-        return "";
-    }
     $hasNum = 0;
+    $pCount = 0;
     for ($i = 0; $i < count($items); $i++) {
         $kv = explode(":", $items[$i]);
         if (count($kv) == 2 && $kv[1] != "s") {
             $hasNum = 1;
         }
+        if (count($kv) == 3 && $kv[1] == "p") {
+            $hasNum = 1;
+            $pCount = 1;
+        }
+    }
+    // F404: a single-leaf plan is accepted only for the pattern kind - that one key is exactly
+    // what the stepper emits; every other single-leaf shape keeps its own generator.
+    if (count($items) < 2 && $pCount == 0) {
+        return "";
     }
     if ($hasNum == 0) {
         return "";
@@ -6506,13 +6584,15 @@ function api_schema_keywords_unsupported(string $body): string
         if (count($kv) < 2) {
             continue;
         }
-        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b") {
+        // F404: the pattern kind is steppable too (the mixed stepper emits its counted
+        // segments), so it counts toward full emission like s/i/n/b.
+        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b" && $kv[1] != "p") {
             $fullEmission = 0;
             break;
         }
     }
     if ($fullEmission == 1
-        && preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $body) == 1) {
+        && preg_match('/"(enum|const|minimum|maximum|multipleOf)"\s*:/', $body) == 1) {
         $fullEmission = 0;
     }
     if ($fullEmission == 0 && $declN > 1 && count(api_schema_candidates($body)) == 0) {
@@ -6564,6 +6644,141 @@ function api_schema_bounds_unsupported(string $body): int
     return 0;
 }
 
+// F404: expand a class body into its character set - bare safe characters and a-z/0-9/A-Z ranges
+// with both ends in the same family. Negation, metacharacters and unsafe characters (quote,
+// backslash, colon, tilde, pipe, comma - anything that could break the JSON string, the plan
+// entry or the spec encoding) return "" - that pattern stays refused.
+function api_pattern_class_chars(string $body): string
+{
+    $out = "";
+    $seen = "";
+    $i = 0;
+    $len = strlen($body);
+    while ($i < $len) {
+        $ch = $body[$i];
+        if ($i + 2 < $len && $body[$i + 1] == "-") {
+            $lo = $ch;
+            $hi = $body[$i + 2];
+            $sameFamily = (ctype_digit($lo) && ctype_digit($hi))
+                || (ctype_lower($lo) && ctype_lower($hi))
+                || (ctype_upper($lo) && ctype_upper($hi));
+            if ($sameFamily != 1 || ord($hi) < ord($lo)) {
+                return "";
+            }
+            $step = 3;
+        } else {
+            $lo = $ch;
+            $hi = $ch;
+            $step = 1;
+        }
+        for ($c = ord($lo); $c <= ord($hi); $c++) {
+            $one = chr($c);
+            if (preg_match('/[A-Za-z0-9 .\\-]/', $one) != 1) {
+                return "";
+            }
+            if (strpos($seen, $one) === false) {
+                $seen .= $one;
+                $out .= $one;
+            }
+        }
+        $i += $step;
+    }
+    return $out;
+}
+
+// F404: the anchored class/count pattern forms the flat mixed stepper can honour. The pattern must
+// be ^...$ anchored, and the core a concatenation of literal runs (JSON-safe text) and character
+// classes with an exact count - a bare class counts one, {n} counts n (1..16). No {n,m}, no * + ?,
+// no negation, no alternation beside a class, no escapes - those keep the explicit 400. Returns
+// the segment spec for the stepper ("l<text>~c<n>x<chars>") or "" when the pattern is a pure
+// literal (F282's alternation machinery owns those) or is not implemented.
+function api_schema_pattern_spec(string $pat): string
+{
+    $n = strlen($pat);
+    if ($n < 3 || substr($pat, 0, 1) != "^" || substr($pat, $n - 1, 1) != "$") {
+        return "";
+    }
+    $core = substr($pat, 1, $n - 2);
+    $segs = [];
+    $lit = "";
+    $i = 0;
+    $len = strlen($core);
+    $hasClass = 0;
+    while ($i < $len) {
+        $ch = $core[$i];
+        if ($ch == "[") {
+            if ($lit != "") {
+                $segs[] = "l" . $lit;
+                $lit = "";
+            }
+            $close = strpos($core, "]", $i + 1);
+            if ($close === false) {
+                return "";
+            }
+            $chars = api_pattern_class_chars(substr($core, $i + 1, $close - $i - 1));
+            if ($chars == "") {
+                return "";
+            }
+            $i = $close + 1;
+            $count = 1;
+            if ($i < $len && $core[$i] == "{") {
+                $brace = strpos($core, "}", $i);
+                if ($brace === false) {
+                    return "";
+                }
+                $num = substr($core, $i + 1, $brace - $i - 1);
+                if (preg_match('/^[0-9]{1,2}$/', $num) != 1 || (int) $num < 1 || (int) $num > 16) {
+                    return "";
+                }
+                $count = (int) $num;
+                $i = $brace + 1;
+            }
+            $segs[] = "c" . $count . "x" . $chars;
+            $hasClass = 1;
+        } else {
+            if (strpos("[]{}", $ch) !== false) {
+                return "";
+            }
+            if (preg_match('/[A-Za-z0-9 .\\-]/', $ch) != 1) {
+                return "";
+            }
+            if (strlen($lit) >= 32) {
+                return "";
+            }
+            $lit .= $ch;
+            $i++;
+        }
+    }
+    if ($lit != "") {
+        $segs[] = "l" . $lit;
+    }
+    if ($hasClass == 0) {
+        return "";
+    }
+    return implode("~", $segs);
+}
+
+// F404: ids of tokens whose decoded text is exactly ONE character of the class charset. The raw
+// gguf_charset_ids set can include multi-character tokens made entirely of class characters, and
+// a counted class segment would then emit more characters than the pattern asks for - the same
+// over-run the F399 length budget had to filter out of the quote close.
+function api_pattern_class_ids(string $chars): string
+{
+    $all = gguf_charset_ids($chars);
+    if ($all == "") {
+        return "";
+    }
+    $out = "";
+    $parts = explode(",", $all);
+    for ($i = 0; $i < count($parts); $i++) {
+        $t = gguf_token_str((int) $parts[$i]);
+        if (strlen($t) == 1 && strpos($chars, $t) !== false) {
+            $out = $out == "" ? $parts[$i] : $out . "," . $parts[$i];
+        }
+    }
+    return $out;
+}
+
 function api_schema_pattern_unsupported(string $body): int
 {
     if (strpos($body, "\"pattern\"") === false) {
@@ -6589,6 +6804,12 @@ function api_schema_pattern_unsupported(string $body): int
         }
         $pat = substr($body, $q1 + 1, $q2 - $q1 - 1);
         $off = $q2 + 1;
+        // F404: an anchored class/count pattern the grammar implements is honoured, not refused -
+        // the same composability rule the other keyword gates follow (a supported form exempting
+        // itself does not weaken the refusal of the forms nobody enforces).
+        if (api_schema_pattern_spec($pat) != "") {
+            continue;
+        }
         $core = $pat;
         $clen = strlen($core);
         if ($clen >= 4 && substr($core, 0, 2) == "^(" && substr($core, $clen - 2, 2) == ")$") {
@@ -12567,15 +12788,76 @@ function main(): void
     // supported cases.
     $prA = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"Paris|London"}}}}}');
     $prB = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"^(New York|Los Angeles)$"}}}}}');
+    // F404: the anchored class/count forms are now HONOURED, so they are no longer a refusal -
+    // the quantifier range, the star, the unanchored class and the negated class all still are,
+    // in the same gate, both directions.
+    $prF = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}');
+    $prG = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^SKU-[0-9]{4,6}$"}}}}}');
+    $prH = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+$"}}}}}');
+    $prI = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"[0-9]{3}"}}}}}');
+    $prJ = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^a-z]{2}$"}}}}}');
+    $prK = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^X[abc]{2,4}$"}}}}}');
     $prC = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"^[A-Z][a-z]+$"}}}}}');
     $prD = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string","pattern":"ab+c"}}}}}');
     $prE = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"city":{"type":"string"}}}}}');
-    echo "SCHEMA-PAT-REJECT literal=" . $prA . " wrapped=" . $prB . " class=" . $prC
+    echo "SCHEMA-PAT-REJECT literal=" . $prA . " wrapped=" . $prB . " counted=["
+        . $prF . "] range=[ " . $prG . "] star=[ " . $prH . "] unanchored=[ " . $prI
+        . "] negated=[ " . $prJ . "] mixed_alt=[ " . $prK . "] class=" . $prC
         . " quant=" . $prD . " none=" . $prE . "\n";
-    if ($prA == 0 && $prB == 0 && $prC == 1 && $prD == 1 && $prE == 0) {
+    if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 1 && $prH == 1 && $prI == 1
+        && $prJ == 1 && $prK == 1 && $prC == 1 && $prD == 1 && $prE == 0) {
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
     } else {
         echo "SCHEMA-PAT-REJECT: FAIL\n";
+    }
+
+    // SCHEMA-PAT-IMPL (F404): the counted class form is EMITTED by the mixed stepper, so the gate
+    // asserts the decoded text matches the pattern (preg_match over the value, not a status code),
+    // the literal segments appear verbatim, and a multi-leaf plan keeps every key with all-required
+    // still served. A spec that silently differs from the pattern would pass a status-code gate.
+    $spA = api_schema_pattern_spec('^[A-Z]{3}$');
+    $spB = api_schema_pattern_spec('^X[abc]{2}$');
+    $spC = api_schema_pattern_spec('^Paris$');
+    $spD = api_schema_pattern_spec('^[a-z]{2,4}$');
+    $pvBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"pat1","schema":'
+        . '{"type":"object","properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}';
+    $pvPlan = api_response_schema_mixed_object($pvBody);
+    $pvIds = tok_chat("user", "Give the code.") . "," . tok_chat_open("assistant");
+    $pvOut = api_object_mixed($pvIds, $pvPlan, "abcdefghijklmnopqrstuvwxyz", 16, 0);
+    $pvText = "";
+    $pvParts = explode(",", $pvOut);
+    $pvBase = count(explode(",", $pvIds));
+    for ($i = $pvBase; $i < count($pvParts); $i++) {
+        $pvText = $pvText . gguf_token_str((int) $pvParts[$i]);
+    }
+    $pvText = str_replace("Ġ", " ", $pvText);
+    $pvMatch = preg_match('/^\\{"code":"[A-Z]{3}"\\}$/', $pvText) == 1 ? 1 : 0;
+    $pwBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"pat2","schema":'
+        . '{"type":"object","properties":{"code":{"type":"string","pattern":"^X[abc]{2}$"},'
+        . '"city":{"type":"string"}},"required":["code","city"]}}}';
+    $pwSch = api_json_object_after($pwBody, "schema");
+    $pwPlan = api_response_schema_mixed_object($pwBody);
+    $pwRefuse = api_schema_keywords_unsupported($pwSch);
+    $pwOut = api_object_mixed($pvIds, $pwPlan, "abcdefghijklmnopqrstuvwxyz", 16, 0);
+    $pwText = "";
+    $pwParts = explode(",", $pwOut);
+    for ($i = $pvBase; $i < count($pwParts); $i++) {
+        $pwText = $pwText . gguf_token_str((int) $pwParts[$i]);
+    }
+    $pwText = str_replace("Ġ", " ", $pwText);
+    $pwCode = preg_match('/"code":"X[abc]{2}"/', $pwText) == 1 ? 1 : 0;
+    $pwCity = strpos($pwText, "\"city\":\"") !== false ? 1 : 0;
+    echo "SCHEMA-PAT-IMPL spec3=[" . $spA . "] spec_lit=[ " . $spB . "] pure_literal=[" . $spC
+        . "] range=[" . $spD . "] plan=[" . $pvPlan . "] out=[" . $pvText . "] match=" . $pvMatch
+        . "] plan2=[" . $pwPlan . "] refuse2=[" . $pwRefuse . "] out2=[" . $pwText
+        . "] code2=" . $pwCode . " city2=" . $pwCity . "]\n";
+    if ($spA == "c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $spB == "lX~c2xabc" && $spC == "" && $spD == ""
+        && $pvPlan == "code:p:c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $pvMatch == 1 && api_json_ok($pvText) == 1
+        && $pwPlan == "code:p:lX~c2xabc,city:s" && $pwRefuse == "" && $pwCode == 1
+        && $pwCity == 1 && api_json_ok($pwText) == 1) {
+        echo "SCHEMA-PAT-IMPL: PASS (emitted values match the pattern; multi-leaf keeps every key)\n";
+    } else {
+        echo "SCHEMA-PAT-IMPL: FAIL\n";
     }
 
     // SCHEMA-BOUND-REJECT (F397): same two-direction rule as the pattern gate. The supported

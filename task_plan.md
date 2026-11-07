@@ -663,3 +663,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`SCHEMA-REQ-SUBSET` 加混合形状例（string+integer+string，required 两个 ⇒ 键集合＝required 且整数值仍是整数）；`SCHEMA-KEYWORDS` 的 `req_mixed` 期望按新事实更新（若支持则改 `""`，并加"仍不支持的形状"对照）；`additionalProperties` 例双向。
 **验收**：①混合形状键集合正确（门 + 活体）②未支持形状/未声明名字仍拒绝（双向）③既有 SCHEMA-* 全绿④8000/8001 不回退⑤错误消息与实际支持面一致（不许留旧说法）。
 **顺位**：required 省略到混合形状 → additionalProperties 语义 → 数组界的其余形状 → pattern/边界实现 → 分片多卡 / FR-05。
+
+
+## F404 计划与完成（pattern 元字符实现：从"显式 400"到"真正支持"）
+**动作**：实现 `^...$` 锚定、字面量段 + 精确计数字符类段（`{n}`/裸类=1，n≤16，同族区间解析期展开）的 pattern；plan 新 kind `p:`（spec 编码 `l<text>~c<n>x<chars>`）；`api_object_mixed` p 分支（类字符走单字符 id 过滤）；混合检测器移出 pattern 排除 + 单叶 p plan；关键字门 fullEmission 计入 p。
+**F404 已完成**：自检 **176/0**（新门 `SCHEMA-PAT-IMPL`：发射值 preg_match 匹配模式；`SCHEMA-PAT-REJECT` 11 例双向）；8000 **115/0**、8001 绿、scaling **1.499×**、哨兵 **0**；活体 10 例双向全绿（`engine/schema_pattern_f404.log`）。**门抓到的真缺陷**：模式里的 `{3}` 使叶子值大括数=2 ⇒ "一大括号=扁平叶子"启发式丢叶 ⇒ **剥 JSON 字符串内容后计数**（三处形状判定全改）。**记法：括号计数启发式必须剥字符串；值匹配（非状态码）才是 pattern 的验收面。**
+**明确留拒（排队）**：`{n,m}` 区间量词（可复用 F399 字符预算）、`* + ?`、否定类、非锚定类、嵌套叶子类 pattern、pattern 同叶 minLength/maxLength。
+**顺位**：数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。
