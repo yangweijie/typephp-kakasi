@@ -859,6 +859,33 @@ function api_response_schema_array_string(string $body): string
         . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
+    // F407: a BOUNDED array leaf beside other properties is the mixed stepper's shape - it counts
+    // the elements AND emits the siblings - while this single-array writer would drop them, so it
+    // steps aside for exactly that shape. Without bounds the single-array emission is what has
+    // always served the shape, and a bounded single-leaf schema keeps coming through here (F400).
+    if (strpos($schema, "\"minItems\"") !== false || strpos($schema, "\"maxItems\"") !== false) {
+        $pp2 = strpos($schema, "\"properties\"");
+        if ($pp2 !== false) {
+            $bo2 = strpos($schema, "{", $pp2);
+            if ($bo2 !== false) {
+                $blk2 = api_balance_block($schema, $bo2);
+                if ($blk2 != "") {
+                    $nLeaves = 0;
+                    $hasB = 0;
+                    foreach (explode(",", api_top_leaves($blk2, 8)) as $lf) {
+                        $nLeaves++;
+                        $lkv = explode(":", $lf);
+                        if (count($lkv) == 2 && strpos($lkv[1], "a~") === 0) {
+                            $hasB = 1;
+                        }
+                    }
+                    if ($nLeaves > 1 && $hasB == 1) {
+                        return "";
+                    }
+                }
+            }
+        }
+    }
     return $pm[1];
 }
 
@@ -947,6 +974,32 @@ function api_response_schema_array_number(string $body): string
         . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"(integer|number)"\s*\}'
         . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
         return "";
+    }
+    // F407: a BOUNDED array leaf beside other properties is the mixed stepper's shape (it counts
+    // the elements AND emits the siblings) - this single-array writer would drop them, so it
+    // steps aside for exactly that shape, the same bail the string-array detector grew.
+    if (strpos($schema, "\"minItems\"") !== false || strpos($schema, "\"maxItems\"") !== false) {
+        $pp2 = strpos($schema, "\"properties\"");
+        if ($pp2 !== false) {
+            $bo2 = strpos($schema, "{", $pp2);
+            if ($bo2 !== false) {
+                $blk2 = api_balance_block($schema, $bo2);
+                if ($blk2 != "") {
+                    $nLeaves = 0;
+                    $hasB = 0;
+                    foreach (explode(",", api_top_leaves($blk2, 8)) as $lf) {
+                        $nLeaves++;
+                        $lkv = explode(":", $lf);
+                        if (count($lkv) == 2 && strpos($lkv[1], "~") !== false) {
+                            $hasB = 1;
+                        }
+                    }
+                    if ($nLeaves > 1 && $hasB == 1) {
+                        return "";
+                    }
+                }
+            }
+        }
     }
     return $pm[1] . "|" . ($pm[2] == "number" ? "1" : "0");
 }
@@ -2721,6 +2774,25 @@ function api_top_leaves(string $block, int $maxN): string
                        || preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*\[[^\]]*"boolean"[^\]]*\]/', $val) == 1) {
                 $arrOk = 1;
                 $arrTy = "ab";
+            }
+            // F407: element-count bounds travel with the leaf in the plan kind ("a~2~3"), so the
+            // mixed stepper can count the elements without re-reading the schema. Valid bounds
+            // only - an invalid pair keeps the plain kind and is refused by the keyword gate's
+            // own validation (maxItems 0, min>max, min past the ceiling, negatives, floats).
+            if ($arrOk == 1) {
+                $bmn = [];
+                $bmx = [];
+                $hasMin = preg_match('/"minItems"\s*:\s*([0-9]+)/', $val, $bmn) == 1;
+                $hasMax = preg_match('/"maxItems"\s*:\s*([0-9]+)/', $val, $bmx) == 1;
+                if ($hasMin || $hasMax) {
+                    $bvMin = $hasMin ? (int) $bmn[1] : 0;
+                    $bvMax = $hasMax ? (int) $bmx[1] : 0;
+                    if (($hasMax && $bvMax < 1) || ($bvMax > 0 && $bvMin > $bvMax) || $bvMin > 8) {
+                        $arrOk = 0;         // unservable bounds: back to a non-leaf, the gate refuses
+                    } else {
+                        $arrTy = $arrTy . "~" . $bvMin . "~" . $bvMax;
+                    }
+                }
             }
         }
         // Object arrays carry exactly three braces (the value, its items object and that
@@ -4604,6 +4676,101 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                 return "";
             }
             $s = $s . "," . $pcq;
+        } else if (strpos($ty, "~") !== false) {
+            // F407: a counted array leaf - the kind prefix a/an/af/ab with "~min~max" carrying the
+            // element bounds from the schema. The elements are emitted exactly like the nested
+            // stepper's array leaves; the close is not offered below the minimum and is the only
+            // token at the maximum (F400's counting, one level inside the object). The budget
+            // raises to the minimum, so the minimum is always reachable.
+            $tilde = strpos($ty, "~");
+            $aty = substr($ty, 0, $tilde);
+            $brest = explode("~", substr($ty, $tilde + 1));
+            if (count($brest) != 2
+                || ($aty != "a" && $aty != "an" && $aty != "af" && $aty != "ab")) {
+                return "";
+            }
+            $bMin = (int) $brest[0];
+            $bMax = (int) $brest[1];
+            if ($bMin < 0 || $bMin > 8 || ($bMax > 0 && $bMin > $bMax)) {
+                return "";
+            }
+            $budget = $bMax > 0 ? $bMax : 3;
+            if ($bMin > $budget) {
+                $budget = $bMin;
+            }
+            $aComma = api_punct_ids(",");
+            $aBracket = api_punct_ids("]");
+            if ($aComma == "" || $aBracket == "") {
+                return "";
+            }
+            $aopen = $aty == "a" ? "[\"" : "[";
+            $aop = api_constrained_continue([$aopen], 8);
+            if ($aop == "") {
+                return "";
+            }
+            $s = $s . "," . $aop;
+            $aDone = 0;
+            for ($it = 0; $it < $budget && $aDone == 0; $it++) {
+                if ($it > 0 && $aty == "a") {
+                    $aopen2 = api_constrained_continue(["\""], 4);
+                    if ($aopen2 == "") {
+                        return "";
+                    }
+                    $s = $s . "," . $aopen2;
+                }
+                if ($aty == "a") {
+                    $aclosed = 0;
+                    for ($d = 0; $d < 6; $d++) {
+                        $anx = model_session_next_allowed(0, $stepIds);
+                        if ($anx < 0) {
+                            break;
+                        }
+                        $s = $s . "," . $anx;
+                        if (strpos($q, "," . $anx . ",") !== false) {
+                            $aclosed = 1;
+                            break;
+                        }
+                    }
+                    if ($aclosed == 0) {
+                        $acq = api_constrained_continue(["\""], 4);
+                        if ($acq != "") {
+                            $s = $s . "," . $acq;
+                        }
+                    }
+                } else if ($aty == "ab") {
+                    $abool = api_constrained_continue(["true", "false"], 4);
+                    if ($abool == "") {
+                        return "";
+                    }
+                    $s = $s . "," . $abool;
+                } else {
+                    $anum = api_number_fill($aty == "af" ? 1 : 0, 4);
+                    if ($anum == "") {
+                        return "";
+                    }
+                    $s = $s . "," . $anum;
+                }
+                $aOffer = $aComma . "," . $aBracket;
+                if ($it + 1 < $bMin) {
+                    $aOffer = $aComma;          // below the minimum: the array cannot close yet
+                } else if ($it + 1 >= $budget) {
+                    $aOffer = $aBracket;        // at the maximum: only the close is reachable
+                }
+                $anx2 = model_session_next_allowed(0, $aOffer);
+                if ($anx2 < 0) {
+                    return "";
+                }
+                $s = $s . "," . $anx2;
+                if (strpos("," . $aComma . ",", "," . $anx2 . ",") === false) {
+                    $aDone = 1;                 // "]"
+                }
+            }
+            if ($aDone == 0) {
+                $acl = api_constrained_continue(["]"], 4);
+                if ($acl != "") {
+                    $s = $s . "," . $acl;
+                }
+            }
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 6);
             if ($body != "") {
@@ -6424,6 +6591,62 @@ function api_schema_array_element_bounds(string $schema): string
         return "";
     }
     $leaves = explode(",", $plan);
+    // F407: a leaf kind carrying "~min~max" (a/an/af/ab + element bounds) is the counted form the
+    // mixed stepper emits. A multi-leaf plan is honoured when the bounds sit inside ONE such leaf
+    // and every other leaf is a kind that stepper emits (s/i/n/b); a single-leaf plan keeps the
+    // keyed writer's path, which reads the same bounds from its own validation below. Two counted
+    // leaves keep the refusal.
+    $bIdx = -1;
+    for ($li = 0; $li < count($leaves); $li++) {
+        $lkv = explode(":", $leaves[$li]);
+        if (count($lkv) != 2 || strpos($lkv[1], "~") === false) {
+            continue;
+        }
+        $apfx = substr($lkv[1], 0, strpos($lkv[1], "~"));
+        if ($apfx != "a" && $apfx != "an" && $apfx != "af" && $apfx != "ab") {
+            continue;
+        }
+        if ($bIdx >= 0) {
+            return "";
+        }
+        $bIdx = $li;
+    }
+    if ($bIdx >= 0) {
+        for ($li = 0; $li < count($leaves); $li++) {
+            if ($li == $bIdx) {
+                continue;
+            }
+            $lkv = explode(":", $leaves[$li]);
+            if (count($lkv) != 2
+                || ($lkv[1] != "s" && $lkv[1] != "i" && $lkv[1] != "n" && $lkv[1] != "b")) {
+                return "";
+            }
+        }
+        $kv = explode(":", $leaves[$bIdx]);
+        $kp = strpos($block, "\"" . $kv[0] . "\"");
+        $vo = strpos($block, "{", $kp);
+        $leaf = api_balance_block($block, $vo);
+        if ($leaf == "") {
+            return "";
+        }
+        if (substr_count($leaf, "\"minItems\"") + substr_count($leaf, "\"maxItems\"")
+            != substr_count($schema, "\"minItems\"") + substr_count($schema, "\"maxItems\"")) {
+            return "";
+        }
+        $bmn2 = [];
+        $bmx2 = [];
+        $hMin = preg_match('/"minItems"\s*:\s*([0-9]+)/', $leaf, $bmn2) == 1;
+        $hMax = preg_match('/"maxItems"\s*:\s*([0-9]+)/', $leaf, $bmx2) == 1;
+        if (!$hMin && !$hMax) {
+            return "";
+        }
+        $tMin = $hMin ? (int) $bmn2[1] : 0;
+        $tMax = $hMax ? (int) $bmx2[1] : 0;
+        if (($hMax && $tMax < 1) || ($tMax > 0 && $tMin > $tMax) || $tMin > 8) {
+            return "";
+        }
+        return $tMin . ":" . $tMax;
+    }
     if (count($leaves) != 1) {
         return "";
     }
@@ -6671,7 +6894,10 @@ function api_schema_additional_properties_honoured(string $schema): int
         if (count($kv) != 2) {
             return 0;
         }
+        // F407: the counted array kind ("a~min~max") is plan-named like the rest, so the
+        // constraint holds there by the same construction.
         if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b"
+            && strpos($kv[1], "a~") !== 0
             && $kv[1] != "a" && $kv[1] != "an" && $kv[1] != "af" && $kv[1] != "ab") {
             return 0;
         }
@@ -6800,8 +7026,11 @@ function api_schema_keywords_unsupported(string $body): string
             continue;
         }
         // F404: the pattern kind is steppable too (the mixed stepper emits its counted
-        // segments), so it counts toward full emission like s/i/n/b.
-        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b" && $kv[1] != "p") {
+        // segments), so it counts toward full emission like s/i/n/b. F407: a counted array leaf
+        // ("a~min~max") is the same - the mixed stepper emits the array by element count and the
+        // other keys from the plan.
+        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b" && $kv[1] != "p"
+            && strpos($kv[1], "a~") !== 0) {
             $fullEmission = 0;
             break;
         }
@@ -13241,6 +13470,15 @@ function main(): void
     // The combination with the SCHEMA form of the keyword still is, and names the keyword that is
     // actually unimplemented rather than the one that is supported.
     $kwAB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":3}},"additionalProperties":{"type":"string"}}');
+    // F407: the bounds on an array leaf BESIDE other properties moved from a refusal to the
+    // mixed stepper (which counts the elements and emits the siblings) - the multi-leaf shape is
+    // served, an unservable bound pair still names minItems, the combination with
+    // additionalProperties composes (the keys are still plan-named), and all-required is
+    // satisfied by the full emission.
+    $kwAG = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":3,"items":{"type":"string"}},"note":{"type":"string"}}}');
+    $kwAH = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","minItems":9,"maxItems":2,"items":{"type":"string"}},"note":{"type":"string"}}}');
+    $kwAI = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":3,"items":{"type":"string"}},"note":{"type":"string"}},"additionalProperties":false}');
+    $kwAJ = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":3,"items":{"type":"string"}},"note":{"type":"string"}},"required":["cities","note"]}');
     $kwD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","b"]}');
     $kwE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"]}');
     $kwF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}}}');
@@ -13278,7 +13516,9 @@ function main(): void
         . "] req_arr_sub=[" . $kwAC . "] req_arr_all=[" . $kwAD . "] req_enum_all=[" . $kwAE
         . "] addprops_form=[" . $kwW . "] addprops_nested=[" . $kwX
         . "] addprops_mixed=[" . $kwY . "] addprops_enum=[" . $kwAF . "] addprops_arr=[" . $kwZ
-        . "] addprops_wire=[" . $kwAA . "] addprops_form_arr=[" . $kwAB . "]\n";
+        . "] addprops_wire=[" . $kwAA . "] addprops_form_arr=[" . $kwAB
+        . "] multi_bounds=[" . $kwAG . "] multi_bad=[" . $kwAH . "] multi_addprops=[" . $kwAI
+        . "] multi_allreq=[" . $kwAJ . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
@@ -13288,7 +13528,8 @@ function main(): void
         && $kwAC == "required" && $kwAD == "required" && $kwAE == "required"
         && $kwW == "additionalProperties" && $kwX == "additionalProperties"
         && $kwY == "" && $kwAF == "additionalProperties" && $kwZ == "" && $kwAA == ""
-        && $kwAB == "additionalProperties") {
+        && $kwAB == "additionalProperties"
+        && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == "") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";
@@ -13492,6 +13733,36 @@ function main(): void
     if ($c6LB !== false && $c6RB !== false && $c6RB > $c6LB) {
         $c6N = count(explode(",", substr($c6Text, $c6LB + 1, $c6RB - $c6LB - 1)));
     }
+    // F407: the bounds on an array leaf BESIDE other properties - the mixed stepper counts the
+    // elements and emits the siblings; the single-array writer would have dropped them, which is
+    // why it steps aside for this shape. The plan carries the bounds ("a~min~max") so the stepper
+    // never re-reads the schema.
+    $c7Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"cnt7","schema":'
+        . '{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":2,'
+        . '"items":{"type":"string"}},"note":{"type":"string"}}}}}';
+    $c7Bounds = api_response_schema_array_bounds($c7Body);
+    $c7Plan = api_response_schema_mixed_object($c7Body);
+    $c7Refuse = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array",'
+        . '"minItems":2,"maxItems":2,"items":{"type":"string"}},"note":{"type":"string"}}}');
+    $c7RefuseBad = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array",'
+        . '"minItems":9,"maxItems":2,"items":{"type":"string"}},"note":{"type":"string"}}}');
+    $c7Ids = tok_chat("user", "Name two French cities.") . "," . tok_chat_open("assistant");
+    $c7Out = api_object_mixed($c7Ids, $c7Plan, "abcdefghijklmnopqrstuvwxyz", 16, 0);
+    $c7Parts = explode(",", $c7Out);
+    $c7Base = count(explode(",", $c7Ids));
+    $c7Text = "";
+    for ($i = $c7Base; $i < count($c7Parts); $i++) {
+        $c7Text = $c7Text . gguf_token_str((int) $c7Parts[$i]);
+    }
+    $c7Text = str_replace("Ġ", " ", $c7Text);
+    $c7LB = strpos($c7Text, "[");
+    $c7RB = strpos($c7Text, "]");
+    $c7N = 0;
+    if ($c7LB !== false && $c7RB !== false && $c7RB > $c7LB) {
+        $c7N = count(explode(",", substr($c7Text, $c7LB + 1, $c7RB - $c7LB - 1)));
+    }
+    $c7Keys = (strpos($c7Text, "\"cities\"") !== false ? 1 : 0)
+        + (strpos($c7Text, "\"note\"") !== false ? 1 : 0);
     echo "SCHEMA-COUNT bounds=[" . $cnBounds . "] n=" . $cnN . "] text=[" . $cnText
         . "] num_bounds=[" . $c2Bounds . "] num_prop=[" . $c2Prop . "] num_n=" . $c2N
         . "] num_text=[" . $c2Text . "] refuse_obj=[" . $c3A . "] refuse_ceiling=[" . $c3B
@@ -13500,7 +13771,10 @@ function main(): void
         . "] pre_refuse=[" . $c5Refuse . "] top_bounds=[" . $c6Bounds . "] top_n=" . $c6N
         . "] top_text=[" . $c6Text . "] top_refuse0=[" . $c6Refuse0
         . "] top_refuseMM=[" . $c6RefuseMM . "] top_refuseObj=[" . $c6RefuseObj
-        . "] top_kw=[" . $c6Kw . "] top_kwObj=[" . $c6KwObj . "]\n";
+        . "] top_kw=[" . $c6Kw . "] top_kwObj=[" . $c6KwObj
+        . "] multi_bounds=[" . $c7Bounds . "] multi_plan=[" . $c7Plan . "] multi_n=" . $c7N
+        . "] multi_keys=" . $c7Keys . "] multi_text=[" . $c7Text . "] multi_refuse=["
+        . $c7Refuse . "] multi_refuse_bad=[" . $c7RefuseBad . "]\n";
     if ($cnBounds == "3:4" && $cnN >= 3 && $cnN <= 4 && api_json_ok($cnText) == 1
         && $c2Bounds == "2:2" && $c2N == 2 && api_json_ok($c2Text) == 1
         && $c3A == "" && $c3B == "" && $c3C == "" && $c3D == "0:4"
@@ -13508,7 +13782,10 @@ function main(): void
         && api_json_ok($c5Text) == 1
         && $c6Bounds == "2:2" && $c6N == 2 && api_json_ok($c6Text) == 1
         && $c6Refuse0 == "" && $c6RefuseMM == "" && $c6RefuseObj == ""
-        && $c6Kw == "" && $c6KwObj == "maxItems") {
+        && $c6Kw == "" && $c6KwObj == "maxItems"
+        && $c7Bounds == "2:2" && $c7Plan == "cities:a~2~2,note:s" && $c7Refuse == ""
+        && $c7RefuseBad == "minItems" && $c7N == 2 && $c7Keys == 2
+        && api_json_ok($c7Text) == 1) {
         echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-COUNT: FAIL\n";
