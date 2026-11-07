@@ -41,6 +41,15 @@ def keys_of(text):
         return None
 
 
+def n_items(text, key):
+    # Same rule as the F400 live check: count via json.loads - the served charset contains
+    # commas, so splitting the raw text would over-count.
+    try:
+        return len(json.loads(text)[key])
+    except Exception:
+        return None
+
+
 THREE = {"type": "object", "properties": {"city": {"type": "string"},
                                           "zip": {"type": "string"},
                                           "note": {"type": "string"}}}
@@ -77,6 +86,20 @@ cases = [
     ("addprops_mixed_refuse", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
       "additionalProperties": False},
+     lambda code, txt: code == 400 and "additionalProperties" in txt),
+    # F403: two constraints that each hold must not refuse each other. The array bound is enforced by
+    # element counting, the key constraint by the plan, so the pair is served.
+    ("addprops_with_arr_bounds", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
+                                                  "minItems": 2, "maxItems": 3}},
+      "additionalProperties": False},
+     lambda code, txt: (code == 200 and (n_items(txt, "cities") or 0) in (2, 3)
+                        and keys_of(txt) == ["cities"])),
+    # ...while a keyword that really is unimplemented still gets named, next to a supported one.
+    ("addprops_form_with_arr_bounds", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
+                                                  "maxItems": 3}},
+      "additionalProperties": {"type": "string"}},
      lambda code, txt: code == 400 and "additionalProperties" in txt),
 ]
 

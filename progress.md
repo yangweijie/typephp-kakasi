@@ -1250,3 +1250,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-KEYWORDS` 增至 22 例（`addProps=[]`、`addprops_wire=[]` 放行；form/nested/mixed 仍拒；`addprops_arr=[maxItems]` 把**已知过度拒绝**钉进门）。
 - **活体**：`addprops_all_string` 200 且键集合＝required；`addprops_mixed_refuse` 400 ⇒ harness 现 7 例全绿（`engine/schema_required_f402.log`）。
 - **梯**：**175/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.515×**、哨兵 **0**。
+
+
+## ▶ 状态（F403①，2026-11-07 12:40）——数组界 + `additionalProperties` 判据**可组合**（各自支持的约束不再互相排斥）；拒绝消息补上实际支持面
+- **改动**：`api_schema_array_element_bounds` 排除正则去掉 `additionalProperties`（键约束由自己的判据在拒绝时判定，不再参与数组形状排除）；`api_schema_additional_properties_honoured` 叶子 kind 集加 `a`；**拒绝消息**补上 additionalProperties 的实际支持面（验收⑤）。
+- **前一轮残留澄清**：上次会话 10:56 的 `selftest_f403.log` 是**中间态构建**的产物（kwZ 仍拒、SCHEMA-KEYWORDS FAIL）；且 `run-kakasi-selftest.bat` 的 `%1` 在脚本内 `cd engine` **之后**展开，传 `engine\xxx.log` 会落到不存在的 `engine\engine\`——**exe 根本没跑**、BAT_EXIT=1、日志不动，长得像"测试失败"。修正：传纯文件名；**证据必须核 mtime 晚于本轮构建**。
+- **门**：`SCHEMA-KEYWORDS` 的 `addprops_arr` 期望 `[maxItems]` → `[]`（旧期望被新行为证伪 ⇒ 改门并说明），新增 `addprops_form_arr=[additionalProperties]`（schema 形式组合仍拒并点名）；harness 7 → 9 例（`addprops_with_arr_bounds` 断言 200+元素数+键集合；`addprops_form_with_arr_bounds` 断言 400+点名）。
+- **活体**：`addprops_with_arr_bounds` **200**、2 元素、键集合＝["cities"]；`addprops_form_with_arr_bounds` **400** ⇒ 9 例全绿（`engine/schema_required_f403.log`，VERDICT: PASS）；数组界 8 例复跑全绿（`engine/schema_count_f403.log`）。
+- **梯**：自检 **175/0**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 par/fairness **0**；scaling **1.557×**；哨兵 **0**（`engine/selftest_f403.log`、`engine/api_smoke_f403.log`、`engine/par_smoke_f403.log`、`engine/fairness_f403.log`、`engine/throughput_f403.log`、`engine/schema_required_f403.log`、`engine/schema_count_f403.log`）。
+- **未做（F403② 排队）**：required 省略 / additionalProperties 扩到**混合叶子**（integer/number/boolean）——设计已在 findings（先修 `api_object_mixed` 的 `b` 分支，过滤形状门只放 {s,i,n,b}，逐形状验证键集合后再放判据）。
+- **下一轮顺位**：F403② → pattern 元字符实现 → 数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。

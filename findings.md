@@ -3772,3 +3772,21 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **支持表更新**：`additionalProperties` 布尔拼写在扁平全字符串对象上＝**支持（构造性质）**；schema 形式 / 嵌套 / 含非字符串叶子＝**显式 400**；与数组界同时出现＝暂 400（已入门的债）。
 **梯**：自检 **175 PASS / 0 FAIL**、`RUN_EXIT=0`（新增 5 个用例在既有门内，条数不变）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.515×**；哨兵 **0**（`engine/selftest_f402.log`、`engine/api_smoke_f402.log`、`engine/throughput_f402.log`）。
 **方法**：该不该拒绝一条约束，问的是"**生成器能否产出违反它的输出**"，不是"**有没有实现这个关键字**"；配套必须双向，否则判据会一路放宽到把真不支持的也放行。
+
+## F403② 设计分析（2026-11-07，读码收集，未实现）
+**required 省略的现路径（F401，仅扁平全字符串）**：`api_schema_required_filter`（:6178）＝形状门 `api_schema_flat_all_string` + plan 逐名保留 → `api_response_schema_string_props_required`（:6221）按 keep 表过滤 props → `api_schema_keywords_unsupported` 里子集判据 `api_schema_required_filter($body) != ""` 放行。
+**混合对象生成器**：`api_object_mixed`（:4446）**完全按传入 plan 逐键步进**（头部 `{"k1":` + 每个 item `,"k2":`）⇒ required 省略 = **过滤 plan 再传入**，生成器无需改动即少发键。plan 由 `api_response_schema_mixed_object`（:4523）产出：≥2 叶子、≥1 非字符串叶子、排除 enum/const/pattern/minimum/maximum/multipleOf、顶层对象。
+**发现的潜在缺陷（实现②时必须一并处理或明确留拒）**：`api_object_mixed` 只认 `s` 和 else→`api_number_fill`（:4508）⇒ plan 里 kind `b`（boolean）、`an/af/ab`（数组叶子）、`ao:`、`e:/en:` 都会被发成**数字**。而混合检测器**不排除**这些 kind（hasNum 只判 != "s"）。嵌套步进器 `api_nested_object_value`（:2924/:2931）反而正确处理 `b` 和数组 kind。⇒ {"x":s,"nums":an} 这类扁平形状今天可能被发成 `"nums":<整数>`。F402 的 addprops 判据接受的 kind 集 {s,an,af,ab} 里 an/af/ab 恰是生成器发不对的 kind——**F402 的接受面可能本身过宽**（对 an/af/ab 形状接受了约束但服务端发错值）。②实现顺序：先修 `api_object_mixed` 的 `b` 分支（照嵌套步进器 :2924 的 constrained true/false），②的过滤形状门只放 kind ⊆ {s,i,n,b} 的 plan；an/af/ab/ao/e:/en: 的混合形状要么先补生成器分支并配门，要么在检测器里排除并在判据里继续拒（逐个形状验证后再放，不能只改判据）。
+**过滤落点**：plan 在请求路径 4 处产出（:5464 非流式、:7306 流式、:8459、:8825 enum 路径），建议包装 `api_response_schema_mixed_object` 后按 `api_schema_required_filter` 的 keep 表过滤 plan（照 `api_response_schema_string_props_required` 的模式），别改 4 个调用点的顺序敏感逻辑。
+**additionalProperties 扩到混合叶子**：honoured 判据（:6249）kind 集加 `i/n/b`（键名同样来自 plan，构造上满足），但必须先用键集合门证明 `api_object_mixed` 少发键后同轮放行；`e:/en:/ao:` 因 explode(":") 产生 >2 段在判据里天然返回 0（仍拒）。
+**门设计**：`SCHEMA-REQ-SUBSET` 加混合例（string+integer+string，required 两个 ⇒ 键集合＝required 且整数值仍是整数）；`SCHEMA-KEYWORDS` 的 `req_mixed`/`addprops_mixed` 期望按新事实改 `""` 并加"仍不支持的形状"对照（含 b 叶子的混合形状在生成器修好前仍拒、修好后放行+对照例）。
+
+## F403①：数组界 + `additionalProperties` 两判据**可组合**（各自成立的约束不再互相排斥）
+**改了什么**：`api_schema_array_element_bounds` 的排除正则去掉 `additionalProperties`（它约束的是键名，键名来自 plan，由它自己的判据在拒绝时判定——数组形状不该替它做主）；`api_schema_additional_properties_honoured` 的叶子 kind 集加 `a`（字符串数组叶子；构造论证与 F402 同源：该形状的键名同样全部来自 plan）；**拒绝消息**补上 additionalProperties 的实际支持面（"minItems/maxItems ... also together with additionalProperties:true/false ... additionalProperties:true/false wherever every key is named from the declared plan"）。
+**判据记法**：排除条件从"含 additionalProperties 即排除"改成"**该关键字自身在支持面内则不参与排除**"——两条约束各自可执行时，可组合是构造性质，互斥是判据的私设；私设的互斥就是过度拒绝。
+**门（`SCHEMA-KEYWORDS` 23 例）**：`addprops_arr` 期望由 `[maxItems]` 改 `[]`（旧期望被新行为证伪 ⇒ 改门并说明）；新增 `addprops_form_arr=[additionalProperties]`——数组界 + **schema 形式**的 additionalProperties 仍拒，且点名真正未实现的关键字（组合不放宽"实现"的判定，只取消"私设的互斥"）。
+**活体双向（`engine/schema_required_f403.log` 第 8/9 例，harness 现 9 例）**：`addprops_with_arr_bounds` **200** 且元素数∈[2,3]、键集合＝["cities"]（`n_items` 计数照 F400 的规则走 `json.loads`，serve 字符集含逗号）；`addprops_form_with_arr_bounds` **400 点名 additionalProperties**。数组界计数 8 例复跑全绿（`engine/schema_count_f403.log`）——排除面收窄后既有拒绝例不回退。
+**支持表更新**：数组界（单属性标量数组）+ `additionalProperties` 布尔拼写＝**支持（可组合）**；+ schema 形式＝**显式 400**；其余既有行不变。
+**两条过程教训**：①`run-kakasi-selftest.bat` 的 `%1` 在脚本内部 `cd engine` **之后**才展开——传 `engine\xxx.log` 会落到不存在的 `engine\engine\`，**exe 根本没跑**而退出码是 1，长得像"测试失败"；必须传纯文件名（或绝对路径）。②**本轮证据的判据是日志 mtime 晚于本轮构建时间**：上次会话留下的 10:56 `selftest_f403.log` 差点被当成"改动后仍 FAIL"的证据——那其实是中间态构建的产物（kwZ 旧期望），当前源码重跑即绿。证据先核出身，再核内容。
+**梯**：自检 **175 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 `PAR_EXIT=0`、`FAIR_EXIT=0`；scaling **1.557×**；哨兵 **0**（`engine/selftest_f403.log`、`engine/api_smoke_f403.log`、`engine/par_smoke_f403.log`、`engine/fairness_f403.log`、`engine/throughput_f403.log`、`engine/schema_required_f403.log`、`engine/schema_count_f403.log`）。
+**未做（F403② 排队）**：required 省略 / additionalProperties 扩到**混合叶子**——设计分析已写在上节（含 `api_object_mixed` 对 b/an/af/ab/ao/e:/en: kind 发成数字的潜在缺陷：先修 b 分支、过滤形状门只放 {s,i,n,b}，逐形状验证后再放判据）。
