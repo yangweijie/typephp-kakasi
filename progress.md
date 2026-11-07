@@ -1290,3 +1290,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**（修复后二进制）：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.574×**、哨兵 **0**。
 - **留拒（排队）**：负界任意跨度（带符号走位）、浮点界、多叶有界整数、multipleOf 组合。
 - **下一轮顺位**：数组界的其余形状（多属性/顶层/对象数组）→ `{n,m}` 区间量词/`* + ?` → 分片多卡 / FR-05。
+
+
+## ▶ 状态（F406，2026-11-07 17:55）——数组界扩到**顶层数组**（schema 本身是数组对象），门放行与无人服务的缝隙同步堵住
+- **实现**：`api_schema_array_element_bounds` 加顶层分支（锚定数组对象、界仅此两键、items 恰标量字符串；max0/min>max/min>8 同款拒绝）；`api_response_schema_top_array_string` 正则接受界兄弟键（**服务面同步**——否则门放行后无人服务）；`api_top_array_string_value` 加 $bounds（F400 同款计数机制）；四链接入 `api_response_schema_array_bounds`（关键字检测器的 body 包装，一处扩展两个用途）。
+- **门**：`SCHEMA-COUNT` 加顶层例（top_bounds=[2:2] top_n=2、三拒绝例、top_kw/top_kwObj 双向）；活体 harness 扩到 11 例。
+- **活体**：11 例全绿（`engine/schema_count_f406.log`）——顶层 2/2 恰 2 元素、顶层 6/7 抬高分支、顶层 max0 400。required 13 例、pattern 10 例、bounds 8 例复跑全绿。
+- **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.566×**、哨兵 **0**。
+- **留拒（排队）**：多属性带界数组叶、顶层数字/布尔数组界、对象数组界。
+- **下一轮顺位**：多属性带界数组叶（混合步进器 a-kind 计数化）→ 对象数组界 → `{n,m}` 区间量词 → 分片多卡 / FR-05。

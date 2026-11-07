@@ -1,7 +1,7 @@
-"""F400 live check: are array minItems/maxItems honoured on the served API, and do the shapes whose
-generator cannot count elements still get refused?
+"""F400/F406 live check: are array minItems/maxItems honoured on the served API, and do the shapes
+whose generator cannot count elements still get refused?
 
-Four cases, both directions. The request bodies are built with json.dumps, so they arrive in the
+Eleven cases, both directions. The request bodies are built with json.dumps, so they arrive in the
 spaced wire spelling - the one that hid a whitespace bug in F397.
   1. string array,  minItems 3 / maxItems 4  -> 200 and 3 <= len <= 4
   2. integer array, minItems 2 / maxItems 2  -> 200 and len == 2
@@ -10,6 +10,10 @@ spaced wire spelling - the one that hid a whitespace bug in F397.
   5. string array through the STREAM path     -> 200 and the count inside the bounds
   6. minItems 6 (above the default budget)    -> 200 and 6 or 7 elements
   7. minItems 9 (past the element ceiling)    -> 400 naming minItems
+  8. bounds spelled before "items"            -> 200 and the count inside the bounds
+  9. F406: TOP-LEVEL array, min 2 / max 2     -> 200 and len == 2
+ 10. F406: top-level array, min 6 / max 7     -> 200 and 6 or 7 elements (the raise branch)
+ 11. F406: top-level array, maxItems 0        -> 400 naming maxItems
 Case 4 is the leak test: a bound outside the array would be relaxed by the shape check and enforced
 by nothing.
 """
@@ -39,6 +43,14 @@ def ask(prompt, schema, max_tokens=96):
 def n_items(text, key):
     try:
         return len(json.loads(text)[key])
+    except Exception:
+        return None
+
+
+def n_top_items(text):
+    # The top-level array schema serves a bare JSON array - count its elements.
+    try:
+        return len(json.loads(text))
     except Exception:
         return None
 
@@ -106,6 +118,17 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "minItems": 2, "maxItems": 3,
                                                   "items": {"type": "string"}}}},
      lambda code, txt: code == 200 and (n_items(txt, "cities") or 0) in (2, 3), ask),
+    # F406: the bounds on a TOP-LEVEL array - the schema itself is the array object, the elements
+    # are counted the same way, and the still-refused forms are pinned next to it.
+    ("top_min2_max2", "Name some French cities.",
+     {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}},
+     lambda code, txt: code == 200 and (n_top_items(txt) or 0) == 2, ask),
+    ("top_min6_max7_raise", "Name some French cities.",
+     {"type": "array", "minItems": 6, "maxItems": 7, "items": {"type": "string"}},
+     lambda code, txt: code == 200 and (n_top_items(txt) or 0) in (6, 7), ask),
+    ("top_max0_refuse", "Name some French cities.",
+     {"type": "array", "maxItems": 0, "items": {"type": "string"}},
+     lambda code, txt: code == 400 and "maxItems" in txt, ask),
 ]
 
 bad = 0
