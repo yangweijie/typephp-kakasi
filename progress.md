@@ -1280,3 +1280,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **176/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.499×**；哨兵 **0**。
 - **留拒（排队）**：`{n,m}` 区间量词、`* + ?`、否定类、非锚定类、嵌套叶子类 pattern、pattern 同叶 minLength/maxLength。
 - **下一轮顺位**：数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。
+
+
+## ▶ 状态（F405，2026-11-07 16:50）——数值边界**真正实现**（单整数叶 + 非负界 + 任意跨度 + 单侧可缺）；活体抓到 maximum-only 哨兵撞守卫的非法 JSON
+- **实现**：`api_schema_number_bounded_shape`（单整数叶 kind "i"、界至少一个且在场者非负 ⇒ "prop|lo|hi"，缺席侧 -1）；`api_number_bounded_fill` **逐位走界**（定长：有上界取 len(hi)——d 位值恒大于短一位的 lo，仅上界紧；len 相等两侧紧；每位允许数字 = 界的剩余交集，前缀入界后放宽 0..9，首位禁前导零；发射值是界的子集——合法）；边界门豁免该形状（负界 span≤15 仍由候选层枚举）；四链在 number_prop 前接入；拒绝消息按验收⑤更新。
+- **活体抓到的真 bug**：maximum-only 的 lo=-1 哨兵撞 fill 的 `$lo < 0` 守卫 ⇒ 线上回 **`{"n":}` 非法 JSON**（门当时绿——只测了 minimum-only 的发射）⇒ 修守卫 + 补 v5（maximum-only 发射）断言。**记法：哨兵值与守卫条件一起复核；检测器绿 ≠ 发射器绿。**
+- **门**：`SCHEMA-BOUND-REJECT` onesided/wide 期望证伪改 0 + multi_leaf/neg_one/float_wide/mult_of 仍拒；新门 `SCHEMA-NUM-BND`（shape 字符串 + 各走法发射值在界内 + json_ok）。
+- **活体**：8 例双向全绿（`engine/schema_bounds_f405b.log`）——`{"n":100000}`、`{"n":234567}`、`{"n":5}`、`{"n":12}`、`{"n":2}` 全在界内；多叶/负界/浮点 400 且消息一致。pattern 10 例、required 13 例复跑不回退。
+- **梯**（修复后二进制）：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.574×**、哨兵 **0**。
+- **留拒（排队）**：负界任意跨度（带符号走位）、浮点界、多叶有界整数、multipleOf 组合。
+- **下一轮顺位**：数组界的其余形状（多属性/顶层/对象数组）→ `{n,m}` 区间量词/`* + ?` → 分片多卡 / FR-05。

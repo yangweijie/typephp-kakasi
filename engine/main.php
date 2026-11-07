@@ -4849,6 +4849,165 @@ function api_response_schema_number_prop(string $body): string
     return $pm[1] . "|" . ($pm[2] == "number" ? "1" : "0");
 }
 
+// F405: the bounded-integer shape the digit-walk writer honours - exactly one integer leaf,
+// minimum and/or maximum present, every present bound a non-negative integer, and none of the
+// keywords that mean another generator owns the leaf. Negative bounds keep the old rules (the
+// candidates tier enumerates span<=15; anything wider stays refused). Returns "<prop>|<lo>|<hi>"
+// with -1 marking an absent side, or "".
+function api_schema_number_bounded_shape(string $schema): string
+{
+    if (preg_match('/"(enum|const|pattern|multipleOf)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $kv = explode(":", $leaves[0]);
+    if (count($kv) != 2 || $kv[1] != "i") {
+        return "";
+    }
+    $mn = [];
+    $mx = [];
+    $hasLo = preg_match('/"minimum"\s*:\s*(-?[0-9]+)/', $schema, $mn) == 1;
+    $hasHi = preg_match('/"maximum"\s*:\s*(-?[0-9]+)/', $schema, $mx) == 1;
+    if (!$hasLo && !$hasHi) {
+        return "";
+    }
+    $lo = -1;
+    $hi = -1;
+    if ($hasLo) {
+        $lo = (int) $mn[1];
+        if ($lo < 0) {
+            return "";
+        }
+    }
+    if ($hasHi) {
+        $hi = (int) $mx[1];
+        if ($hi < 0) {
+            return "";
+        }
+    }
+    if ($hasLo && $hasHi && $lo > $hi) {
+        return "";
+    }
+    return $kv[0] . "|" . $lo . "|" . $hi;
+}
+
+// Body-level wrapper: the response schema is extracted the way every other detector does it.
+function api_response_schema_number_bounded(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    $schema = api_json_object_after($body, "schema");
+    if ($schema == "") {
+        return "";
+    }
+    return api_schema_number_bounded_shape($schema);
+}
+
+// F405: emit an integer inside the bounds by walking digits left to right, one fixed length:
+// len(hi) when the upper bound exists (every d-digit value >= 10^(d-1) is above a shorter lo, so
+// only the upper walk is tight; equal lengths tighten both) and len(lo) for a one-sided minimum.
+// At each position the allowed digits are the intersection of the bound remainders, widening to
+// 0..9 as soon as the prefix moves strictly inside. The output is a subset of the range - legal,
+// since the schema asks "inside the bounds", not "every value".
+function api_number_bounded_fill(int $lo, int $hi): string
+{
+    $single = api_digit_ids(1);
+    // $lo == -1 / $hi == -1 mean an absent side (the shape helper refuses genuinely negative
+    // bounds, so the sentinel cannot collide with them here); the only range check is that both
+    // present sides are ordered.
+    if ($single == "" || ($lo >= 0 && $hi >= 0 && $hi < $lo)) {
+        return "";
+    }
+    $ids = [];
+    $parts = explode(",", $single);
+    for ($i = 0; $i < count($parts); $i++) {
+        $t = gguf_token_str((int) $parts[$i]);
+        if (strlen($t) == 1 && $t >= "0" && $t <= "9") {
+            $ids[$t] = $parts[$i];
+        }
+    }
+    if (count($ids) < 10) {
+        return "";
+    }
+    $loStr = $lo >= 0 ? (string) $lo : "";
+    $hiStr = $hi >= 0 ? (string) $hi : "";
+    $d = $hiStr !== "" ? strlen($hiStr) : strlen($loStr);
+    if ($d < 1 || $d > 18) {
+        return "";
+    }
+    $tightLo = ($loStr !== "" && strlen($loStr) == $d) ? 1 : 0;
+    $tightHi = ($hiStr !== "") ? 1 : 0;
+    $s = "";
+    for ($i = 0; $i < $d; $i++) {
+        $loD = ($tightLo == 1) ? (int) $loStr[$i] : 0;
+        $hiD = ($tightHi == 1) ? (int) $hiStr[$i] : 9;
+        if ($i == 0 && $d > 1 && $loD < 1) {
+            $loD = 1;                       // no illegal leading zero on a multi-digit value
+        }
+        if ($loD > $hiD) {
+            return "";
+        }
+        $allowed = "";
+        for ($dv = $loD; $dv <= $hiD; $dv++) {
+            $allowed = $allowed == "" ? $ids["" . $dv] : $allowed . "," . $ids["" . $dv];
+        }
+        $nx = model_session_next_allowed(0, $allowed);
+        if ($nx < 0) {
+            return "";
+        }
+        $tok = gguf_token_str($nx);
+        if (strlen($tok) != 1 || $tok < "0" || $tok > "9") {
+            return "";
+        }
+        $dv = (int) $tok;
+        $s = $s == "" ? "" . $nx : $s . "," . $nx;
+        if ($tightLo == 1 && $dv > (int) $loStr[$i]) {
+            $tightLo = 0;
+        }
+        if ($tightHi == 1 && $dv < (int) $hiStr[$i]) {
+            $tightHi = 0;
+        }
+    }
+    return $s;
+}
+
+// The bounded-integer object: {"prop":<in-range digits>} with the forced closing brace.
+function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, int $useCache = 1): string
+{
+    $s = api_constrained($ids, ["{\"" . $prop . "\":"], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $body = api_number_bounded_fill($lo, $hi);
+    if ($body != "") {
+        $s = $s . "," . $body;
+    }
+    $end = api_constrained_continue(["}"], 4);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
 // Unbounded integer multipleOf. No finite candidate set exists, so decode a short digit prefix
 // and force a three-digit suffix x = (m - (p*1000) % m) % m. Since m <= 999, x < 1000 and
 // p*1000 + x is divisible by m while staying a legal JSON integer (zero-padded suffix).
@@ -5663,10 +5822,16 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
                     $smu = explode("|", $scMult);
                     $scOut = api_multiple_value($ids, $smu[0], (int) $smu[1], 4, 1);
                 } else {
-                    $scNum = api_response_schema_number_prop($body);
-                    if ($scNum != "") {
-                        $sp2 = explode("|", $scNum);
-                        $scOut = api_number_value($ids, $sp2[0], (int) $sp2[1], 6, 1);
+                    $scNumB = api_response_schema_number_bounded($body);
+                    if ($scNumB != "") {
+                        $snb = explode("|", $scNumB);
+                        $scOut = api_number_bounded_value($ids, $snb[0], (int) $snb[1], (int) $snb[2], 1);
+                    } else {
+                        $scNum = api_response_schema_number_prop($body);
+                        if ($scNum != "") {
+                            $sp2 = explode("|", $scNum);
+                            $scOut = api_number_value($ids, $sp2[0], (int) $sp2[1], 6, 1);
+                        }
                     }
                 }
             }
@@ -6604,6 +6769,13 @@ function api_schema_keywords_unsupported(string $body): string
 function api_schema_bounds_unsupported(string $body): int
 {
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false) {
+        return 0;
+    }
+    // F405: the bounded-integer shape the digit-walk writer honours (one integer leaf, any span,
+    // one or both non-negative bounds) is no longer a refusal - the old rules below keep judging
+    // every other shape, including the negative bounds the candidates tier still enumerates when
+    // the span fits and nothing honours otherwise.
+    if (api_schema_number_bounded_shape($body) != "") {
         return 0;
     }
     // Walk every minimum and pair it with the maximum that follows it, so a schema with several
@@ -7767,10 +7939,16 @@ Connection: close
                                                 $scOut = api_multiple_value($ids, $smu[0], (int) $smu[1], 4, 1);
                                             } else {
                                                 // Bare unbounded number: digits with an optional fraction.
-                                                $scNum = api_response_schema_number_prop($body);
-                                                if ($scNum != "") {
-                                                    $sp2 = explode("|", $scNum);
-                                                    $scOut = api_number_value($ids, $sp2[0], (int) $sp2[1], 6, 1);
+                                                $scNumB = api_response_schema_number_bounded($body);
+                                                if ($scNumB != "") {
+                                                    $snb = explode("|", $scNumB);
+                                                    $scOut = api_number_bounded_value($ids, $snb[0], (int) $snb[1], (int) $snb[2], 1);
+                                                } else {
+                                                    $scNum = api_response_schema_number_prop($body);
+                                                    if ($scNum != "") {
+                                                        $sp2 = explode("|", $scNum);
+                                                        $scOut = api_number_value($ids, $sp2[0], (int) $sp2[1], 6, 1);
+                                                    }
                                                 }
                                             }
                                         }
@@ -8148,9 +8326,11 @@ function api_serve(int $port): void
                 $status = "400 Bad Request";
             } else if (api_schema_bounds_unsupported($schBody) == 1) {
                 // F397: same rule as the pattern branch - a bound combination the grammar cannot
-                // enumerate (float, one-sided, or a span wider than 15) used to be served as
-                // unconstrained text. Refuse it with the reason instead.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15\",\"type\":\"invalid_request_error\"}}";
+                // enumerate used to be served as unconstrained text. Refuse it with the reason
+                // instead. F405: the honoured set is wider now, so the message names it - a
+                // single integer property with non-negative bounds of any span and either side
+                // missing; the rest still refuses.
+                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with non-negative minimum and/or maximum (any span); float bounds, negative bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
@@ -8851,11 +9031,18 @@ function api_serve(int $port): void
                                         $sJOut = api_multiple_value($ids, $smu2[0], (int) $smu2[1], 4,
                                             $prefixCache);
                                     } else {
-                                        $sNum = api_response_schema_number_prop($body);
-                                        if ($sNum != "") {
-                                            $snp2 = explode("|", $sNum);
-                                            $sJOut = api_number_value($ids, $snp2[0], (int) $snp2[1], 6,
-                                                $prefixCache);
+                                        $sNumB = api_response_schema_number_bounded($body);
+                                        if ($sNumB != "") {
+                                            $snb2 = explode("|", $sNumB);
+                                            $sJOut = api_number_bounded_value($ids, $snb2[0], (int) $snb2[1],
+                                                (int) $snb2[2], $prefixCache);
+                                        } else {
+                                            $sNum = api_response_schema_number_prop($body);
+                                            if ($sNum != "") {
+                                                $snp2 = explode("|", $sNum);
+                                                $sJOut = api_number_value($ids, $snp2[0], (int) $snp2[1], 6,
+                                                    $prefixCache);
+                                            }
                                         }
                                     }
                                 }
@@ -9233,11 +9420,21 @@ function api_serve(int $port): void
                                 } else {
                                     // A bare unbounded integer/number: digits (and an optional
                                     // fraction), so the value is always a valid JSON number.
-                                    $numProp = api_response_schema_number_prop($body);
-                                    if ($numProp != "") {
-                                        $np = explode("|", $numProp);
-                                        $enumOut = api_number_value($ids, $np[0], (int) $np[1], 6, $prefixCache);
+                                    $numPropB = api_response_schema_number_bounded($body);
+                                    if ($numPropB != "") {
+                                        $npb = explode("|", $numPropB);
+                                        $enumOut = api_number_bounded_value($ids, $npb[0], (int) $npb[1],
+                                            (int) $npb[2], $prefixCache);
                                         $jsonMode = 1;
+                                    } else {
+                                        // A bare unbounded integer/number: digits (and an optional
+                                        // fraction), so the value is always a valid JSON number.
+                                        $numProp = api_response_schema_number_prop($body);
+                                        if ($numProp != "") {
+                                            $np = explode("|", $numProp);
+                                            $enumOut = api_number_value($ids, $np[0], (int) $np[1], 6, $prefixCache);
+                                            $jsonMode = 1;
+                                        }
                                     }
                                 }
                             }
@@ -12866,24 +13063,103 @@ function main(): void
     // generating unconstrained text.
     $bdA = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":5}}}}}');
     $bdB = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":5.5}}}}}');
+    // F405: the single-integer-leaf shape with non-negative bounds is HONOURED at any span and
+    // with one side missing (the digit walk emits an in-range value), so onesided/wide moved
+    // from 1 to 0 - the falsified expectations change, and the shapes that still refuse are
+    // pinned right next to them: the same bounds on a multi-leaf or negative or float leaf.
     $bdC = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1}}}}}');
     $bdD = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100}}}}}');
+    $bdH = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1},"s":{"type":"string"}}}}}');
+    $bdI = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-100}}}}}');
+    $bdJ = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":0,"maximum":100}}}}}');
+    $bdK = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100},"m":{"type":"integer","multipleOf":3}}}}}');
     $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
     // F397: the same two cases as they arrive on the wire, with spaces after the colons - the
     // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
     $bdF = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5}}}}}');
     $bdG = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 5.5}}}}}');
-    echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=" . $bdC
-        . " wide=" . $bdD . " none=" . $bdE
+    echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=[" . $bdC
+        . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[ " . $bdI
+        . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK . "] none=" . $bdE
         . " wire_supported=" . $bdF . " wire_float=" . $bdG . "
 ";
-    if ($bdA == 0 && $bdB == 1 && $bdC == 1 && $bdD == 1 && $bdE == 0
+    if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 1
+        && $bdJ == 1 && $bdK == 1 && $bdE == 0
         && $bdF == 0 && $bdG == 1) {
-        echo "SCHEMA-BOUND-REJECT: PASS (supported combination kept, unsupported ones flagged)
+        echo "SCHEMA-BOUND-REJECT: PASS (single-leaf non-negative bounds honoured at any span; others flagged)
 ";
     } else {
         echo "SCHEMA-BOUND-REJECT: FAIL
 ";
+    }
+
+    // SCHEMA-NUM-BND (F405): the digit walk EMITS an integer inside the bounds, so the gate parses
+    // the emitted value and asserts lo <= v <= hi for the wide, equal-length and one-sided walks -
+    // a status-code check would stay green while the value ignored the bounds. The detector's
+    // shape string is asserted too, with the refused shapes returning "".
+    $nbA = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100}}}}}');
+    $nbB = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":1000}}}}}');
+    $nbC = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":5}}}}}');
+    $nbD = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":5}}}}}');
+    $nbE = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-100},"s":{"type":"string"}}}}}');
+    $nbIds = tok_chat("user", "Give the number.") . "," . tok_chat_open("assistant");
+    $nbOut1 = api_number_bounded_value($nbIds, "n", 0, 100, 0);
+    $nbT1 = "";
+    $nbP1 = explode(",", $nbOut1);
+    $nbBase = count(explode(",", $nbIds));
+    for ($i = $nbBase; $i < count($nbP1); $i++) {
+        $nbT1 = $nbT1 . gguf_token_str((int) $nbP1[$i]);
+    }
+    $nbT1 = str_replace("Ġ", " ", $nbT1);
+    $nbV1 = preg_match('/"n":([0-9]+)\}/', $nbT1, $nbM1) == 1 ? (int) $nbM1[1] : -1;
+    $nbOut2 = api_number_bounded_value($nbIds, "n", 1, 1000, 0);
+    $nbT2 = "";
+    $nbP2 = explode(",", $nbOut2);
+    for ($i = $nbBase; $i < count($nbP2); $i++) {
+        $nbT2 = $nbT2 . gguf_token_str((int) $nbP2[$i]);
+    }
+    $nbT2 = str_replace("Ġ", " ", $nbT2);
+    $nbV2 = preg_match('/"n":([0-9]+)\}/', $nbT2, $nbM2) == 1 ? (int) $nbM2[1] : -1;
+    $nbOut3 = api_number_bounded_value($nbIds, "n", 5, -1, 0);
+    $nbT3 = "";
+    $nbP3 = explode(",", $nbOut3);
+    for ($i = $nbBase; $i < count($nbP3); $i++) {
+        $nbT3 = $nbT3 . gguf_token_str((int) $nbP3[$i]);
+    }
+    $nbT3 = str_replace("Ġ", " ", $nbT3);
+    $nbV3 = preg_match('/"n":([0-9]+)\}/', $nbT3, $nbM3) == 1 ? (int) $nbM3[1] : -1;
+    $nbOut4 = api_number_bounded_value($nbIds, "n", 1, 5, 0);
+    $nbT4 = "";
+    $nbP4 = explode(",", $nbOut4);
+    for ($i = $nbBase; $i < count($nbP4); $i++) {
+        $nbT4 = $nbT4 . gguf_token_str((int) $nbP4[$i]);
+    }
+    $nbT4 = str_replace("Ġ", " ", $nbT4);
+    $nbV4 = preg_match('/"n":([0-9]+)\}/', $nbT4, $nbM4) == 1 ? (int) $nbM4[1] : -1;
+    // F405: maximum-only is the case the live check caught after the gate went green - the absent
+    // lower sentinel collided with the fill's negative guard and the number body came out empty,
+    // so the assertion is here: an emitted value, inside the bounds, valid JSON.
+    $nbOut5 = api_number_bounded_value($nbIds, "n", -1, 15, 0);
+    $nbT5 = "";
+    $nbP5 = explode(",", $nbOut5);
+    for ($i = $nbBase; $i < count($nbP5); $i++) {
+        $nbT5 = $nbT5 . gguf_token_str((int) $nbP5[$i]);
+    }
+    $nbT5 = str_replace("Ġ", " ", $nbT5);
+    $nbV5 = preg_match('/"n":([0-9]+)\}/', $nbT5, $nbM5) == 1 ? (int) $nbM5[1] : -1;
+    echo "SCHEMA-NUM-BND shape=[" . $nbA . "] shape2=[" . $nbB . "] shape_one=[" . $nbC
+        . "] shape_span=[ " . $nbD . "] shape_multi=[ " . $nbE . "] v1=" . $nbV1
+        . " v2=" . $nbV2 . " v3=" . $nbV3 . " v4=" . $nbV4 . " v5=" . $nbV5 . "]\n";
+    if ($nbA == "n|0|100" && $nbB == "n|1|1000" && $nbC == "n|5|-1" && $nbD == "n|1|5"
+        && $nbE == ""
+        && $nbV1 >= 0 && $nbV1 <= 100 && api_json_ok($nbT1) == 1
+        && $nbV2 >= 1 && $nbV2 <= 1000 && api_json_ok($nbT2) == 1
+        && $nbV3 >= 5 && $nbV3 <= 9 && api_json_ok($nbT3) == 1
+        && $nbV4 >= 1 && $nbV4 <= 5 && api_json_ok($nbT4) == 1
+        && $nbV5 >= 0 && $nbV5 <= 15 && api_json_ok($nbT5) == 1) {
+        echo "SCHEMA-NUM-BND: PASS (emitted values inside the bounds; refused shapes yield no shape)\n";
+    } else {
+        echo "SCHEMA-NUM-BND: FAIL\n";
     }
 
     // SCHEMA-KEYWORDS (F398): the five unenforced keywords must be named, and `required` must be

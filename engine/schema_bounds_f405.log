@@ -1,0 +1,10 @@
+wide_0_100000        status=200 ok=True text={"n":100000}
+wide_1000_999999     status=200 ok=True text={"n":234567}
+onesided_min_5       status=200 ok=True text={"n":5}
+onesided_max_15      status=200 ok=False text={"n":}
+narrow_1_5           status=200 ok=True text={"n":2}
+multi_leaf_refuse    status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with non-negative minimum and/or maximum (any span); float bou
+negative_refuse      status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with non-negative minimum and/or maximum (any span); float bou
+float_refuse         status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with non-negative minimum and/or maximum (any span); float bou
+VERDICT: FAIL cases=1
+CHECK_EXIT=1

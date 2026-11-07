@@ -1,0 +1,87 @@
+"""F405 live check: are non-negative integer bounds honoured at any span and with a side missing?
+
+The bounds gate used to refuse anything beyond an integer with BOTH bounds and a span of at most
+15 (the candidates tier enumerates those). Now the digit walk serves a single integer property
+with non-negative minimum and/or maximum at ANY span, so the assertion is the VALUE inside the
+bounds, not the status code. Eight cases:
+  1. wide span [0, 100000]       -> 200, value inside the bounds
+  2. wide span [1000, 999999]    -> 200, value inside the bounds
+  3. one-sided minimum 5         -> 200, value >= 5
+  4. one-sided maximum 15        -> 200, value <= 15
+  5. narrow span [1, 5]          -> 200, value inside (candidates tier, no regression)
+  6. the same wide bounds on a multi-leaf schema -> 400 (only the single-leaf shape is honoured)
+  7. negative bounds             -> 400
+  8. float bounds                -> 400
+"""
+import json
+import sys
+import urllib.error
+import urllib.request
+
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+URL = "http://127.0.0.1:%d/v1/chat/completions" % PORT
+
+
+def ask(prompt, schema, max_tokens=64):
+    body = {"messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_schema",
+                                "json_schema": {"name": "bnd", "schema": schema}},
+            "max_tokens": max_tokens, "temperature": 0}
+    req = urllib.request.Request(URL, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as f:
+            return f.getcode(), json.loads(f.read().decode())["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()[:200]
+
+
+def val_of(text, key):
+    try:
+        return json.loads(text)[key]
+    except Exception:
+        return None
+
+cases = [
+    ("wide_0_100000", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0, "maximum": 100000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 0 <= val_of(txt, "n") <= 100000),
+    ("wide_1000_999999", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1000, "maximum": 999999}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 1000 <= val_of(txt, "n") <= 999999),
+    ("onesided_min_5", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") >= 5),
+    ("onesided_max_15", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": 15}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 0 <= val_of(txt, "n") <= 15),
+    ("narrow_1_5", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 1 <= val_of(txt, "n") <= 5),
+    ("multi_leaf_refuse", "Give the number and the city.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0, "maximum": 100000},
+                                       "city": {"type": "string"}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("negative_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -5000, "maximum": -100}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("float_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+]
+
+bad = 0
+for label, prompt, schema, ok in cases:
+    code, txt = ask(prompt, schema)
+    good = ok(code, txt)
+    if not good:
+        bad += 1
+    print("%-20s status=%s ok=%s text=%s" % (label, code, good, txt[:140]))
+print("VERDICT: " + ("PASS - emitted values inside the bounds; refused shapes still 400"
+                     if bad == 0 else "FAIL cases=%d" % bad))
+sys.exit(1 if bad else 0)
