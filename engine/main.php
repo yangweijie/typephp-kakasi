@@ -2800,7 +2800,11 @@ function api_top_leaves(string $block, int $maxN): string
         // "items", and matching it would put the array under the wrong key (F296 round B).
         if ($arrOk == 0 && $valBraces == 4) {
             $mo2 = [];
-            if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{\s*"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val, $mo2) == 1) {
+            // F408: minItems/maxItems may sit before "items" the same way the scalar-array
+            // detectors accept them - the ao kind is the shape, not one spelling of it.
+            if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*'
+                . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+                . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{\s*"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"string"/', $val, $mo2) == 1) {
                 $arrOk = 1;
                 $arrTy = "ao:" . $mo2[1];
             }
@@ -3211,7 +3215,7 @@ function api_response_schema_nested_object(string $body): string
 // An array of flat objects, e.g. {"people":[{"name":" a","age":123}, …]}. The element plan is
 // "<name>:<s|i|n>,…" taken from items.properties. Each element is closed by a forced "}", then
 // only "," (another element) or "]" (end) is reachable.
-function api_array_object_value(string $ids, string $prop, string $plan, string $charset, int $maxItems, int $maxSteps, int $useCache = 1): string
+function api_array_object_value(string $ids, string $prop, string $plan, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $charsetIds = gguf_charset_ids($charset);
     $quoteIds = gguf_charset_ids("\"");
@@ -3219,6 +3223,23 @@ function api_array_object_value(string $ids, string $prop, string $plan, string 
     $bracketIds = api_punct_ids("]");
     if ($charsetIds == "" || $quoteIds == "" || $commaIds == "" || $bracketIds == "") {
         return "";
+    }
+    // F408: "min:max" element-count bounds (0 = that side unconstrained) - the same wiring the
+    // scalar-array writers got in F400/F406: the budget becomes the maximum (raised to the
+    // minimum when the minimum is above it), below the minimum the close is not offered, at the
+    // maximum only the close is.
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
     }
     $items = explode(",", $plan);
     if (count($items) == 0) {
@@ -3289,7 +3310,13 @@ function api_array_object_value(string $ids, string $prop, string $plan, string 
         if ($cb != "") {
             $s = $s . "," . $cb;
         }
-        $nx2 = model_session_next_allowed(0, $it < $maxItems - 1 ? $endIds : $bracketIds);
+        $offer = $endIds;
+        if ($it + 1 < $bMin) {
+            $offer = $commaIds;         // below the minimum: the list cannot close yet
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;       // at the maximum: only the close token is reachable
+        }
+        $nx2 = model_session_next_allowed(0, $offer);
         if ($nx2 < 0) {
             break;
         }
@@ -3454,8 +3481,11 @@ function api_response_schema_array_object(string $body): string
         return "";
     }
     $pm = [];
-    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
-        . '"items"\s*:\s*\{\s*"type"\s*:\s*"object"/s', $schema, $pm) != 1) {
+    // F408: minItems/maxItems may sit before "items" the same way the scalar-array detectors
+    // accept them - the ao shape is the shape, not one spelling of it.
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*'
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+        . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"object"/s', $schema, $pm) != 1) {
         return "";
     }
     $ip = strpos($schema, $pm[0]);
@@ -5961,7 +5991,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
     } else if ($scArrObj != "") {
         $sao = explode("|", $scArrObj);
         $scOut = api_array_object_value($ids, $sao[0], $sao[1],
-            api_schema_charset(), 3, 6, 1);
+            api_schema_charset(), 3, 6, 1, api_response_schema_array_bounds($body));
     } else if ($scRootOneof != "") {
         $sro = explode("|", $scRootOneof);
         $scOut = api_root_oneof_grammar_value($ids, $sro[1],
@@ -6529,6 +6559,64 @@ function api_response_schema_string_bounds(string $body): string
     return $out;
 }
 
+// F408: element-count bounds for the OBJECT-array shape the keyed writer serves - a single
+// property whose kind is "ao:..." (items are objects with their own properties), the writer
+// emitting only that key, so only a single-leaf plan is honoured. The same bound sanity as the
+// scalar-array shapes: maxItems 0, min>max and a minimum past the element ceiling stay refused,
+// and a bound outside the array's own object would be relaxed but enforced nowhere.
+function api_schema_array_object_bounds(string $schema): string
+{
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $kv = explode(":", $leaves[0]);
+    // The ao plan entry is three parts - "a:ao:<itemkey>" - so the kind is kv[1] == "ao" and the
+    // items' own key sits in kv[2].
+    if (count($kv) < 3 || $kv[1] != "ao") {
+        return "";
+    }
+    $kp = strpos($block, "\"" . $kv[0] . "\"");
+    $vo = strpos($block, "{", $kp);
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return "";
+    }
+    if (substr_count($leaf, "\"minItems\"") + substr_count($leaf, "\"maxItems\"")
+        != substr_count($schema, "\"minItems\"") + substr_count($schema, "\"maxItems\"")) {
+        return "";
+    }
+    $bmn = [];
+    $bmx = [];
+    $hMin = preg_match('/"minItems"\s*:\s*([0-9]+)/', $leaf, $bmn) == 1;
+    $hMax = preg_match('/"maxItems"\s*:\s*([0-9]+)/', $leaf, $bmx) == 1;
+    if (!$hMin && !$hMax) {
+        return "";
+    }
+    $tMin = $hMin ? (int) $bmn[1] : 0;
+    $tMax = $hMax ? (int) $bmx[1] : 0;
+    if (($hMax && $tMax < 1) || ($tMax > 0 && $tMin > $tMax) || $tMin > 8) {
+        return "";
+    }
+    return $tMin . ":" . $tMax;
+}
+
 // F400: element-count bounds for the scalar-array shape whose generator steps element by element
 // and can therefore restrict the closing bracket by count. The honoured shape is deliberately
 // narrow: one properties block, exactly one "type":"array" in the whole schema (so no nested rank),
@@ -6563,18 +6651,27 @@ function api_schema_array_element_bounds(string $schema): string
         }
         return $tMin . ":" . $tMax;
     }
-    if (preg_match_all('/"properties"\s*:/', $schema) != 1
-        || preg_match_all('/"type"\s*:\s*"array"/', $schema) != 1) {
-        return "";
-    }
     // F403: additionalProperties is no longer an exclusion here. It constrains key NAMES, which
     // this shape gets from the plan, so it is judged by its own predicate at refusal time - two
     // constraints that each hold must not refuse each other.
     if (preg_match('/"(enum|const|pattern|oneOf|anyOf|allOf)"\s*:/', $schema) == 1) {
         return "";
     }
-    if (strpos($schema, "\"items\"") !== false
-        && preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"(object|array)"/', $schema) == 1) {
+    // F408: the items check runs BEFORE the one-properties-block rule below - the object-array
+    // shape inherently carries TWO properties blocks (the root's and the items'), so the count
+    // rule would refuse it before its own bounds were ever read.
+    if (strpos($schema, "\"items\"") !== false) {
+        if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"array"/', $schema) == 1) {
+            return "";              // arrays of arrays: the 2D writers do not count elements
+        }
+        if (preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"object"/', $schema) == 1) {
+            // F408: the object-array shape the keyed writer serves - the bounds are validated by
+            // the same rules as the scalar arrays, "" keeps the refusal.
+            return api_schema_array_object_bounds($schema);
+        }
+    }
+    if (preg_match_all('/"properties"\s*:/', $schema) != 1
+        || preg_match_all('/"type"\s*:\s*"array"/', $schema) != 1) {
         return "";
     }
     $pp = strpos($schema, "\"properties\"");
@@ -8156,7 +8253,7 @@ Connection: close
                                 } else if ($scArrObj != "") {
                                     $sao = explode("|", $scArrObj);
                                     $scOut = api_array_object_value($ids, $sao[0], $sao[1],
-                                        api_schema_charset(), 3, 6, 1);
+                                        api_schema_charset(), 3, 6, 1, api_response_schema_array_bounds($body));
                                 } else if ($scRootOneof != "") {
                                     $sro = explode("|", $scRootOneof);
                                     $scOut = api_root_oneof_grammar_value($ids, $sro[1],
@@ -9251,7 +9348,7 @@ function api_serve(int $port): void
                         } else if ($sArrObj != "") {
                             $sao2 = explode("|", $sArrObj);
                             $sJOut = api_array_object_value($ids, $sao2[0], $sao2[1],
-                                api_schema_charset(), 3, 6, $prefixCache);
+                                api_schema_charset(), 3, 6, $prefixCache, api_response_schema_array_bounds($body));
                         } else if ($sRootOneof != "") {
                             $sro2 = explode("|", $sRootOneof);
                             $sJOut = api_root_oneof_grammar_value($ids, $sro2[1],
@@ -9618,7 +9715,7 @@ function api_serve(int $port): void
                     } else if ($arrObj != "") {
                         $aop = explode("|", $arrObj);
                         $enumOut = api_array_object_value($ids, $aop[0], $aop[1],
-                            api_schema_charset(), 3, 6, $prefixCache);
+                            api_schema_charset(), 3, 6, $prefixCache, api_response_schema_array_bounds($body));
                         $jsonMode = 1;
                     } else if ($arrRootOneof != "") {
                         $aro = explode("|", $arrRootOneof);
@@ -13491,7 +13588,15 @@ function main(): void
     $kwN = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":3}}}');
     $kwO = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":5}}}');
     $kwP = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"}}},"maxItems":2}');
+    // F408: the bounds on an OBJECT-array leaf moved from a refusal to the keyed writer (which
+    // counts the elements the same way) - the single-leaf ao shape is served, an unservable pair
+    // still names minItems, a multi-leaf ao plan keeps the refusal (the writer emits only that
+    // key), and bounds on an array of arrays stay refused (the 2D writers do not count).
     $kwQ = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"object","properties":{"n":{"type":"string"}}},"maxItems":3}}}');
+    $kwAK = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","minItems":2,"maxItems":3,"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}');
+    $kwAL = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","minItems":9,"maxItems":2,"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}');
+    $kwAM = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","maxItems":3,"items":{"type":"object","properties":{"n":{"type":"string"}}}},"note":{"type":"string"}}}');
+    $kwAN = api_schema_keywords_unsupported('{"type":"object","properties":{"g":{"type":"array","items":{"type":"array","items":{"type":"string"}},"maxItems":3}}}');
     $kwR = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "array", "items": {"type": "string"}, "minItems": 2}}}');
     $kwS = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":0}}}');
     $kwT = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"minItems":4,"maxItems":2}}}');
@@ -13511,7 +13616,8 @@ function main(): void
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
-        . "] arr_obj=[" . $kwQ . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
+        . "] arr_obj=[" . $kwQ . "] ao_bounds=[" . $kwAK . "] ao_bad=[" . $kwAL
+        . "] ao_multi=[" . $kwAM . "] ao_2d=[" . $kwAN . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
         . "] min_gt_max=[" . $kwT . "] req_undeclared=[" . $kwU . "] req_mixed=[" . $kwV
         . "] req_arr_sub=[" . $kwAC . "] req_arr_all=[" . $kwAD . "] req_enum_all=[" . $kwAE
         . "] addprops_form=[" . $kwW . "] addprops_nested=[" . $kwX
@@ -13522,7 +13628,8 @@ function main(): void
     if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
-        && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == "maxItems"
+        && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == ""
+        && $kwAK == "" && $kwAL == "minItems" && $kwAM == "maxItems" && $kwAN == "maxItems"
         && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
         && $kwU == "required" && $kwV == ""
         && $kwAC == "required" && $kwAD == "required" && $kwAE == "required"
@@ -13672,6 +13779,9 @@ function main(): void
     }
     $c3A = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
         . '"items":{"type":"object","properties":{"n":{"type":"string"}}},"maxItems":3}}}');
+    // F408 flipped the object-array case: the keyed ao writer counts elements now, so a servable
+    // bound pair returns them; the still-refused forms live in the ao_bad/ao_multi/ao_2d fixtures
+    // and in c8KwBad below.
     $c3B = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
         . '"items":{"type":"string"},"minItems":9}}}');
     $c3C = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
@@ -13763,9 +13873,45 @@ function main(): void
     }
     $c7Keys = (strpos($c7Text, "\"cities\"") !== false ? 1 : 0)
         + (strpos($c7Text, "\"note\"") !== false ? 1 : 0);
+    // F408: the bounds on an OBJECT-array leaf - the keyed ao writer counts the elements the same
+    // way; the shapes nobody honours (an unservable pair, a multi-leaf ao plan, bounds on an
+    // array of arrays) still refuse.
+    $c8Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"cnt8","schema":'
+        . '{"type":"object","properties":{"rows":{"type":"array","minItems":2,"maxItems":2,'
+        . '"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}}}';
+    $c8Bounds = api_response_schema_array_bounds($c8Body);
+    $c8Det = api_response_schema_array_object($c8Body);
+    $c8Kw = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array",'
+        . '"minItems":2,"maxItems":2,"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}');
+    $c8KwBad = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array",'
+        . '"minItems":9,"maxItems":2,"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}');
+    $c8Ids = tok_chat("user", "Name two French cities.") . "," . tok_chat_open("assistant");
+    $c8Split = explode("|", $c8Det);
+    $c8Out = api_array_object_value($c8Ids, $c8Split[0], $c8Split[1], "abcdefghijklmnopqrstuvwxyz", 3, 6, 0, $c8Bounds);
+    $c8Parts = explode(",", $c8Out);
+    $c8Base = count(explode(",", $c8Ids));
+    $c8Text = "";
+    for ($i = $c8Base; $i < count($c8Parts); $i++) {
+        $c8Text = $c8Text . gguf_token_str((int) $c8Parts[$i]);
+    }
+    $c8Text = str_replace("Ġ", " ", $c8Text);
+    $c8N = 0;
+    $c8Walk = 0;
+    $c8Len = strlen($c8Text);
+    for ($i = 0; $i < $c8Len; $i++) {
+        $ch = substr($c8Text, $i, 1);
+        if ($ch == "{") {
+            if ($c8Walk == 1) {
+                $c8N++;                     // an object opening directly inside the outer array
+            }
+            $c8Walk++;
+        } else if ($ch == "}") {
+            $c8Walk--;
+        }
+    }
     echo "SCHEMA-COUNT bounds=[" . $cnBounds . "] n=" . $cnN . "] text=[" . $cnText
         . "] num_bounds=[" . $c2Bounds . "] num_prop=[" . $c2Prop . "] num_n=" . $c2N
-        . "] num_text=[" . $c2Text . "] refuse_obj=[" . $c3A . "] refuse_ceiling=[" . $c3B
+        . "] num_text=[" . $c2Text . "] obj_bounds=[" . $c3A . "] refuse_ceiling=[" . $c3B
         . "] refuse_outside=[" . $c3C . "] ok=[" . $c3D
         . "] pre_bounds=[" . $c5Bounds . "] pre_prop=[" . $c5Prop . "] pre_n=" . $c5N
         . "] pre_refuse=[" . $c5Refuse . "] top_bounds=[" . $c6Bounds . "] top_n=" . $c6N
@@ -13774,10 +13920,12 @@ function main(): void
         . "] top_kw=[" . $c6Kw . "] top_kwObj=[" . $c6KwObj
         . "] multi_bounds=[" . $c7Bounds . "] multi_plan=[" . $c7Plan . "] multi_n=" . $c7N
         . "] multi_keys=" . $c7Keys . "] multi_text=[" . $c7Text . "] multi_refuse=["
-        . $c7Refuse . "] multi_refuse_bad=[" . $c7RefuseBad . "]\n";
+        . $c7Refuse . "] multi_refuse_bad=[" . $c7RefuseBad
+        . "] ao_bounds=[" . $c8Bounds . "] ao_det=[" . $c8Det . "] ao_n=" . $c8N
+        . "] ao_text=[" . $c8Text . "] ao_kw=[" . $c8Kw . "] ao_kw_bad=[" . $c8KwBad . "]\n";
     if ($cnBounds == "3:4" && $cnN >= 3 && $cnN <= 4 && api_json_ok($cnText) == 1
         && $c2Bounds == "2:2" && $c2N == 2 && api_json_ok($c2Text) == 1
-        && $c3A == "" && $c3B == "" && $c3C == "" && $c3D == "0:4"
+        && $c3A == "0:3" && $c3B == "" && $c3C == "" && $c3D == "0:4"
         && $c5Bounds == "2:2" && $c5Prop == "cities" && $c5N == 2 && $c5Refuse == ""
         && api_json_ok($c5Text) == 1
         && $c6Bounds == "2:2" && $c6N == 2 && api_json_ok($c6Text) == 1
@@ -13785,7 +13933,9 @@ function main(): void
         && $c6Kw == "" && $c6KwObj == "maxItems"
         && $c7Bounds == "2:2" && $c7Plan == "cities:a~2~2,note:s" && $c7Refuse == ""
         && $c7RefuseBad == "minItems" && $c7N == 2 && $c7Keys == 2
-        && api_json_ok($c7Text) == 1) {
+        && api_json_ok($c7Text) == 1
+        && $c8Bounds == "2:2" && $c8Kw == "" && $c8KwBad == "minItems"
+        && $c8N == 2 && api_json_ok($c8Text) == 1) {
         echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-COUNT: FAIL\n";

@@ -1,0 +1,18 @@
+str_min3_max4          status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov"]}
+int_min2_max2          status=200 ok=True text={"nums":[100,200]}
+obj_items_count        status=400 ok=False text={"error":{"message":"schema keyword not supported: maxItems (minItems/maxItems are honoured on a single scalar-array pro
+outer_bound_refuse     status=400 ok=True text={"error":{"message":"schema keyword not supported: maxItems (minItems/maxItems are honoured on a single scalar-array pro
+str_min2_max3_stream   status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov"]}
+str_min6_max7_raise    status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov","Lyo
+str_min9_refuse        status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+str_bounds_before_items status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov"]}
+top_min2_max2          status=200 ok=True text=["Paris, France,","Lyon, France"]
+top_min6_max7_raise    status=200 ok=True text=["Paris, France,","Lyon, France","Lille, France","Nantes, France","Toulouse, France","Lyon, France"]
+top_max0_refuse        status=400 ok=True text={"error":{"message":"schema keyword not supported: maxItems (minItems/maxItems are honoured on a single scalar-array pro
+multi_leaf_min2_max2   status=200 ok=True text={"cities":["Lyon, Lille,","Nantes, Montpellier,"],"note":"Lyon is the capital of the French region of Lorraine, while Li
+multi_leaf_min6_raise  status=200 ok=True text={"cities":["Lyon, Lille,","Nantes, Montpellier,","Lyon, Lille,","Nantes, Montpellier,","Lyon, Lille,","Nantes, Montpelli
+multi_leaf_bad_refuse  status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+ao_min2_max2           status=400 ok=False text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+ao_bad_refuse          status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+VERDICT: FAIL cases=2
+CHECK_EXIT=1

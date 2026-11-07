@@ -1,7 +1,7 @@
-"""F400/F406/F407 live check: are array minItems/maxItems honoured on the served API, and do the
-shapes whose generator cannot count elements still get refused?
+"""F400/F406/F407/F408 live check: are array minItems/maxItems honoured on the served API, and do
+the shapes whose generator cannot count elements still get refused?
 
-Fourteen cases, both directions. The request bodies are built with json.dumps, so they arrive in the
+Sixteen cases, both directions. The request bodies are built with json.dumps, so they arrive in the
 spaced wire spelling - the one that hid a whitespace bug in F397.
   1. string array,  minItems 3 / maxItems 4  -> 200 and 3 <= len <= 4
   2. integer array, minItems 2 / maxItems 2  -> 200 and len == 2
@@ -17,8 +17,12 @@ spaced wire spelling - the one that hid a whitespace bug in F397.
  12. F407: the bounded array leaf BESIDE a string property -> 200, count inside AND both keys
  13. F407: multi-leaf, min 6 / max 7         -> 200, 6 or 7 elements, both keys
  14. F407: multi-leaf, unservable bounds     -> 400 naming minItems
+ 15. F408: OBJECT-array, min 2 / max 2       -> 200 and 2 items
+ 16. F408: object-array, unservable bounds   -> 400 naming minItems
 Case 4 is the leak test: a bound outside the array would be relaxed by the shape check and enforced
-by nothing.
+by nothing. Case 3 predates F408 - with the counting now implemented it stays refused only because
+its bounds are unservable (min 9 > max 3 would be... it has only maxItems: 3, which IS servable
+now, so case 3 flips to 200 and the refusal side is covered by cases 11/14/16).
 """
 import json
 import sys
@@ -98,11 +102,13 @@ cases = [
      {"type": "object", "properties": {"nums": {"type": "array", "items": {"type": "integer"},
                                                 "minItems": 2, "maxItems": 2}}},
      lambda code, txt: code == 200 and n_items(txt, "nums") == 2, ask),
-    ("obj_items_refuse", "List some people.",
+    # F408 flipped this one: the object-array writer counts elements now, so maxItems 3 on an
+    # object array is served with at most three items (the refusal side lives in cases 11/14/16).
+    ("obj_items_count", "List some people.",
      {"type": "object", "properties": {"rows": {"type": "array", "items": {"type": "object",
                                                                            "properties": {"name": {"type": "string"}}},
                                                 "maxItems": 3}}},
-     lambda code, txt: code == 400 and "maxItems" in txt, ask),
+     lambda code, txt: code == 200 and (n_items(txt, "rows") or 0) in (1, 2, 3), ask),
     ("outer_bound_refuse", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
       "maxItems": 2},
@@ -157,6 +163,18 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
                                                   "minItems": 9, "maxItems": 2},
                                        "note": {"type": "string"}}},
+     lambda code, txt: code == 400 and "minItems" in txt, ask),
+    # F408: the bounds on an OBJECT-array leaf - the keyed ao writer counts the elements the same
+    # way; the shapes nobody honours still refuse.
+    ("ao_min2_max2", "List two people.",
+     {"type": "object", "properties": {"rows": {"type": "array", "minItems": 2, "maxItems": 2,
+                                                "items": {"type": "object",
+                                                          "properties": {"n": {"type": "string"}}}}}},
+     lambda code, txt: code == 200 and (n_items(txt, "rows") or 0) == 2, ask),
+    ("ao_bad_refuse", "List some people.",
+     {"type": "object", "properties": {"rows": {"type": "array", "minItems": 9, "maxItems": 2,
+                                                "items": {"type": "object",
+                                                          "properties": {"n": {"type": "string"}}}}}},
      lambda code, txt: code == 400 and "minItems" in txt, ask),
 ]
 

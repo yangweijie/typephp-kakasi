@@ -1309,3 +1309,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.561×**、哨兵 **0**。
 - **留拒（排队）**：对象数组的界（ao 写入器计数化）、`{n,m}` 区间量词、嵌套叶子的带界数组。
 - **下一轮顺位**：对象数组界 → `{n,m}` 区间量词 / `* + ?` → 分片多卡 / FR-05。
+
+
+## ▶ 状态（F408，2026-11-07 21:20）——数组界扩到**对象数组**（ao 写入器计数化）；门抓到检查顺序与 kind 段数两个缺陷
+- **实现**：`api_array_object_value` 加 $bounds（F400 同款计数）；关键字检测器 items 检查重构（object ⇒ ao 规则 / array ⇒ 仍拒）且**移到 properties 计数规则之前**（ao 天然两个 properties 块）；`api_schema_array_object_bounds`（单叶 + kind 恰为 "ao" + occurrence + 界验证）；两处 ao 正则接受 items 前界段；四链接入。
+- **门抓到的两个缺陷**：①顺序——ao 被计数规则先拒（ao 天然两 properties 块）⇒ items 检查前移；②kind 判断 `strpos($kv[1],"ao:")` 对三段条目恒假（kv[1] 是 "ao"，itemkey 在 kv[2]）⇒ 改 `count>=3 && kv[1]=="ao"`。**记法：plan 条目段数因 kind 而异，按 kv[1] 判 kind 前先明确段数约定。**
+- **被证伪翻转**：kwQ `[maxItems]`→`[]`、c3A `""`→`"0:3"`、活体用例 3 400→200 计数内（翻转均有说明与新对照）。
+- **活体**：16 例全绿（`engine/schema_count_f408c.log`）——ao 2/2 恰 2 项、坏界 400。required/pattern/bounds 复跑不回退。
+- **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.495×**、哨兵 **0**。
+- **留拒（排队）**：多叶 ao、`{n,m}` 区间量词、嵌套带界数组。
+- **下一轮顺位**：`{n,m}` 区间量词 / `* + ?` → 嵌套带界数组 / 多叶 ao → 分片多卡 / FR-05。
