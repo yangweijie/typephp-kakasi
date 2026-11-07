@@ -134,11 +134,19 @@ cases = [
      {"type": "object", "properties": {"num": {"type": "string", "pattern": "^[0-9]+$"}}},
      lambda code, txt: code == 200 and val_of(txt, "num") is not None
      and re.match(r"^[0-9]+$", val_of(txt, "num")) is not None),
-    ("nonlast_range_refuse", "Give the tag.",
-     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]{2,4}[0-9]{3}$"}}},
-     lambda code, txt: code == 400 and "pattern" in txt),
-    ("nonlast_star_refuse", "Give the tag.",
+    # F415 flipped these two: a quantifier beside a FOLLOWING segment is served by emitting the
+    # minimum (the count lands inside the bounds - the subset argument); only a minimum of ZERO
+    # beside a follower (an epsilon transition) keeps refusing.
+    ("nonlast_star_served", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]+[0-9]{2}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[a-z]+[0-9]{2}$", val_of(txt, "tag")) is not None),
+    ("nonlast_range_served", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]{2,4}[0-9]{3}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[a-z]{2,4}[0-9]{3}$", val_of(txt, "tag")) is not None),
+    ("nonlast_star0_refuse", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]*[0-9]{2}$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
     ("literal_alt_regression", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string", "pattern": "^(Paris|London)$"}}},

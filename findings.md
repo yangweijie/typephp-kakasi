@@ -3884,3 +3884,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：SCHEMA-COUNT 加双带界数组嵌套例（two_bounds=[2:2]、two_nums=2、two_tags=3、stray 界仍拒）。
 **F414 完成（补记）**：自检 **177/0**（two_bounds=[2:2] two_kw=[] two_stray=[] two_nums=2 two_tags=3）、8000 **115/0**、8001 par/fairness **0**、scaling **1.609×**、哨兵 **0**（`engine/selftest_f414.log`、`engine/api_smoke_f414.log`、`engine/par_smoke_f414.log`、`engine/fairness_f414.log`、`engine/throughput_f414.log`、`engine/schema_count_f414.log`、`engine/schema_required_f414.log`、`engine/schema_pattern_f414.log`、`engine/schema_bounds_f414.log`）。活体 22 例全绿：双带界数组嵌套（nums 2/2 + tags 3/3）两计数同时兑现；游离界 400。required/pattern/bounds 复跑不回退。
 **记法**：多叶带界的 occurrence 检查从"单叶 == 全 schema"改为"**带界叶子出现次数之和 == 全 schema**"——逐叶验证 + 总量核算，界在任何带界叶子之外的位置（游离界）都保持拒绝。
+
+## F415（进行中）：非末段量化符——**最小计数发射**（子集合法论证，无需 NFA）
+**设计洞察**：原计划"NFA 走位（位置集模拟）"被一个更简单的论证取代——非末段量化符发射**最小计数**即可：计数值 dmin 落在 [min,max] 内 ⇒ 值是 pattern 的一个合法匹配（**与 F405 数值边界"输出是界的子集——合法，schema 要的是界内而非每个值"同源**）⇒ 走位确定性发射 dmin 个字符后进入下一段，无 NFA。解析器仅拒绝 min=0 的非末段（epsilon 转移）。
+**实现**：解析器的非末段拒绝从"全部非精确"收窄为"仅 min=0"；写入器的段循环索引化（isLast 标记）——非末段 "c" 走 min-精确发射（无引号提供），末段保持原区间/无界走位。
+**门**：prAO（非末段星号）/prAP（非末段区间）翻转 + prAY（min=0 非末段）仍拒对照；活体翻转 2 例 + 新增 min-0 拒绝例。
+**F415 完成（补记）**：自检 **177/0**（spD 翻转为两段 spec）、8000 **115/0**、8001 par/fairness **0**、scaling **1.693×**、哨兵 **0**（`engine/selftest_f415c.log`、`engine/api_smoke_f415c.log`、`engine/par_smoke_f415c.log`、`engine/fairness_f415c.log`、`engine/throughput_f415c.log`、`engine/schema_pattern_f415c.log`、`engine/schema_required_f415c.log`、`engine/schema_bounds_f415c.log`、`engine/schema_count_f415c.log`）。活体 18 例全绿：非末段星号 `^[a-z]+[0-9]{2}$` 与非末段区间 `^[a-z]{2,4}[0-9]{3}$` 值匹配（区间段恒发 min）；min=0 非末段 400。required/bounds/count 复跑不回退。过程一次 LNK1104（exe 锁）与一次瞬态崩溃——杀进程重建后全绿。
+**记法**：**"NFA 走位"被"最小计数发射"取代——range 段恒发 min 即落在 [min,max] 内（值是 pattern 的一个合法匹配），与 F405 边界"输出是界的子集"同源**；原 NFA 设计（位置集模拟）是过度设计——发射一个合法解即可兑现约束，无需枚举所有路径。
+**留拒（排队）**：min=0 非末段（epsilon）、body 内字面量 `^`、`\D` 等其他转义。

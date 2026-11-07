@@ -4715,7 +4715,10 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
             // so the emitted string matches the pattern by construction; a class character is
             // picked from the class charset alone, so no quote or off-class character can leak
             // into the value.
-            foreach (explode("~", $pSpec) as $seg) {
+            $segs2 = explode("~", $pSpec);
+            for ($si = 0; $si < count($segs2); $si++) {
+                $seg = $segs2[$si];
+                $isLast = $si == count($segs2) - 1;
                 $tag = substr($seg, 0, 1);
                 if ($tag == "l") {
                     $lp = api_constrained_continue([substr($seg, 1)], 32);
@@ -4763,31 +4766,46 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                     if ($dmax >= 0 && $dmax < $dmin) {
                         return "";
                     }
-                    $budget = $dmax >= 0 ? $dmax : 16;
-                    $got = 0;
-                    $cdone = 0;
-                    for ($d = 0; $d <= $budget && $cdone == 0; $d++) {
-                        if ($got < $dmin) {
-                            $cAllow = $cids;
-                        } else if ($dmax >= 0 && $got >= $dmax) {
-                            $cdone = 1;                 // at the maximum: the value ends here
-                            break;
-                        } else {
-                            $cAllow = $cids . "," . $qids;
+                    if (!$isLast) {
+                        // F415: a non-last segment emits exactly its MINIMUM - the count lands
+                        // inside the bounds, so the value is one valid match and the walk simply
+                        // continues with the next segment (the same subset argument the numeric
+                        // bounds use). No close is offered here; the segments that follow, and
+                        // the tail's quote, finish the value.
+                        for ($d = 0; $d < $dmin; $d++) {
+                            $pnx = model_session_next_allowed(0, $cids);
+                            if ($pnx < 0) {
+                                return "";
+                            }
+                            $s = $s . "," . $pnx;
                         }
-                        $pnx = model_session_next_allowed(0, $cAllow);
-                        if ($pnx < 0) {
-                            return "";
+                    } else {
+                        $budget = $dmax >= 0 ? $dmax : 16;
+                        $got = 0;
+                        $cdone = 0;
+                        for ($d = 0; $d <= $budget && $cdone == 0; $d++) {
+                            if ($got < $dmin) {
+                                $cAllow = $cids;
+                            } else if ($dmax >= 0 && $got >= $dmax) {
+                                $cdone = 1;                 // at the maximum: the value ends here
+                                break;
+                            } else {
+                                $cAllow = $cids . "," . $qids;
+                            }
+                            $pnx = model_session_next_allowed(0, $cAllow);
+                            if ($pnx < 0) {
+                                return "";
+                            }
+                            if (strpos("," . $qids . ",", "," . $pnx . ",") !== false) {
+                                $cdone = 1;                 // the model chose to close: the tail emits it
+                                break;
+                            }
+                            $s = $s . "," . $pnx;
+                            $got++;
                         }
-                        if (strpos("," . $qids . ",", "," . $pnx . ",") !== false) {
-                            $cdone = 1;                 // the model chose to close: the tail emits it
-                            break;
-                        }
-                        $s = $s . "," . $pnx;
-                        $got++;
+                        // The budget running out ends the value too - the tail's closing quote closes
+                        // it; emitting one here would put a stray second quote on the wire.
                     }
-                    // The budget running out ends the value too - the tail's closing quote closes
-                    // it; emitting one here would put a stray second quote on the wire.
                 } else {
                     return "";
                 }
@@ -7611,9 +7629,12 @@ function api_schema_pattern_spec(string $pat): string
                 $qExact = 0;
                 $i++;
             }
-            // F409: a non-exact quantifier is honoured only when nothing follows - the closing
-            // quote is the one token that can end the segment, so the walk stays unambiguous.
-            if ($qExact == 0 && $i < $len) {
+            // F415: a non-exact quantifier beside a FOLLOWING segment is served by emitting the
+            // MINIMUM - the count lands inside the bounds, so the value is one valid match (the
+            // same subset argument the numeric bounds use), and the walk continues with the next
+            // segment - no NFA needed. Only a minimum of zero (an epsilon transition) still
+            // refuses.
+            if ($qExact == 0 && $i < $len && $qMin < 1) {
                 return "";
             }
             $segs[] = "c" . $qMin . ($qExact == 1 ? "" : "-" . ($qMax > 0 ? $qMax : "")) . "x" . $chars;
@@ -13776,10 +13797,11 @@ function main(): void
     // F404: the anchored class/count forms are now HONOURED, so they are no longer a refusal -
     // the quantifier range, the star, the unanchored class and the negated class all still are,
     // in the same gate, both directions.
-    // F409: {n,m} ranges and the * + ? shorthands are honoured on the LAST segment (the closing
-    // quote is a distinct token, so the walk stays unambiguous) - prH (star) and prK (last-segment
-    // range) moved from 1 to 0, while a range or star beside a FOLLOWING segment still refuses
-    // (that walk needs a real NFA), and the unanchored/negated forms keep their refusals.
+    // F409/F415: {n,m} ranges and the * + ? shorthands are honoured - on the LAST segment the
+    // closing quote is a distinct token and the walk offers the range's span; beside a FOLLOWING
+    // segment the walk emits the minimum (the count lands inside the bounds), and only a minimum
+    // of ZERO beside a follower keeps refusing. The unanchored/negated forms keep their F412
+    // behaviour.
     $prF = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}');
     // F409 flipped prG too: `[0-9]{4,6}` is the LAST segment (nothing follows before $), so the
     // range is served - the non-last range lives in prAP below.
@@ -13804,8 +13826,13 @@ function main(): void
     $prAV = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\D{3}$"}}}}}');
     $prAW = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^a\\\\b$"}}}}}');
     $prK = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^X[abc]{2,4}$"}}}}}');
+    // F415 flipped prAO and prAP: a quantifier beside a FOLLOWING segment is served by emitting
+    // the minimum (the count lands inside the bounds - the subset argument), so the star-non-last
+    // and range-non-last forms are served; only a minimum of ZERO beside a follower (an epsilon
+    // transition) keeps refusing.
     $prAO = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+[0-9]{2}$"}}}}}');
     $prAP = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]{2,4}[0-9]{3}$"}}}}}');
+    $prAY = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]*[0-9]{2}$"}}}}}');
     // F409 bisect: the live request path hands the gate the BARE schema (spaced, with the type
     // key) - if one of these returns 1 while prH returns 0, the difference is in the body shape,
     // not the pattern.
@@ -13820,13 +13847,14 @@ function main(): void
     echo "SCHEMA-PAT-REJECT literal=" . $prA . " wrapped=" . $prB . " counted=["
         . $prF . "] lastrange=[" . $prG . "] star=[" . $prH . "] unanchored=[ " . $prI
         . "] negated=[ " . $prJ . "] lastrange2=[" . $prK . "] star_nonlast=[ " . $prAO
-        . "] range_nonlast=[ " . $prAP . "] bare_spaced=[" . $prAQ . "] bare_compact=["
+        . "] range_nonlast=[ " . $prAP . "] star0_nonlast=[" . $prAY . "] bare_spaced=[" . $prAQ . "] bare_compact=["
         . $prAR . "] bare_notype=[" . $prAS . "] class=[" . $prC
         . "] unanchored=[" . $prI . "] negated=[" . $prJ . "] neg_empty=[" . $prAT
         . "] neg_underscore=[" . $prAX . "] escape=[" . $prAU . "] esc_upper_D=[" . $prAV . "] esc_backslash=[" . $prAW
         . "] quant=" . $prD . " none=" . $prE . "\n";
     if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 0
-        && $prJ == 0 && $prK == 0 && $prAO == 1 && $prAP == 1 && $prC == 0 && $prD == 1 && $prE == 0
+        && $prJ == 0 && $prK == 0 && $prAO == 0 && $prAP == 0 && $prAY == 1
+        && $prC == 0 && $prD == 1 && $prE == 0
         && $prAT == 1 && $prAX == 0 && $prAU == 0 && $prAV == 1 && $prAW == 1
         && $prAQ == 0 && $prAR == 0 && $prAS == 0) {
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
@@ -13841,8 +13869,9 @@ function main(): void
     $spA = api_schema_pattern_spec('^[A-Z]{3}$');
     $spB = api_schema_pattern_spec('^X[abc]{2}$');
     $spC = api_schema_pattern_spec('^Paris$');
-    // F409 repurposed this one: a range beside a FOLLOWING segment still yields no spec (the walk
-    // would need a real NFA); the served last-segment range lives in spE below.
+    // F415 flipped this one too: a range beside a FOLLOWING segment now yields the two-segment
+    // spec - the walk emits the minimum for the ranged segment and continues; the min-zero
+    // epsilon form still yields no spec.
     $spD = api_schema_pattern_spec('^[a-z]{2,4}[0-9]{3}$');
     // F409: the range and the star spell out in the spec, and the emitted value honours them - the
     // length walks between the bounds, the star's close is reachable from the first position. The
@@ -13908,7 +13937,8 @@ function main(): void
         . "] spec_range=[" . $spE . "] spec_star=[" . $spF . "] planz=[" . $pzPlan
         . "] outz=[" . $pzText . "] matchz=" . $pzMatch . "] plans=[" . $psPlan
         . "] outs=[" . $psText . "] matchs=" . $psMatch . "]\n";
-    if ($spA == "c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $spB == "lX~c2xabc" && $spC == "" && $spD == ""
+    if ($spA == "c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $spB == "lX~c2xabc" && $spC == ""
+        && $spD == "c2-4xabcdefghijklmnopqrstuvwxyz~c3x0123456789"
         && $spE == "c2-4xabcdefghijklmnopqrstuvwxyz" && $spF == "c1-xabcdefghijklmnopqrstuvwxyz"
         && $pvPlan == "code:p:c3xABCDEFGHIJKLMNOPQRSTUVWXYZ" && $pvMatch == 1 && api_json_ok($pvText) == 1
         && $pwPlan == "code:p:lX~c2xabc,city:s" && $pwRefuse == "" && $pwCode == 1
