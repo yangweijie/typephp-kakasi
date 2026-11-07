@@ -7416,7 +7416,42 @@ function api_pattern_class_chars(string $body): string
     $len = strlen($body);
     while ($i < $len) {
         $ch = $body[$i];
-        if ($i + 2 < $len && $body[$i + 1] == "-") {
+        $add = "";
+        if ($ch == "\\" && $i + 1 < $len) {
+            // F413: the escape shorthands inside a class - \\d, \\w, \\s and the escaped dash;
+            // every other escape (including a literal backslash, which the value alphabet cannot
+            // carry) keeps the refusal. F413: BOTH spellings are accepted, because the request
+            // gate sees the RAW WIRE text where the JSON escape of \\d is \\\\d - the doubled
+            // backslash followed by the shorthand letter.
+            $esc = $body[$i + 1];
+            $step = 2;
+            if ($esc == "d") {
+                $add = "0123456789";
+            } else if ($esc == "w") {
+                $add = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            } else if ($esc == "s") {
+                $add = " ";
+            } else if ($esc == "-") {
+                $add = "-";
+            } else if ($esc == "\\" && $i + 2 < $len
+                       && ($body[$i + 2] == "d" || $body[$i + 2] == "w"
+                           || $body[$i + 2] == "s" || $body[$i + 2] == "-")) {
+                $esc = $body[$i + 2];
+                if ($esc == "d") {
+                    $add = "0123456789";
+                } else if ($esc == "w") {
+                    $add = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                } else if ($esc == "s") {
+                    $add = " ";
+                } else {
+                    $add = "-";
+                }
+                $step = 3;
+            } else {
+                return "";
+            }
+            $i += $step;
+        } else if ($i + 2 < $len && $body[$i + 1] == "-") {
             $lo = $ch;
             $hi = $body[$i + 2];
             $sameFamily = (ctype_digit($lo) && ctype_digit($hi))
@@ -7425,15 +7460,17 @@ function api_pattern_class_chars(string $body): string
             if ($sameFamily != 1 || ord($hi) < ord($lo)) {
                 return "";
             }
-            $step = 3;
+            for ($c = ord($lo); $c <= ord($hi); $c++) {
+                $add .= chr($c);
+            }
+            $i += 3;
         } else {
-            $lo = $ch;
-            $hi = $ch;
-            $step = 1;
+            $add = $ch;
+            $i += 1;
         }
-        for ($c = ord($lo); $c <= ord($hi); $c++) {
-            $one = chr($c);
-            if (preg_match('/[A-Za-z0-9 .\\-]/', $one) != 1) {
+        for ($k2 = 0; $k2 < strlen($add); $k2++) {
+            $one = $add[$k2];
+            if (preg_match('/[A-Za-z0-9 .\\-_]/', $one) != 1) {
                 return "";
             }
             if (strpos($seen, $one) === false) {
@@ -7441,7 +7478,6 @@ function api_pattern_class_chars(string $body): string
                 $out .= $one;
             }
         }
-        $i += $step;
     }
     return $out;
 }
@@ -7452,7 +7488,8 @@ function api_pattern_class_chars(string $body): string
 // everything) is unsatisfiable and refused by the caller.
 function api_pattern_class_complement(string $chars): string
 {
-    $alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-";
+    // F413: the underscore joins the alphabet with the \\w expansion.
+    $alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-_";
     $out = "";
     for ($i = 0; $i < strlen($alpha); $i++) {
         $one = substr($alpha, $i, 1);
@@ -7576,11 +7613,88 @@ function api_schema_pattern_spec(string $pat): string
             }
             $segs[] = "c" . $qMin . ($qExact == 1 ? "" : "-" . ($qMax > 0 ? $qMax : "")) . "x" . $chars;
             $hasClass = 1;
+        } else if ($ch == "\\" && $i + 1 < $len) {
+            // F413: the bare escape shorthands are classes - \\d digits, \\w word characters, \\s
+            // the space; every other escape (a literal backslash among them, which the value
+            // alphabet cannot carry) keeps the refusal. BOTH spellings are accepted, because the
+            // request gate sees the RAW WIRE text where the JSON escape of \\d is \\\\d. The
+            // quantifier parse is the class branch's, so \\d{3}, \\w+ and \\s? all compose.
+            $esc = $core[$i + 1];
+            $step = 2;
+            if ($esc == "d") {
+                $chars = "0123456789";
+            } else if ($esc == "w") {
+                $chars = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            } else if ($esc == "s") {
+                $chars = " ";
+            } else if ($esc == "\\" && $i + 2 < $len
+                       && ($core[$i + 2] == "d" || $core[$i + 2] == "w" || $core[$i + 2] == "s")) {
+                $esc = $core[$i + 2];
+                if ($esc == "d") {
+                    $chars = "0123456789";
+                } else if ($esc == "w") {
+                    $chars = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                } else {
+                    $chars = " ";
+                }
+                $step = 3;
+            } else {
+                return "";
+            }
+            if ($lit != "") {
+                $segs[] = "l" . $lit;
+                $lit = "";
+            }
+            $i += $step;
+            $qMin = 1;
+            $qMax = 1;
+            $qExact = 1;
+            if ($i < $len && $core[$i] == "{") {
+                $brace = strpos($core, "}", $i);
+                if ($brace === false) {
+                    return "";
+                }
+                $num = substr($core, $i + 1, $brace - $i - 1);
+                $parts = explode(",", $num);
+                if (count($parts) > 2
+                    || preg_match('/^[0-9]{1,2}$/', $parts[0]) != 1
+                    || (int) $parts[0] < 1 || (int) $parts[0] > 16) {
+                    return "";
+                }
+                $qMin = (int) $parts[0];
+                if (count($parts) == 2) {
+                    if (preg_match('/^[0-9]{1,2}$/', $parts[1]) != 1
+                        || (int) $parts[1] > 16 || (int) $parts[1] < $qMin) {
+                        return "";
+                    }
+                    $qMax = (int) $parts[1];
+                    $qExact = $qMax == $qMin ? 1 : 0;
+                }
+                $i = $brace + 1;
+            } else if ($i < $len && ($core[$i] == "+" || $core[$i] == "*" || $core[$i] == "?")) {
+                if ($core[$i] == "+") {
+                    $qMin = 1;
+                    $qMax = 0;
+                } else if ($core[$i] == "*") {
+                    $qMin = 0;
+                    $qMax = 0;
+                } else {
+                    $qMin = 0;
+                    $qMax = 1;
+                }
+                $qExact = 0;
+                $i++;
+            }
+            if ($qExact == 0 && $i < $len) {
+                return "";
+            }
+            $segs[] = "c" . $qMin . ($qExact == 1 ? "" : "-" . ($qMax > 0 ? $qMax : "")) . "x" . $chars;
+            $hasClass = 1;
         } else {
             if (strpos("[]{}", $ch) !== false) {
                 return "";
             }
-            if (preg_match('/[A-Za-z0-9 .\\-]/', $ch) != 1) {
+            if (preg_match('/[A-Za-z0-9 .\\-_]/', $ch) != 1) {
                 return "";
             }
             if (strlen($lit) >= 32) {
@@ -13672,8 +13786,18 @@ function main(): void
     // (excluding everything - unsatisfiable) and the escape shorthands keep refusing.
     $prI = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"[0-9]{3}"}}}}}');
     $prJ = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^a-z]{2}$"}}}}}');
-    $prAT = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .-]{2}$"}}}}}');
+    // F413 flipped prAU: the escape shorthands are classes now - \\d digits, \\w word characters,
+    // \\s the space, bare or inside a class; the uppercase \\D and a literal backslash (which the
+    // value alphabet cannot carry) keep refusing.
+    // F413: the alphabet extension (the underscore joining for \\w) has a ripple here - the OLD
+    // empty-complement fixture `[^A-Za-z0-9 .-]` now leaves the underscore, so it is SERVED and
+    // the true empty complement (excluding everything including the underscore) takes over the
+    // refusal side.
+    $prAT = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .\\\\-_]{2}$"}}}}}');
+    $prAX = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .-]{2}$"}}}}}');
     $prAU = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\d{3}$"}}}}}');
+    $prAV = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\D{3}$"}}}}}');
+    $prAW = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^a\\\\b$"}}}}}');
     $prK = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^X[abc]{2,4}$"}}}}}');
     $prAO = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+[0-9]{2}$"}}}}}');
     $prAP = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]{2,4}[0-9]{3}$"}}}}}');
@@ -13694,10 +13818,11 @@ function main(): void
         . "] range_nonlast=[ " . $prAP . "] bare_spaced=[" . $prAQ . "] bare_compact=["
         . $prAR . "] bare_notype=[" . $prAS . "] class=[" . $prC
         . "] unanchored=[" . $prI . "] negated=[" . $prJ . "] neg_empty=[" . $prAT
-        . "] escape=[" . $prAU . "] quant=" . $prD . " none=" . $prE . "\n";
+        . "] neg_underscore=[" . $prAX . "] escape=[" . $prAU . "] esc_upper_D=[" . $prAV . "] esc_backslash=[" . $prAW
+        . "] quant=" . $prD . " none=" . $prE . "\n";
     if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 0
         && $prJ == 0 && $prK == 0 && $prAO == 1 && $prAP == 1 && $prC == 0 && $prD == 1 && $prE == 0
-        && $prAT == 1 && $prAU == 1
+        && $prAT == 1 && $prAX == 0 && $prAU == 0 && $prAV == 1 && $prAW == 1
         && $prAQ == 0 && $prAR == 0 && $prAS == 0) {
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
     } else {

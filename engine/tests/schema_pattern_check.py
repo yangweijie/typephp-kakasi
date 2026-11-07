@@ -96,12 +96,33 @@ cases = [
      lambda code, txt: code == 200 and val_of(txt, "tag") is not None
      and re.match(r"^[^a-z]{2}$", val_of(txt, "tag")) is not None),
     # Still refused: the empty complement (unsatisfiable) and the escape shorthands.
-    ("neg_empty_refuse", "Give the tag.",
+    # F413: the alphabet extension (the underscore joining for \w) ripples into the negation - the
+    # OLD empty complement now leaves the underscore (served), and the TRUE empty complement
+    # (excluding everything including the underscore) takes over the refusal side.
+    ("neg_underscore_served", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string",
                                                "pattern": "^[^A-Za-z0-9 .-]{2}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[^A-Za-z0-9 .-]{2}$", val_of(txt, "tag")) is not None),
+    ("neg_empty_refuse", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string",
+                                               "pattern": "^[^A-Za-z0-9 .\\-_]{2}$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
-    ("escape_refuse", "Give the number.",
+    # F413 flipped this one: the escape shorthands are classes now - \d digits, \w word characters,
+    # \s the space; the uppercase \D and a literal backslash keep refusing.
+    ("escape_served", "Give the number.",
      {"type": "object", "properties": {"num": {"type": "string", "pattern": "^\\d{3}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "num") is not None
+     and re.match(r"^[0-9]{3}$", val_of(txt, "num")) is not None),
+    ("escape_w_served", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^\\w+$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^\w+$", val_of(txt, "tag")) is not None),
+    ("escape_upper_D_refuse", "Give the number.",
+     {"type": "object", "properties": {"num": {"type": "string", "pattern": "^\\D{3}$"}}},
+     lambda code, txt: code == 400 and "pattern" in txt),
+    ("escape_backslash_refuse", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^a\\\\b$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
     # F409: the {n,m} range and the plus on the LAST segment - the value length walks between the
     # bounds; a quantifier beside a FOLLOWING segment still refuses (that walk needs a real NFA).

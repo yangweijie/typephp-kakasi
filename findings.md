@@ -3871,3 +3871,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **F412 完成（补记）**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.485×**、哨兵 **0**（`engine/selftest_f412.log`、`engine/api_smoke_f412.log`、`engine/par_smoke_f412.log`、`engine/fairness_f412.log`、`engine/throughput_f412.log`、`engine/schema_pattern_f412.log`、`engine/schema_required_f412.log`、`engine/schema_bounds_f412.log`、`engine/schema_count_f412.log`）。活体 15 例全绿：非锚定 `[0-9]{3}` → 值恰 3 位数字（锚定发射满足"包含"语义）；否定类 `^[^a-z]{2}$` → 值 2 字符均非小写；空补集与 `\d` 转义 400。required/bounds/count 复跑不回退。
 **记法**："包含"语义的约束可以用"匹配自身"兑现——锚定发射是非锚定模式的合法解，这类语义化简（约束 ⇒ 其一个合法解）是窄实现的核心手法，与非锚定 F282 字面量的既有口径一致。
 **留拒（排队）**：非末段量化符（NFA）、body 内字面量 `^`、转义 shorthands、多叶嵌套带界。
+
+## F413（进行中）：pattern 第四批——**转义 shorthands**（`\d`/`\w`/`\s`，裸用与类内）
+**实现**：①裸转义 `\d`/`\w`/`\s` = 合成字符集（0-9 / 下划线+字母数字 / 空格），量化符机制照类分支复用（`\d{3}`、`\w+`、`\s?` 组合）；②类内转义 `[\d\-]` 同映射；③**安全字母表扩展加下划线**（\w 的展开需要）——class-chars 校验、补集字母表、字面量分支三处同步；④`\D`（大写）与字面量反斜杠（值字母表无法承载）维持拒绝。
+**记法**：转义 shorthands 是**类的语法糖**——映射到既有字符集机制而非新机制；字母表扩展时校验/补集/字面量三处必须同步，否则否定类与转义的并集会出现"部分字母表"的不一致。
+**F413 完成（补记）**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.536×**、哨兵 **0**（`engine/selftest_f413d2.log`、`engine/api_smoke_f413d2.log`、`engine/par_smoke_f413d2.log`、`engine/fairness_f413d2.log`、`engine/throughput_f413d2.log`、`engine/schema_pattern_f413d2.log`、`engine/schema_required_f413d2.log`、`engine/schema_bounds_f413d2.log`、`engine/schema_count_f413d2.log`）。活体 18 例全绿：`\d{3}` → 恰 3 位数字、`\w+` → 词字符、`\D`/字面量反斜杠 400、部分否定（下划线补集）200、真空补集 400。required/bounds/count 复跑不回退。
+**记法补一条**：**pattern 门工作在线材原文上——JSON 转义使 `\d` 在线材是 `\d`；解析器必须同时接受单反斜杠（进程内夹具拼写）与双反斜杠（线材拼写）两种形式，且逐拼写核对步进长度。** 另：字母表扩展有**连带效应**——`\w` 加下划线后，旧"空补集"夹具的补集非空（剩下划线）而被合法服务，"真空补集"改用全排除形式。
+**留拒（排队）**：非末段量化符（NFA）、body 内字面量 `^`、其他转义（`\D`/`\`/`\b`）、多叶嵌套带界。
