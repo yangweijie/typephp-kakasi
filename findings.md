@@ -3714,7 +3714,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | minItems / maxItems：单属性标量数组（string/integer/number，元素 ≤8） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT` + 活体 200/400（F400） |
 | minItems / maxItems / minLength / maxLength：**其他形状**；additionalProperties | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398/F399/F400） |
 | required = 全部声明属性 | **支持**（构造上满足） | `SCHEMA-KEYWORDS` req_all + 活体 200 |
-| required ⊂ 声明属性 | **显式 400** | req_subset + 活体 400 |
+| required ⊂ 声明属性：扁平全字符串对象 | **支持**（省略可选属性，输出键集合＝required） | `SCHEMA-REQ-SUBSET` + 活体 200（F401） |
+| required ⊂ 声明属性：其他形状；或名字未声明 | **显式 400** | `SCHEMA-KEYWORDS` req_mixed / req_undeclared + 活体 400（F401） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
@@ -3745,3 +3746,15 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **边界与仍拒绝（明确排队）**：只覆盖**单属性**标量数组——多属性、混合、嵌套、对象数组、顶层数组上的界仍 400；界写在 `items` **之前**（`{"type":"array","minItems":2,"items":…}`）正则不认**已修复，见 F400b**；元素上限 8；`maxItems:0`（空数组）不支持；抬高预算后仍受 token 预算约束（活体 6 元素在 max_tokens 96 内）。
 
 **F400b（同一轮的第二步）**：`minItems`/`maxItems` 写在 `"items"` **之前**的排版本来就能被执行，只是检测器的正则要求 `items` 紧跟 `"type":"array"`，于是这类请求**被拒而执行路径其实是对的**——这是"检测缺口"而不是"实现缺口"。两个正则各加一个**只认这两个关键字**的前置可选段（别的兄弟键仍不匹配）。`SCHEMA-COUNT` 加 `pre_bounds=[2:2] pre_prop=[cities] pre_n=2 pre_refuse=[]`；活体加 `str_bounds_before_items` **200，2 元素**；梯复跑：自检 **174/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.539×**（`engine/selftest_f400b.log`、`engine/api_smoke_f400b.log`、`engine/schema_count_f400e.log`）。**记法**：拒绝一条约束时要分清"没人执行"和"没人认出来"——前者需要实现，后者只需要改判据；两者的门都必须是双向的。
+
+
+## F401：`required` 真子集从"显式拒绝"变成**真正支持**（扁平全字符串对象：省略可选属性），并顺带抓出一个**F399 遗留的非法 JSON**
+**实现**：①`api_schema_required_names` 读列表、`api_schema_required_filter` 只在**能 honour 的形状**（扁平全字符串 + 每个 required 名字都已声明）返回要发的名字（声明顺序）；②`api_response_schema_string_props_required` 过滤属性表，**`api_response_schema_string_bounds` 改为消费同一张过滤表**——否则 F399 的按序字符预算会错位（这一步是"中间产物也要断言"的那条规矩在起作用）；③四个调用点改用过滤后的属性表；④拒绝分支从**计数比较**换成**名字比较**。
+**计数比较的真缺陷（门抓住）**：旧判据只看 `reqN < declN`，于是 `properties:{a,b} + required:["a","z"]`（2 对 2）**被当成"全部必需"而放行**，但 `z` 根本没声明 ⇒ 发出的对象里没有 `z`，直接违反 schema。新增门例 `req_undeclared` 期望 `required`，第一版 **FAIL**（`req_undeclared=[]`），改成逐个名字查 plan 之后 PASS。**判据：数量相等不等于名字相符。**
+**活体第五例抓到的非法 JSON**：`subset_with_length`（city 3..8、note ≤5、省略 zip）在 8000 上返回 `{"city":"New York","note":"I am ""}`——**JSON 不闭合**。根因不在 required，而在**F399 的收口 token**：`gguf_charset_ids("\"")` 会返回**多个** id，其中有的解码出**不止一个字符**；到达 maxLength 时把它们当闭引号发进字符串就多出引号。修法是只允许解码**恰为一个 `"`** 的 token 收口（`$closeIds`）。同 workload 修复前 **200 但 JSON 非法** ⇒ 修复后 **200 且 `{"city":"New York","note":"I am "}`**，自检新增 `comb_bounds=[3:8,0:5] comb_city=8 comb_note=5 comb_json=1 comb_zip=0` 把这条组合钉成静态门。**这是"组合例才能抓到的缺陷"：单属性长度门（F399）和单列表 required 都各自绿着。**
+**门**：新门 `SCHEMA-REQ-SUBSET`（断言**键集合**＝required，而不是状态码：`keep=[city,note] props=2 bounds=[0:0,0:0] keys city=1 note=1 zip=0`，加 all-required 不过滤、未声明名字不过滤两个对照）；`SCHEMA-KEYWORDS` 的 `req_subset`/`wire_subset` 期望由 `required` 改为 `""`（旧期望被新行为证伪，按 F399 的规矩改门不保绿），并新增 `req_undeclared`/`req_mixed` 两个仍拒绝的对照。
+**拒绝消息**也同步改了：原文"required is honoured only when it names every declared property"已经不是事实，现在列出**哪条约束在哪个形状上被支持**。
+**支持表**：`required ⊂ 声明属性` 拆成"扁平全字符串：**支持**"与"其他形状 / 未声明名字：**显式 400**"。
+**活体五例**（`engine/schema_required_f401e.log`，`scripts/schema_required_run.sh`）：二之三 **200** 键集合＝required；全必需 **200** 三键齐；未声明名字 **400**；混合形状真子集 **400**；子集＋长度 **200** 且两段长度都在界内 ⇒ **VERDICT: PASS**。
+**梯**：自检 **175 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.520×**；哨兵 **0**（`engine/selftest_f401d.log`、`engine/api_smoke_f401e.log`、`engine/throughput_f401e.log`）。
+**边界与仍拒绝**：required 省略只覆盖扁平全字符串对象（混合/嵌套/数组形状的子集仍 400）；未声明的名字仍 400（不做"猜一个"）；`additionalProperties:false`、`pattern` 元字符、数值边界的真正实现仍未做。

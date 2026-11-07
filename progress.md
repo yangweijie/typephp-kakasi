@@ -1233,3 +1233,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：**174/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**。
 - **仍拒绝（排队）**：多属性/混合/嵌套/对象数组/顶层数组的界；`maxItems:0`；元素上限 8。
 - **F400b**：界写在 `items` **之前**的排版是**检测缺口**而非实现缺口 ⇒ 两个正则各加"只认这两个关键字"的前置可选段；门加 `pre_n=2 pre_refuse=[]`，活体加 `str_bounds_before_items` 200/2 元素；梯复跑 **174/0**、8000 **115/0**、8001 绿、scaling **1.539×**（`engine/selftest_f400b.log`、`engine/schema_count_f400e.log`）。
+
+
+## ▶ 状态（F401，2026-11-07 10:26）——`required` 真子集**真正支持**（扁平全字符串：省略可选属性），并抓到 F399 遗留的非法 JSON
+- **实现**：`api_schema_required_filter`（形状 + 逐个名字都在 plan 里）⇒ `api_response_schema_string_props_required` 过滤属性表，**bounds 也改为吃同一张表**（否则按序字符预算错位）。
+- **门抓住的真缺陷**：旧判据用**计数**比较 ⇒ `required:["a","z"]` 对两个声明属性被当成"全部必需"而放行（`z` 根本不存在）。新例 `req_undeclared` 第一版 FAIL ⇒ 改成**名字**比较后 PASS。**数量相等 ≠ 名字相符。**
+- **活体第五例抓到非法 JSON**：`{"city":"New York","note":"I am ""}` ⇒ 根因是 maxLength 收口时把**解码出多个字符**的引号 token 当闭引号发进字符串（F399 遗留，组合才暴露）；只允许解码恰为一个 `"` 的 token 收口 ⇒ 同 workload 复测 200 且合法；自检加 `comb_json=1 comb_city=8 comb_note=5 comb_zip=0` 钉住。
+- **门/表**：新门 `SCHEMA-REQ-SUBSET` 断言**键集合**＝required；`SCHEMA-KEYWORDS` 的 `req_subset`/`wire_subset` 期望由 `required` 改 `""`（旧期望被证伪 ⇒ 改门），加 `req_undeclared`/`req_mixed` 仍拒；支持表该行拆分；**拒绝消息**不再声称"required 只在全部声明时 honoured"。
+- **活体五例**：`engine/schema_required_f401e.log` ⇒ VERDICT: PASS（`scripts/schema_required_run.sh`）。
+- **梯**：**175/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.520×**、哨兵 **0**。

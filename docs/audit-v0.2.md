@@ -675,3 +675,13 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 形状判据（防"放行但无人执行"） | 出现次数相等判据：界在叶子块外 ⇒ 返回 "" ⇒ 仍 400（活体 `outer_bound_refuse`） | 同上 |
 | 界写在 `items` 之前（F400b，检测缺口） | 门 `pre_bounds=[2:2] pre_prop=[cities] pre_n=2 pre_refuse=[]`；活体 `str_bounds_before_items` **200，2 元素** | `engine/selftest_f400b.log`、`engine/schema_count_f400e.log` |
 | 梯（F400b 复跑） | 自检 **174/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.539×**、哨兵 **0** | `engine/selftest_f400b.log`、`engine/api_smoke_f400b.log`、`engine/throughput_f400b.log` |
+
+### F401（2026-11-07 10:26）——required 真子集真正支持（省略可选属性）；顺带修掉 F399 遗留的非法 JSON
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 新门（断言**键集合**而非状态码） | `keep=[city,note] props=2 bounds=[0:0,0:0] keys city=1 note=1 zip=0`，all-required 不过滤、未声明名字不过滤 | `engine/selftest_f401d.log` |
+| 计数判据的真缺陷（门抓住） | `required:["a","z"]` 对 `{a,b}` 旧判据视作"全部必需"放行 ⇒ `req_undeclared` 第一版 **FAIL**，改名字比较后 **PASS** | `engine/selftest_f401.log`（FAIL 侧）vs `engine/selftest_f401d.log`（PASS 侧） |
+| 组合例抓到的非法 JSON（F399 遗留） | 活体 `{"city":"New York","note":"I am ""}` ⇒ 收口 token 解码出多字符；只允许恰为一个 `"` 的 token 收口后 **200 且合法**，门加 `comb_json=1 comb_city=8 comb_note=5 comb_zip=0` | `engine/schema_required_f401.log`（FAIL 侧）vs `engine/schema_required_f401e.log`（PASS 侧） |
+| 活体五例双向 | 二之三 **200** 键集合＝required；全必需 **200**；未声明名字 **400**；混合形状子集 **400**；子集＋长度 **200** ⇒ PASS | `engine/schema_required_f401e.log` |
+| 拒绝消息与事实一致 | 不再写"required is honoured only when…"，改为列出各约束 supported 的形状 | `engine/main.php` 8000 校验分支 |
+| 梯 | 自检 **175/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.520×**、哨兵 **0** | `engine/selftest_f401d.log`、`engine/api_smoke_f401e.log`、`engine/throughput_f401e.log` |

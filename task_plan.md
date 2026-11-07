@@ -644,3 +644,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **验收**：①输出键集合正确（门 + 活体）②其他形状/未知名字仍拒绝（双向）③既有 SCHEMA-*/TOOL-* 全绿④8000/8001 不回退。
 **明确留下（排队，不装作支持）**：`minItems`/`maxItems` 的其他形状（多属性、顶层数组、对象数组）、`maxItems:0` 与元素上限 8 以上的 min；`additionalProperties:false`；pattern 元字符与数值边界的真正实现；多属性对象数组项；per-stream k 自适应（已按证据关闭为不支持）；分片多卡 / FR-05（本机不可验证）。
 **顺位**：required 真子集 → 数组界的其余形状 → pattern/边界实现 → additionalProperties → 分片多卡 / FR-05。
+**F401 已完成**：`required` 真子集在扁平全字符串对象上按**省略可选属性**执行（属性表与 bounds 吃同一张过滤表）；门 `SCHEMA-REQ-SUBSET` 断言**键集合**；`SCHEMA-KEYWORDS` 的 `req_subset` 期望被证伪并改为 `""`，加 `req_undeclared`/`req_mixed` 仍拒；**计数比较**换成**名字比较**（旧判据把 `required:["a","z"]` 当成"全部必需"而放行）；活体组合例抓到 **F399 遗留的非法 JSON**（maxLength 收口用了多字符引号 token）并修好；梯 **175/0**、8000 **115/0**、8001 绿、scaling **1.520×**。
+
+
+## F402 计划（把 required 省略推到"混合形状"，并清掉同族判据债）
+**F401 已完成**：见上；仍只覆盖扁平全字符串对象。
+**动作**：①`api_object_mixed`（混合叶子 ≤8）也按属性步进 ⇒ 把过滤表推进到这条路径：`api_schema_required_filter` 的形状判据从"全字符串叶子"扩到"叶子类型不影响步进"的集合，逐个形状**先验证它真的会少发键**再放行，不能只改判据；②bounds/charset/步数等**按属性序号取用**的地方全部改成吃过滤后的表（F401 里 bounds 就是这一处差点错位）；③`additionalProperties:false` 同族处理：现在的语义是"发全部必需键"，声明了 additionalProperties:false 时并不会多出键 ⇒ 先判"这条约束是否已被构造满足"，满足就不拒绝（与 required 全必需同理），不满足才 400。
+**门**：`SCHEMA-REQ-SUBSET` 加混合形状例（string+integer+string，required 两个 ⇒ 键集合＝required 且整数值仍是整数）；`SCHEMA-KEYWORDS` 的 `req_mixed` 期望按新事实更新（若支持则改 `""`，并加"仍不支持的形状"对照）；`additionalProperties` 例双向。
+**验收**：①混合形状键集合正确（门 + 活体）②未支持形状/未声明名字仍拒绝（双向）③既有 SCHEMA-* 全绿④8000/8001 不回退⑤错误消息与实际支持面一致（不许留旧说法）。
+**顺位**：required 省略到混合形状 → additionalProperties 语义 → 数组界的其余形状 → pattern/边界实现 → 分片多卡 / FR-05。

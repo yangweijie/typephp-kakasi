@@ -610,6 +610,19 @@ function api_string_value_multi(string $ids, array $props, string $charset, int 
         $stepIds = $stepIds . "," . $bsIds;
     }
     $q = "," . $quoteIds . ",";
+    // F401b: the token that closes a bounded string must decode to exactly one quote character.
+    // gguf_charset_ids can answer with several ids for `"`, some of which carry more than one
+    // character, and offering those at maxLength put an extra quote into the value and produced
+    // invalid JSON - the live case with two bounded properties caught it.
+    $closeIds = "";
+    foreach (explode(",", $quoteIds) as $qid) {
+        if (str_replace("Ġ", " ", gguf_token_str((int) $qid)) == "\"") {
+            $closeIds = $closeIds == "" ? $qid : $closeIds . "," . $qid;
+        }
+    }
+    if ($closeIds == "") {
+        $closeIds = $quoteIds;
+    }
     for ($pi = 0; $pi < count($props); $pi++) {
         if ($pi > 0) {
             $sep = api_constrained_continue([",\"" . $props[$pi] . "\":\""], 32);
@@ -643,7 +656,7 @@ function api_string_value_multi(string $ids, array $props, string $charset, int 
                 // version only checked the count before the step and let one token overshoot.
                 $remain = $bMax - $len;
                 if ($remain <= 0) {
-                    $allow = $quoteIds;
+                    $allow = $closeIds;
                 } else {
                     $fit = "";
                     foreach (explode(",", $charsetIds) as $cid) {
@@ -653,9 +666,9 @@ function api_string_value_multi(string $ids, array $props, string $charset, int 
                         }
                     }
                     if ($len >= $bMin) {
-                        $fit = $fit . ($fit == "" ? "" : ",") . $quoteIds;
+                        $fit = $fit . ($fit == "" ? "" : ",") . $closeIds;
                     }
-                    $allow = $fit == "" ? $quoteIds : $fit;
+                    $allow = $fit == "" ? $closeIds : $fit;
                 }
             } else if ($len < $bMin) {
                 $allow = $charsetIds;
@@ -5530,7 +5543,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
             api_response_schema_top_array_object($body),
             api_schema_charset(), 2, 6, 1);
     } else {
-        $scProp = api_response_schema_string_props($body);
+        $scProp = api_response_schema_string_props_required($body);
         if (count($scProp) > 0) {
             $scOut = api_string_value_multi($ids, $scProp,
                 api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
@@ -6003,7 +6016,7 @@ function api_schema_bound_value(string $body, string $key, int $from): string
 // refusing the keywords, because their generators do not step strings the same way.
 function api_response_schema_string_bounds(string $body): string
 {
-    $props = api_response_schema_string_props($body);
+    $props = api_response_schema_string_props_required($body);
     if (count($props) == 0) {
         return "";
     }
@@ -6128,6 +6141,101 @@ function api_response_schema_array_bounds(string $body): string
     return api_schema_array_element_bounds(api_json_object_after($body, "schema"));
 }
 
+// F401: the names listed in `required`, comma-joined in the order they appear, or "" when the
+// keyword is absent, empty or unreadable.
+function api_schema_required_names(string $schema): string
+{
+    $rp = strpos($schema, "\"required\"");
+    if ($rp === false) {
+        return "";
+    }
+    $rb = strpos($schema, "[", $rp);
+    if ($rb === false) {
+        return "";
+    }
+    $re = strpos($schema, "]", $rb);
+    if ($re === false) {
+        return "";
+    }
+    $out = "";
+    foreach (explode(",", substr($schema, $rb + 1, $re - $rb - 1)) as $rq) {
+        $rq = str_replace("\"", "", $rq);
+        $rq = str_replace(" ", "", $rq);
+        if ($rq != "") {
+            $out = $out == "" ? $rq : $out . "," . $rq;
+        }
+    }
+    return $out;
+}
+
+// F401: `required` naming a strict subset asks the decoder to OMIT the optional properties. Only the
+// flat all-string generator steps property by property and can therefore leave one out, and only
+// when every required name is actually declared - otherwise the answer would still break the
+// schema, which is what the refusal is for. Returns the names to emit, in declaration order, or "".
+function api_schema_required_filter(string $schema): string
+{
+    $req = api_schema_required_names($schema);
+    if ($req == "" || api_schema_flat_all_string($schema) != 1) {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 64);
+    if ($plan == "") {
+        return "";
+    }
+    $keep = "";
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        if (strpos("," . $req . ",", "," . $kv[0] . ",") !== false) {
+            $keep = $keep == "" ? $kv[0] : $keep . "," . $kv[0];
+        }
+    }
+    if ($keep == "") {
+        return "";
+    }
+    foreach (explode(",", $req) as $rq) {
+        if (strpos("," . $keep . ",", "," . $rq . ",") === false) {
+            return "";
+        }
+    }
+    return $keep;
+}
+
+// The property list the flat-string generator emits: filtered to `required` where that subset can be
+// honoured, and unchanged otherwise (no `required`, or an all-required schema, is already satisfied
+// by emitting every declared property).
+function api_response_schema_string_props_required(string $body): array
+{
+    $props = api_response_schema_string_props($body);
+    $keep = api_schema_required_filter(api_json_object_after($body, "schema"));
+    if ($keep == "") {
+        return $props;
+    }
+    $out = [];
+    foreach (explode(",", $keep) as $name) {
+        foreach ($props as $p) {
+            if ($p == $name) {
+                $out[] = $p;
+            }
+        }
+    }
+    if (count($out) == 0) {
+        return $props;
+    }
+    return $out;
+}
+
 // F399: is this schema a flat object whose leaves are all strings? That is the only shape whose
 // generator can honour minLength/maxLength, so it is the only one allowed past the refusal.
 function api_schema_flat_all_string(string $schema): int
@@ -6181,28 +6289,13 @@ function api_schema_keywords_unsupported(string $body): string
         return $kw;
     }
     // required: the generator emits EVERY declared property, so a schema that requires all of them
-    // is satisfied by construction. Only a strict subset - optional properties the decoder cannot
-    // omit - is a constraint it would silently break, and that is what gets refused.
-    $rp = strpos($body, "\"required\"");
-    if ($rp === false) {
-        return "";
-    }
-    $rb = strpos($body, "[", $rp);
-    if ($rb === false) {
-        return "required";
-    }
-    $re = strpos($body, "]", $rb);
-    if ($re === false) {
-        return "required";
-    }
-    $reqList = substr($body, $rb + 1, $re - $rb - 1);
-    $reqN = 0;
-    foreach (explode(",", $reqList) as $rq) {
-        $rq = str_replace("\"", "", $rq);
-        $rq = str_replace(" ", "", $rq);
-        if ($rq != "") {
-            $reqN++;
-        }
+    // is satisfied by construction. Two things can still break it: a name that is not declared at
+    // all, and a strict subset on a shape whose generator cannot leave a property out. Comparing
+    // counts would miss the first - required ["a","z"] against two declared properties reads as
+    // "all required" - so the names themselves are checked against the plan (F401).
+    $req = api_schema_required_names($body);
+    if ($req == "") {
+        return strpos($body, "\"required\"") === false ? "" : "required";
     }
     $pp = strpos($body, "\"properties\"");
     if ($pp === false) {
@@ -6217,8 +6310,27 @@ function api_schema_keywords_unsupported(string $body): string
         return "required";
     }
     $plan = api_top_leaves($block, 64);
-    $declN = $plan == "" ? 0 : count(explode(",", $plan));
-    if ($reqN > 0 && $reqN < $declN) {
+    if ($plan == "") {
+        return "required";
+    }
+    $decl = "";
+    $declN = 0;
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        $decl = $decl == "" ? $kv[0] : $decl . "," . $kv[0];
+        $declN++;
+    }
+    foreach (explode(",", $req) as $rq) {
+        if (strpos("," . $decl . ",", "," . $rq . ",") === false) {
+            return "required";
+        }
+    }
+    if ($declN > 0 && count(explode(",", $req)) < $declN) {
+        // F401: the subset is honoured where the generator can leave an optional property out, and
+        // only when every required name is declared; other shapes still get refused.
+        if (api_schema_required_filter($body) != "") {
+            return "";
+        }
         return "required";
     }
     return "";
@@ -7229,7 +7341,7 @@ Connection: close
                                         api_schema_charset(), 2, 6, 1);
                                 } else {
                                     // Free-form string properties: the charset grammar fills them.
-                                    $scProp = api_response_schema_string_props($body);
+                                    $scProp = api_response_schema_string_props_required($body);
                                     if (count($scProp) > 0) {
                                         $scOut = api_string_value_multi($ids, $scProp,
                                             api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
@@ -7635,13 +7747,16 @@ function api_serve(int $port): void
                 $payload = "{\"error\":{\"message\":\"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
-                // F398: minItems/maxItems/minLength/maxLength/additionalProperties are not enforced
-                // at all, and `required` is only honoured when it names every declared property.
-                // Naming the keyword in the refusal is the point - the caller learns which part of
-                // the schema could not be honoured instead of receiving text that ignores it.
+                // F398: a keyword the decoder does not enforce is named in the refusal instead of
+                // being ignored. Since then minItems/maxItems, minLength/maxLength and a required
+                // subset have each become enforced on the shapes listed in the message, so the
+                // message names what IS honoured too - the caller learns which part of the schema
+                // could not be honoured instead of receiving text that ignores it.
                 $payload = "{\"error\":{\"message\":\"schema keyword not supported: "
                     . api_schema_keywords_unsupported($schBody)
-                    . " (required is honoured only when it names every declared property)\",\"type\":\"invalid_request_error\"}}";
+                    . " (minItems/maxItems are honoured on a single scalar-array property; "
+                    . "minLength/maxLength and a required subset on a flat all-string object)"
+                    . "\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else {
                 $maxTok = api_max_tokens(api_num($body, "max_tokens",
@@ -8309,7 +8424,7 @@ function api_serve(int $port): void
                                 api_response_schema_top_array_object($body), api_schema_charset(),
                                 2, 6, $prefixCache);
                         } else {
-                            $sProps = api_response_schema_string_props($body);
+                            $sProps = api_response_schema_string_props_required($body);
                             if (count($sProps) > 0) {
                                 $sJOut = api_string_value_multi($ids, $sProps, api_schema_charset(),
                                     16, $prefixCache, api_response_schema_string_bounds($body));
@@ -8682,7 +8797,7 @@ function api_serve(int $port): void
                     } else {
                         // Free-form string properties: the charset grammar fills each value, and
                         // the forced quotes/separators/brace keep the object well-formed.
-                        $strProps = api_response_schema_string_props($body);
+                        $strProps = api_response_schema_string_props_required($body);
                         if (count($strProps) > 0) {
                             $enumOut = api_string_value_multi($ids, $strProps, api_schema_charset(),
                                 16, $prefixCache, api_response_schema_string_bounds($body));
@@ -12326,18 +12441,26 @@ function main(): void
     $kwR = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "array", "items": {"type": "string"}, "minItems": 2}}}');
     $kwS = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":0}}}');
     $kwT = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"minItems":4,"maxItems":2}}}');
+    // F401: a strict subset used to be refused everywhere; on the flat all-string object the
+    // generator can now omit the optional property, so `req_subset`/`wire_subset` moved from
+    // "required" to "". The falsified expectation is changed rather than kept green, and the cases
+    // that must STILL refuse are added next to it: a required name that is not declared, and a
+    // subset on a shape whose generator does not step properties.
+    $kwU = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","z"]}');
+    $kwV = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"integer"}},"required":["a"]}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
         . "] arr_obj=[" . $kwQ . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
-        . "] min_gt_max=[" . $kwT . "]\n";
+        . "] min_gt_max=[" . $kwT . "] req_undeclared=[" . $kwU . "] req_mixed=[" . $kwV . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == "additionalProperties"
-        && $kwD == "" && $kwE == "required" && $kwF == ""
-        && $kwG == "" && $kwH == "required"
+        && $kwD == "" && $kwE == "" && $kwF == ""
+        && $kwG == "" && $kwH == ""
         && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == "maxItems"
-        && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems") {
+        && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
+        && $kwU == "required" && $kwV == "required") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required refused only as a subset)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";
@@ -12384,10 +12507,42 @@ function main(): void
     $lnLen2 = strlen($lnVal2);
     $lnMixed = api_schema_keywords_unsupported('{"type":"object","properties":'
         . '{"a":{"type":"string","minLength":3},"b":{"type":"integer"}}}');
+    // F401b: TWO bounded properties, one of them optional - the combination the live check caught
+    // emitting as invalid JSON. Asserts the answer parses, both lengths sit inside their bounds and
+    // the optional key is gone, so neither half of the pair can be quietly dropped.
+    $lnBody3 = '{"response_format":{"type":"json_schema","json_schema":{"name":"len3","schema":'
+        . '{"type":"object","properties":{"city":{"type":"string","minLength":3,"maxLength":8},'
+        . '"zip":{"type":"string"},"note":{"type":"string","maxLength":5}},'
+        . '"required":["city","note"]}}}}';
+    $lnProps3 = api_response_schema_string_props_required($lnBody3);
+    $lnBounds3 = api_response_schema_string_bounds($lnBody3);
+    $lnOut3 = api_string_value_multi($lnIds, $lnProps3, "abcdefghijklmnopqrstuvwxyz ", 12, 0, $lnBounds3);
+    $lnParts3 = explode(",", $lnOut3);
+    $lnText3 = "";
+    for ($i = $lnBase; $i < count($lnParts3); $i++) {
+        $lnText3 = $lnText3 . gguf_token_str((int) $lnParts3[$i]);
+    }
+    $lnText3 = str_replace("Ġ", " ", $lnText3);
+    $lnCity3 = "";
+    $lnM3 = [];
+    if (preg_match('/"city":"([A-Za-z ]*)"/', $lnText3, $lnM3) == 1) {
+        $lnCity3 = $lnM3[1];
+    }
+    $lnNote3 = "";
+    $lnM3b = [];
+    if (preg_match('/"note":"([A-Za-z ]*)"/', $lnText3, $lnM3b) == 1) {
+        $lnNote3 = $lnM3b[1];
+    }
+    $lnZip3 = strpos($lnText3, "\"zip\"") === false ? 0 : 1;
     echo "SCHEMA-LEN bounds=[" . $lnBounds . "] len=" . $lnLen . " maxonly=[" . $lnBounds2
-        . "] len2=" . $lnLen2 . " mixed_refusal=[" . $lnMixed . "]\n";
+        . "] len2=" . $lnLen2 . " mixed_refusal=[" . $lnMixed
+        . "] comb_bounds=[" . $lnBounds3 . "] comb_city=" . strlen($lnCity3)
+        . " comb_note=" . strlen($lnNote3) . " comb_json=" . api_json_ok($lnText3)
+        . " comb_zip=" . $lnZip3 . "]\n";
     if ($lnBounds == "3:6" && $lnLen >= 3 && $lnLen <= 6 && $lnOut != ""
-        && $lnBounds2 == "0:2" && $lnLen2 <= 2 && $lnOut2 != "" && $lnMixed == "minLength") {
+        && $lnBounds2 == "0:2" && $lnLen2 <= 2 && $lnOut2 != "" && $lnMixed == "minLength"
+        && $lnBounds3 == "3:8,0:5" && strlen($lnCity3) >= 3 && strlen($lnCity3) <= 8
+        && strlen($lnNote3) <= 5 && api_json_ok($lnText3) == 1 && $lnZip3 == 0) {
         echo "SCHEMA-LEN: PASS (emitted lengths inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-LEN: FAIL\n";
@@ -12493,6 +12648,54 @@ function main(): void
         echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-COUNT: FAIL\n";
+    }
+
+    // SCHEMA-REQ-SUBSET (F401): `required` naming a strict subset is honoured by OMITTING the
+    // optional properties, so the gate asserts the emitted KEY SET equals the required names. A
+    // status code or "parses as JSON" check would stay green while the optional key was still being
+    // emitted, which is the whole defect being closed.
+    $rqBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"req","schema":'
+        . '{"type":"object","properties":{"city":{"type":"string"},"zip":{"type":"string"},'
+        . '"note":{"type":"string"}},"required":["city","note"]}}}}';
+    $rqSch = api_json_object_after($rqBody, "schema");
+    $rqKeep = api_schema_required_filter($rqSch);
+    $rqRefuse = api_schema_keywords_unsupported($rqSch);
+    $rqProps = api_response_schema_string_props_required($rqBody);
+    $rqBounds = api_response_schema_string_bounds($rqBody);
+    $rqIds = tok_chat("user", "Say where you are.") . "," . tok_chat_open("assistant");
+    $rqOut = api_string_value_multi($rqIds, $rqProps, "abcdefghijklmnopqrstuvwxyz", 12, 0, $rqBounds);
+    $rqParts = explode(",", $rqOut);
+    $rqBase = count(explode(",", $rqIds));
+    $rqText = "";
+    for ($i = $rqBase; $i < count($rqParts); $i++) {
+        $rqText = $rqText . gguf_token_str((int) $rqParts[$i]);
+    }
+    $rqText = str_replace("Ġ", " ", $rqText);
+    $rqHasCity = strpos($rqText, "\"city\"") !== false ? 1 : 0;
+    $rqHasNote = strpos($rqText, "\"note\"") !== false ? 1 : 0;
+    $rqHasZip = strpos($rqText, "\"zip\"") !== false ? 1 : 0;
+    // An all-required schema needs no omission, and a required name that is not declared gets
+    // nothing filtered at all - both must keep the property list whole.
+    $r2Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"req2","schema":'
+        . '{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}},'
+        . '"required": ["a", "b"]}}}}';
+    $r2Props = api_response_schema_string_props_required($r2Body);
+    $r3Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"req3","schema":'
+        . '{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"string"}},'
+        . '"required":["a","z"]}}}}';
+    $r3Props = api_response_schema_string_props_required($r3Body);
+    $r3Keep = api_schema_required_filter(api_json_object_after($r3Body, "schema"));
+    echo "SCHEMA-REQ-SUBSET keep=[" . $rqKeep . "] refuse=[" . $rqRefuse . "] props="
+        . count($rqProps) . "] bounds=[" . $rqBounds . "] keys city=" . $rqHasCity
+        . " note=" . $rqHasNote . " zip=" . $rqHasZip . "] text=[" . $rqText
+        . "] all_required_props=" . count($r2Props) . "] undeclared_keep=[" . $r3Keep
+        . "] undeclared_props=" . count($r3Props) . "]\n";
+    if ($rqKeep == "city,note" && $rqRefuse == "" && count($rqProps) == 2 && $rqBounds == "0:0,0:0"
+        && $rqHasCity == 1 && $rqHasNote == 1 && $rqHasZip == 0 && api_json_ok($rqText) == 1
+        && count($r2Props) == 2 && $r3Keep == "" && count($r3Props) == 2) {
+        echo "SCHEMA-REQ-SUBSET: PASS (emitted keys equal the required subset; optional omitted)\n";
+    } else {
+        echo "SCHEMA-REQ-SUBSET: FAIL\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes
