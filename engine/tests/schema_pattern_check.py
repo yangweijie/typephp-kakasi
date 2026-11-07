@@ -104,9 +104,16 @@ cases = [
                                                "pattern": "^[^A-Za-z0-9 .-]{2}$"}}},
      lambda code, txt: code == 200 and val_of(txt, "tag") is not None
      and re.match(r"^[^A-Za-z0-9 .-]{2}$", val_of(txt, "tag")) is not None),
+    # F416: the caret joining the value alphabet means the old empty complement now leaves the
+    # caret (served) - the true empty complement excludes all sixty-seven characters.
+    ("neg_caret_served", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string",
+                                               "pattern": "^[^A-Za-z0-9 .-]{2}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[^A-Za-z0-9 .-]{2}$", val_of(txt, "tag")) is not None),
     ("neg_empty_refuse", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string",
-                                               "pattern": "^[^A-Za-z0-9 .\\-_]{2}$"}}},
+                                               "pattern": "^[^A-Za-z0-9 .\\-_^]{2}$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
     # F413 flipped this one: the escape shorthands are classes now - \d digits, \w word characters,
     # \s the space; the uppercase \D and a literal backslash keep refusing.
@@ -118,9 +125,11 @@ cases = [
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^\\w+$"}}},
      lambda code, txt: code == 200 and val_of(txt, "tag") is not None
      and re.match(r"^\w+$", val_of(txt, "tag")) is not None),
-    ("escape_upper_D_refuse", "Give the number.",
+    # F416 flipped this one: the \D escape is the digit complement within the value alphabet.
+    ("escape_upper_D_served", "Give the number.",
      {"type": "object", "properties": {"num": {"type": "string", "pattern": "^\\D{3}$"}}},
-     lambda code, txt: code == 400 and "pattern" in txt),
+     lambda code, txt: code == 200 and val_of(txt, "num") is not None
+     and re.match(r"^\D{3}$", val_of(txt, "num")) is not None),
     ("escape_backslash_refuse", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^a\\\\b$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),

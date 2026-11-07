@@ -3892,3 +3892,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **F415 完成（补记）**：自检 **177/0**（spD 翻转为两段 spec）、8000 **115/0**、8001 par/fairness **0**、scaling **1.693×**、哨兵 **0**（`engine/selftest_f415c.log`、`engine/api_smoke_f415c.log`、`engine/par_smoke_f415c.log`、`engine/fairness_f415c.log`、`engine/throughput_f415c.log`、`engine/schema_pattern_f415c.log`、`engine/schema_required_f415c.log`、`engine/schema_bounds_f415c.log`、`engine/schema_count_f415c.log`）。活体 18 例全绿：非末段星号 `^[a-z]+[0-9]{2}$` 与非末段区间 `^[a-z]{2,4}[0-9]{3}$` 值匹配（区间段恒发 min）；min=0 非末段 400。required/bounds/count 复跑不回退。过程一次 LNK1104（exe 锁）与一次瞬态崩溃——杀进程重建后全绿。
 **记法**：**"NFA 走位"被"最小计数发射"取代——range 段恒发 min 即落在 [min,max] 内（值是 pattern 的一个合法匹配），与 F405 边界"输出是界的子集"同源**；原 NFA 设计（位置集模拟）是过度设计——发射一个合法解即可兑现约束，无需枚举所有路径。
 **留拒（排队）**：min=0 非末段（epsilon）、body 内字面量 `^`、`\D` 等其他转义。
+
+## F416（进行中）：pattern 第六批——`\D` 转义（数字补集）与**类内字面量 `^`**（值字母表 67 连带）
+**实现**：①`\D` 裸用与类内 = 0-9 在值字母表内的补集（否定机制复用）；②类体内**非首位的 `^`** 作为字面量插入值字母表（首位的仍是否定标记）——class-chars 校验/补集字母表（67）/规格编码三处同步；③**连带**：F413 的"空补集"夹具（排除 66 字符）现在留下 `^` 被合法服务 ⇒ 真"空补集"改用全排除 67 字符形式 + 部分否定服务对照（与 F413 的字母表扩展涟漪同款，连续第二轮）。
+**门**：prAV（`\D`）与 prAT（空补集）翻转 + prAX（部分否定含 `^`）对照；活体翻转 2 例 + 新增 2 例。
+**F416 完成（补记）**：自检 **177/0**（prAV/prAT 翻转 + prAX 部分否定含 ^ 对照）、8000 **115/0**、8001 par/fairness **0**、scaling **1.540×**、哨兵 **0**（`engine/selftest_f416.log`、`engine/api_smoke_f416.log`、`engine/par_smoke_f416.log`、`engine/fairness_f416.log`、`engine/throughput_f416.log`、`engine/schema_pattern_f416.log`、`engine/schema_required_f416.log`、`engine/schema_bounds_f416.log`、`engine/schema_count_f416.log`）。活体 20 例全绿：`\D{3}` → 值全非数字、`[^A-Za-z0-9 .-]{2}` → 值含 `^` 或 `_`（部分否定随字母表扩展）、真空补集 400。required/bounds/count 复跑不回退。
+**记法**：**值字母表的每次扩展都有否定类涟漪——空补集夹具必须随字母表同步更新（F413/F416 连续两轮同一模式）；补集字母表是"值字母表"的单一事实来源，扩展时两处必须同步。**
+**留拒（排队）**：非末段 min=0（epsilon）、body 内字面量 `^`（类外的——锚点歧义）、其他转义（`\b` 等非字符类语义）。

@@ -7441,31 +7441,37 @@ function api_pattern_class_chars(string $body): string
         $ch = $body[$i];
         $add = "";
         if ($ch == "\\" && $i + 1 < $len) {
-            // F413: the escape shorthands inside a class - \\d, \\w, \\s and the escaped dash;
-            // every other escape (including a literal backslash, which the value alphabet cannot
-            // carry) keeps the refusal. F413: BOTH spellings are accepted, because the request
-            // gate sees the RAW WIRE text where the JSON escape of \\d is \\\\d - the doubled
-            // backslash followed by the shorthand letter.
+            // F413: the escape shorthands inside a class - \\d, \\w, \\s, \\D (F416: the digit
+            // complement) and the escaped dash; every other escape (including a literal
+            // backslash, which the value alphabet cannot carry) keeps the refusal. F413: BOTH
+            // spellings are accepted, because the request gate sees the RAW WIRE text where the
+            // JSON escape of \\d is \\\\d - the doubled backslash followed by the shorthand
+            // letter.
             $esc = $body[$i + 1];
             $step = 2;
             if ($esc == "d") {
                 $add = "0123456789";
             } else if ($esc == "w") {
-                $add = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                $add = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ^";
             } else if ($esc == "s") {
                 $add = " ";
+            } else if ($esc == "D") {
+                $add = api_pattern_class_complement("0123456789");
             } else if ($esc == "-") {
                 $add = "-";
             } else if ($esc == "\\" && $i + 2 < $len
                        && ($body[$i + 2] == "d" || $body[$i + 2] == "w"
-                           || $body[$i + 2] == "s" || $body[$i + 2] == "-")) {
+                           || $body[$i + 2] == "s" || $body[$i + 2] == "D"
+                           || $body[$i + 2] == "-")) {
                 $esc = $body[$i + 2];
                 if ($esc == "d") {
                     $add = "0123456789";
                 } else if ($esc == "w") {
-                    $add = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                    $add = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ^";
                 } else if ($esc == "s") {
                     $add = " ";
+                } else if ($esc == "D") {
+                    $add = api_pattern_class_complement("0123456789");
                 } else {
                     $add = "-";
                 }
@@ -7493,7 +7499,7 @@ function api_pattern_class_chars(string $body): string
         }
         for ($k2 = 0; $k2 < strlen($add); $k2++) {
             $one = $add[$k2];
-            if (preg_match('/[A-Za-z0-9 .\\-_]/', $one) != 1) {
+            if (preg_match('/[A-Za-z0-9 .\\-_^]/', $one) != 1) {
                 return "";
             }
             if (strpos($seen, $one) === false) {
@@ -7511,8 +7517,9 @@ function api_pattern_class_chars(string $body): string
 // everything) is unsatisfiable and refused by the caller.
 function api_pattern_class_complement(string $chars): string
 {
-    // F413: the underscore joins the alphabet with the \\w expansion.
-    $alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-_";
+    // F413: the underscore joins the alphabet with the \\w expansion; F416: the caret joins as a
+    // class-body literal.
+    $alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-_^";
     $out = "";
     for ($i = 0; $i < strlen($alpha); $i++) {
         $one = substr($alpha, $i, 1);
@@ -7641,27 +7648,33 @@ function api_schema_pattern_spec(string $pat): string
             $hasClass = 1;
         } else if ($ch == "\\" && $i + 1 < $len) {
             // F413: the bare escape shorthands are classes - \\d digits, \\w word characters, \\s
-            // the space; every other escape (a literal backslash among them, which the value
-            // alphabet cannot carry) keeps the refusal. BOTH spellings are accepted, because the
-            // request gate sees the RAW WIRE text where the JSON escape of \\d is \\\\d. The
-            // quantifier parse is the class branch's, so \\d{3}, \\w+ and \\s? all compose.
+            // the space, \\D (F416) the digit complement; every other escape (a literal backslash
+            // among them, which the value alphabet cannot carry) keeps the refusal. BOTH
+            // spellings are accepted, because the request gate sees the RAW WIRE text where the
+            // JSON escape of \\d is \\\\d. The quantifier parse is the class branch's, so \\d{3},
+            // \\w+ and \\s? all compose.
             $esc = $core[$i + 1];
             $step = 2;
             if ($esc == "d") {
                 $chars = "0123456789";
             } else if ($esc == "w") {
-                $chars = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                $chars = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ^";
             } else if ($esc == "s") {
                 $chars = " ";
+            } else if ($esc == "D") {
+                $chars = api_pattern_class_complement("0123456789");
             } else if ($esc == "\\" && $i + 2 < $len
-                       && ($core[$i + 2] == "d" || $core[$i + 2] == "w" || $core[$i + 2] == "s")) {
+                       && ($core[$i + 2] == "d" || $core[$i + 2] == "w" || $core[$i + 2] == "s"
+                           || $core[$i + 2] == "D")) {
                 $esc = $core[$i + 2];
                 if ($esc == "d") {
                     $chars = "0123456789";
                 } else if ($esc == "w") {
-                    $chars = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-                } else {
+                    $chars = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ^";
+                } else if ($esc == "s") {
                     $chars = " ";
+                } else {
+                    $chars = api_pattern_class_complement("0123456789");
                 }
                 $step = 3;
             } else {
@@ -13820,7 +13833,11 @@ function main(): void
     // empty-complement fixture `[^A-Za-z0-9 .-]` now leaves the underscore, so it is SERVED and
     // the true empty complement (excluding everything including the underscore) takes over the
     // refusal side.
-    $prAT = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .\\\\-_]{2}$"}}}}}');
+    // F416 flipped prAV and prAT: the \\D escape is the digit complement, and the caret joining
+    // the value alphabet (as a class-body literal) means the F413 empty-complement fixture now
+    // leaves the caret (served) - the true empty complement excludes all sixty-seven characters
+    // and takes over the refusal side.
+    $prAT = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .\\\\-_^]{2}$"}}}}}');
     $prAX = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .-]{2}$"}}}}}');
     $prAU = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\d{3}$"}}}}}');
     $prAV = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\D{3}$"}}}}}');
@@ -13855,7 +13872,7 @@ function main(): void
     if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 0
         && $prJ == 0 && $prK == 0 && $prAO == 0 && $prAP == 0 && $prAY == 1
         && $prC == 0 && $prD == 1 && $prE == 0
-        && $prAT == 1 && $prAX == 0 && $prAU == 0 && $prAV == 1 && $prAW == 1
+        && $prAT == 1 && $prAX == 0 && $prAU == 0 && $prAV == 0 && $prAW == 1
         && $prAQ == 0 && $prAR == 0 && $prAS == 0) {
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
     } else {
