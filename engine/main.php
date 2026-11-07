@@ -7446,6 +7446,23 @@ function api_pattern_class_chars(string $body): string
     return $out;
 }
 
+// F412: the complement of a negated class within the JSON-safe alphabet - the same characters the
+// positive classes draw from, so the emitted value stays free of quotes, backslashes and anything
+// that could break the JSON string or the spec encoding. An empty complement (the class excludes
+// everything) is unsatisfiable and refused by the caller.
+function api_pattern_class_complement(string $chars): string
+{
+    $alpha = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .-";
+    $out = "";
+    for ($i = 0; $i < strlen($alpha); $i++) {
+        $one = substr($alpha, $i, 1);
+        if (strpos($chars, $one) === false) {
+            $out .= $one;
+        }
+    }
+    return $out;
+}
+
 // F404/F409: the anchored class/count pattern forms the flat mixed stepper can honour. The pattern
 // must be ^...$ anchored, and the core a concatenation of literal runs (JSON-safe text) and
 // character classes with a quantifier - a bare class counts one, {n} counts exactly n (anywhere),
@@ -7458,10 +7475,24 @@ function api_pattern_class_chars(string $body): string
 function api_schema_pattern_spec(string $pat): string
 {
     $n = strlen($pat);
-    if ($n < 3 || substr($pat, 0, 1) != "^" || substr($pat, $n - 1, 1) != "$") {
+    if ($n < 1) {
         return "";
     }
-    $core = substr($pat, 1, $n - 2);
+    // F412: the anchors are optional - an unanchored pattern accepts any string CONTAINING a
+    // match, and the anchored emission is exactly such a string, so serving the match honours the
+    // constraint whatever the anchors spelled.
+    if (substr($pat, 0, 1) == "^") {
+        $pat = substr($pat, 1);
+        $n--;
+    }
+    if ($n > 0 && substr($pat, $n - 1, 1) == "$") {
+        $pat = substr($pat, 0, $n - 1);
+        $n--;
+    }
+    if ($n < 1) {
+        return "";
+    }
+    $core = $pat;
     $segs = [];
     $lit = "";
     $i = 0;
@@ -7478,11 +7509,26 @@ function api_schema_pattern_spec(string $pat): string
             if ($close === false) {
                 return "";
             }
-            $chars = api_pattern_class_chars(substr($core, $i + 1, $close - $i - 1));
+            $cbody = substr($core, $i + 1, $close - $i - 1);
+            $i = $close + 1;
+            // F412: a leading ^ negates the class - the character set becomes the complement
+            // within the JSON-safe alphabet, so the emitted value still cannot break out of the
+            // JSON string.
+            $negate = 0;
+            if (substr($cbody, 0, 1) == "^") {
+                $negate = 1;
+                $cbody = substr($cbody, 1);
+            }
+            $chars = api_pattern_class_chars($cbody);
             if ($chars == "") {
                 return "";
             }
-            $i = $close + 1;
+            if ($negate == 1) {
+                $chars = api_pattern_class_complement($chars);
+                if ($chars == "") {
+                    return "";
+                }
+            }
             $qMin = 1;
             $qMax = 1;
             $qExact = 1;
@@ -13620,8 +13666,14 @@ function main(): void
     // range is served - the non-last range lives in prAP below.
     $prG = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^SKU-[0-9]{4,6}$"}}}}}');
     $prH = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+$"}}}}}');
+    // F412 flipped prI and prJ: an UNANCHORED pattern is served by the anchored emission (the
+    // match contains itself), and a NEGATED class is served by the complement within the JSON-safe
+    // alphabet (the value still cannot break out of the JSON string). The empty complement
+    // (excluding everything - unsatisfiable) and the escape shorthands keep refusing.
     $prI = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"[0-9]{3}"}}}}}');
     $prJ = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^a-z]{2}$"}}}}}');
+    $prAT = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[^A-Za-z0-9 .-]{2}$"}}}}}');
+    $prAU = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"num":{"type":"string","pattern":"^\\d{3}$"}}}}}');
     $prK = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"code":{"type":"string","pattern":"^X[abc]{2,4}$"}}}}}');
     $prAO = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]+[0-9]{2}$"}}}}}');
     $prAP = api_schema_pattern_unsupported('{"json_schema":{"schema":{"properties":{"tag":{"type":"string","pattern":"^[a-z]{2,4}[0-9]{3}$"}}}}}');
@@ -13641,9 +13693,11 @@ function main(): void
         . "] negated=[ " . $prJ . "] lastrange2=[" . $prK . "] star_nonlast=[ " . $prAO
         . "] range_nonlast=[ " . $prAP . "] bare_spaced=[" . $prAQ . "] bare_compact=["
         . $prAR . "] bare_notype=[" . $prAS . "] class=[" . $prC
-        . "] quant=" . $prD . " none=" . $prE . "\n";
-    if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 1
-        && $prJ == 1 && $prK == 0 && $prAO == 1 && $prAP == 1 && $prC == 0 && $prD == 1 && $prE == 0
+        . "] unanchored=[" . $prI . "] negated=[" . $prJ . "] neg_empty=[" . $prAT
+        . "] escape=[" . $prAU . "] quant=" . $prD . " none=" . $prE . "\n";
+    if ($prA == 0 && $prB == 0 && $prF == 0 && $prG == 0 && $prH == 0 && $prI == 0
+        && $prJ == 0 && $prK == 0 && $prAO == 1 && $prAP == 1 && $prC == 0 && $prD == 1 && $prE == 0
+        && $prAT == 1 && $prAU == 1
         && $prAQ == 0 && $prAR == 0 && $prAS == 0) {
         echo "SCHEMA-PAT-REJECT: PASS (supported forms kept, metacharacter forms flagged)\n";
     } else {

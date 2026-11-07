@@ -3864,3 +3864,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门/活体抓住的回归**：重构边界 token 时把**无界**叶子在预算末元素的"只给右括号"丢成了"逗号或右括号" ⇒ 模型选逗号后强制闭合产生**尾逗号非法 JSON** ⇒ smoke 的 4 个 deep40 数组叶用例 keys=None ⇒ 修复：无界叶子保持旧行为（末元素只给右括号）。**记法：重构一个"预算+边界过滤"循环时，无界路径的旧强制行为必须逐 token 对齐——尾逗号是边界过滤丢失的指纹。**
 **F411 完成（补记）**：回归修复后——自检 **177/0**、8000 **115/0**（回归修复）、8001 par/fairness **0**、scaling **1.546×**、哨兵 **0**（`engine/selftest_f411b.log`、`engine/api_smoke_f411b.log`、`engine/par_smoke_f411b.log`、`engine/fairness_f411b.log`、`engine/throughput_f411b.log`、`engine/schema_count_f411b.log`、`engine/schema_required_f411b.log`、`engine/schema_pattern_f411b.log`、`engine/schema_bounds_f411b.log`）。活体 20 例全绿：嵌套 2/2 → `{"outer":{"nums":[a,b]}}` 恰 2 元素且嵌套保持；坏界 400。required/pattern/bounds 复跑不回退。
 **记法补一条**：让位类改动（本例嵌套检测器在计数规则前插入）要检查**下游共享路径**的同名消费——api_response_schema_array_bounds 同时是键控写入器的实参来源，嵌套规则返回非空会改变键控路径读到的界——本例嵌套形状不会到达键控分支（嵌套分支在前），但检查本身不能省。
+
+## F412（进行中）：pattern 第三批——**否定类**与**非锚定**（两者都可无歧义服务）
+**实现**：①否定类 `[^body]`——字符集 = body 排除集在**JSON 安全字母表**（65 字符：大小写+数字+空格点横线）内的补集，发射值仍无法逃出 JSON 字符串；补集为空（排除一切，不可满足）仍拒；②锚点可选——非锚定 pattern 接受"任何**包含**匹配的串"，而锚定发射本身就是这样的串 ⇒ 服务匹配即兑现约束。解析器分别剥 `^` 与 `$`（独立可选）；body 内的 `^`（非首位的字面量 ^）维持拒绝（窄）。
+**门/活体**：prI（非锚定）与 prJ（否定类）翻转 + 空补集/转义 `\d` 仍拒对照；活体翻转 2 例 + 新增 2 例。
+**F412 完成（补记）**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.485×**、哨兵 **0**（`engine/selftest_f412.log`、`engine/api_smoke_f412.log`、`engine/par_smoke_f412.log`、`engine/fairness_f412.log`、`engine/throughput_f412.log`、`engine/schema_pattern_f412.log`、`engine/schema_required_f412.log`、`engine/schema_bounds_f412.log`、`engine/schema_count_f412.log`）。活体 15 例全绿：非锚定 `[0-9]{3}` → 值恰 3 位数字（锚定发射满足"包含"语义）；否定类 `^[^a-z]{2}$` → 值 2 字符均非小写；空补集与 `\d` 转义 400。required/bounds/count 复跑不回退。
+**记法**："包含"语义的约束可以用"匹配自身"兑现——锚定发射是非锚定模式的合法解，这类语义化简（约束 ⇒ 其一个合法解）是窄实现的核心手法，与非锚定 F282 字面量的既有口径一致。
+**留拒（排队）**：非末段量化符（NFA）、body 内字面量 `^`、转义 shorthands、多叶嵌套带界。

@@ -85,11 +85,23 @@ cases = [
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[a-z]+$"}}},
      lambda code, txt: code == 200 and val_of(txt, "tag") is not None
      and re.match(r"^[a-z]+$", val_of(txt, "tag")) is not None),
-    ("unanchored_refuse", "Give the number.",
+    # F412 flipped these two: an UNANCHORED pattern is served by the anchored emission (the match
+    # contains itself), and a NEGATED class by the complement within the JSON-safe alphabet.
+    ("unanchored_served", "Give the number.",
      {"type": "object", "properties": {"num": {"type": "string", "pattern": "[0-9]{3}"}}},
-     lambda code, txt: code == 400 and "pattern" in txt),
-    ("negated_class_refuse", "Give the tag.",
+     lambda code, txt: code == 200 and val_of(txt, "num") is not None
+     and re.match(r"^[0-9]{3}$", val_of(txt, "num")) is not None),
+    ("negated_class_served", "Give the tag.",
      {"type": "object", "properties": {"tag": {"type": "string", "pattern": "^[^a-z]{2}$"}}},
+     lambda code, txt: code == 200 and val_of(txt, "tag") is not None
+     and re.match(r"^[^a-z]{2}$", val_of(txt, "tag")) is not None),
+    # Still refused: the empty complement (unsatisfiable) and the escape shorthands.
+    ("neg_empty_refuse", "Give the tag.",
+     {"type": "object", "properties": {"tag": {"type": "string",
+                                               "pattern": "^[^A-Za-z0-9 .-]{2}$"}}},
+     lambda code, txt: code == 400 and "pattern" in txt),
+    ("escape_refuse", "Give the number.",
+     {"type": "object", "properties": {"num": {"type": "string", "pattern": "^\\d{3}$"}}},
      lambda code, txt: code == 400 and "pattern" in txt),
     # F409: the {n,m} range and the plus on the LAST segment - the value length walks between the
     # bounds; a quantifier beside a FOLLOWING segment still refuses (that walk needs a real NFA).
