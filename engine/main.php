@@ -735,7 +735,7 @@ function api_response_schema_nested_number(string $body): string
 // An array of charset-filled strings, e.g. {"cities":["paris","lyon"]}. The model decides when to
 // stop: after each element only "," (continue) and "]" (end) are reachable, and the closing brace
 // is forced. Runs BEFORE the flat detectors, which would otherwise mistake "items" for a key.
-function api_array_string_value(string $ids, string $prop, string $charset, int $maxItems, int $maxSteps, int $useCache = 1): string
+function api_array_string_value(string $ids, string $prop, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $charsetIds = gguf_charset_ids($charset);
     $quoteIds = gguf_charset_ids("\"");
@@ -743,6 +743,22 @@ function api_array_string_value(string $ids, string $prop, string $charset, int 
     $bracketIds = api_punct_ids("]");
     if ($charsetIds == "" || $quoteIds == "" || $commaIds == "" || $bracketIds == "") {
         return "";
+    }
+    // F400: "min:max" element-count bounds (0 = that side unconstrained). The budget becomes the
+    // maximum, and below the minimum the closing bracket is not offered at all - the same shape of
+    // filtering the length bounds use in F399, one level up.
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
     }
     $s = api_constrained($ids, ["{\"" . $prop . "\":[\""], 64, $useCache);
     if ($s == "") {
@@ -779,7 +795,13 @@ function api_array_string_value(string $ids, string $prop, string $charset, int 
                 $s = $s . "," . $cq;
             }
         }
-        $nx2 = model_session_next_allowed(0, $it < $maxItems - 1 ? $endIds : $bracketIds);
+        $offer = $endIds;
+        if ($it + 1 < $bMin) {
+            $offer = $commaIds;         // below the minimum: the list cannot close yet
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;       // at the maximum: only the close token is reachable
+        }
+        $nx2 = model_session_next_allowed(0, $offer);
         if ($nx2 < 0) {
             break;
         }
@@ -816,8 +838,11 @@ function api_response_schema_array_string(string $body): string
         return "";
     }
     $pm = [];
+    // F400: minItems/maxItems may sit beside `items` inside the array object. Nothing else may, so
+    // the tail names those two keywords instead of accepting any scalar key.
     if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
-        . '"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}\s*\}/s', $schema, $pm) != 1) {
+        . '"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}'
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
     return $pm[1];
@@ -826,12 +851,25 @@ function api_response_schema_array_string(string $body): string
 // An array of numbers, e.g. {"nums":[123,456]}. Each element is filled with api_number_fill for a
 // fixed token budget, then only "," (continue) or "]" (end) is reachable. Runs before the flat
 // number detector, which would otherwise mistake "items" for a key.
-function api_array_number_value(string $ids, string $prop, int $allowFrac, int $maxItems, int $elemSteps, int $useCache = 1): string
+function api_array_number_value(string $ids, string $prop, int $allowFrac, int $maxItems, int $elemSteps, int $useCache = 1, string $bounds = ""): string
 {
     $commaIds = api_punct_ids(",");
     $bracketIds = api_punct_ids("]");
     if ($commaIds == "" || $bracketIds == "") {
         return "";
+    }
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
     }
     $s = api_constrained($ids, ["{\"" . $prop . "\":["], 64, $useCache);
     if ($s == "") {
@@ -846,7 +884,13 @@ function api_array_number_value(string $ids, string $prop, int $allowFrac, int $
             break;
         }
         $s = $s . "," . $body;
-        $nx = model_session_next_allowed(0, $it < $maxItems - 1 ? $endIds : $bracketIds);
+        $offer = $endIds;
+        if ($it + 1 < $bMin) {
+            $offer = $commaIds;         // below the minimum: the list cannot close yet
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;       // at the maximum: only the close token is reachable
+        }
+        $nx = model_session_next_allowed(0, $offer);
         if ($nx < 0) {
             break;
         }
@@ -885,7 +929,8 @@ function api_response_schema_array_number(string $body): string
     }
     $pm = [];
     if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
-        . '"items"\s*:\s*\{\s*"type"\s*:\s*"(integer|number)"\s*\}\s*\}/s', $schema, $pm) != 1) {
+        . '"items"\s*:\s*\{\s*"type"\s*:\s*"(integer|number)"\s*\}'
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
     return $pm[1] . "|" . ($pm[2] == "number" ? "1" : "0");
@@ -5460,11 +5505,11 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
             api_schema_charset(), 8, 1);
     } else if ($scArr != "") {
         $scOut = api_array_string_value($ids, $scArr,
-            api_schema_charset(), 4, 6, 1);
+            api_schema_charset(), 4, 6, 1, api_response_schema_array_bounds($body));
     } else if ($scArrNum != "") {
         $san = explode("|", $scArrNum);
         $scOut = api_array_number_value($ids, $san[0], (int) $san[1],
-            4, 3, 1);
+            4, 3, 1, api_response_schema_array_bounds($body));
     } else if ($scMix != "") {
         $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1);
     } else if (api_response_schema_top_array_string($body) == 1) {
@@ -5984,6 +6029,103 @@ function api_response_schema_string_bounds(string $body): string
     return $out;
 }
 
+// F400: element-count bounds for the scalar-array shape whose generator steps element by element
+// and can therefore restrict the closing bracket by count. The honoured shape is deliberately
+// narrow: one properties block, exactly one "type":"array" in the whole schema (so no nested rank),
+// no keyword another generator would claim, and one leaf whose items are scalar. Returns "min:max"
+// (0 = that side unconstrained) or ""; "" is what keeps minItems/maxItems refused for every other
+// shape instead of silently ignored.
+function api_schema_array_element_bounds(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match_all('/"properties"\s*:/', $schema) != 1
+        || preg_match_all('/"type"\s*:\s*"array"/', $schema) != 1) {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern|oneOf|anyOf|allOf|additionalProperties)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    if (strpos($schema, "\"items\"") !== false
+        && preg_match('/"items"\s*:\s*\{\s*"type"\s*:\s*"(object|array)"/', $schema) == 1) {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $kv = explode(":", $leaves[0]);
+    if (count($kv) != 2) {
+        return "";
+    }
+    if ($kv[1] != "a" && $kv[1] != "an" && $kv[1] != "af") {
+        return "";
+    }
+    $kp = strpos($block, "\"" . $kv[0] . "\"");
+    $vo = strpos($block, "{", $kp);
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return "";
+    }
+    // A bound outside the array's own object - on the enclosing schema, or on some other part of it
+    // - would be relaxed here but enforced nowhere, so the whole shape goes back to being refused.
+    if (substr_count($leaf, "\"minItems\"") + substr_count($leaf, "\"maxItems\"")
+        != substr_count($schema, "\"minItems\"") + substr_count($schema, "\"maxItems\"")) {
+        return "";
+    }
+    $mn = api_schema_bound_value($leaf, "\"minItems\"", 0);
+    $mx = api_schema_bound_value($leaf, "\"maxItems\"", 0);
+    if (strpos($leaf, "\"minItems\"") !== false
+        && ($mn == "" || strpos($mn, ".") !== false || strpos($mn, "-") !== false)) {
+        return "";
+    }
+    if (strpos($leaf, "\"maxItems\"") !== false
+        && ($mx == "" || strpos($mx, ".") !== false || strpos($mx, "-") !== false)) {
+        return "";
+    }
+    $bMin = 0;
+    $bMax = 0;
+    if ($mn != "") {
+        $bMin = (int) $mn;
+    }
+    if ($mx != "") {
+        $bMax = (int) $mx;
+    }
+    // maxItems 0 asks for an empty array, which this generator never emits; a minimum past the
+    // element ceiling, or past the maximum, is a bound it cannot reach either. All stay refused.
+    if ($mx != "" && $bMax < 1) {
+        return "";
+    }
+    if ($bMax > 0 && $bMin > $bMax) {
+        return "";
+    }
+    if ($bMin > 8) {
+        return "";
+    }
+    return $bMin . ":" . $bMax;
+}
+
+// Same bounds, from the request body (the generator call sites hold the body, the refusal holds the
+// extracted schema).
+function api_response_schema_array_bounds(string $body): string
+{
+    return api_schema_array_element_bounds(api_json_object_after($body, "schema"));
+}
+
 // F399: is this schema a flat object whose leaves are all strings? That is the only shape whose
 // generator can honour minLength/maxLength, so it is the only one allowed past the refusal.
 function api_schema_flat_all_string(string $schema): int
@@ -6027,6 +6169,11 @@ function api_schema_keywords_unsupported(string $body): string
         // F399: minLength/maxLength are honoured for a flat all-string object, whose stepper can
         // restrict the closing quote; every other shape still refuses them rather than ignoring.
         if (($kw == "minLength" || $kw == "maxLength") && api_schema_flat_all_string($body) == 1) {
+            continue;
+        }
+        // F400: minItems/maxItems are honoured for a single scalar-array property, whose stepper
+        // can restrict the closing bracket by element count; every other shape still refuses them.
+        if (($kw == "minItems" || $kw == "maxItems") && api_schema_array_element_bounds($body) != "") {
             continue;
         }
         return $kw;
@@ -7053,11 +7200,12 @@ Connection: close
                                         api_schema_charset(), 8, 1);
                                 } else if ($scArr != "") {
                                     $scOut = api_array_string_value($ids, $scArr,
-                                        api_schema_charset(), 4, 6, 1);
+                                        api_schema_charset(), 4, 6, 1,
+                                        api_response_schema_array_bounds($body));
                                 } else if ($scArrNum != "") {
                                     $san = explode("|", $scArrNum);
                                     $scOut = api_array_number_value($ids, $san[0], (int) $san[1],
-                                        4, 3, 1);
+                                        4, 3, 1, api_response_schema_array_bounds($body));
                                 } else if ($scMix != "") {
                                     $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1);
                                 } else if (api_response_schema_top_array_string($body) == 1) {
@@ -8132,11 +8280,11 @@ function api_serve(int $port): void
                                 api_schema_charset(), 8, $prefixCache);
                         } else if ($sArr != "") {
                             $sJOut = api_array_string_value($ids, $sArr, api_schema_charset(), 4,
-                                6, $prefixCache);
+                                6, $prefixCache, api_response_schema_array_bounds($body));
                         } else if ($sArrNum != "") {
                             $san2 = explode("|", $sArrNum);
                             $sJOut = api_array_number_value($ids, $san2[0], (int) $san2[1], 4, 3,
-                                $prefixCache);
+                                $prefixCache, api_response_schema_array_bounds($body));
                         } else if ($sMix != "") {
                             $sJOut = api_object_mixed($ids, $sMix, api_schema_charset(), 16,
                                 $prefixCache);
@@ -8496,12 +8644,12 @@ function api_serve(int $port): void
                         $jsonMode = 1;
                     } else if ($arrProp != "") {
                         $enumOut = api_array_string_value($ids, $arrProp, api_schema_charset(), 4, 6,
-                            $prefixCache);
+                            $prefixCache, api_response_schema_array_bounds($body));
                         $jsonMode = 1;
                     } else if ($arrNum != "") {
                         $anp = explode("|", $arrNum);
                         $enumOut = api_array_number_value($ids, $anp[0], (int) $anp[1], 4, 3,
-                            $prefixCache);
+                            $prefixCache, api_response_schema_array_bounds($body));
                         $jsonMode = 1;
                     } else if ($mixPlan != "") {
                         $enumOut = api_object_mixed($ids, $mixPlan, api_schema_charset(), 16,
@@ -12165,13 +12313,29 @@ function main(): void
     $kwF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}}}');
     $kwG = api_schema_keywords_unsupported('{"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a", "b"]}');
     $kwH = api_schema_keywords_unsupported('{"properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a"]}');
+    // F400: minItems/maxItems on the one shape whose stepper counts elements is honoured, so it is
+    // no longer a refusal. The same keywords on a shape that cannot count - a bound on the object
+    // rather than on the array, an array of objects, an unsatisfiable or empty pair of bounds -
+    // still are, in both spellings.
+    $kwN = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":3}}}');
+    $kwO = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":5}}}');
+    $kwP = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"}}},"maxItems":2}');
+    $kwQ = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"object","properties":{"n":{"type":"string"}}},"maxItems":3}}}');
+    $kwR = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "array", "items": {"type": "string"}, "minItems": 2}}}');
+    $kwS = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":0}}}');
+    $kwT = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"minItems":4,"maxItems":2}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
-        . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH . "]\n";
+        . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
+        . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
+        . "] arr_obj=[" . $kwQ . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
+        . "] min_gt_max=[" . $kwT . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == "additionalProperties"
         && $kwD == "" && $kwE == "required" && $kwF == ""
-        && $kwG == "" && $kwH == "required") {
+        && $kwG == "" && $kwH == "required"
+        && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == "maxItems"
+        && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required refused only as a subset)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";
@@ -12225,6 +12389,79 @@ function main(): void
         echo "SCHEMA-LEN: PASS (emitted lengths inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-LEN: FAIL\n";
+    }
+
+    // SCHEMA-COUNT (F400): element-count bounds are enforced for a single scalar-array property, so
+    // the gate counts the EMITTED elements rather than checking a status code. Case two pins
+    // minItems == maxItems on a number array in the spaced spelling; case three asserts the refusal
+    // for the shapes whose generator cannot count.
+    $cnIds = tok_chat("user", "Name some French cities.") . "," . tok_chat_open("assistant");
+    $cnBase = count(explode(",", $cnIds));
+    $cnBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"cnt","schema":'
+        . '{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"},'
+        . '"minItems":3,"maxItems":4}}}}}}';
+    $cnBounds = api_response_schema_array_bounds($cnBody);
+    $cnProp = api_response_schema_array_string($cnBody);
+    $cnOut = api_array_string_value($cnIds, $cnProp, "abcdefghijklmnopqrstuvwxyz", 4, 6, 0, $cnBounds);
+    $cnParts = explode(",", $cnOut);
+    $cnText = "";
+    for ($i = $cnBase; $i < count($cnParts); $i++) {
+        $cnText = $cnText . gguf_token_str((int) $cnParts[$i]);
+    }
+    $cnText = str_replace("Ġ", " ", $cnText);
+    $cnLB = strpos($cnText, "[");
+    $cnRB = strpos($cnText, "]");
+    $cnInner = "";
+    if ($cnLB !== false && $cnRB !== false && $cnRB > $cnLB) {
+        $cnInner = substr($cnText, $cnLB + 1, $cnRB - $cnLB - 1);
+    }
+    $cnN = 0;
+    if ($cnInner != "") {
+        $cnN = count(explode(",", $cnInner));
+    }
+    $c2Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"cnt2","schema":'
+        . '{"type": "object", "properties": {"nums": {"type": "array", "items": {"type": "integer"},'
+        . '"minItems": 2, "maxItems": 2}}}}}}';
+    $c2Bounds = api_response_schema_array_bounds($c2Body);
+    $c2Prop = api_response_schema_array_number($c2Body);
+    $c2np = explode("|", $c2Prop);
+    $c2Ids = tok_chat("user", "Give me two integers.") . "," . tok_chat_open("assistant");
+    $c2Out = api_array_number_value($c2Ids, $c2np[0], (int) $c2np[1], 4, 3, 0, $c2Bounds);
+    $c2Parts = explode(",", $c2Out);
+    $c2Base = count(explode(",", $c2Ids));
+    $c2Text = "";
+    for ($i = $c2Base; $i < count($c2Parts); $i++) {
+        $c2Text = $c2Text . gguf_token_str((int) $c2Parts[$i]);
+    }
+    $c2Text = str_replace("Ġ", " ", $c2Text);
+    $c2LB = strpos($c2Text, "[");
+    $c2RB = strpos($c2Text, "]");
+    $c2Inner = "";
+    if ($c2LB !== false && $c2RB !== false && $c2RB > $c2LB) {
+        $c2Inner = substr($c2Text, $c2LB + 1, $c2RB - $c2LB - 1);
+    }
+    $c2N = 0;
+    if ($c2Inner != "") {
+        $c2N = count(explode(",", $c2Inner));
+    }
+    $c3A = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
+        . '"items":{"type":"object","properties":{"n":{"type":"string"}}},"maxItems":3}}}');
+    $c3B = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
+        . '"items":{"type":"string"},"minItems":9}}}');
+    $c3C = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
+        . '"items":{"type":"string"}},"maxItems":2}}');
+    $c3D = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
+        . '"items":{"type":"string"},"maxItems":4}}}');
+    echo "SCHEMA-COUNT bounds=[" . $cnBounds . "] n=" . $cnN . "] text=[" . $cnText
+        . "] num_bounds=[" . $c2Bounds . "] num_prop=[" . $c2Prop . "] num_n=" . $c2N
+        . "] num_text=[" . $c2Text . "] refuse_obj=[" . $c3A . "] refuse_ceiling=[" . $c3B
+        . "] refuse_outside=[" . $c3C . "] ok=[" . $c3D . "]\n";
+    if ($cnBounds == "3:4" && $cnN >= 3 && $cnN <= 4 && api_json_ok($cnText) == 1
+        && $c2Bounds == "2:2" && $c2N == 2 && api_json_ok($c2Text) == 1
+        && $c3A == "" && $c3B == "" && $c3C == "" && $c3D == "0:4") {
+        echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
+    } else {
+        echo "SCHEMA-COUNT: FAIL\n";
     }
 
     // Array of strings: after each element only "," or "]" is reachable, so the list closes

@@ -1223,3 +1223,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：3..6 → `Hello`(5)；max2 → `A`(1) ⇒ PASS。
 - **过程问题**：残留进程锁 exe（LNK1104）；探针正则只匹配小写导致误判"没数据"。
 - **梯**：**173/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.545×**、哨兵 **0**。
+
+
+## ▶ 状态（F400，2026-11-07 09:20）——`minItems`/`maxItems` **真正支持**（单属性标量数组），门检查**元素个数**
+- **实现**：`api_schema_array_element_bounds`（形状 + 出现次数双重判据）+ 两个数组生成器按**元素计数**过滤逗号/右括号，min 高于默认预算时抬高（上限 8）；检测器正则只放行 `minItems`/`maxItems` 作 items 的兄弟键；四个调用点接入。
+- **门**：新门 `SCHEMA-COUNT`（`bounds=[3:4] n=4`、数字数组 `2:2` → `n=2`、三个拒绝侧）；`SCHEMA-KEYWORDS` 扩到 14 例（放行 3 / 仍拒 4：界写在对象上、对象数组、`maxItems:0`、min>max）。
+- **活体七例**（`engine/schema_count_f400c.log`，`scripts/schema_count_run.sh`）：4 元素 200、2 元素 200、对象数组 400、界在对象上 400、**流式** 2 元素 200、**抬高预算** 6 元素 200、min 9 超上限 400 ⇒ PASS。
+- **方法**：活体用 `json.loads` 数元素（serve 字符集含逗号，切分会多数）；新分支（抬高、上限拒绝）各配活体例。
+- **梯**：**174/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**。
+- **仍拒绝（排队）**：多属性/混合/嵌套/对象数组/顶层数组的界；界写在 `items` 之前；`maxItems:0`。

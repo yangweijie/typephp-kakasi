@@ -3710,7 +3710,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 的 1 侧 + 活体 400（F396） |
 | 数值边界：integer + 双边界 + 跨度 ≤15 | **支持** | `SCHEMA-BOUND-REJECT` 0 侧 + 活体 200 |
 | 数值边界：float / 单侧 / 跨度 >15 | **显式 400** | 同上 1 侧 + 活体 400（F397） |
-| minItems / maxItems / minLength / maxLength / additionalProperties | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398） |
+| minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN` + 活体 200（F399） |
+| minItems / maxItems：单属性标量数组（string/integer/number，元素 ≤8） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT` + 活体 200/400（F400） |
+| minItems / maxItems / minLength / maxLength：**其他形状**；additionalProperties | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398/F399/F400） |
 | required = 全部声明属性 | **支持**（构造上满足） | `SCHEMA-KEYWORDS` req_all + 活体 200 |
 | required ⊂ 声明属性 | **显式 400** | req_subset + 活体 400 |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
@@ -3731,3 +3733,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **支持表更新**：`minLength`/`maxLength`（扁平全字符串对象）由"显式 400"改为**支持**；其他形状仍为"显式 400"。
 **梯**：自检 **173 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.545×**；哨兵 **0**。
 **边界**：min 的满足受 `maxSteps` 预算限制（步数用尽会兜底闭引号）；只覆盖扁平全字符串形状；数组/混合/嵌套形状的长度约束仍拒绝。
+
+
+## F400：`minItems`/`maxItems` 从"显式拒绝"变成**真正支持**（单属性标量数组），门检查的是**输出的元素个数**
+**实现**：①`api_schema_array_element_bounds($schema)` 只在**能 honour 的形状**上给出 `min:max`：整个 schema 只有一个 `properties`、恰好一个 `"type":"array"`、items 不是 object/array、`properties` 只有 1 个叶子且 kind ∈ {a,an,af}，且两个关键字在**全 schema 的出现次数 == 在叶子块内的出现次数**（界写在对象上而不是数组上 ⇒ 返回 ""，回到拒绝）；②`api_array_string_value`/`api_array_number_value` 新增可选 `$bounds`：预算收到 max，**未到 min 时只提供逗号**、**到达 max 时只提供右括号**；min 高于默认预算 4 时把预算抬到 min（上限 8）；③两个检测器的正则允许 items 之后**只跟** `minItems`/`maxItems` 整数对（其他兄弟键仍不匹配，免得把 `uniqueItems` 之类静默放行）；④四个调用点（8000 非流、8000 流式两处、8001）都传 `api_response_schema_array_bounds($body)`。
+**门**：新门 `SCHEMA-COUNT` 断言**元素数**而非状态码：`bounds=[3:4] n=4`、数字数组空格排版 `num_bounds=[2:2] num_n=2`、`refuse_obj/refuse_ceiling/refuse_outside=[]`、`ok=[0:4]` ⇒ PASS。`SCHEMA-KEYWORDS` 扩到 14 例：放行侧 `arr_max=[]`、`arr_minmax=[]`、`wire_arr_min=[]`，拒绝侧 `obj_bound=[maxItems]`（界写在对象上）、`arr_obj=[maxItems]`（对象数组）、`max0=[maxItems]`（空数组）、`min_gt_max=[minItems]`（不可满足）。
+**活体七例（`engine/schema_count_f400c.log`）**：`str_min3_max4` **200，4 元素**；`int_min2_max2` **200，2 元素**；`obj_items_refuse` **400**；`outer_bound_refuse` **400**（泄漏测试）；`str_min2_max3_stream` **流式 200，2 元素**；`str_min6_max7_raise` **200，6 元素**（min 高于默认预算，走"抬高"分支）；`str_min9_refuse` **400**（超过元素上限 8）⇒ **VERDICT: PASS**。
+**方法记录**：①活体计数用 `json.loads(...)["key"]` 而不是按逗号切分——serve 路径的 charset **含逗号**，元素文本里就有 `","`，切分会多数；自检用无逗号字符集，两侧口径不同是**有意**的（自检测 grammar，活体测协议）。②新增分支必须有活体例：F399 的 overshoot 就出在没被测的分支里，这次"预算抬高"和"上限拒绝"各配一例。③`api_schema_array_element_bounds` 的**出现次数相等**判据是防"放行但无人执行"的第三次同族修复（F397 排版、F398 扫描范围、本轮界的位置）。
+**支持表**：该行从"显式 400"拆成"支持（单属性标量数组 ≤8 元素）"与"其他形状仍 400"。
+**梯**：自检 **174 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.562×**；哨兵 **0**。
+**边界与仍拒绝（明确排队）**：只覆盖**单属性**标量数组——多属性、混合、嵌套、对象数组、顶层数组上的界仍 400；界写在 `items` **之前**（`{"type":"array","minItems":2,"items":…}`）正则不认，故仍 400；元素上限 8；`maxItems:0`（空数组）不支持；抬高预算后仍受 token 预算约束（活体 6 元素在 max_tokens 96 内）。

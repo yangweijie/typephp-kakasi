@@ -665,3 +665,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 活体双向 | 3..6 → **200 `Hello`(5)**；max2 → **200 `A`(1)** ⇒ PASS | `engine/schema_len_f399b.log` |
 | 第一版 bug（已修） | 多字符 token 越过 max（len2=5）⇒ 按字符过滤后 len2=1 | `engine/run_f399.log` vs `run_f399c.log` |
 | 梯 | 自检 **173/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.545×**、哨兵 **0** | `engine/run_f399c.log`、`engine/gate_f399c.log` |
+
+### F400（2026-11-07 09:20）——minItems/maxItems 真正支持（单属性标量数组）；门数的是元素个数
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 新门（检查输出**元素个数**） | `bounds=[3:4] n=4`、数字数组（空格排版）`num_bounds=[2:2] num_n=2`、`refuse_obj/ceiling/outside=[]`、`ok=[0:4]` | `engine/selftest_f400.log` |
+| 关键字门（14 例、双向、两排版） | 放行 `arr_max=[]` `arr_minmax=[]` `wire_arr_min=[]`；仍拒 `obj_bound=maxItems` `arr_obj=maxItems` `max0=maxItems` `min_gt_max=minItems` | 同上 |
+| 活体七例（双向 + 流式 + 抬高/上限分支） | 4 元素 **200**、2 元素 **200**、对象数组 **400**、界写在对象上 **400**、流式 2 元素 **200**、min 6 → **6 元素 200**、min 9 **400** ⇒ PASS | `engine/schema_count_f400c.log`（`scripts/schema_count_run.sh`） |
+| 形状判据（防"放行但无人执行"） | 出现次数相等判据：界在叶子块外 ⇒ 返回 "" ⇒ 仍 400（活体 `outer_bound_refuse`） | 同上 |
+| 梯 | 自检 **174/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.562×**、哨兵 **0** | `engine/selftest_f400.log`、`engine/api_smoke_f400.log`、`engine/par_smoke_f400.log`、`engine/throughput_f400.log` |
