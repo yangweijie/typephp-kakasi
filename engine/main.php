@@ -6631,15 +6631,25 @@ function api_schema_array_object_bounds(string $schema): string
         return "";
     }
     $leaves = explode(",", $plan);
-    if (count($leaves) != 1) {
+    // F410: a multi-leaf plan is honoured too - the keyed ao writer counts the array's elements
+    // and emits only that key, which is legal while every sibling is optional; required naming a
+    // sibling keeps refusing via the keywords gate's required rules (the ao kind is not one the
+    // full-emission check counts), and so do subsets. Two object arrays keep the refusal: one
+    // writer serves one array, and the second's bounds would be relaxed but enforced nowhere.
+    $aoIdx = -1;
+    for ($li = 0; $li < count($leaves); $li++) {
+        $lkv = explode(":", $leaves[$li]);
+        if (count($lkv) >= 3 && $lkv[1] == "ao") {
+            if ($aoIdx >= 0) {
+                return "";
+            }
+            $aoIdx = $li;
+        }
+    }
+    if ($aoIdx < 0) {
         return "";
     }
-    $kv = explode(":", $leaves[0]);
-    // The ao plan entry is three parts - "a:ao:<itemkey>" - so the kind is kv[1] == "ao" and the
-    // items' own key sits in kv[2].
-    if (count($kv) < 3 || $kv[1] != "ao") {
-        return "";
-    }
+    $kv = explode(":", $leaves[$aoIdx]);
     $kp = strpos($block, "\"" . $kv[0] . "\"");
     $vo = strpos($block, "{", $kp);
     $leaf = api_balance_block($block, $vo);
@@ -13734,7 +13744,11 @@ function main(): void
     $kwQ = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"object","properties":{"n":{"type":"string"}}},"maxItems":3}}}');
     $kwAK = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","minItems":2,"maxItems":3,"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}');
     $kwAL = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","minItems":9,"maxItems":2,"items":{"type":"object","properties":{"n":{"type":"string"}}}}}}');
+    // F410 flipped kwAM: a multi-leaf ao plan is honoured now - the writer counts the array's
+    // elements and emits only that key, legal while the sibling is optional; required naming the
+    // sibling still refuses (the ao kind is not full-emission), pinned next to it.
     $kwAM = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","maxItems":3,"items":{"type":"object","properties":{"n":{"type":"string"}}}},"note":{"type":"string"}}}');
+    $kwAU = api_schema_keywords_unsupported('{"type":"object","properties":{"rows":{"type":"array","maxItems":3,"items":{"type":"object","properties":{"n":{"type":"string"}}}},"note":{"type":"string"}},"required":["rows","note"]}');
     $kwAN = api_schema_keywords_unsupported('{"type":"object","properties":{"g":{"type":"array","items":{"type":"array","items":{"type":"string"}},"maxItems":3}}}');
     $kwR = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "array", "items": {"type": "string"}, "minItems": 2}}}');
     $kwS = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":0}}}');
@@ -13756,7 +13770,7 @@ function main(): void
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
         . "] arr_obj=[" . $kwQ . "] ao_bounds=[" . $kwAK . "] ao_bad=[" . $kwAL
-        . "] ao_multi=[" . $kwAM . "] ao_2d=[" . $kwAN . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
+        . "] ao_multi=[" . $kwAM . "] ao_req=[" . $kwAU . "] ao_2d=[" . $kwAN . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
         . "] min_gt_max=[" . $kwT . "] req_undeclared=[" . $kwU . "] req_mixed=[" . $kwV
         . "] req_arr_sub=[" . $kwAC . "] req_arr_all=[" . $kwAD . "] req_enum_all=[" . $kwAE
         . "] addprops_form=[" . $kwW . "] addprops_nested=[" . $kwX
@@ -13768,7 +13782,8 @@ function main(): void
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
         && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == ""
-        && $kwAK == "" && $kwAL == "minItems" && $kwAM == "maxItems" && $kwAN == "maxItems"
+        && $kwAK == "" && $kwAL == "minItems" && $kwAM == "" && $kwAU == "required"
+        && $kwAN == "maxItems"
         && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
         && $kwU == "required" && $kwV == ""
         && $kwAC == "required" && $kwAD == "required" && $kwAE == "required"

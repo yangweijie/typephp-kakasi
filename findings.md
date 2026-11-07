@@ -3852,3 +3852,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **被证伪翻转（均有说明）**：prH（`^[a-z]+$` 末段星号）、prG（`^SKU-[0-9]{4,6}$` 末段区间）、prK、prC（`^[A-Z][a-z]+$` 字面量+末段星号）、spD（改造为非末段仍拒的证明）、活体 star/range/plus 三例翻转为 200+值匹配。仍拒：非末段量化符（prAO/prAP）、非锚定、否定类、2D。
 **活体 13 例全绿**：`^[a-z]{2,4}$` 值长 2..4、`^[0-9]+$`、`^X[abc]{2,4}$`、`^SKU-[0-9]{4,6}$` 全匹配；非末段 400。
 **留拒（排队）**：非末段量化符（需 NFA 走位）、否定类、非锚定、嵌套带界数组。
+
+## F410（进行中）：数组界扩到**多叶 ao**（对象数组带界 + 兄弟键合法省略）
+**实现**：`api_schema_array_object_bounds` 放宽单叶限制——plan 扫描恰一个 "ao" 叶（两个对象数组仍拒：一个写入器服务一个数组，第二个的界会被放宽但无人执行）；ao 写入器计数的界 + 只发该键（兄弟键可选 ⇒ 合法省略，键集合断言钉住）；required 点名兄弟键仍拒（ao kind 不在 fullEmission 集 ⇒ 候选层仲裁拒绝——既有规则自动覆盖，无需改动）；子集同样仍拒（mixed_omittable 的三段条目规则）。
+**门**：SCHEMA-KEYWORDS 的 kwAM 翻转（多叶 ao 由拒改为放行）+ kwAU（required 点名兄弟仍拒）对照；活体 harness 扩到 18 例（多叶 ao 2/2 计数 + 键集合=["rows"] + required 400）。
+**F410 完成（补记）**：自检 **177/0**（kwAM 翻转 + kwAU 对照）；8000 **115/0**、8001 par/fairness **0**、scaling **1.507×**、哨兵 **0**（`engine/selftest_f410.log`、`engine/api_smoke_f410.log`、`engine/par_smoke_f410.log`、`engine/fairness_f410.log`、`engine/throughput_f410.log`、`engine/schema_count_f410.log`、`engine/schema_required_f410.log`、`engine/schema_pattern_f410.log`、`engine/schema_bounds_f410.log`）。活体 18 例全绿：多叶 ao 2/2 → `{"rows":[{"n":"2"},{"n":"2"}]}` 恰 2 项且键集合=["rows"]（兄弟键合法省略被断言钉住）；required 点名兄弟 400。required/pattern/bounds 复跑不回退。
+**记法**：放宽一个"单叶"形状限制时，required/子集/addprops 三条既有规则要逐一复核——本例全部自动覆盖（ao 的三段 kind 不在任何放行集里），零新代码但每条都要在门或活体里有证据。
