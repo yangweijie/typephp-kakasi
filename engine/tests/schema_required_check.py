@@ -1,15 +1,25 @@
-"""F401 live check: does `required` naming a strict subset come back with exactly those keys?
+"""F401/F402/F403 live check: does `required` come back with exactly the keys it names?
 
 The refusal used to fire for every subset. Now the flat all-string object honours it by omitting the
-optional properties, so the assertion is about the KEY SET of the served answer, not the status
-code. Seven cases, both directions, all bodies built with json.dumps (the spaced wire spelling):
+optional properties, and F403② extends that to the mixed shape (string + integer/number/boolean),
+whose generator steps the filtered plan. The assertion is about the KEY SET of the served answer,
+not the status code. Thirteen cases, both directions, all bodies built with json.dumps (the spaced
+wire spelling):
   1. subset of three strings           -> 200, keys == required, optional absent
   2. all three required               -> 200, every key present (no regression)
   3. required names an undeclared key  -> 400 naming required
-  4. subset on a mixed shape           -> 400 naming required (that generator cannot omit)
+  4. subset on a mixed shape           -> 200, keys == required, integer key absent
   5. subset combined with maxLength    -> 200, keys subset AND lengths inside bounds
   6. additionalProperties false (F402) -> 200, keys == the two required names
-  7. additionalProperties on a mixed shape -> 400 naming additionalProperties
+  7. additionalProperties on a mixed shape -> 200, keys == the declared plan (F403②)
+  8. additionalProperties beside an enum leaf -> 400 naming additionalProperties
+  9. additionalProperties + array bounds -> 200, element count inside bounds, key set exact
+ 10. the SCHEMA form of the keyword beside array bounds -> 400 naming additionalProperties
+ 11. all-required on a mixed shape    -> 200, every key present, integer still an integer
+ 12. all-required with a boolean leaf -> 200, every key present (the candidates tier used to
+     answer this with the boolean alone), boolean still a boolean
+ 13. required on a shape with an array leaf -> 400 naming required (the single-array path emits
+     only the array key and would drop the required sibling)
 """
 import json
 import sys
@@ -64,10 +74,12 @@ cases = [
     ("undeclared_name", "Say where you are.",
      dict(list(THREE.items()) + [("required", ["city", "region"])]),
      lambda code, txt: code == 400 and "required" in txt),
+    # F403②: the mixed generator steps the filtered plan, so the subset is honoured by omitting
+    # the optional integer - and the integer must stay absent, not merely tolerated.
     ("mixed_shape_subset", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
       "required": ["city"]},
-     lambda code, txt: code == 400 and "required" in txt),
+     lambda code, txt: code == 200 and keys_of(txt) == ["city"]),
     ("subset_with_length", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string", "minLength": 3, "maxLength": 8},
                                        "zip": {"type": "string"},
@@ -77,14 +89,22 @@ cases = [
                         and 3 <= len(json.loads(txt)["city"]) <= 8
                         and len(json.loads(txt)["note"]) <= 5)),
     # F402: additionalProperties names no key of its own - the generators emit the declared plan and
-    # nothing else - so refusing it rejected a request that was already satisfied. Two directions:
-    # the all-string object accepts it and the mixed object still refuses it.
+    # nothing else - so refusing it rejected a request that was already satisfied.
     ("addprops_all_string", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "additionalProperties": False, "required": ["city", "note"]},
      lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
-    ("addprops_mixed_refuse", "Say where you are.",
+    # F403②: the mixed shape passes too, and the integer leaf must still come back an integer.
+    ("addprops_mixed_served", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
+      "additionalProperties": False},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "count"]
+                        and isinstance(json.loads(txt)["count"], int))),
+    # ...while an enum leaf still refuses: its plan entry has three colon-separated parts and the
+    # honoured predicate reads exactly two.
+    ("addprops_enum_refuse", "Say where you are.",
+     {"type": "object", "properties": {"mode": {"type": "string", "enum": ["Paris", "London"]},
+                                       "count": {"type": "integer"}},
       "additionalProperties": False},
      lambda code, txt: code == 400 and "additionalProperties" in txt),
     # F403: two constraints that each hold must not refuse each other. The array bound is enforced by
@@ -101,6 +121,27 @@ cases = [
                                                   "maxItems": 3}},
       "additionalProperties": {"type": "string"}},
      lambda code, txt: code == 400 and "additionalProperties" in txt),
+    # F403②: all-required on the mixed shape keeps every key, and the integer is still an integer.
+    ("mixed_all_required", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
+      "required": ["city", "count"]},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "count"]
+                        and isinstance(json.loads(txt)["count"], int))),
+    # The case the finite-candidates tier used to answer with the boolean alone: required naming
+    # the unbounded integer must now come back with BOTH keys, the boolean still a boolean.
+    ("bool_all_required", "Say where you are.",
+     {"type": "object", "properties": {"flag": {"type": "boolean"}, "count": {"type": "integer"}},
+      "required": ["flag", "count"]},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["count", "flag"]
+                        and isinstance(json.loads(txt)["flag"], bool)
+                        and isinstance(json.loads(txt)["count"], int))),
+    # A shape with an array leaf is served by the single-array path, which emits only that key -
+    # a required sibling would be dropped, so the request is refused instead of half-served.
+    ("arr_leaf_required_refuse", "Say where you are.",
+     {"type": "object", "properties": {"name": {"type": "string"},
+                                       "nums": {"type": "array", "items": {"type": "integer"}}},
+      "required": ["name"]},
+     lambda code, txt: code == 400 and "required" in txt),
 ]
 
 bad = 0

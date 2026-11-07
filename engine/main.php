@@ -4504,6 +4504,14 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                     $s = $s . "," . $cq;
                 }
             }
+        } else if ($ty == "b") {
+            // F403②: a boolean leaf is the two literals, the same way the nested stepper emits
+            // it (F285). Without this branch the leaf fell into the numeric fill and the plan's
+            // "flag":b came out as an integer that is not true or false.
+            $bb = api_constrained_continue(["true", "false"], 4);
+            if ($bb != "") {
+                $s = $s . "," . $bb;
+            }
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 6);
             if ($body != "") {
@@ -4567,6 +4575,24 @@ function api_response_schema_mixed_object(string $body): string
     }
     if ($hasNum == 0) {
         return "";
+    }
+    // F403②: the generator emits exactly the keys in the plan it is given, so a required subset
+    // is honoured by handing it the filtered plan - the same construction the flat all-string
+    // path uses (F401). The filter's own shape gate (flat all-string, or mixed with the leaf
+    // kinds this generator emits) decides eligibility; here we only apply it. Applied here
+    // rather than at the call sites so all four dispatch chains stay in step.
+    $keep = api_schema_required_filter($schema);
+    if ($keep != "") {
+        $filtered = "";
+        foreach (explode(",", $plan) as $leaf) {
+            $kv = explode(":", $leaf);
+            if (count($kv) >= 1 && strpos("," . $keep . ",", "," . $kv[0] . ",") !== false) {
+                $filtered = $filtered == "" ? $leaf : $filtered . "," . $leaf;
+            }
+        }
+        if ($filtered != "") {
+            $plan = $filtered;
+        }
     }
     return $plan;
 }
@@ -5704,6 +5730,9 @@ function api_schema_candidates(string $tail): array
     if ($block == "") {
         return $out;
     }
+    // F403②: `required` sits beside `properties`, outside the block, so it has to be read from
+    // the schema before $tail is narrowed down to the block.
+    $reqNames = api_schema_required_names($tail);
     $tail = $block;
     // Object-valued properties mean this is a NESTED plan. Without this gate, pass 1's enum regex
     // reaches into the deepest leaf and emits a flat object, silently dropping every intermediate
@@ -5890,6 +5919,25 @@ function api_schema_candidates(string $tail): array
     }
     if (count($combos) == 1 && $combos[0] == "") {
         return $out;
+    }
+    // F403②: a candidate object contains ONLY the enumerated keys - legal while every other
+    // property is optional, but a required key that no candidate renders would be served as an
+    // answer violating `required` (a boolean leaf beside an unbounded integer produced
+    // {"flag":false} for required ["flag","count"]). No candidates then; the grammar chain serves
+    // the shape with every declared key instead.
+    if ($reqNames != "") {
+        foreach (explode(",", $reqNames) as $rq) {
+            $found = 0;
+            for ($uk = 0; $uk < count($used); $uk++) {
+                if ($used[$uk] == $rq) {
+                    $found = 1;
+                    break;
+                }
+            }
+            if ($found == 0) {
+                return [];
+            }
+        }
     }
     for ($i = 0; $i < count($combos); $i++) {
         $out[] = "{" . $combos[$i] . "}";
@@ -6175,10 +6223,66 @@ function api_schema_required_names(string $schema): string
 // flat all-string generator steps property by property and can therefore leave one out, and only
 // when every required name is actually declared - otherwise the answer would still break the
 // schema, which is what the refusal is for. Returns the names to emit, in declaration order, or "".
+// F403②: the mixed object's generator steps property by property and emits exactly the keys in
+// the plan it is handed, so a required subset is honoured there by the same construction as the
+// flat all-string path (F401) - with the leaf kinds that generator can actually emit (string,
+// integer, number, boolean). The shape judgement mirrors api_response_schema_mixed_object's, so
+// a plan admitted here is a plan that schema really produces; anything else (array leaves, enum
+// or const leaves, object leaves) stays refused until its own key-set proof exists.
+function api_schema_mixed_omittable(string $schema): int
+{
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+        return 0;
+    }
+    if (api_schema_is_object($schema) != 1) {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    $items = explode(",", $plan);
+    if (count($items) < 2) {
+        return 0;
+    }
+    $hasNum = 0;
+    for ($i = 0; $i < count($items); $i++) {
+        $kv = explode(":", $items[$i]);
+        // Three-part entries (e:/en:/ao:) and array kinds are not emitted correctly by the flat
+        // mixed generator, so this path stays refused for them rather than half-honoured.
+        if (count($kv) != 2) {
+            return 0;
+        }
+        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b") {
+            return 0;
+        }
+        if ($kv[1] != "s") {
+            $hasNum = 1;
+        }
+    }
+    if ($hasNum == 0) {
+        return 0;
+    }
+    return 1;
+}
+
 function api_schema_required_filter(string $schema): string
 {
     $req = api_schema_required_names($schema);
-    if ($req == "" || api_schema_flat_all_string($schema) != 1) {
+    if ($req == "" || (api_schema_flat_all_string($schema) != 1
+            && api_schema_mixed_omittable($schema) != 1)) {
         return "";
     }
     $pp = strpos($schema, "\"properties\"");
@@ -6243,9 +6347,10 @@ function api_response_schema_string_props_required(string $body): array
 // name every key from the declared plan - the model never picks one - so for those shapes the
 // constraint holds whatever its value, and refusing it rejected a request the decoder already
 // satisfies (the same mistake `required` was). Scoped deliberately: only a top-level object whose
-// leaves are all scalars, only the boolean spelling, only one occurrence. An object-array item, a
-// nested object, an array leaf, or the schema form of the keyword stay refused until that route has
-// its own key-set gate.
+// leaves are all steppable kinds (strings, integers, numbers, booleans, and the scalar arrays the
+// mixed/nested steppers emit - F403② adds the flat mixed kinds i/n/b alongside F402's s/an/af/ab),
+// only the boolean spelling, only one occurrence. An object-array item, a nested object, or the
+// schema form of the keyword stay refused until that route has its own key-set gate.
 function api_schema_additional_properties_honoured(string $schema): int
 {
     if (preg_match('/"additionalProperties"\s*:\s*(?:true|false)/', $schema) != 1
@@ -6273,7 +6378,8 @@ function api_schema_additional_properties_honoured(string $schema): int
         if (count($kv) != 2) {
             return 0;
         }
-        if ($kv[1] != "s" && $kv[1] != "a" && $kv[1] != "an" && $kv[1] != "af" && $kv[1] != "ab") {
+        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b"
+            && $kv[1] != "a" && $kv[1] != "an" && $kv[1] != "af" && $kv[1] != "ab") {
             return 0;
         }
     }
@@ -6380,6 +6486,36 @@ function api_schema_keywords_unsupported(string $body): string
         if (api_schema_required_filter($body) != "") {
             return "";
         }
+        return "required";
+    }
+    // F403②: required is honoured where the serving path emits every required key. The
+    // full-emission generators cover a plan whose leaf kinds are all s/i/n/b with no other
+    // constraint keyword present (flat all-string, the mixed stepper with its boolean branch) -
+    // subsets go through the filter above, all-required needs nothing omitted. A leaf of any
+    // other kind - an array (the single-array tier), an enum or const (the finite candidates), a
+    // bare number - is served by a path that emits ONLY that key and drops its siblings, which
+    // is legal while they are optional but a violation once required names them (a boolean
+    // beside an unbounded integer answered {"flag":false} for required ["flag","count"]). For a
+    // multi-leaf plan outside the full-emission set the finite candidates are the arbiter: after
+    // the required check inside them, non-empty means every required key is renderable, empty
+    // means no path emits them all. A single-leaf plan is its own exception: the one required
+    // key is exactly what those paths emit.
+    $fullEmission = 1;
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        if (count($kv) < 2) {
+            continue;
+        }
+        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b") {
+            $fullEmission = 0;
+            break;
+        }
+    }
+    if ($fullEmission == 1
+        && preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $body) == 1) {
+        $fullEmission = 0;
+    }
+    if ($fullEmission == 0 && $declN > 1 && count(api_schema_candidates($body)) == 0) {
         return "required";
     }
     return "";
@@ -12485,7 +12621,12 @@ function main(): void
     // predicates composable - each half holds, so neither may veto the other.
     $kwW = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":{"type":"string"}}');
     $kwX = api_schema_keywords_unsupported('{"properties":{"a":{"type":"object","properties":{"n":{"type":"string"}}}},"additionalProperties":false}');
+    // F403②: the mixed shape (string + integer) now passes too - the flat mixed generator names
+    // every key from the plan, so the constraint holds there by the same construction. The
+    // enum-leaf counterpart still refuses: an e:/en: plan entry has three colon-separated parts
+    // and the honoured predicate reads exactly two.
     $kwY = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":true}');
+    $kwAF = api_schema_keywords_unsupported('{"type":"object","properties":{"mode":{"type":"string","enum":["Paris","London"]},"count":{"type":"integer"}},"additionalProperties":false}');
     $kwZ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":3}},"additionalProperties":false}');
     $kwAA = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "additionalProperties": false}');
     // F403: the pair above is no longer refused - each half holds, so neither may veto the other.
@@ -12510,11 +12651,15 @@ function main(): void
     $kwT = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array","items":{"type":"string"},"minItems":4,"maxItems":2}}}');
     // F401: a strict subset used to be refused everywhere; on the flat all-string object the
     // generator can now omit the optional property, so `req_subset`/`wire_subset` moved from
-    // "required" to "". The falsified expectation is changed rather than kept green, and the cases
-    // that must STILL refuse are added next to it: a required name that is not declared, and a
-    // subset on a shape whose generator does not step properties.
+    // "required" to "". F403② moves `req_mixed` the same way - the mixed generator steps the
+    // filtered plan - while the cases that must STILL refuse stay: an undeclared required name,
+    // and required on a multi-leaf plan carrying a leaf kind (array, enum) whose serving path
+    // emits only that one key and would drop a required sibling.
     $kwU = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","z"]}');
     $kwV = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"string"},"b":{"type":"integer"}},"required":["a"]}');
+    $kwAC = api_schema_keywords_unsupported('{"type":"object","properties":{"name":{"type":"string"},"nums":{"type":"array","items":{"type":"integer"}}},"required":["name"]}');
+    $kwAD = api_schema_keywords_unsupported('{"type":"object","properties":{"name":{"type":"string"},"nums":{"type":"array","items":{"type":"integer"}}},"required":["name","nums"]}');
+    $kwAE = api_schema_keywords_unsupported('{"type":"object","properties":{"mode":{"type":"string","enum":["Paris","London"]},"count":{"type":"integer"}},"required":["mode","count"]}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
@@ -12522,19 +12667,21 @@ function main(): void
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
         . "] arr_obj=[" . $kwQ . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
         . "] min_gt_max=[" . $kwT . "] req_undeclared=[" . $kwU . "] req_mixed=[" . $kwV
+        . "] req_arr_sub=[" . $kwAC . "] req_arr_all=[" . $kwAD . "] req_enum_all=[" . $kwAE
         . "] addprops_form=[" . $kwW . "] addprops_nested=[" . $kwX
-        . "] addprops_mixed=[" . $kwY . "] addprops_arr=[" . $kwZ
+        . "] addprops_mixed=[" . $kwY . "] addprops_enum=[" . $kwAF . "] addprops_arr=[" . $kwZ
         . "] addprops_wire=[" . $kwAA . "] addprops_form_arr=[" . $kwAB . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
         && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == "maxItems"
         && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
-        && $kwU == "required" && $kwV == "required"
+        && $kwU == "required" && $kwV == ""
+        && $kwAC == "required" && $kwAD == "required" && $kwAE == "required"
         && $kwW == "additionalProperties" && $kwX == "additionalProperties"
-        && $kwY == "additionalProperties" && $kwZ == "" && $kwAA == ""
+        && $kwY == "" && $kwAF == "additionalProperties" && $kwZ == "" && $kwAA == ""
         && $kwAB == "additionalProperties") {
-        echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required refused only as a subset)\n";
+        echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";
     }
@@ -12758,14 +12905,81 @@ function main(): void
         . '"required":["a","z"]}}}}';
     $r3Props = api_response_schema_string_props_required($r3Body);
     $r3Keep = api_schema_required_filter(api_json_object_after($r3Body, "schema"));
+    // F403②: the mixed shape steps the filtered plan the same way. The subset emits ONLY the
+    // required key and the optional integer stays absent; all-required keeps every key with the
+    // integer still an integer. The boolean case is the one the finite-candidates tier used to
+    // answer with the boolean alone: `required` naming the unbounded integer must yield NO
+    // candidates (the grammar chain serves both keys, the boolean a real true/false), while a
+    // required set the candidates can fully render keeps producing them.
+    $mBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"mix1","schema":'
+        . '{"type":"object","properties":{"city":{"type":"string"},"count":{"type":"integer"}},'
+        . '"required":["city"]}}}}';
+    $mPlan = api_response_schema_mixed_object($mBody);
+    $mIds = tok_chat("user", "Say where you are.") . "," . tok_chat_open("assistant");
+    $mOut = api_object_mixed($mIds, $mPlan, "abcdefghijklmnopqrstuvwxyz", 12, 0);
+    $mText = "";
+    $mParts = explode(",", $mOut);
+    $mBase = count(explode(",", $mIds));
+    for ($i = $mBase; $i < count($mParts); $i++) {
+        $mText = $mText . gguf_token_str((int) $mParts[$i]);
+    }
+    $mText = str_replace("Ġ", " ", $mText);
+    $mHasCity = strpos($mText, "\"city\"") !== false ? 1 : 0;
+    $mHasCount = strpos($mText, "\"count\"") !== false ? 1 : 0;
+    $m2Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"mix2","schema":'
+        . '{"type":"object","properties":{"city":{"type":"string"},"count":{"type":"integer"}}}}}}';
+    $m2Plan = api_response_schema_mixed_object($m2Body);
+    $m2Out = api_object_mixed($mIds, $m2Plan, "abcdefghijklmnopqrstuvwxyz", 12, 0);
+    $m2Text = "";
+    $m2Parts = explode(",", $m2Out);
+    for ($i = $mBase; $i < count($m2Parts); $i++) {
+        $m2Text = $m2Text . gguf_token_str((int) $m2Parts[$i]);
+    }
+    $m2Text = str_replace("Ġ", " ", $m2Text);
+    $m2Both = (strpos($m2Text, "\"city\"") !== false ? 1 : 0)
+        + (strpos($m2Text, "\"count\"") !== false ? 1 : 0);
+    $m2Int = preg_match('/"count":-?[0-9]+/', $m2Text) == 1 ? 1 : 0;
+    $bBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"mixb","schema":'
+        . '{"type":"object","properties":{"flag":{"type":"boolean"},"count":{"type":"integer"}},'
+        . '"required":["flag","count"]}}}}';
+    $bSch = api_json_object_after($bBody, "schema");
+    $bCands = api_schema_candidates($bSch);
+    $bPlan = api_response_schema_mixed_object($bBody);
+    $bOut = api_object_mixed($mIds, $bPlan, "abcdefghijklmnopqrstuvwxyz", 12, 0);
+    $bText = "";
+    $bParts = explode(",", $bOut);
+    for ($i = $mBase; $i < count($bParts); $i++) {
+        $bText = $bText . gguf_token_str((int) $bParts[$i]);
+    }
+    $bText = str_replace("Ġ", " ", $bText);
+    $bBoth = (strpos($bText, "\"flag\"") !== false ? 1 : 0)
+        + (strpos($bText, "\"count\"") !== false ? 1 : 0);
+    $bBool = (strpos($bText, "\"flag\":true") !== false || strpos($bText, "\"flag\":false") !== false) ? 1 : 0;
+    $b2Sch = '{"type":"object","properties":{"flag":{"type":"boolean"},'
+        . '"num":{"type":"integer","minimum":1,"maximum":3}},"required":["flag","num"]}';
+    $b2Cands = api_schema_candidates($b2Sch);
+    $b2Full = 0;
+    if (count($b2Cands) > 0) {
+        $b2Full = (strpos($b2Cands[0], "\"flag\"") !== false && strpos($b2Cands[0], "\"num\"") !== false) ? 1 : 0;
+    }
     echo "SCHEMA-REQ-SUBSET keep=[" . $rqKeep . "] refuse=[" . $rqRefuse . "] props="
         . count($rqProps) . "] bounds=[" . $rqBounds . "] keys city=" . $rqHasCity
         . " note=" . $rqHasNote . " zip=" . $rqHasZip . "] text=[" . $rqText
         . "] all_required_props=" . count($r2Props) . "] undeclared_keep=[" . $r3Keep
-        . "] undeclared_props=" . count($r3Props) . "]\n";
+        . "] undeclared_props=" . count($r3Props)
+        . "] mix_plan=[" . $mPlan . "] mix city=" . $mHasCity . " count=" . $mHasCount
+        . "] mix2_plan=[" . $m2Plan . "] mix2_keys=" . $m2Both . " mix2_int=" . $m2Int
+        . "] bool_cands=" . count($bCands) . "] bool_plan=[" . $bPlan . "] bool_keys="
+        . $bBoth . " bool_bool=" . $bBool
+        . "] enum_int_cands=" . count($b2Cands) . " enum_int_full=" . $b2Full . "]\n";
     if ($rqKeep == "city,note" && $rqRefuse == "" && count($rqProps) == 2 && $rqBounds == "0:0,0:0"
         && $rqHasCity == 1 && $rqHasNote == 1 && $rqHasZip == 0 && api_json_ok($rqText) == 1
-        && count($r2Props) == 2 && $r3Keep == "" && count($r3Props) == 2) {
+        && count($r2Props) == 2 && $r3Keep == "" && count($r3Props) == 2
+        && $mPlan == "city:s" && $mHasCity == 1 && $mHasCount == 0 && api_json_ok($mText) == 1
+        && $m2Plan == "city:s,count:i" && $m2Both == 2 && $m2Int == 1 && api_json_ok($m2Text) == 1
+        && count($bCands) == 0 && $bPlan == "flag:b,count:i" && $bBoth == 2 && $bBool == 1
+        && api_json_ok($bText) == 1
+        && count($b2Cands) > 0 && $b2Full == 1) {
         echo "SCHEMA-REQ-SUBSET: PASS (emitted keys equal the required subset; optional omitted)\n";
     } else {
         echo "SCHEMA-REQ-SUBSET: FAIL\n";

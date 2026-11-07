@@ -1260,3 +1260,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **175/0**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 par/fairness **0**；scaling **1.557×**；哨兵 **0**（`engine/selftest_f403.log`、`engine/api_smoke_f403.log`、`engine/par_smoke_f403.log`、`engine/fairness_f403.log`、`engine/throughput_f403.log`、`engine/schema_required_f403.log`、`engine/schema_count_f403.log`）。
 - **未做（F403② 排队）**：required 省略 / additionalProperties 扩到**混合叶子**（integer/number/boolean）——设计已在 findings（先修 `api_object_mixed` 的 `b` 分支，过滤形状门只放 {s,i,n,b}，逐形状验证键集合后再放判据）。
 - **下一轮顺位**：F403② → pattern 元字符实现 → 数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。
+
+
+## ▶ 状态（F403②，2026-11-07 13:55）——required 省略 / additionalProperties 扩到**混合叶子**；活体探针抓到候选层丢 required 键的真缺陷并修掉
+- **探针（先于实现）**：`{flag:b,count:i}` 全必需 → `{"flag":false}`（count 丢）；`{name:s,nums:an}` 全必需 → `{"nums":[...]}`（name 丢）。**真缺陷**：候选层只拼可枚举叶子、单数组路径只发数组键——required 点名被丢的键时服务的是违反 required 的答案；F398 的"全必需构造上已满足"对这两类形状不成立。
+- **改动**：①候选层 required 感知（required 点名未枚举键 ⇒ 不产候选，语法链带全键服务）；②`api_object_mixed` 布尔分支（b 原来发成数字）；③`api_schema_mixed_omittable`（kind ∈ {s,i,n,b}，e:/en:/ao:/数组 kind 不放）进 required 过滤的形状门，plan 过滤放在 `api_response_schema_mixed_object` 内部（四链一处生效）；④addprops 判据 kind 加 i/n/b；⑤关键字门：全发射面之外的多叶 plan 由候选层当裁判（空 ⇒ 显式 400 required；`{flag:b,num:i min/max}` 全必需仍由候选层完整服务），单叶例外。
+- **门**：`SCHEMA-KEYWORDS` 26 例（`req_mixed`/`addprops_mixed` 期望被证伪改 `[]`，新增 req_arr_sub/req_arr_all/req_enum_all/addprops_enum 仍拒对照）；`SCHEMA-REQ-SUBSET` 加混合/布尔/候选层断言（mix city=1 count=0、bool_cands=0、bool_keys=2 bool_bool=1、enum_int_full=1）。
+- **活体**：13 例双向全绿（`engine/schema_required_f403c.log`）——`bool_all_required` **200 `{"flag":false,"count":100000}`**（原缺陷现场修复）。**第一轮 ok=False 是测试自身的错**：`keys_of` 返回排序键集，断言写反了顺序；改断言后全绿，FAIL 现场留档（`engine/schema_required_f403b.log`）。
+- **梯**：自检 **175/0**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**；哨兵 **0**。
+- **留拒（排队）**：数组叶子的 required 子集、`{mode:e,flag:b}` 全必需（门钉住为已知过度拒绝，后续按"先证键集合再放行"取消）。
+- **下一轮顺位**：pattern 元字符实现 → 数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。

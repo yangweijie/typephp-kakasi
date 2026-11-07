@@ -648,8 +648,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 
 
 ## F403 计划（先还债，再扩面：两处**已知过度拒绝**）
+**F403② 已完成**：required 省略 / additionalProperties 扩到**混合叶子**（integer/number/boolean），并修掉活体探针抓到的**候选层丢 required 键**真缺陷（`{flag:b,count:i}` 全必需曾答 `{"flag":false}`）——候选层 required 感知（required 点名未枚举键 ⇒ 不产候选，语法链带全键服务）+ `api_object_mixed` 布尔分支（b 原发成数字）+ `api_schema_mixed_omittable`（kind ∈ {s,i,n,b}）进过滤形状门 + plan 过滤放 `api_response_schema_mixed_object` 内部（四链一处生效）+ addprops kind 加 i/n/b + 关键字门收尾（全发射面外多叶 plan 由候选层当裁判，空 ⇒ 400 required）。`SCHEMA-KEYWORDS` 26 例（req_mixed/addprops_mixed 期望证伪改 `[]`，req_arr_*/req_enum_all/addprops_enum 仍拒对照）；`SCHEMA-REQ-SUBSET` 加混合/布尔断言；活体 13 例双向全绿（`bool_all_required` 200 两键真布尔；第一轮 FAIL 是测试自身 `keys_of` 排序顺序写反，改断言后绿）。梯 **175/0**、8000 **115/0**、8001 绿、scaling **1.536×**、哨兵 **0**。
+**明确留拒（排队）**：数组叶子的 required 子集、`{mode:e,flag:b}` 全必需（门钉住为已知过度拒绝，后续按"先证键集合再放行"取消）。
 **F403① 已完成**：数组界 + `additionalProperties` 判据**可组合**——数组排除正则去掉该关键字（键约束由自己的判据在拒绝时判定）、addprops 判据 kind 集加 `a`；`SCHEMA-KEYWORDS` 的 `addprops_arr` 期望被证伪改 `[]` 并新增 `addprops_form_arr=[additionalProperties]` 对照；harness 增至 9 例双向全绿（200+元素数+键集合 / 400+点名）；拒绝消息补上实际支持面；数组界 8 例复跑全绿；梯 **175/0**、8000 **115/0**、8001 绿、scaling **1.557×**、哨兵 **0**。**过程**：上次会话 10:56 的 selftest 日志是中间态构建产物；`run-kakasi-selftest.bat` 的 `%1` 在内部 `cd engine` 之后展开 ⇒ 必须传纯文件名（传 `engine\xxx.log` 落到不存在的 `engine\engine\`、exe 根本没跑）。
-**F403② 未做（下一轮）**：required 省略 / additionalProperties 扩到**混合叶子**（integer/number/boolean）——`api_object_mixed` 完全按传入 plan 逐键步进 ⇒ required 省略 = 过滤 plan 再传入；先修它对 `b`（boolean）kind 发成数字的分支，过滤形状门只放 {s,i,n,b}，**先用键集合门证明**再放行判据（设计细节与潜在缺陷清单已写进 findings F403② 节）。
 **动作**：①取消 `addprops_arr` 那类"两个各自支持的约束同时出现就拒绝"的排除条件——把数组判据里"含 additionalProperties 即排除"改成"**该关键字自身在支持面内则不参与排除**"，判据要可组合而不是互相踩；②把 `additionalProperties` / required 省略的支持面从 `{s}` 扩到**混合叶子**（含 integer/number/boolean）：这条路径的键名同样来自 plan，但必须**先用键集合门证明**（`api_object_mixed` 输出不含未声明键、且 required 子集时少发键）再放行判据；③两处各配双向门与活体例。
 **验收**：①`addprops_arr` 期望由 `[maxItems]` 改 `[]`（旧期望被新行为证伪 ⇒ 改门并说明）；②混合形状新门断言**键集合**；③既有 SCHEMA-* 全绿；④8000/8001 不回退；⑤拒绝消息的支持面描述与实际一致。
 **顺位**：这两笔债 → pattern 元字符实现 → 数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。

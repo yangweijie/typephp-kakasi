@@ -3790,3 +3790,18 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **两条过程教训**：①`run-kakasi-selftest.bat` 的 `%1` 在脚本内部 `cd engine` **之后**才展开——传 `engine\xxx.log` 会落到不存在的 `engine\engine\`，**exe 根本没跑**而退出码是 1，长得像"测试失败"；必须传纯文件名（或绝对路径）。②**本轮证据的判据是日志 mtime 晚于本轮构建时间**：上次会话留下的 10:56 `selftest_f403.log` 差点被当成"改动后仍 FAIL"的证据——那其实是中间态构建的产物（kwZ 旧期望），当前源码重跑即绿。证据先核出身，再核内容。
 **梯**：自检 **175 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 `PAR_EXIT=0`、`FAIR_EXIT=0`；scaling **1.557×**；哨兵 **0**（`engine/selftest_f403.log`、`engine/api_smoke_f403.log`、`engine/par_smoke_f403.log`、`engine/fairness_f403.log`、`engine/throughput_f403.log`、`engine/schema_required_f403.log`、`engine/schema_count_f403.log`）。
 **未做（F403② 排队）**：required 省略 / additionalProperties 扩到**混合叶子**——设计分析已写在上节（含 `api_object_mixed` 对 b/an/af/ab/ao/e:/en: kind 发成数字的潜在缺陷：先修 b 分支、过滤形状门只放 {s,i,n,b}，逐形状验证后再放判据）。
+
+## F403②：required 省略 / additionalProperties 扩到**混合叶子**，并修掉候选层丢 required 键的真缺陷
+**活体探针先于实现（证据改变设计）**：`{flag:b, count:i}` 全必需 → **`{"flag":false}`**（count 被丢）；`{name:s, nums:an}` 全必需 → **`{"nums":[...]}`**（name 被丢）。这两个是**真缺陷**而非过度拒绝：候选层（`api_schema_candidates`）只把**可枚举叶子**拼进候选对象，其余键一律省略——叶子可选时合法，required 点名时就是**服务了违反 required 的答案**；数组叶子形状由单数组路径服务（其检测器正则匹配 schema 里**任意位置**的数组叶子，只发那一个键），同样丢兄弟键。F398 的"全属性 required 构造上已满足"对这两类形状**不成立**。
+**修了什么**：
+- **候选层 required 感知**（`api_schema_candidates`）：候选对象只含被枚举的键 ⇒ required 点名任何未被枚举的键时**不产候选**（返回 []），让语法链带着全部键服务。
+- **`api_object_mixed` 布尔分支**：kind `b` 原来掉进 `api_number_fill` 发成数字；照嵌套步进器（F285）改为 `constrained ["true","false"]`。
+- **required 省略扩到混合形状**：新判据 `api_schema_mixed_omittable`（镜像混合检测器：≥2 叶、≥1 非字符串、排除 enum/const/pattern/minimum/maximum/multipleOf、叶子 kind ∈ {s,i,n,b}——三段式 e:/en:/ao: 与数组 kind 不放，**先证键集合再放判据**）进 `api_schema_required_filter` 的形状门；plan 过滤放在 `api_response_schema_mixed_object` **内部**（四个调度链的 plan 都出自它，一处过滤全链生效，不动调用点顺序敏感逻辑）。
+- **additionalProperties 判据 kind 集加 i/n/b**（键名同样来自 plan，构造论证不变）；enum 叶子对照仍拒（三段式 plan 条目，判据读两段）。
+- **关键字门 required 收尾规则**：全发射面（plan kind 全 ∈ {s,i,n,b} 且无 enum/const/pattern/minimum/maximum/multipleOf）之外的多叶 plan，required 是否可服务交给**候选层当裁判**——候选非空 ⟺ 每个 required 键都可渲染（`{flag:b, num:i min/max}` 全必需仍由候选层完整服务）；空则显式 400 点名 required。单叶 plan 是例外（单键路径发的恰是那一个键）。
+**门**：`SCHEMA-KEYWORDS` 26 例——`req_mixed` 由 `[required]` 改 `[]`（旧期望被新行为证伪 ⇒ 改门），新增 `req_arr_sub/req_arr_all/req_enum_all=[required]`（数组/enum 叶子的 required 仍拒）与 `addprops_enum=[additionalProperties]` 对照；`SCHEMA-REQ-SUBSET` 加混合例——子集 plan=[city:s] 且 count 缺席、全必需两键整数仍是整数、`bool_cands=0`（required 点名不可枚举键 ⇒ 无候选）+ 语法链两键且 flag 是真布尔、`enum_int_cands=6 enum_int_full=1`（全可枚举的 required 集候选仍产且含全键）。
+**活体 13 例双向全绿（`engine/schema_required_f403c.log`）**：`mixed_shape_subset` 200 仅 city；`addprops_mixed_served` 200 两键 count 是 int；`mixed_all_required` 200 两键；`bool_all_required` **200 `{"flag":false,"count":100000}`**（原缺陷现场修复）；`arr_leaf_required_refuse` 400 点名 required；`addprops_enum_refuse` 400；其余 7 例不回退。
+**活体抓到测试自身的错**：第一轮 13 例 `bool_all_required` ok=False 而**引擎输出恰好正确**——`keys_of` 返回**排序后**键集，断言却写了 `["flag","count"]`。**断言用的辅助函数的语义（排序）要先核对**；修正为 `["count","flag"]` 后全绿（`engine/schema_required_f403b.log` 留作现场）。
+**留拒（排队）**：数组叶子的 required 子集（服务其实正确但按窄判据仍拒）；`{mode:e, flag:b}` 全必需（候选层本可全键服务，按窄规则拒绝）——两者都用门钉住为已知过度拒绝，留给后续轮次按"先证键集合再放行"逐步取消。
+**梯**：自检 **175/0**、`RUN_EXIT=0`；8000 **115/0**、`SMOKE_EXIT=0`；8001 `PAR_EXIT=0`、`FAIR_EXIT=0`；scaling **1.536×**；哨兵 **0**（`engine/selftest_f403b.log`、`engine/api_smoke_f403b.log`、`engine/par_smoke_f403b.log`、`engine/fairness_f403b.log`、`engine/throughput_f403b.log`、`engine/schema_required_f403c.log`）。
+**方法条**：**"required 被满足"是关于服务路径发射集合的命题，不是关于关键字 exists 的命题**——同一关键字在不同形状上要分别回答"这条路径发哪些键"；门必须对每个形状双向断言键集合，而不是断言状态码。
