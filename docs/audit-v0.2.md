@@ -685,3 +685,12 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 活体五例双向 | 二之三 **200** 键集合＝required；全必需 **200**；未声明名字 **400**；混合形状子集 **400**；子集＋长度 **200** ⇒ PASS | `engine/schema_required_f401e.log` |
 | 拒绝消息与事实一致 | 不再写"required is honoured only when…"，改为列出各约束 supported 的形状 | `engine/main.php` 8000 校验分支 |
 | 梯 | 自检 **175/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.520×**、哨兵 **0** | `engine/selftest_f401d.log`、`engine/api_smoke_f401e.log`、`engine/throughput_f401e.log` |
+
+### F402（2026-11-07 10:45）——additionalProperties 误拒修复（构造上已满足）+ 按序号取用审计
+| 论断 | 数值 | 证据文件 |
+|---|---|---|
+| 审计：按属性序号取用的中间产物 | 仅 `api_response_schema_string_bounds` 一处，且已吃过滤后的属性表 ⇒ 无第二处错位面 | `engine/main.php` bounds 函数 + `grep` 调用点清单 |
+| 新判据放行面 | 布尔拼写 + 只出现一次 + 有 properties + 叶子 kind ∈ {s,an,af,ab} | `engine/main.php` `api_schema_additional_properties_honoured` |
+| 门（`SCHEMA-KEYWORDS` 22 例） | 放行 `addProps=[]` `addprops_wire=[]`；仍拒 `form`/`nested`/`mixed`＝additionalProperties；`addprops_arr=maxItems`（**已知过度拒绝写进门**） | `engine/selftest_f402.log` |
+| 活体双向 | `addprops_all_string` **200** 键集合＝required；`addprops_mixed_refuse` **400** ⇒ 7 例 PASS | `engine/schema_required_f402.log` |
+| 梯 | 自检 **175/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.515×**、哨兵 **0** | `engine/selftest_f402.log`、`engine/api_smoke_f402.log`、`engine/throughput_f402.log` |

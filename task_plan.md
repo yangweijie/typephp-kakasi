@@ -643,7 +643,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体双向**：真子集 → 200 且键集合等于 required；未知名字 → 400；全部声明属性 → 200（不回归）；带 tool 参数 schema 的请求 → 200（F398 的误伤面）。
 **验收**：①输出键集合正确（门 + 活体）②其他形状/未知名字仍拒绝（双向）③既有 SCHEMA-*/TOOL-* 全绿④8000/8001 不回退。
 **明确留下（排队，不装作支持）**：`minItems`/`maxItems` 的其他形状（多属性、顶层数组、对象数组）、`maxItems:0` 与元素上限 8 以上的 min；`additionalProperties:false`；pattern 元字符与数值边界的真正实现；多属性对象数组项；per-stream k 自适应（已按证据关闭为不支持）；分片多卡 / FR-05（本机不可验证）。
-**顺位**：required 真子集 → 数组界的其余形状 → pattern/边界实现 → additionalProperties → 分片多卡 / FR-05。
+**顺位**：required 省略到混合形状 → additionalProperties 语义 → 数组界的其余形状 → pattern/边界实现 → 分片多卡 / FR-05。
+**F402 已完成（部分）**：②审计确认按序号取用只有 bounds 一处且已对齐；③`additionalProperties` 布尔拼写在扁平全字符串对象上改为**支持（构造性质）**，`SCHEMA-KEYWORDS` 增至 22 例、活体增至 7 例双向；梯 **175/0**、8000 **115/0**、8001 绿、scaling **1.515×**。**未做**：①混合形状的 required 省略（`addprops_mixed` 仍拒为证）；数组界 + additionalProperties 的**过度拒绝**仍在（`addprops_arr=[maxItems]` 钉住）。
+
+
+## F403 计划（先还债，再扩面：两处**已知过度拒绝**）
+**动作**：①取消 `addprops_arr` 那类"两个各自支持的约束同时出现就拒绝"的排除条件——把数组判据里"含 additionalProperties 即排除"改成"**该关键字自身在支持面内则不参与排除**"，判据要可组合而不是互相踩；②把 `additionalProperties` / required 省略的支持面从 `{s}` 扩到**混合叶子**（含 integer/number/boolean）：这条路径的键名同样来自 plan，但必须**先用键集合门证明**（`api_object_mixed` 输出不含未声明键、且 required 子集时少发键）再放行判据；③两处各配双向门与活体例。
+**验收**：①`addprops_arr` 期望由 `[maxItems]` 改 `[]`（旧期望被新行为证伪 ⇒ 改门并说明）；②混合形状新门断言**键集合**；③既有 SCHEMA-* 全绿；④8000/8001 不回退；⑤拒绝消息的支持面描述与实际一致。
+**顺位**：这两笔债 → pattern 元字符实现 → 数值边界实现 → 数组界的其余形状（多属性/顶层/对象数组）→ 分片多卡 / FR-05。
 **F401 已完成**：`required` 真子集在扁平全字符串对象上按**省略可选属性**执行（属性表与 bounds 吃同一张过滤表）；门 `SCHEMA-REQ-SUBSET` 断言**键集合**；`SCHEMA-KEYWORDS` 的 `req_subset` 期望被证伪并改为 `""`，加 `req_undeclared`/`req_mixed` 仍拒；**计数比较**换成**名字比较**（旧判据把 `required:["a","z"]` 当成"全部必需"而放行）；活体组合例抓到 **F399 遗留的非法 JSON**（maxLength 收口用了多字符引号 token）并修好；梯 **175/0**、8000 **115/0**、8001 绿、scaling **1.520×**。
 
 

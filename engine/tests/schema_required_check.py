@@ -2,12 +2,14 @@
 
 The refusal used to fire for every subset. Now the flat all-string object honours it by omitting the
 optional properties, so the assertion is about the KEY SET of the served answer, not the status
-code. Five cases, both directions, all bodies built with json.dumps (the spaced wire spelling):
+code. Seven cases, both directions, all bodies built with json.dumps (the spaced wire spelling):
   1. subset of three strings           -> 200, keys == required, optional absent
   2. all three required               -> 200, every key present (no regression)
   3. required names an undeclared key  -> 400 naming required
   4. subset on a mixed shape           -> 400 naming required (that generator cannot omit)
   5. subset combined with maxLength    -> 200, keys subset AND lengths inside bounds
+  6. additionalProperties false (F402) -> 200, keys == the two required names
+  7. additionalProperties on a mixed shape -> 400 naming additionalProperties
 """
 import json
 import sys
@@ -65,6 +67,17 @@ cases = [
      lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
                         and 3 <= len(json.loads(txt)["city"]) <= 8
                         and len(json.loads(txt)["note"]) <= 5)),
+    # F402: additionalProperties names no key of its own - the generators emit the declared plan and
+    # nothing else - so refusing it rejected a request that was already satisfied. Two directions:
+    # the all-string object accepts it and the mixed object still refuses it.
+    ("addprops_all_string", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "additionalProperties": False, "required": ["city", "note"]},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("addprops_mixed_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
+      "additionalProperties": False},
+     lambda code, txt: code == 400 and "additionalProperties" in txt),
 ]
 
 bad = 0

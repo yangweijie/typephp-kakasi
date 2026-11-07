@@ -3712,7 +3712,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数值边界：float / 单侧 / 跨度 >15 | **显式 400** | 同上 1 侧 + 活体 400（F397） |
 | minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN` + 活体 200（F399） |
 | minItems / maxItems：单属性标量数组（string/integer/number，元素 ≤8） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT` + 活体 200/400（F400） |
-| minItems / maxItems / minLength / maxLength：**其他形状**；additionalProperties | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398/F399/F400） |
+| minItems / maxItems / minLength / maxLength：**其他形状** | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398/F399/F400） |
+| additionalProperties（布尔拼写，全字符串叶子） | **支持**（键名来自声明表，构造上已满足） | `SCHEMA-KEYWORDS` addProps/addprops_wire + 活体 200（F402） |
+| additionalProperties：schema 形式 / 嵌套 / 含非字符串叶子 / 与数组界同时 | **显式 400** | addprops_form / nested / mixed / arr（F402；`arr` 是**已知过度拒绝**，F403 还债） |
 | required = 全部声明属性 | **支持**（构造上满足） | `SCHEMA-KEYWORDS` req_all + 活体 200 |
 | required ⊂ 声明属性：扁平全字符串对象 | **支持**（省略可选属性，输出键集合＝required） | `SCHEMA-REQ-SUBSET` + 活体 200（F401） |
 | required ⊂ 声明属性：其他形状；或名字未声明 | **显式 400** | `SCHEMA-KEYWORDS` req_mixed / req_undeclared + 活体 400（F401） |
@@ -3758,3 +3760,15 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体五例**（`engine/schema_required_f401e.log`，`scripts/schema_required_run.sh`）：二之三 **200** 键集合＝required；全必需 **200** 三键齐；未声明名字 **400**；混合形状真子集 **400**；子集＋长度 **200** 且两段长度都在界内 ⇒ **VERDICT: PASS**。
 **梯**：自检 **175 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.520×**；哨兵 **0**（`engine/selftest_f401d.log`、`engine/api_smoke_f401e.log`、`engine/throughput_f401e.log`）。
 **边界与仍拒绝**：required 省略只覆盖扁平全字符串对象（混合/嵌套/数组形状的子集仍 400）；未声明的名字仍 400（不做"猜一个"）；`additionalProperties:false`、`pattern` 元字符、数值边界的真正实现仍未做。
+
+
+## F402：`additionalProperties` 的**误拒**修掉（构造上已满足的约束不该拒绝），并审计按序取用的中间产物
+**②审计（先做，因为它决定判据能不能改）**：全文件只有 `api_response_schema_string_bounds` 一处**按属性序号**取用中间产物（`$bounds` 的第 `$pi` 项），而它已经改成吃**过滤后的同一张表** ⇒ required 省略与字符预算天然对齐；没有第二处按下标取用的地方。**记法：改"过滤列表"之前先找按序号取用的地方，那里才是错位真正会发生的位置。**
+**③为什么是误拒**：这条约束管的是**哪些键可以出现**，而结构化生成器的每个键名都来自声明表（模型不选键名）——"不会多出键"是**构造性质**，与关键字的值无关。旧代码把它一律 400，等于**拒绝了一个本来就满足的请求**，和 F398 里 `required` 全必需被误拒同类。
+**判据（`api_schema_additional_properties_honoured`）**：只在 ①布尔拼写（schema 形式真的约束额外键，仍拒）②全 schema 只出现一次 ③有 `properties` ④每个叶子 kind ∈ {s, an, af, ab}（对象叶子、对象数组、enum/const 叶子不在"键名表可枚举"范围，仍拒）时放行。
+**门（`SCHEMA-KEYWORDS` 增至 22 例）**：`addProps=[]`、`addprops_wire=[]`（放行）、`addprops_form=[additionalProperties]`、`addprops_nested=[additionalProperties]`、`addprops_mixed=[additionalProperties]`（含 integer 叶子＝**当前不覆盖，写成边界不悄悄扩**）、`addprops_arr=[maxItems]`。
+**已知过度拒绝（用门钉住，不藏）**：数组界 + `additionalProperties:false` 各自都在支持面内，但数组判据把"含 additionalProperties"列为排除 ⇒ 现在仍 400 且消息点名 maxItems。`addprops_arr` 把这条债写进门，F403 取消。
+**活体双向（`engine/schema_required_f402.log` 第 6/7 例）**：`addprops_all_string`（false + required 两个）**200 且键集合＝city,note**；`addprops_mixed_refuse` **400 点名 additionalProperties** ⇒ VERDICT: PASS（该 harness 现 7 例）。
+**支持表更新**：`additionalProperties` 布尔拼写在扁平全字符串对象上＝**支持（构造性质）**；schema 形式 / 嵌套 / 含非字符串叶子＝**显式 400**；与数组界同时出现＝暂 400（已入门的债）。
+**梯**：自检 **175 PASS / 0 FAIL**、`RUN_EXIT=0`（新增 5 个用例在既有门内，条数不变）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.515×**；哨兵 **0**（`engine/selftest_f402.log`、`engine/api_smoke_f402.log`、`engine/throughput_f402.log`）。
+**方法**：该不该拒绝一条约束，问的是"**生成器能否产出违反它的输出**"，不是"**有没有实现这个关键字**"；配套必须双向，否则判据会一路放宽到把真不支持的也放行。

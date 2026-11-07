@@ -6236,6 +6236,47 @@ function api_response_schema_string_props_required(string $body): array
     return $out;
 }
 
+// F402: `additionalProperties` constrains which KEYS may appear. The property-stepping generators
+// name every key from the declared plan - the model never picks one - so for those shapes the
+// constraint holds whatever its value, and refusing it rejected a request the decoder already
+// satisfies (the same mistake `required` was). Scoped deliberately: only a top-level object whose
+// leaves are all scalars, only the boolean spelling, only one occurrence. An object-array item, a
+// nested object, an array leaf, or the schema form of the keyword stay refused until that route has
+// its own key-set gate.
+function api_schema_additional_properties_honoured(string $schema): int
+{
+    if (preg_match('/"additionalProperties"\s*:\s*(?:true|false)/', $schema) != 1
+        || preg_match_all('/"additionalProperties"\s*:/', $schema) != 1) {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        if (count($kv) != 2) {
+            return 0;
+        }
+        if ($kv[1] != "s" && $kv[1] != "an" && $kv[1] != "af" && $kv[1] != "ab") {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 // F399: is this schema a flat object whose leaves are all strings? That is the only shape whose
 // generator can honour minLength/maxLength, so it is the only one allowed past the refusal.
 function api_schema_flat_all_string(string $schema): int
@@ -6284,6 +6325,11 @@ function api_schema_keywords_unsupported(string $body): string
         // F400: minItems/maxItems are honoured for a single scalar-array property, whose stepper
         // can restrict the closing bracket by element count; every other shape still refuses them.
         if (($kw == "minItems" || $kw == "maxItems") && api_schema_array_element_bounds($body) != "") {
+            continue;
+        }
+        // F402: additionalProperties holds by construction where every key is named from the plan.
+        if ($kw == "additionalProperties"
+            && api_schema_additional_properties_honoured($body) == 1) {
             continue;
         }
         return $kw;
@@ -12425,6 +12471,16 @@ function main(): void
     $kwB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5}}}');
     $kwI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5},"b":{"type":"integer"}}}');
     $kwC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":false}');
+    // F402: additionalProperties is satisfied by construction where every key is named from the
+    // plan, so the all-string case moved from "additionalProperties" to "". The counterparts that
+    // must STILL refuse are added next to it - the schema form of the keyword, a leaf the generator
+    // does not name from a plan, and the combination with an array bound (whose own predicate rejects
+    // the pair, so the request is refused rather than half-honoured).
+    $kwW = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":{"type":"string"}}');
+    $kwX = api_schema_keywords_unsupported('{"properties":{"a":{"type":"object","properties":{"n":{"type":"string"}}}},"additionalProperties":false}');
+    $kwY = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":true}');
+    $kwZ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"},"maxItems":3}},"additionalProperties":false}');
+    $kwAA = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "additionalProperties": false}');
     $kwD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a","b"]}');
     $kwE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"]}');
     $kwF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}}}');
@@ -12454,13 +12510,18 @@ function main(): void
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
         . "] arr_obj=[" . $kwQ . "] wire_arr_min=[" . $kwR . "] max0=[" . $kwS
-        . "] min_gt_max=[" . $kwT . "] req_undeclared=[" . $kwU . "] req_mixed=[" . $kwV . "]\n";
-    if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == "additionalProperties"
+        . "] min_gt_max=[" . $kwT . "] req_undeclared=[" . $kwU . "] req_mixed=[" . $kwV
+        . "] addprops_form=[" . $kwW . "] addprops_nested=[" . $kwX
+        . "] addprops_mixed=[" . $kwY . "] addprops_arr=[" . $kwZ
+        . "] addprops_wire=[" . $kwAA . "]\n";
+    if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
         && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == "maxItems"
         && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
-        && $kwU == "required" && $kwV == "required") {
+        && $kwU == "required" && $kwV == "required"
+        && $kwW == "additionalProperties" && $kwX == "additionalProperties"
+        && $kwY == "additionalProperties" && $kwZ == "maxItems" && $kwAA == "") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required refused only as a subset)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";

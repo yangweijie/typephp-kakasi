@@ -1242,3 +1242,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门/表**：新门 `SCHEMA-REQ-SUBSET` 断言**键集合**＝required；`SCHEMA-KEYWORDS` 的 `req_subset`/`wire_subset` 期望由 `required` 改 `""`（旧期望被证伪 ⇒ 改门），加 `req_undeclared`/`req_mixed` 仍拒；支持表该行拆分；**拒绝消息**不再声称"required 只在全部声明时 honoured"。
 - **活体五例**：`engine/schema_required_f401e.log` ⇒ VERDICT: PASS（`scripts/schema_required_run.sh`）。
 - **梯**：**175/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.520×**、哨兵 **0**。
+
+
+## ▶ 状态（F402，2026-11-07 10:45）——`additionalProperties` 误拒修复（构造上已满足 ⇒ 不该拒绝）+ 按序取用审计
+- **审计**：按属性序号取用的中间产物只有 bounds 一处，且已吃过滤表 ⇒ 无错位面。
+- **判据**：`api_schema_additional_properties_honoured`＝布尔拼写 + 只出现一次 + 有 properties + 叶子 kind ∈ {s,an,af,ab}；schema 形式/嵌套/含非字符串叶子仍 400。
+- **门**：`SCHEMA-KEYWORDS` 增至 22 例（`addProps=[]`、`addprops_wire=[]` 放行；form/nested/mixed 仍拒；`addprops_arr=[maxItems]` 把**已知过度拒绝**钉进门）。
+- **活体**：`addprops_all_string` 200 且键集合＝required；`addprops_mixed_refuse` 400 ⇒ harness 现 7 例全绿（`engine/schema_required_f402.log`）。
+- **梯**：**175/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.515×**、哨兵 **0**。
