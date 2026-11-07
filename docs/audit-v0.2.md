@@ -673,4 +673,5 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 关键字门（14 例、双向、两排版） | 放行 `arr_max=[]` `arr_minmax=[]` `wire_arr_min=[]`；仍拒 `obj_bound=maxItems` `arr_obj=maxItems` `max0=maxItems` `min_gt_max=minItems` | 同上 |
 | 活体七例（双向 + 流式 + 抬高/上限分支） | 4 元素 **200**、2 元素 **200**、对象数组 **400**、界写在对象上 **400**、流式 2 元素 **200**、min 6 → **6 元素 200**、min 9 **400** ⇒ PASS | `engine/schema_count_f400c.log`（`scripts/schema_count_run.sh`） |
 | 形状判据（防"放行但无人执行"） | 出现次数相等判据：界在叶子块外 ⇒ 返回 "" ⇒ 仍 400（活体 `outer_bound_refuse`） | 同上 |
-| 梯 | 自检 **174/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.562×**、哨兵 **0** | `engine/selftest_f400.log`、`engine/api_smoke_f400.log`、`engine/par_smoke_f400.log`、`engine/throughput_f400.log` |
+| 界写在 `items` 之前（F400b，检测缺口） | 门 `pre_bounds=[2:2] pre_prop=[cities] pre_n=2 pre_refuse=[]`；活体 `str_bounds_before_items` **200，2 元素** | `engine/selftest_f400b.log`、`engine/schema_count_f400e.log` |
+| 梯（F400b 复跑） | 自检 **174/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.539×**、哨兵 **0** | `engine/selftest_f400b.log`、`engine/api_smoke_f400b.log`、`engine/throughput_f400b.log` |

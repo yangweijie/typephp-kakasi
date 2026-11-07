@@ -838,10 +838,11 @@ function api_response_schema_array_string(string $body): string
         return "";
     }
     $pm = [];
-    // F400: minItems/maxItems may sit beside `items` inside the array object. Nothing else may, so
-    // the tail names those two keywords instead of accepting any scalar key.
-    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
-        . '"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}'
+    // F400: minItems/maxItems may sit beside `items` inside the array object, before or after it.
+    // Nothing else may, so the tails name those two keywords instead of accepting any scalar key.
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*'
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+        . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}'
         . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
@@ -928,8 +929,9 @@ function api_response_schema_array_number(string $body): string
         return "";
     }
     $pm = [];
-    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*'
-        . '"items"\s*:\s*\{\s*"type"\s*:\s*"(integer|number)"\s*\}'
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*'
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+        . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"(integer|number)"\s*\}'
         . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
@@ -12452,13 +12454,42 @@ function main(): void
         . '"items":{"type":"string"}},"maxItems":2}}');
     $c3D = api_schema_array_element_bounds('{"type":"object","properties":{"a":{"type":"array",'
         . '"items":{"type":"string"},"maxItems":4}}}');
+    // The same bounds written BEFORE items. The enforcement path was already correct for them, but
+    // the detectors used to require items immediately after "type":"array", so the request was
+    // refused while doing nothing else changed - detection is asserted here, not assumed.
+    $c5Body = '{"response_format":{"type":"json_schema","json_schema":{"name":"cnt3","schema":'
+        . '{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":2,'
+        . '"items":{"type":"string"}}}}}}}';
+    $c5Bounds = api_response_schema_array_bounds($c5Body);
+    $c5Prop = api_response_schema_array_string($c5Body);
+    $c5Refuse = api_schema_keywords_unsupported('{"type":"object","properties":{"a":{"type":"array",'
+        . '"minItems":2,"maxItems":2,"items":{"type":"string"}}}}');
+    $c5Ids = tok_chat("user", "Name two French cities.") . "," . tok_chat_open("assistant");
+    $c5Out = api_array_string_value($c5Ids, $c5Prop, "abcdefghijklmnopqrstuvwxyz", 4, 6, 0, $c5Bounds);
+    $c5Parts = explode(",", $c5Out);
+    $c5Base = count(explode(",", $c5Ids));
+    $c5Text = "";
+    for ($i = $c5Base; $i < count($c5Parts); $i++) {
+        $c5Text = $c5Text . gguf_token_str((int) $c5Parts[$i]);
+    }
+    $c5Text = str_replace("Ġ", " ", $c5Text);
+    $c5LB = strpos($c5Text, "[");
+    $c5RB = strpos($c5Text, "]");
+    $c5N = 0;
+    if ($c5LB !== false && $c5RB !== false && $c5RB > $c5LB) {
+        $c5N = count(explode(",", substr($c5Text, $c5LB + 1, $c5RB - $c5LB - 1)));
+    }
     echo "SCHEMA-COUNT bounds=[" . $cnBounds . "] n=" . $cnN . "] text=[" . $cnText
         . "] num_bounds=[" . $c2Bounds . "] num_prop=[" . $c2Prop . "] num_n=" . $c2N
         . "] num_text=[" . $c2Text . "] refuse_obj=[" . $c3A . "] refuse_ceiling=[" . $c3B
-        . "] refuse_outside=[" . $c3C . "] ok=[" . $c3D . "]\n";
+        . "] refuse_outside=[" . $c3C . "] ok=[" . $c3D
+        . "] pre_bounds=[" . $c5Bounds . "] pre_prop=[" . $c5Prop . "] pre_n=" . $c5N
+        . "] pre_refuse=[" . $c5Refuse . "]\n";
     if ($cnBounds == "3:4" && $cnN >= 3 && $cnN <= 4 && api_json_ok($cnText) == 1
         && $c2Bounds == "2:2" && $c2N == 2 && api_json_ok($c2Text) == 1
-        && $c3A == "" && $c3B == "" && $c3C == "" && $c3D == "0:4") {
+        && $c3A == "" && $c3B == "" && $c3C == "" && $c3D == "0:4"
+        && $c5Bounds == "2:2" && $c5Prop == "cities" && $c5N == 2 && $c5Refuse == ""
+        && api_json_ok($c5Text) == 1) {
         echo "SCHEMA-COUNT: PASS (emitted element counts inside bounds; other shapes still refused)\n";
     } else {
         echo "SCHEMA-COUNT: FAIL\n";

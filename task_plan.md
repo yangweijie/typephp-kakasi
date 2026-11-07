@@ -633,6 +633,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **验收**：①元素数在界内（门 + 活体）②其他形状仍拒绝（双向）③既有 SCHEMA-* 全绿④8000/8001 不回退。
 **顺位**：minItems/maxItems → required 真子集语义 → pattern 元字符 → 分片多卡 / FR-05。
 **F400 已完成**：单属性标量数组的 `minItems`/`maxItems` 按**元素计数**执行（未到 min 只给逗号、到 max 只给右括号、min 高于默认预算时抬到 min 上限 8）；门 `SCHEMA-COUNT` 断言输出的元素个数；`SCHEMA-KEYWORDS` 扩到 14 例（界写在对象上 / 对象数组 / `maxItems:0` / min>max 仍拒）；活体七例全绿（含流式与抬高分支）；梯 **174/0**、8000 **115/0**、8001 绿、scaling **1.562×**。
+**F400b 已完成**：界写在 `items` **之前**的排版是**检测缺口**（执行路径本来就对）⇒ 两个数组检测器各加"只认这两个关键字"的前置可选段；门加 `pre_n=2 pre_refuse=[]`，活体加第 8 例 200/2 元素；梯复跑 **174/0**、8000 **115/0**、8001 绿、scaling **1.539×**。
 
 
 ## F401 计划（required 真子集：从"拒绝"变"支持"——只输出被要求的属性）
@@ -641,5 +642,5 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：①新门 `SCHEMA-REQ-SUBSET`：断言**输出的键集合** = required 集合（不是状态码），两种 JSON 排版；②`SCHEMA-KEYWORDS` 的 `req_subset` 期望从 `[required]` 改为 `[]`，并**新增仍拒绝的对照**（required 里含未声明的属性名 → `required`）——旧期望被新行为证伪，按 F399 的做法改门而不是保绿。
 **活体双向**：真子集 → 200 且键集合等于 required；未知名字 → 400；全部声明属性 → 200（不回归）；带 tool 参数 schema 的请求 → 200（F398 的误伤面）。
 **验收**：①输出键集合正确（门 + 活体）②其他形状/未知名字仍拒绝（双向）③既有 SCHEMA-*/TOOL-* 全绿④8000/8001 不回退。
-**明确留下（排队，不装作支持）**：`minItems`/`maxItems` 的其他形状（多属性、顶层数组、对象数组）与界写在 `items` 之前的排版；`additionalProperties:false`；pattern 元字符与数值边界的真正实现；多属性对象数组项；per-stream k 自适应（已按证据关闭为不支持）；分片多卡 / FR-05（本机不可验证）。
+**明确留下（排队，不装作支持）**：`minItems`/`maxItems` 的其他形状（多属性、顶层数组、对象数组）、`maxItems:0` 与元素上限 8 以上的 min；`additionalProperties:false`；pattern 元字符与数值边界的真正实现；多属性对象数组项；per-stream k 自适应（已按证据关闭为不支持）；分片多卡 / FR-05（本机不可验证）。
 **顺位**：required 真子集 → 数组界的其余形状 → pattern/边界实现 → additionalProperties → 分片多卡 / FR-05。

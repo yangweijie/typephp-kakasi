@@ -1231,4 +1231,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体七例**（`engine/schema_count_f400c.log`，`scripts/schema_count_run.sh`）：4 元素 200、2 元素 200、对象数组 400、界在对象上 400、**流式** 2 元素 200、**抬高预算** 6 元素 200、min 9 超上限 400 ⇒ PASS。
 - **方法**：活体用 `json.loads` 数元素（serve 字符集含逗号，切分会多数）；新分支（抬高、上限拒绝）各配活体例。
 - **梯**：**174/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**。
-- **仍拒绝（排队）**：多属性/混合/嵌套/对象数组/顶层数组的界；界写在 `items` 之前；`maxItems:0`。
+- **仍拒绝（排队）**：多属性/混合/嵌套/对象数组/顶层数组的界；`maxItems:0`；元素上限 8。
+- **F400b**：界写在 `items` **之前**的排版是**检测缺口**而非实现缺口 ⇒ 两个正则各加"只认这两个关键字"的前置可选段；门加 `pre_n=2 pre_refuse=[]`，活体加 `str_bounds_before_items` 200/2 元素；梯复跑 **174/0**、8000 **115/0**、8001 绿、scaling **1.539×**（`engine/selftest_f400b.log`、`engine/schema_count_f400e.log`）。

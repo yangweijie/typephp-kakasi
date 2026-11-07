@@ -100,6 +100,12 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
                                                   "minItems": 9}}},
      lambda code, txt: code == 400 and "minItems" in txt, ask),
+    # The same bounds spelled before "items" - the order json.dumps does not force and a hand-written
+    # schema often uses.
+    ("str_bounds_before_items", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "minItems": 2, "maxItems": 3,
+                                                  "items": {"type": "string"}}}},
+     lambda code, txt: code == 200 and (n_items(txt, "cities") or 0) in (2, 3), ask),
 ]
 
 bad = 0
