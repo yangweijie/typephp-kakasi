@@ -3735,9 +3735,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
-| contains / minContains / maxContains / not / if / dependencies / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| contains / minContains / maxContains / not / if / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
 | dependentSchemas：子 schema 恰为 `{"required":[…]}` | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`（F446） |
 | dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
+| dependencies：数组形式 / `{"required":[…]}` 对象形式 | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`（F447） |
+| dependencies：其他对象体 | **显式 400** | `deps_bad`/`deps_other`（F447） |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
@@ -4186,3 +4188,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`depsch_ok` **200 双键**、`depsch_bad_subset`/`depsch_other_body` **400 点名**；required/bounds/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**（`engine/selftest_f446c.log`、`engine/schema_required_f446.log`、`engine/api_smoke_f446.log`、`engine/throughput_f446.log`）。
 **记法**：**嵌套块里的同名关键字会被"全局扫描"当成根级**——读 `required`（以及任何根级关键字）时，先剥离已知的嵌套容器；"存在性判断"和"取值"必须用**同一份**剥离后的文本，否则一个走剥离、一个走原串，结论就会打架。**单写 `/required/` 的门会漏掉"被服务但键不全"**——活体的键集合断言才是这一层的证据。
+
+
+## F447：`dependencies`（draft-7）两种拼写都支持；"会发出键集"抽成共用函数
+**实现**：`api_schema_dependencies_ok($schema)`——**数组值**：触发键在发出集合里 ⇒ 列出的依赖键必须都在（同 dependentRequired）；**对象值**：仅当子 schema **恰为** `{"required":[...]}` 时按同一键集判定（同 dependentSchemas），其他对象体返回 0 ⇒ 仍点名拒绝。新增 `api_schema_emitted_set($schema)` 把"required 子集优先，否则声明表"的计算抽出来共用。
+**成对修复（F446 同族）**：`api_schema_required_names`/`api_schema_required_present` 里的剥离逻辑抽成 `api_schema_required_scan`，**同时剥离 `dependentSchemas` 与 `dependencies`**——`dependencies` 的对象体里同样可以嵌套 `required`，不剥离就会重演"键集合被收缩"的键丢失。
+**门**：`SCHEMA-STRUCT` 加 `deps_arr=[]`、`deps_obj=[]`（两拼写放行）、`deps_bad=[dependencies]`（required 子集省略依赖）、`deps_other=[dependencies]`（更丰富对象体）。
+**活体**：`deps_arr_ok`/`deps_obj_ok` **200 双键**、`deps_bad_subset` **400 点名**；required/bounds/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.537×**、哨兵 **0**（`engine/selftest_f447.log`、`engine/schema_required_f447.log`、`engine/api_smoke_f447.log`、`engine/throughput_f447.log`）。
+**记法**：**一个关键字的两种拼写要在同一个判据里收口**——数组与 bare-required 对象语义不同，但"判据都是发出键集"这一点相同；**剥离容器要按"所有可能嵌套它的关键字"一次做全**（dependentSchemas + dependencies），补一个漏一个就会在下一个关键字上重演同一个键丢失。

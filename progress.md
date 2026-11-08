@@ -1679,3 +1679,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-STRUCT` 加 `depsch_ok=[]`、`depsch_bad=[dependentSchemas]`、`depsch_other=[dependentSchemas]`。
 - **活体**：`depsch_ok` **200 双键**、`depsch_bad_subset`/`depsch_other_body` **400 点名**；其余 harness 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**。
+
+
+## ▶ 状态（F447，2026-11-08 21:24）——`dependencies`（draft-7）两种拼写均支持
+- **实现**：`api_schema_dependencies_ok`——数组值＝"触发键在则这些键也必须在"（同 dependentRequired），对象值**仅当恰为** `{"required":[…]}`（同 dependentSchemas）；其他对象体拒绝。`api_schema_emitted_set` 抽出"会发出键集"供三个条件关键字共用。
+- **成对修复**：`api_schema_required_names/present` 的剥离逻辑抽成 `api_schema_required_scan`，**同时剥离 `dependentSchemas` 与 `dependencies`**——否则 `dependencies` 里的嵌套 `required` 会被当成根级（F446 同族）。
+- **门**：`deps_arr=[]`、`deps_obj=[]`、`deps_bad=[dependencies]`、`deps_other=[dependencies]`。
+- **活体**：两种拼写 **200 双键**、required 子集省略依赖 **400 点名**；其余 harness 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.537×**、哨兵 **0**。

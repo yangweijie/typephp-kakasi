@@ -7662,22 +7662,32 @@ function api_response_schema_array_bounds(string $body): string
 
 // F401: the names listed in `required`, comma-joined in the order they appear, or "" when the
 // keyword is absent, empty or unreadable.
-function api_schema_required_names(string $schema): string
+// F446/F447: a `required` nested inside dependentSchemas or dependencies is not the root
+// requirement; both readers work on a copy with those blocks removed, or the key filter would
+// silently shrink the emitted set to the nested list.
+function api_schema_required_scan(string $schema): string
 {
-    // F446: `required` inside a dependentSchemas subschema is not the root requirement. Strip those
-    // blocks before scanning - otherwise the key filter reads the subschema's list and silently
-    // shrinks the emitted set to it (the live probe answered {"note":...} for a two-key schema).
     $scan = $schema;
-    $ds = strpos($schema, "\"dependentSchemas\"");
-    if ($ds !== false) {
-        $db = strpos($schema, "{", $ds);
-        if ($db !== false) {
-            $dblk = api_balance_block($schema, $db);
-            if ($dblk != "") {
-                $scan = str_replace($dblk, "", $schema);
-            }
+    foreach (explode(",", "dependentSchemas,dependencies") as $k) {
+        $ds = strpos($scan, "\"" . $k . "\"");
+        if ($ds === false) {
+            continue;
+        }
+        $db = strpos($scan, "{", $ds);
+        if ($db === false) {
+            continue;
+        }
+        $dblk = api_balance_block($scan, $db);
+        if ($dblk != "") {
+            $scan = str_replace($dblk, "", $scan);
         }
     }
+    return $scan;
+}
+
+function api_schema_required_names(string $schema): string
+{
+    $scan = api_schema_required_scan($schema);
     $rp = strpos($scan, "\"required\"");
     if ($rp === false) {
         return "";
@@ -7705,18 +7715,7 @@ function api_schema_required_names(string $schema): string
 // way the name reader does, otherwise a subschema's `required` reads as a root requirement.
 function api_schema_required_present(string $schema): int
 {
-    $scan = $schema;
-    $ds = strpos($schema, "\"dependentSchemas\"");
-    if ($ds !== false) {
-        $db = strpos($schema, "{", $ds);
-        if ($db !== false) {
-            $dblk = api_balance_block($schema, $db);
-            if ($dblk != "") {
-                $scan = str_replace($dblk, "", $schema);
-            }
-        }
-    }
-    return strpos($scan, "\"required\"") === false ? 0 : 1;
+    return strpos(api_schema_required_scan($schema), "\"required\"") === false ? 0 : 1;
 }
 
 // F401: `required` naming a strict subset asks the decoder to OMIT the optional properties. Only the
@@ -7954,6 +7953,128 @@ function api_schema_plan_count(string $schema): int
         return 0;
     }
     return count(explode(",", $plan));
+}
+
+// F447: the emitted key set, computed once for the conditional keywords (required subset first, else
+// the declared plan). "" means the shape's keys are not proven, so callers keep their refusal.
+function api_schema_emitted_set(string $schema): string
+{
+    $emit = api_schema_required_filter($schema);
+    if ($emit != "") {
+        return $emit;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $pbo = strpos($schema, "{", $pp);
+    if ($pbo === false) {
+        return "";
+    }
+    $pblk = api_balance_block($schema, $pbo);
+    if ($pblk == "") {
+        return "";
+    }
+    $plan = api_top_leaves($pblk, 64);
+    if ($plan == "") {
+        return "";
+    }
+    $emit = "";
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        $emit = $emit == "" ? $kv[0] : $emit . "," . $kv[0];
+    }
+    return $emit;
+}
+
+// F447: `dependencies` is the draft-7 spelling of both conditionals - an ARRAY value means the keys
+// it names must accompany the trigger (dependentRequired), an OBJECT value is honoured only when it
+// is exactly {"required":[...]} (dependentSchemas). Any other value keeps the refusal.
+function api_schema_dependencies_ok(string $schema): int
+{
+    if (api_schema_flat_all_string($schema) != 1) {
+        return 0;
+    }
+    $dp = strpos($schema, "\"dependencies\"");
+    if ($dp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $dp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $emit = api_schema_emitted_set($schema);
+    if ($emit == "") {
+        return 0;
+    }
+    $off = 0;
+    $entries = 0;
+    while (true) {
+        $q = strpos($block, "\"", $off);
+        if ($q === false) {
+            break;
+        }
+        $qe = strpos($block, "\"", $q + 1);
+        if ($qe === false) {
+            return 0;
+        }
+        $key = substr($block, $q + 1, $qe - $q - 1);
+        $arr = strpos($block, "[", $qe);
+        $obj = strpos($block, "{", $qe);
+        $isArr = 0;
+        if ($arr !== false && ($obj === false || $arr < $obj)) {
+            $isArr = 1;
+        }
+        if ($isArr == 1) {
+            $ac = strpos($block, "]", $arr);
+            if ($ac === false) {
+                return 0;
+            }
+            $off = $ac + 1;
+            $entries++;
+            if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+                continue;
+            }
+            foreach (explode(",", substr($block, $arr + 1, $ac - $arr - 1)) as $dep) {
+                $dep = str_replace("\"", "", $dep);
+                $dep = str_replace(" ", "", $dep);
+                if ($dep != "" && strpos("," . $emit . ",", "," . $dep . ",") === false) {
+                    return 0;
+                }
+            }
+        } else if ($obj !== false) {
+            $sub = api_balance_block($block, $obj);
+            if ($sub == "") {
+                return 0;
+            }
+            $off = $obj + strlen($sub) + 1;
+            $entries++;
+            $mr = [];
+            if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mr) != 1) {
+                return 0;
+            }
+            if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+                continue;
+            }
+            foreach (explode(",", $mr[1]) as $dep) {
+                $dep = str_replace("\"", "", $dep);
+                $dep = str_replace(" ", "", $dep);
+                if ($dep != "" && strpos("," . $emit . ",", "," . $dep . ",") === false) {
+                    return 0;
+                }
+            }
+        } else {
+            return 0;
+        }
+    }
+    if ($entries == 0) {
+        return 0;
+    }
+    return 1;
 }
 
 // F446: dependentSchemas is honoured for its narrowest useful form - every trigger's subschema is
@@ -8260,10 +8381,14 @@ function api_schema_structural_unsupported(string $schema): string
         && api_schema_dependent_schemas_ok($schema) != 1) {
         return "dependentSchemas";
     }
+    // F447: `dependencies` is judged in both of its spellings (array, or a bare-required object).
+    if (preg_match('/"dependencies"\s*:\s*\{/', $schema) == 1
+        && api_schema_dependencies_ok($schema) != 1) {
+        return "dependencies";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"(contains|patternProperties|not|if|'
-        . 'dependencies)"\s*:\s*\{/', $schema, $mk) == 1) {
+    if (preg_match('/"(contains|patternProperties|not|if)"\s*:\s*\{/', $schema, $mk) == 1) {
         return $mk[1];
     }
     if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
@@ -15651,6 +15776,12 @@ function main(): void
     $sfAD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependentSchemas":{"a":{"required":["b"]}}}');
     $sfAE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"dependentSchemas":{"a":{"required":["b"]}}}');
     $sfAF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependentSchemas":{"a":{"properties":{"x":{"type":"string"}}}}}');
+    // F447: `dependencies` in both spellings is served; an omitted dependency and any richer
+    // subschema body stay refused.
+    $sfAG = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":["b"]}}');
+    $sfAH = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":{"required":["b"]}}}');
+    $sfAI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"dependencies":{"a":["b"]}}');
+    $sfAJ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":{"properties":{"x":{"type":"string"}}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -15663,7 +15794,9 @@ function main(): void
         . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
         . "] dep_mixed=[" . $sfY . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
         . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText
-        . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF . "]\n";
+        . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF
+        . "] deps_arr=[" . $sfAG . "] deps_obj=[" . $sfAH . "] deps_bad=[" . $sfAI
+        . "] deps_other=[" . $sfAJ . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15676,7 +15809,9 @@ function main(): void
         && $sfY == "dependentRequired"
         && $sfZ == "" && $sfAA == "prefixItems" && $sfAB == ""
         && $sfAC == "pair|s,i" && $tupShape == 1 && api_json_ok($tupText) == 1
-        && $sfAD == "" && $sfAE == "dependentSchemas" && $sfAF == "dependentSchemas") {
+        && $sfAD == "" && $sfAE == "dependentSchemas" && $sfAF == "dependentSchemas"
+        && $sfAG == "" && $sfAH == "" && $sfAI == "dependencies"
+        && $sfAJ == "dependencies") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

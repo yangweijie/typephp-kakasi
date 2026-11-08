@@ -1044,6 +1044,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **明确留拒（排队）**：`dependentSchemas` 的其他子 schema 体、`dependencies`（draft-7）、`contains`/`not`/`if`/`patternProperties`/`unevaluated*` 的实现；四位以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
 
 
+## F447 计划与完成（dependencies 两种拼写）
+**F446 已完成**：dependentSchemas 窄形态 + 嵌套 required 剥离。
+**F447 已完成**：`api_schema_dependencies_ok`（数组 / bare-required 对象）；`api_schema_emitted_set` 共用；`api_schema_required_scan` 同时剥离 dependentSchemas 与 dependencies。门加 `deps_arr/deps_obj/deps_bad/deps_other`；活体两拼写 200 双键、违反 400。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.537×**、哨兵 **0**（`engine/selftest_f447.log`、`engine/schema_required_f447.log`、`engine/api_smoke_f447.log`、`engine/throughput_f447.log`）。
+**明确留拒（排队）**：`contains`/`not`/`if`/`patternProperties`/`unevaluated*` 的实现；`dependencies`/`dependentSchemas` 的更丰富子 schema 体；四位以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+
+
 ## F445 计划与完成（小数网格到三位）
 **F443 已完成**：无界 multipleOf 到九位。
 **F445 已完成**：`api_schema_scaled` 支持 1–3 位；标记 -999/-998/-997；写入器按位数补零。两个连带问题：`$nfM` 与自检数组同名（改 `$nfN`）；全局替换哨兵把 inward/exclusive 的返回值改了却没改比较值（`frac_exp` 变 0 ⇒ 统一为 -2000000000）。
