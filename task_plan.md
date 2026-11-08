@@ -965,4 +965,5 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**（`SCHEMA-BOUND-REJECT`）：`excl_bool` 期望由 **1 改 0**（旧期望被新行为证伪 ⇒ 改门），新增 `excl_bool_alone=1`（`exclusiveMinimum:true` 无 `minimum`）；**再加一个取值断言**：用 `api_number_bounded_value($ids,"n",6,6,0)` 生成并断言输出 `{"n":6}`（证明收紧到 6 而不是放行 5）。
 **活体**（`engine/tests/schema_bounds_check.py`）：把 `exclusive_bool_refuse` 的断言从"400 或 200 且 n>5"收紧为"**200 且 n>5**"，并改名 `exclusive_bool_served`。
 **验收**：①布尔+数值界 ⇒ 200 且值 > 下界（门 + 活体）②布尔孤立 ⇒ 400 ③自检与四个 harness 全绿 ④8000/8001 不回退。
+**锚点核对（提交时实测）**：`api_schema_number_bounded_shape`、`$hasExLo/$hasExHi = preg_match`、`$bdBD = api_schema_bounds_unsupported`、活体用例 `exclusive_bool_refuse` 均在当前工作树中存在（各 1 处）⇒ 本规格可按写明的锚点直接执行，无需重新定位。
 **顺位**（其后）：多叶 multipleOf 的实现 → number 叶浮点界（小数写入器 + 4 个路由点）→ 分片多卡 / FR-05。
