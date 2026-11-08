@@ -79,6 +79,28 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": -1000, "maximum": 1000}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and isinstance(val_of(txt, "n"), int) and -1000 <= val_of(txt, "n") <= 1000),
+    # F420: multipleOf narrows the honoured value to a single deterministic multiple inside the
+    # bounds (the subset argument).
+    ("multipleof_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 100,
+                                             "multipleOf": 7}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 1 <= val_of(txt, "n") <= 100
+     and val_of(txt, "n") % 7 == 0),
+    # Both bounds negative: the magnitude walk picks the smallest multiple of 7 at or above 10, so
+    # the served value is -14 - inside [-100, -10] and still a multiple.
+    ("multipleof_negative", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -100, "maximum": -10,
+                                             "multipleOf": 7}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and -100 <= val_of(txt, "n") <= -10
+     and val_of(txt, "n") % 7 == 0),
+    # No multiple of 7 lies in [1, 5]: the constraint cannot be met, so it must be refused rather
+    # than answered with a non-multiple.
+    ("multipleof_unsatisfiable", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5,
+                                             "multipleOf": 7}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),

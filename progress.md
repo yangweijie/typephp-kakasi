@@ -1420,3 +1420,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、哨兵 **0**。
 - **留拒（排队）**：multipleOf 与界组合、浮点界。
 - **下一轮顺位**：multipleOf 组合 → 分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## ▶ 状态（F420 续，2026-11-08 10:10）——接手工作树里未验证的 multipleOf 组合，补两个洞
+- **接手时的状态**：`git status` 显示 main.php / schema_bounds_check.py / findings.md 有未提交改动（上一会话的 F420 实现），**梯未跑完**；按"以工作树为准"先读 diff 再动手。
+- **读出来的两个洞（不是跑出来的）**：①`SCHEMA-NUM-BND` 新期望 `$nbD == " n|1|5|0"` 把 echo 标签的前导空格抄进了比较串 ⇒ 必红，已改回；②**不可满足倍数无人拒**：形状返回 "" 后旧跨度规则判"受支持"，候选层会发非倍数 ⇒ 在 `api_schema_bounds_unsupported` 形状判定后加"带界 + multipleOf 而形状不认 ⇒ 拒"，400 消息同步写明。
+- **门/活体补齐**：`SCHEMA-BOUND-REJECT` 加 `mult_one=0`（单叶服务）、`mult_unsat=1`、`mult_wire=0`（空格排版），多叶 `mult_of=1` 保持；活体加双负 `[-100,-10] m=7` → -14 与不可满足 → 400。
+- **机制核对**：`api_number_bounded_value` 的符号映射使折叠后的 `lo==hi` 在正/双负/零三个分支都发射该值（双负 = dash + 幅值 fill），与"确定性单值＝子集合法解"的论证一致。
+- **过程错误（记下来，同类第三次）**：第一次重建报 **`SYCL_LINK_FAILED`**，随后自检打印的是**旧二进制**的门文本（有 `mult_shape` 没有我新加的 `mult_one`）⇒ 差点把陈旧结果当本轮结论。处置：杀残留进程 → 重建 → **查 exe mtime/size**（4231680 → 4233216，10:10:26）→ 复跑。**判据：链接失败之后的一切数字都属于上一个二进制，必须先证明二进制换了。**
+- **梯（复跑，新二进制）**：自检 **177 PASS / 0 FAIL**、`RUN_EXIT=0`（输出里出现 `mult_one=[0] mult_unsat=[1] mult_wire=[0]` ⇒ 证明新码在二进制里）；`SCHEMA-NUM-BND` `mult_shape=[n|7|7|7] v8=7`；活体 bounds **12 例全绿**（`{"n":7}`、双负 `{"n":-14}`、不可满足 **400**），required/pattern/count 复跑不回退；8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**（`engine/selftest_f420b.log`、`engine/schema_bounds_f420.log`、`engine/api_smoke_f420.log`、`engine/throughput_f420.log`）。

@@ -3911,3 +3911,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **F419 完成（补记）**：自检 **177/0**（neg_shape=[n|-5000|-100] v6=-100 v7=1000）、8000 **115/0**、8001 par/fairness **0**、scaling（gate_live_f419.log）、哨兵 **0**（`engine/selftest_f419.log`、`engine/api_smoke_f419.log`、`engine/par_smoke_f419.log`、`engine/fairness_f419.log`、`engine/throughput_f419.log`、`engine/schema_bounds_f419.log`、`engine/schema_required_f419.log`、`engine/schema_pattern_f419.log`、`engine/schema_count_f419.log`）。活体 10 例全绿：同负 `[-5000,-100]` → 值 -1000（幅值走位 behind dash）；跨零 `[-1000,1000]` → 值 1000（非负侧裁剪）；浮点 400。required/pattern/count 复跑不回退。
 **记法**：**带符号走位映射到幅值走位——同负 = "-" + fill(-hi,-lo)；跨零/单侧负下界 = 裁剪到非负侧（子集合法）；哨兵 -1 与真实 -1 的碰撞在每个组合上都落在合法子集（逐一核对记录）。**
 **留拒（排队）**：multipleOf 与界组合、浮点界。
+
+## F420（已完成）：**multipleOf 与界组合**（确定性倍数发射，子集合法论证）
+**实现**：`api_schema_number_bounded_shape` 撤销 multipleOf 排除——形状接受后**折叠 lo/hi 到界内最小倍数**（分用例：正下界从 lo 起找、双负走幅值、跨零用 0——0 是任何 m 的倍数且在界内；无倍数在界内 = 不可满足仍拒）；返回格式加第 4 段 m（观察用，调用方兼容）；写入器 lo==hi 走位天然发射该值（无需新机制）。
+**门/活体**：SCHEMA-NUM-BND 加 mult_shape=[n|7|7|7] v8=7 断言；SCHEMA-BOUND-REJECT 加 `mult_one=0`（单叶服务）、`mult_unsat=1`（[1,5] 里没有 7 的倍数）、`mult_wire=0`（空格排版），多叶 `mult_of=1` 仍拒；活体加 `min1 max100 multipleOf 7` → 值 7 且 %7==0、双负 `[-100,-10] m=7` → -14（幅值走位）、不可满足 → 400。
+**本轮补上的两个洞（读工作树发现，不是跑出来的）**：①门期望里 `$nbD == " n|1|5|0"` **多了一个前导空格**（echo 标签的空格被误抄进比较串）⇒ 该门必红，已改回 `"n|1|5|0"`；②**不可满足的倍数**原先没人拒：形状返回 "" 之后旧的"跨度≤15"规则会判为受支持，候选层再发出一个非倍数 ⇒ 静默违反。已在 `api_schema_bounds_unsupported` 的形状判定之后加一条"带界 + multipleOf 而形状不认 ⇒ 拒"，并把 400 消息写成实际支持面（含"区间内无倍数则拒绝"）。
+**记法**：**确定性单值发射是 multipleOf 的诚实服务——值是 pattern/bounds 的一个合法解（子集论证第四次复用）**；候选层枚举（span≤15）与确定性发射（任意跨度）分层互补。
+**梯（新二进制复跑）**：自检 **177 PASS / 0 FAIL**、`RUN_EXIT=0`；输出含 `mult_one=[0] mult_unsat=[1] mult_wire=[0]` ⇒ 新码确在二进制里；`SCHEMA-NUM-BND mult_shape=[n|7|7|7] v8=7`；8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**（`engine/selftest_f420b.log`、`engine/api_smoke_f420.log`、`engine/throughput_f420.log`）。
+**活体 12 例全绿**（`engine/schema_bounds_f420.log`）：`min1 max100 m7` → **200 `{"n":7}`**；双负 `[-100,-10] m7` → **200 `{"n":-14}`**（幅值走位取 ≥10 的最小 7 倍数）；`[1,5] m7` → **400**（区间内无倍数）；浮点仍 400；required/pattern/count 三个 harness 复跑不回退。
+**过程错误（同类第三次，已入 progress）**：首次重建 `SYCL_LINK_FAILED`，随后自检打印的是**旧二进制**的门文本（有 `mult_shape`、没有本轮新加的 `mult_one`）⇒ 差点把陈旧数字当本轮结论；处置为杀残留进程 → 重建 → 查 exe mtime/size（4231680→4233216）→ 复跑，并以"输出出现新门字段"作为换码证明。**判据：链接失败之后的一切数字都属于上一个二进制。**

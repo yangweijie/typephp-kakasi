@@ -5188,7 +5188,9 @@ function api_response_schema_number_prop(string $body): string
 // with -1 marking an absent side, or "".
 function api_schema_number_bounded_shape(string $schema): string
 {
-    if (preg_match('/"(enum|const|pattern|multipleOf)"\s*:/', $schema) == 1) {
+    // F420: multipleOf left the exclusion - the writer emits the smallest multiple inside the
+    // bounds deterministically (the subset argument); enum/const/pattern still disqualify.
+    if (preg_match('/"(enum|const|pattern)"\s*:/', $schema) == 1) {
         return "";
     }
     $pp = strpos($schema, "\"properties\"");
@@ -5237,7 +5239,46 @@ function api_schema_number_bounded_shape(string $schema): string
     if ($hasLo && $hasHi && $lo > $hi) {
         return "";
     }
-    return $kv[0] . "|" . $lo . "|" . $hi;
+    // F420: multipleOf narrows the honoured value to a single deterministic multiple inside the
+    // bounds (the subset argument - one valid match), collapsed into lo == hi so the existing
+    // walks emit it unchanged. The cases: both bounds negative walk the magnitude; a positive
+    // lower bound starts the search there; otherwise zero lies inside the bounds and is a
+    // multiple of everything. No multiple inside the bounds means the constraint is
+    // unsatisfiable and the shape refuses.
+    $mult = 0;
+    $mo = [];
+    if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $schema, $mo) == 1) {
+        $mult = (int) $mo[1];
+        if ($mult < 1 || $mult > 1000) {
+            return "";
+        }
+        if ($hasHi && $hi < 0) {
+            // The value is negative: the magnitude is at least |hi| (and at most |lo| when lo
+            // is present and negative); the smallest multiple of m in that magnitude range
+            // gives the value -(magStart).
+            $magLo = -$hi;
+            $magHi = ($hasLo && $lo < 0) ? -$lo : -1;
+            $magStart = $magLo + (($mult - ($magLo % $mult)) % $mult);
+            if ($magHi >= 0 && $magStart > $magHi) {
+                return "";
+            }
+            $lo = -$magStart;
+            $hi = -$magStart;
+        } else if ($hasLo && $lo > 0) {
+            $start = $lo + (($mult - ($lo % $mult)) % $mult);
+            if ($hasHi && $start > $hi) {
+                return "";
+            }
+            $lo = $start;
+            $hi = $start;
+        } else {
+            // Zero lies inside the bounds (or the absent sides permit it) and zero is a
+            // multiple of every m.
+            $lo = 0;
+            $hi = 0;
+        }
+    }
+    return $kv[0] . "|" . $lo . "|" . $hi . "|" . $mult;
 }
 
 // Body-level wrapper: the response schema is extracted the way every other detector does it.
@@ -7419,6 +7460,13 @@ function api_schema_bounds_unsupported(string $body): int
     if (api_schema_number_bounded_shape($body) != "") {
         return 0;
     }
+    // F420: bounds plus a multipleOf the shape does not honour is a constraint no value can meet
+    // (no multiple inside the interval) or a shape the writer cannot reach (several leaves). The
+    // span rule below would call the first one supported and the candidates tier would then emit a
+    // non-multiple silently, so it is refused here instead.
+    if (preg_match('/"multipleOf"\s*:\s*[0-9]+/', $body) == 1) {
+        return 1;
+    }
     // Walk every minimum and pair it with the maximum that follows it, so a schema with several
     // bounded leaves is judged on each pair rather than only the first.
     $off = 0;
@@ -9182,7 +9230,7 @@ function api_serve(int $port): void
                 // instead. F405/F419: the honoured set is wider now, so the message names it - a
                 // single integer property with bounds of any sign and any span, either side
                 // missing; what remains is float bounds and multi-property bounds.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); float bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; float bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
@@ -14017,6 +14065,13 @@ function main(): void
     $bdL = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-100},"s":{"type":"string"}}}}}');
     $bdJ = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":0,"maximum":100}}}}}');
     $bdK = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100},"m":{"type":"integer","multipleOf":3}}}}}');
+    // F420: the single-leaf pair is now served (the writer emits the smallest multiple inside the
+    // bounds), so this is the supported side of the same keyword bdK refuses on a second leaf. The
+    // unsatisfiable interval - no multiple of 7 between 1 and 5 - must refuse rather than fall
+    // through to the span rule, which would call it supported and emit a non-multiple.
+    $bdM = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":100,"multipleOf":7}}}}}');
+    $bdN = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":5,"multipleOf":7}}}}}');
+    $bdO = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": 1, "maximum": 100, "multipleOf": 7}}}}}');
     $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
     // F397: the same two cases as they arrive on the wire, with spaces after the colons - the
     // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
@@ -14024,11 +14079,14 @@ function main(): void
     $bdG = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 5.5}}}}}');
     echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=[" . $bdC
         . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[" . $bdI
-        . "] neg_multi=[ " . $bdL . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK . "] none=" . $bdE
+        . "] neg_multi=[ " . $bdL . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK
+        . "] mult_one=[" . $bdM . "] mult_unsat=[" . $bdN . "] mult_wire=[" . $bdO
+        . "] none=" . $bdE
         . " wire_supported=" . $bdF . " wire_float=" . $bdG . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
+        && $bdM == 0 && $bdN == 1 && $bdO == 0
         && $bdF == 0 && $bdG == 1) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
@@ -14110,20 +14168,33 @@ function main(): void
     $nbT7 = str_replace("Ġ", " ", $nbT7);
     $nbV7 = preg_match('/"n":(-?[0-9]+)\}/', $nbT7, $nbM7) == 1 ? (int) $nbM7[1] : -100000;
     $nbShapeNeg = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-5000,"maximum":-100}}}}}');
+    // F420: multipleOf narrows the honoured value to a single deterministic multiple - the shape
+    // collapses lo/hi to it and the walk emits exactly that value.
+    $nbShapeM = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":100,"multipleOf":7}}}}}');
+    $nbOut8 = api_number_bounded_value($nbIds, "n", 7, 7, 0);
+    $nbT8 = "";
+    $nbP8 = explode(",", $nbOut8);
+    for ($i = $nbBase; $i < count($nbP8); $i++) {
+        $nbT8 = $nbT8 . gguf_token_str((int) $nbP8[$i]);
+    }
+    $nbT8 = str_replace("Ġ", " ", $nbT8);
+    $nbV8 = preg_match('/"n":([0-9]+)\}/', $nbT8, $nbM8) == 1 ? (int) $nbM8[1] : -1;
     echo "SCHEMA-NUM-BND shape=[" . $nbA . "] shape2=[" . $nbB . "] shape_one=[" . $nbC
         . "] shape_span=[ " . $nbD . "] shape_multi=[ " . $nbE . "] v1=" . $nbV1
         . " v2=" . $nbV2 . " v3=" . $nbV3 . " v4=" . $nbV4 . " v5=" . $nbV5
-        . "] neg_shape=[" . $nbShapeNeg . "] v6=" . $nbV6 . " v7=" . $nbV7 . "]\n";
-    if ($nbA == "n|0|100" && $nbB == "n|1|1000" && $nbC == "n|5|-1" && $nbD == "n|1|5"
+        . "] neg_shape=[" . $nbShapeNeg . "] v6=" . $nbV6 . " v7=" . $nbV7
+        . "] mult_shape=[" . $nbShapeM . "] v8=" . $nbV8 . "]\n";
+    if ($nbA == "n|0|100|0" && $nbB == "n|1|1000|0" && $nbC == "n|5|-1|0" && $nbD == "n|1|5|0"
         && $nbE == ""
         && $nbV1 >= 0 && $nbV1 <= 100 && api_json_ok($nbT1) == 1
         && $nbV2 >= 1 && $nbV2 <= 1000 && api_json_ok($nbT2) == 1
         && $nbV3 >= 5 && $nbV3 <= 9 && api_json_ok($nbT3) == 1
         && $nbV4 >= 1 && $nbV4 <= 5 && api_json_ok($nbT4) == 1
         && $nbV5 >= 0 && $nbV5 <= 15 && api_json_ok($nbT5) == 1
-        && $nbShapeNeg == "n|-5000|-100"
+        && $nbShapeNeg == "n|-5000|-100|0"
         && $nbV6 <= -5 && $nbV6 >= -100 && api_json_ok($nbT6) == 1
-        && $nbV7 >= -1000 && $nbV7 <= 1000 && api_json_ok($nbT7) == 1) {
+        && $nbV7 >= -1000 && $nbV7 <= 1000 && api_json_ok($nbT7) == 1
+        && $nbShapeM == "n|7|7|7" && $nbV8 == 7 && api_json_ok($nbT8) == 1) {
         echo "SCHEMA-NUM-BND: PASS (emitted values inside the bounds; refused shapes yield no shape)\n";
     } else {
         echo "SCHEMA-NUM-BND: FAIL\n";
