@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（区间含整数时收紧为整数界；无整数区间仍 400） | `num_float`/`num_float_empty`/`num_mult_refuse`（F439） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一位小数**；更细/负数仍 400） | `num_float`/`num_dec`/`dec_text`/`num_dec_fine`（F439/F440） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -4117,3 +4117,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`float_served` **200 `{"n":100}`**（100∈[2,100] 且是合法 number）、`float_empty_refuse` **400**；bounds/required/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.513×**、哨兵 **0**（`engine/selftest_f439.log`、`engine/schema_bounds_f439.log`、`engine/api_smoke_f439.log`、`engine/throughput_f439.log`）。
 **记法**：**类型约束是包含关系时，子集解就够**——`integer ⊂ number`，所以"整数界里选整数"首先满足 `number` 约束；只有子集为空（区间无整数）才需要更强的发射机制。**放宽一个形状时，必须同时检查"这个形状上别的关键字会不会因此失效"**（number+multipleOf 就是被提到最前的那一处）。
+
+
+## F440：无整数区间的 `number` 界——**一位小数**发射，且不改路由
+**改前**：`{"n":{"type":"number","minimum":1.5,"maximum":1.9}}` → **400**（F439 只覆盖"区间含整数"）。
+**思路（避免四处路由改动）**：沿用既有写入器，用**形状字段编码**——`hi = -999` 作为"十进制标记"、`lo` 携带**十分位值**（15 = 1.5）；`api_number_bounded_value` 在标记分支把 `int.frac` 作为一次强制续写发出。四个路由点因为只读 `lo/hi` 而**无需改动**。
+**实现**：形状函数的"区间无整数"分支改为尝试十分位：两侧**都非负**、各**至多一位小数**、且没有 `multipleOf` 时，取 `k = 10·lo`，返回 `prop|k|-999|0`；新增 `api_schema_tenths`（`"1.5"→15`，其它→-1）。更细的小数、负数、含 `multipleOf` 一律保持拒绝。
+**第一版真 bug（门抓住）**：回退分支**没有限制叶子类型**，integer 叶 `[1.5,1.9]` 也被发成 `1.5`——`frac_unsat` 从 1 变 0、`empty` 从 `""` 变成标记，两处门同时红；加 `$kv[1] == "n"` 后复绿。**"新分支只对目标类型生效"要在判据里写出来，不能靠调用顺序。**
+**门（旧期望被证伪 ⇒ 改门）**：`num_float_empty` 期望由 `""` 改为 `n|15|-999|0`；新增 `num_dec=[n|15|-999|0]`、`num_dec_fine=[]`（两位小数无格点）、`dec_text=[{"n":1.5}]`（**输出文本级断言**）。
+**活体**：`float_dec_served` **200 `{"n":1.5}`**（改前 400）、`float_dec_fine_refuse` **400**（[1.51,1.59]）；`float_served`（F439 的 100）与 bounds/required/count/pattern 均不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.464×**、哨兵 **0**（`engine/selftest_f440c.log`、`engine/schema_bounds_f440.log`、`engine/api_smoke_f440.log`、`engine/throughput_f440.log`）。
+**记法**：**用"形状字段编码 + 同一写入器分支"可以避免多点路由改动**——`hi=-999` 是显式标记，代价是写入器要知道这个约定；**新分支必须按叶子类型设防**（integer 叶不能发小数），否则门会用"另一类叶子也被改坏"红给你看。**文本级断言**（`dec_text`）比"能解析成数字"更强，小数点的出现与位数都被钉住。

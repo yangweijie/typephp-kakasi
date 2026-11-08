@@ -155,8 +155,13 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and 2 <= val_of(txt, "n") <= 100),
-    ("float_empty_refuse", "Give the number.",
+    # F440: an interval with no integer but a tenths grid is served with ONE decimal place (1.5),
+    # which is what this used to refuse; finer fractions have no tenths grid and stay refused.
+    ("float_dec_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 1.9}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.5}'),
+    ("float_dec_fine_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51, "maximum": 1.59}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F421: an INTEGER leaf with fractional bounds. The value must be an integer inside the real
     # interval, so 1.5..9.5 means 2..9 - truncating the bound to 1 would serve a violating value.

@@ -991,3 +991,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.513×**、哨兵 **0**（`engine/selftest_f439.log`、`engine/schema_bounds_f439.log`、`engine/api_smoke_f439.log`、`engine/throughput_f439.log`）。
 **明确留拒（排队）**：**无整数的** number 区间（需小数写入器）；无界 `multipleOf` > 999999；tuple 实现；`dependentSchemas`/`dependencies`；多叶混合情形。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F440 计划与完成（无整数区间：一位小数，不改路由）
+**F439 已完成**：number 叶含整数时取整数。
+**思路**：`hi=-999` 作"十进制标记"、`lo` 存十分位值，同一写入器发 `int.frac` ⇒ **不动四处路由**。
+**F440 已完成**：形状"无整数"分支计算十分位区间（非负、≤1 位小数、无 multipleOf）；新增 `api_schema_tenths`；写入器标记分支。第一版回退未限叶子类型 ⇒ integer 叶也发小数，门抓住后加 `$kv[1]=="n"`。
+**门**：`num_float_empty` "" → `n|15|-999|0`；新增 `num_dec`/`num_dec_fine`/`dec_text`。
+**活体**：`float_dec_served` 200 `{"n":1.5}`、`float_dec_fine_refuse` 400。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.464×**、哨兵 **0**（`engine/selftest_f440c.log`、`engine/schema_bounds_f440.log`、`engine/api_smoke_f440.log`、`engine/throughput_f440.log`）。
+**明确留拒（排队）**：更细的小数（两位及以上）、负数小数界、无界 `multipleOf` > 999999、tuple 实现、`dependentSchemas`/`dependencies`。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

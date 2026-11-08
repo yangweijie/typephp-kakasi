@@ -1624,3 +1624,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（旧期望被证伪 ⇒ 改门）**：`$bdB`/`$bdJ`/`$bdG`（number 叶浮点界三例）期望 **1→0**；`SCHEMA-NUM-FRAC` 加 `num_float=[n|2|9|0]`、`num_float_empty=[]`、`num_float_ok=0`、`num_mult_refuse=1`。
 - **活体**：`float_served` **200 `{"n":100}`**、`float_empty_refuse` **400**（改前前者 400）；bounds/required/count/pattern 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.513×**、哨兵 **0**。
+
+
+## ▶ 状态（F440，2026-11-08 19:00）——无整数区间：**一位小数**发射（不改路由）
+- **思路**：`hi = -999` 作为"十进制标记"，`lo` 携带**十分位值**（如 15 = 1.5）；同一写入器在标记分支把 `int.frac` 作为一次强制续写发出——**四处路由无需改动**。
+- **实现**：形状函数在"区间无整数"分支改为计算十分位区间（两侧都非负、各至多一位小数、无 `multipleOf`）并返回 `prop|k|-999|0`；新增 `api_schema_tenths`；写入器加标记分支。
+- **第一版真 bug（门抓住）**：回退**没有限制叶子类型**，于是 integer 叶 `[1.5,1.9]` 也被发成 `1.5`（`frac_unsat` 从 1 变 0、`empty` 从 "" 变标记）⇒ 加 `$kv[1] == "n"` 后复绿。
+- **门（旧期望证伪 ⇒ 改门）**：`num_float_empty` 期望由 `""` 改为 `n|15|-999|0`；新增 `num_dec`/`num_dec_fine`/`dec_text`。
+- **活体**：`float_dec_served` **200 `{"n":1.5}`**（改前 400）、`float_dec_fine_refuse` **400**（[1.51,1.59] 无十分位格点）。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.464×**、哨兵 **0**。

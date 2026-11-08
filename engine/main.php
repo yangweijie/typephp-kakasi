@@ -5190,6 +5190,21 @@ function api_response_schema_number_prop(string $body): string
 // 1 for minimum 1.5, and served a value for [1.5, 1.9] where no integer exists; rounding makes that
 // interval empty, which the shape then refuses. Anything that is not a plain decimal (an exponent
 // form, say) returns the sentinel so the request is refused rather than guessed at.
+// F440: a non-negative literal with at most one decimal digit, expressed in tenths ("1.5" -> 15).
+// Returns -1 for anything else, so the caller keeps its refusal instead of guessing.
+function api_schema_tenths(string $lit): int
+{
+    $m = [];
+    if (preg_match('/^([0-9]+)(?:\.([0-9]))?$/', $lit, $m) != 1) {
+        return -1;
+    }
+    $f = 0;
+    if (count($m) > 2) {
+        $f = (int) $m[2];
+    }
+    return (int) $m[1] * 10 + $f;
+}
+
 function api_schema_bound_inward(string $lit, int $isMin): int
 {
     if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $lit) != 1) {
@@ -5379,6 +5394,22 @@ function api_schema_number_bounded_shape(string $schema): string
         }
     }
     if ($loSet && $hiSet && $lo > $hi) {
+        // F440: both bounds present and no integer inside - fall back to ONE decimal place when both
+        // literals lie on a tenths grid that contains one. The shape carries the chosen tenths value
+        // in lo and marks hi with -999, so the existing writer emits the decimal without a new route.
+        // Only a NUMBER leaf can take the decimal; an integer leaf with no integer in the interval
+        // stays refused. Negative intervals, finer fractions and any multipleOf keep the refusal.
+        $k = 0;
+        if ($kv[1] == "n" && $hasLo && $hasHi && strpos($schema, "\"multipleOf\"") === false
+            && preg_match('/^[0-9]+(\.[0-9])?$/', $mn[1]) == 1
+            && preg_match('/^[0-9]+(\.[0-9])?$/', $mx[1]) == 1) {
+            $tLo = api_schema_tenths($mn[1]);
+            $tHi = api_schema_tenths($mx[1]);
+            if ($tLo >= 0 && $tHi >= 0 && $tLo <= $tHi) {
+                $k = $tLo;
+                return $kv[0] . "|" . $k . "|-999|0";
+            }
+        }
         return "";
     }
     // F420: multipleOf narrows the honoured value to a single deterministic multiple inside the
@@ -5510,6 +5541,30 @@ function api_number_bounded_fill(int $lo, int $hi): string
 // The bounded-integer object: {"prop":<in-range digits>} with the forced closing brace.
 function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, int $useCache = 1): string
 {
+    // F440: hi = -999 is the decimal marker - lo carries the value in tenths, and the writer forces
+    // "int.frac" as one continuation, which is a legal `number` inside the interval.
+    if ($hi == -999) {
+        $k = $lo;
+        if ($k < 0) {
+            return "";
+        }
+        $intp = (int) (($k - ($k % 10)) / 10);
+        $dec = "" . $intp . "." . ($k % 10);
+        $s = api_constrained($ids, ["{\"" . $prop . "\":"], 64, $useCache);
+        if ($s == "") {
+            return "";
+        }
+        $f = api_constrained_continue([$dec], 12);
+        if ($f == "") {
+            return "";
+        }
+        $s = $s . "," . $f;
+        $end = api_constrained_continue(["}"], 4);
+        if ($end != "") {
+            $s = $s . "," . $end;
+        }
+        return $s;
+    }
     $s = api_constrained($ids, ["{\"" . $prop . "\":"], 64, $useCache);
     if ($s == "") {
         return "";
@@ -14964,6 +15019,17 @@ function main(): void
     $nfF = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9}}}}}');
     $nfG = api_schema_bounds_unsupported('{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.9}}}');
     $nfH = api_schema_bounds_unsupported('{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.9,"multipleOf":2}}}');
+    // F440: no integer inside the interval - ONE decimal place, encoded as tenths in lo with the
+    // -999 marker in hi; two fraction digits have no tenths grid and stay refused.
+    $nfI = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9}}}}}');
+    $nfJ = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.51,"maximum":1.59}}}}}');
+    $nfOut2 = api_number_bounded_value($nbIds, "n", 15, -999, 0);
+    $nfP2 = explode(",", $nfOut2);
+    $nfText2 = "";
+    for ($i = $nbBase; $i < count($nfP2); $i++) {
+        $nfText2 = $nfText2 . gguf_token_str((int) $nfP2[$i]);
+    }
+    $nfText2 = str_replace("Ġ", " ", $nfText2);
     $nfOut = api_number_bounded_value($nbIds, "n", 2, 9, 0);
     $nfP = explode(",", $nfOut);
     $nfText = "";
@@ -14976,10 +15042,12 @@ function main(): void
     echo "SCHEMA-NUM-FRAC pos=[" . $nfA . "] neg=[" . $nfB . "] empty=[" . $nfC
         . "] integral=[" . $nfD . "] v=" . $nfV
         . "] num_float=[" . $nfE . "] num_float_empty=[" . $nfF
-        . "] num_float_ok=[" . $nfG . "] num_mult_refuse=[" . $nfH . "]\n";
+        . "] num_float_ok=[" . $nfG . "] num_mult_refuse=[" . $nfH
+        . "] num_dec=[" . $nfI . "] num_dec_fine=[" . $nfJ . "] dec_text=[" . $nfText2 . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
         && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
-        && $nfE == "n|2|9|0" && $nfF == "" && $nfG == 0 && $nfH == 1) {
+        && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0 && $nfH == 1
+        && $nfI == "n|15|-999|0" && $nfJ == "" && $nfText2 == "{\"n\":1.5}") {
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";
