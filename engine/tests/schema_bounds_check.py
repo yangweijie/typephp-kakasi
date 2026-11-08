@@ -114,6 +114,27 @@ cases = [
     ("int_leaf_float_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1.5, "maximum": 1.9}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F422: exclusive bounds on an integer leaf convert to the adjacent integer interval (the
+    # smallest integer above an exclusive minimum, the largest below an exclusive maximum) and are
+    # served at any span by the same digit walk as inclusive bounds - the value lies STRICTLY inside
+    # the exclusive interval.
+    ("excl_wide_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 100000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 1 <= val_of(txt, "n") <= 99999),
+    ("excl_onesided_min", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": 5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") >= 6),
+    ("excl_onesided_max", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMaximum": 50}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") <= 49),
+    # No integer satisfies 5 < n < 6: unsatisfiable for an integer leaf, so it must be refused
+    # rather than served by a generator that ignores the exclusive bounds.
+    ("excl_unsatisfiable", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": 5, "exclusiveMaximum": 6}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
 ]
 
 bad = 0

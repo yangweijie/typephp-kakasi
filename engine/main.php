@@ -5221,6 +5221,42 @@ function api_schema_bound_inward(string $lit, int $isMin): int
     return $v;
 }
 
+// F422: the integer a STRICT bound excludes lands on. On an integer leaf, exclusiveMinimum X means
+// "the smallest integer strictly greater than X", which is floor(X) + 1; exclusiveMaximum X means
+// "the largest integer strictly less than X", which is ceil(X) - 1. floor/ceil are taken on the
+// plain-decimal literal, so a fractional exclusive bound is served (1.5 -> 2), not truncated. A
+// literal that is not a plain decimal (an exponent form) rejects with the same sentinel as the
+// inward helper, because the digit walk cannot reason about it.
+function api_schema_bound_exclusive(string $lit, int $isMin): int
+{
+    if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $lit) != 1) {
+        return -1000000;
+    }
+    $neg = 0;
+    if (substr($lit, 0, 1) == "-") {
+        $neg = 1;
+        $lit = substr($lit, 1);
+    }
+    $dot = strpos($lit, ".");
+    $ip = $dot === false ? $lit : substr($lit, 0, $dot);
+    $fp = $dot === false ? "" : substr($lit, $dot + 1);
+    $v = (int) $ip;
+    if ($neg == 1) {
+        $v = -$v;
+    }
+    $frac = ($fp != "" && preg_match('/[1-9]/', $fp) == 1) ? 1 : 0;
+    if ($isMin == 1) {
+        // floor(X): a negative literal with a real fraction truncates toward zero, which is one
+        // above the floor, so step down; a positive floor is the integer part itself.
+        $floor = ($neg == 1 && $frac == 1) ? $v - 1 : $v;
+        return $floor + 1;
+    }
+    // ceil(X): a positive literal with a real fraction truncates one below the ceiling, so step
+    // up; a negative ceiling is the integer part itself.
+    $ceil = ($neg == 0 && $frac == 1) ? $v + 1 : $v;
+    return $ceil - 1;
+}
+
 // with -1 marking an absent side, or "".
 function api_schema_number_bounded_shape(string $schema): string
 {
@@ -5255,12 +5291,19 @@ function api_schema_number_bounded_shape(string $schema): string
     }
     $mn = [];
     $mx = [];
+    $exn = [];
+    $exm = [];
     // F421: capture the whole literal, exponent forms included, and let the inward rounding reject
     // anything that is not a plain decimal - the old pattern dropped the fraction silently, which
     // served 1 for minimum 1.5 and served a value at all for [1.5, 1.9].
     $hasLo = preg_match('/"minimum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $mn) == 1;
     $hasHi = preg_match('/"maximum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $mx) == 1;
-    if (!$hasLo && !$hasHi) {
+    // F422: exclusive bounds on an integer leaf - the inclusive form wins when both are present
+    // (the same precedence as the candidates tier), otherwise the exclusive literal is converted
+    // to an inclusive integer bound (floor(X)+1 / ceil(X)-1) and served by the same digit walk.
+    $hasExLo = !$hasLo && preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exn) == 1;
+    $hasExHi = !$hasHi && preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exm) == 1;
+    if (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi) {
         return "";
     }
     $lo = -1;
@@ -5274,14 +5317,28 @@ function api_schema_number_bounded_shape(string $schema): string
         if ($lo == -1000000) {
             return "";
         }
+    } else if ($hasExLo) {
+        $lo = api_schema_bound_exclusive($exn[1], 1);
+        if ($lo == -1000000) {
+            return "";
+        }
     }
     if ($hasHi) {
         $hi = api_schema_bound_inward($mx[1], 0);
         if ($hi == -1000000) {
             return "";
         }
+    } else if ($hasExHi) {
+        $hi = api_schema_bound_exclusive($exm[1], 0);
+        if ($hi == -1000000) {
+            return "";
+        }
     }
-    if ($hasLo && $hasHi && $lo > $hi) {
+    // F422: a side is "set" when it came from the inclusive OR the exclusive literal - the interval
+    // and the multipleOf walk below must reason about whichever bound is present, not only the one.
+    $loSet = $hasLo || $hasExLo;
+    $hiSet = $hasHi || $hasExHi;
+    if ($loSet && $hiSet && $lo > $hi) {
         return "";
     }
     // F420: multipleOf narrows the honoured value to a single deterministic multiple inside the
@@ -5297,21 +5354,21 @@ function api_schema_number_bounded_shape(string $schema): string
         if ($mult < 1 || $mult > 1000) {
             return "";
         }
-        if ($hasHi && $hi < 0) {
+        if ($hiSet && $hi < 0) {
             // The value is negative: the magnitude is at least |hi| (and at most |lo| when lo
             // is present and negative); the smallest multiple of m in that magnitude range
             // gives the value -(magStart).
             $magLo = -$hi;
-            $magHi = ($hasLo && $lo < 0) ? -$lo : -1;
+            $magHi = ($loSet && $lo < 0) ? -$lo : -1;
             $magStart = $magLo + (($mult - ($magLo % $mult)) % $mult);
             if ($magHi >= 0 && $magStart > $magHi) {
                 return "";
             }
             $lo = -$magStart;
             $hi = -$magStart;
-        } else if ($hasLo && $lo > 0) {
+        } else if ($loSet && $lo > 0) {
             $start = $lo + (($mult - ($lo % $mult)) % $mult);
-            if ($hasHi && $start > $hi) {
+            if ($hiSet && $start > $hi) {
                 return "";
             }
             $lo = $start;
@@ -7495,15 +7552,25 @@ function api_schema_keywords_unsupported(string $body): string
 
 function api_schema_bounds_unsupported(string $body): int
 {
-    if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false) {
+    if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
+        && strpos($body, "\"exclusiveMinimum\"") === false && strpos($body, "\"exclusiveMaximum\"") === false) {
         return 0;
     }
     // F405: the bounded-integer shape the digit-walk writer honours (one integer leaf, any span,
     // one or both non-negative bounds) is no longer a refusal - the old rules below keep judging
     // every other shape, including the negative bounds the candidates tier still enumerates when
     // the span fits and nothing honours otherwise.
-    if (api_schema_number_bounded_shape($body) != "") {
+    $shape = api_schema_number_bounded_shape($body);
+    if ($shape != "") {
         return 0;
+    }
+    // F422: exclusive-only bounds (no inclusive minimum/maximum to fall back on) with an empty
+    // shape - the interval rounds to nothing, is multi-leaf, or is a literal the walk cannot read.
+    // Without this the generic generator would ignore the exclusive bounds and serve an
+    // out-of-range value, so refuse it here.
+    if ((strpos($body, "\"exclusiveMinimum\"") !== false || strpos($body, "\"exclusiveMaximum\"") !== false)
+        && strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false) {
+        return 1;
     }
     // F420: bounds plus a multipleOf the shape does not honour is a constraint no value can meet
     // (no multiple inside the interval) or a shape the writer cannot reach (several leaves). The
@@ -9287,7 +9354,7 @@ function api_serve(int $port): void
                 // instead. F405/F419: the honoured set is wider now, so the message names it - a
                 // single integer property with bounds of any sign and any span, either side
                 // missing; what remains is float bounds and multi-property bounds.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); fractional bounds on an integer leaf are rounded inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
@@ -14141,19 +14208,29 @@ function main(): void
     // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
     $bdF = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5}}}}}');
     $bdG = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 5.5}}}}}');
+    // F422: exclusive-only bounds. A satisfiable wide/one-sided interval now has a shape (served),
+    // so it is the supported side; an interval with no integer (5 < n < 6) and an interval with no
+    // multiple refuse instead of falling through to the generic generator that ignores them.
+    $bdT = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":0,"exclusiveMaximum":100000}}}}}');
+    $bdU = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5,"exclusiveMaximum":6}}}}}');
+    $bdV = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":0,"exclusiveMaximum":5,"multipleOf":7}}}}}');
+    $bdW = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5}}}}}');
     echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=[" . $bdC
         . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[" . $bdI
         . "] neg_multi=[ " . $bdL . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK
         . "] mult_one=[" . $bdM . "] mult_unsat=[" . $bdN . "] mult_wire=[" . $bdO
         . "] frac_int=[" . $bdP . "] frac_unsat=[" . $bdQ . "] frac_exp=[" . $bdR
         . "] frac_neg=[" . $bdS . "] none=" . $bdE
-        . " wire_supported=" . $bdF . " wire_float=" . $bdG . "
+        . " wire_supported=" . $bdF . " wire_float=" . $bdG
+        . " excl_wide=[" . $bdT . "] excl_unsat=[" . $bdU . "] excl_mult=[" . $bdV
+        . "] excl_one=[" . $bdW . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
         && $bdM == 0 && $bdN == 1 && $bdO == 0
         && $bdP == 0 && $bdQ == 1 && $bdR == 1 && $bdS == 0
-        && $bdF == 0 && $bdG == 1) {
+        && $bdF == 0 && $bdG == 1
+        && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
@@ -14290,6 +14367,35 @@ function main(): void
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";
+    }
+
+    // SCHEMA-NUM-EXCL (F422): exclusive bounds on an integer leaf convert to the adjacent integer
+    // bound (exclusiveMinimum X -> floor(X)+1, exclusiveMaximum X -> ceil(X)-1), so the shape is the
+    // inclusive interval and the emitted value lies STRICTLY inside the exclusive one. An exclusive
+    // interval holding no integer (5 < n < 6) yields no shape, and the refusal gate covers it.
+    $neA = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":0,"exclusiveMaximum":100000}}}}}');
+    $neB = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5}}}}}');
+    $neC = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMaximum":50}}}}}');
+    $neD = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5,"exclusiveMaximum":6}}}}}');
+    $neE = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":1.5,"exclusiveMaximum":9.5}}}}}');
+    $neF = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":0,"exclusiveMaximum":100,"multipleOf":7}}}}}');
+    $neOut = api_number_bounded_value($nbIds, "n", 2, 9, 0);
+    $neP = explode(",", $neOut);
+    $neText = "";
+    for ($i = $nbBase; $i < count($neP); $i++) {
+        $neText = $neText . gguf_token_str((int) $neP[$i]);
+    }
+    $neText = str_replace("Ġ", " ", $neText);
+    $neM = [];
+    $neV = preg_match('/"n":(-?[0-9]+)\}/', $neText, $neM) == 1 ? (int) $neM[1] : -100000;
+    echo "SCHEMA-NUM-EXCL wide=[" . $neA . "] min1=[" . $neB . "] max1=[" . $neC
+        . "] unsat=[" . $neD . "] frac=[" . $neE . "] mult=[" . $neF . "] v=" . $neV . "]\n";
+    if ($neA == "n|1|99999|0" && $neB == "n|6|-1|0" && $neC == "n|-1|49|0"
+        && $neD == "" && $neE == "n|2|9|0" && $neF == "n|7|7|7"
+        && $neV >= 2 && $neV <= 9 && api_json_ok($neText) == 1) {
+        echo "SCHEMA-NUM-EXCL: PASS (exclusive bounds convert to the adjacent integer interval; empty interval yields no shape)\n";
+    } else {
+        echo "SCHEMA-NUM-EXCL: FAIL\n";
     }
 
     // SCHEMA-KEYWORDS (F398): the five unenforced keywords must be named, and `required` must be

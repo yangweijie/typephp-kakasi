@@ -1442,3 +1442,14 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体改后**：`engine/schema_bounds_f421.log` **14 例全绿**——空区间由 200 `{"n":1}` 翻 **400**，`[1.5,9.5]` → `{"n":2}`；required/pattern/count 不回退。改前证据 `schema_bounds_f421pre.log` 一并留档成对。
 - **梯**：8000 **115/0**、8001 par/fairness **0**、scaling **1.421×**（实测，门 PASS measured）、哨兵 **0**。
 - **提交后清理（同类第二次）**：commit `0ce1e89` 之后发现 `engine/serve.on`（10:55）与一个仍在跑的引擎 PID 783840——**门禁报完 SENTINELS_LEFT=0 之后**才出现的排队后台副本。处置：停进程、删三个哨兵、复查 0/0；`api_smoke_f421.log`/`spec_req.log` 一度被改写，副本跑完后内容与已提交版本一致（`git status` 回到干净）。**判据：门禁的"哨兵 0"只是那一刻的快照；提交后再查一次进程与哨兵，排队副本会在之后启动。另：`Get-CimInstance Win32_Process` 在本机会卡死（WMI），查进程用 `Get-Process`，要命令行才考虑 WMI 且预期它挂起。**
+
+
+## ▶ 状态（F422，2026-11-08 11:10）——exclusive 边界口径复核：复核出**静默违反**，exclusive-only 宽/单侧面接入数字走位
+- **改前活体取证**：`engine/serve_f422pre.log`——`exclusiveMinimum:0, exclusiveMaximum:100000` → **200 `{"n":234567}`**（越上界，静默违反）；`exclusiveMinimum:5`（单侧）→ **200 `{"n":234567}`**（约束被忽略）。窄跨度 exclusive 早已由候选层服务（`SCHEMA-EXCL`），缺陷只在宽/单侧。
+- **根因**：①`api_schema_number_bounded_shape` 只读 `minimum`/`maximum`，不读 exclusive；②`api_schema_bounds_unsupported` 早退（无 min/max ⇒ 受支持）让 exclusive-only 请求绕过全部拒绝逻辑，落入忽略 exclusive 的生成器。
+- **实现**：新 helper `api_schema_bound_exclusive`（exclusiveMinimum→floor(X)+1、exclusiveMaximum→ceil(X)-1；小数也服务、指数拒）；shape 检测器回退读 exclusive、`$loSet/$hiSet` 贯穿；拒绝函数早退纳入 exclusive 关键字 + "exclusive-only 且 shape 空 ⇒ 拒"；400 消息写明 exclusive 面。
+- **门/单测**：新门 `SCHEMA-NUM-EXCL`（wide=[n|1|99999|0] min1=[n|6|-1|0] max1=[n|-1|49|0] unsat=[] frac=[n|2|9|0] mult=[n|7|7|7]）；`SCHEMA-BOUND-REJECT` 加 `excl_wide=0 excl_unsat=1 excl_mult=1 excl_one=0`；`engine/tests/bound_exclusive_test.php`（PHP CLI 抽取式）**22 例全绿**。
+- **活体改后**：`engine/schema_bounds_f422.log` **18 例全绿**（新增 4 例 exclusive）——`excl_wide_served` 200 `{"n":23456}`（∈[1,99999]，改前同请求发越界 234567）、`excl_onesided_min` 200 `{"n":7}`、`excl_onesided_max` 200 `{"n":23}`、`excl_unsatisfiable`（5<n<6）**400**；required/pattern/count 不回退。
+- **梯**：自检 **179/0**（178+新门）、8000 **115/0**、8001 par/fairness **0**、scaling **1.431×**、spec greedy **1.991×**/sampled **1.551×**、哨兵 **0**（`engine/selftest_f422.log`、`engine/api_smoke_f422.log`、`engine/throughput_f422.log`）。
+- **已知限制（记录）**：同侧 inclusive+exclusive 时 inclusive 优先；若 exclusive 更严则发射值可能违反——本轮只覆盖 exclusive-only 面，混合面留后续。
+- **下一轮顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；或同侧 inclusive+exclusive 混合面。

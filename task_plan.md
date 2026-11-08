@@ -784,3 +784,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **记法**：**"拒绝口径复核"复核出来的往往是漏拒而非过度拒绝；判据要问"发射器会不会产出违反值"。取整必须向内（收紧后的整数区间里每个值都满足原实数区间——子集论证）。纯算术 helper 用 PHP CLI 抽取式单测，不必占设备。**
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、`multipleOf` > 1000、`exclusiveMinimum/exclusiveMaximum`（尚未复核口径）。
 **顺位**：exclusive 边界口径复核 → 分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F422 计划与完成（exclusive 边界口径复核：复核出的是**静默违反**，不是拒绝）
+**动作（计划口径）**：exclusiveMinimum/exclusiveMaximum 的口径复核。
+**复核结果（改前活体取证，`serve_f422pre.log`）**：窄跨度 exclusive 由候选层服务（`SCHEMA-EXCL` 门已覆盖）；**宽跨度/单侧 exclusive 被静默忽略**——`exclusiveMinimum:0, exclusiveMaximum:100000` → **200 `{"n":234567}`**（234567 ∉ (0,100000)，违反上界），`exclusiveMinimum:5`（单侧）→ **200 `{"n":234567}`**。根因：①宽跨度 shape 检测器只读 `minimum`/`maximum`，不读 exclusive；②拒绝函数 `api_schema_bounds_unsupported` 的早退（无 min/max 即 return 0 "受支持"）让 exclusive-only 请求绕过所有拒绝逻辑，落入忽略 exclusive 的通用生成器。
+**F422 已完成**：①新 helper `api_schema_bound_exclusive($lit,$isMin)`——**exclusiveMinimum X → floor(X)+1、exclusiveMaximum X → ceil(X)-1**（整数叶相邻整数界；floor/ceil 作用于纯十进制字面量，小数 exclusive 界也服务而非截断；非纯十进制/指数写法返回哨兵）；②shape 检测器在 inclusive 缺席时回退读 exclusive，`$loSet/$hiSet` 贯穿区间与 multipleOf 走位；③拒绝函数早退补 exclusive 关键字，并加"exclusive-only 且 shape 空 ⇒ 拒"（压住空区间/多叶/指数）；④400 消息写明 exclusive 转换面。
+**门**：新门 `SCHEMA-NUM-EXCL`（`wide=[n|1|99999|0] min1=[n|6|-1|0] max1=[n|-1|49|0] unsat=[] frac=[n|2|9|0] mult=[n|7|7|7] v∈[2,9]`）；`SCHEMA-BOUND-REJECT` 加 `excl_wide=0 excl_unsat=1 excl_mult=1 excl_one=0`；**纯 helper 单测** `engine/tests/bound_exclusive_test.php`（PHP CLI、运行时抽取）**22 例全绿**。
+**活体**：bounds harness 加 4 例——`excl_wide_served`（0< n <100000 → 值∈[1,99999]）、`excl_onesided_min`（n>5 → 值≥6）、`excl_onesided_max`（n<50 → 值≤49）、`excl_unsatisfiable`（5<n<6 → **400**）。
+**已知限制（记录，不修本轮）**：同一侧同时给 inclusive+exclusive 时 inclusive 优先（与候选层同优先级），若 exclusive 更严则发射值可能违反该更严 exclusive——本轮只覆盖 exclusive-only 面。
+**梯**：自检 **179/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.431×**、哨兵 **0**；required/pattern/count 复跑不回退。
+**记法**：**exclusive 界的诚实服务是"相邻整数界"（floor(X)+1 / ceil(X)-1），值严格落在开区间内（子集论证）；拒绝函数的早退必须把 exclusive 关键字也纳入，否则 exclusive-only 请求绕过所有拒绝落入忽略约束的生成器——静默违反比过度拒绝更难发现。**
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、`multipleOf` > 1000、同侧 inclusive+exclusive 更严 exclusive 的混合面。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
