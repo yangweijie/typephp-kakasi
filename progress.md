@@ -1536,3 +1536,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`unbounded_big=1`、`unbounded_ok=0`、`mult_one_ub=0`。
 - **活体**：`{"n":23450000}`（%5000=0）、`{"n":2345000000}`（%250000=0）；其余 harness 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.512×**、哨兵 **0**。
+
+
+## ▶ 状态（F431，2026-11-08 15:20）——多叶 `multipleOf`：静默丢键 → 显式拒绝
+- **改前活体**：`{"a":multipleOf 3,"b":multipleOf 5}` → **200 `{"a":1000002}`**，`b` 消失。
+- **根因**：无界检测器只返回第一个叶子，写入器只发一个键，且没有任何生成器能补其余键。
+- **实现**：`multipleOf` 存在且 plan 叶子数 > 1 ⇒ 拒绝；消息补"multipleOf on a schema with more than one property"。
+- **门**：`mult_multi=1`、`mult_mixed=1`（单叶 `unbounded_ok=0` 不变）。
+- **探针修正**：错误体截断窗口 200 → 900（新消息的相关子句在 200 之后，导致假红）。
+- **活体**：`multi_leaf_multipleof` **400 点名**；bounds/required/count/pattern PASS。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**。

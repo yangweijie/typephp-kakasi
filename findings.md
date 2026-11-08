@@ -4029,3 +4029,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`multipleof_unbounded_5000` → **200 `{"n":23450000}`（%5000=0）**、`multipleof_unbounded_250000` → **200 `{"n":2345000000}`（%250000=0）**（改前两例 `{"n":}`）；required/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.512×**、哨兵 **0**（`engine/selftest_f430.log`、`engine/schema_bounds_f430.log`、`engine/api_smoke_f430.log`、`engine/throughput_f430.log`）。
 **记法**：**机制的上限要跟着机制走**——后缀宽度是"能表达余数"的函数，不是常量 3；**写入器 bail 时必须让调用方知道**，否则"半个对象"会以 200 返回；**可满足的平凡情形（m=1）不该拒绝**。
+
+
+## F431：多叶 `multipleOf`——检测器认领整个 schema 后**静默丢键**，改为显式拒绝
+**改前活体（`engine/schema_bounds_f431pre.log`）**：`{"a":{"multipleOf":3},"b":{"multipleOf":5}}` → **200 `{"a":1000002}`**——第二个键 `b` 不见了（`a` 确实是 3 的倍数，但对象不完整）。同一检测器对"一个 multipleOf + 一个普通整数叶"也认领整个 schema（`mult_mixed=1`）。
+**根因**：`api_response_schema_multiple_unbounded` 只按第一个匹配到的叶子返回 `prop|m`，`api_multiple_value` 只发那一个键，**不留任何提示**；而 schema 里有多个叶子时没有任何生成器能补上其余键。
+**实现**：在 `api_schema_bounds_unsupported` 的无界分支加一条——`multipleOf` 存在且 `api_schema_plan_count($body) > 1` ⇒ **拒绝**（多叶一次也不认领）；消息补"a multipleOf on a schema with more than one property is not supported"。
+**门**：`SCHEMA-BOUND-REJECT` 加 `mult_multi=1`（两叶都带 multipleOf）、`mult_mixed=1`（一个 multipleOf + 一个普通整数叶）；单叶 `unbounded_ok=0` 不变。
+**活体**：`multi_leaf_multipleof` **400 且消息含 multipleOf**（改前 200 丢键）。**探针假红**：`schema_bounds_check.py` 把错误体截断在 200 字符，而新消息的 multipleOf 子句在更后面 ⇒ 断言落空；把窗口放到 900 字符后通过——**探针的截断长度也是判据的一部分**。
+**梯**：自检 **182/0**、`RUN_EXIT=0`；bounds 活体 PASS、required/count/pattern PASS；8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**（`engine/selftest_f431.log`、`engine/schema_bounds_f431.log`、`engine/api_smoke_f431.log`、`engine/throughput_f431.log`）。
+**记法**：**"只发一个属性"的生成器必须先证明 schema 只有一个属性**——否则它不是" honoured"，而是**用完整的外观交出不完整的对象**；多叶情形在没有对应生成器前只能拒绝。**错误体的截断窗口要能容下被测子句**，否则"消息里没有"可能只是"没读到"。

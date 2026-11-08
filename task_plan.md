@@ -898,3 +898,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.512×**、哨兵 **0**（`engine/selftest_f430.log`、`engine/schema_bounds_f430.log`、`engine/api_smoke_f430.log`、`engine/throughput_f430.log`）。
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999999；`propertyNames` 的其他求值形式。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F431 计划与完成（多叶 `multipleOf`：要么完整、要么拒绝）
+**F430 已完成**：无界 multipleOf 后缀宽度按位数。
+**改前活体**：两叶 multipleOf → **200 `{"a":…}`**，第二键被静默丢弃。
+**F431 已完成**：`multipleOf` 存在且 `api_schema_plan_count > 1` ⇒ 拒绝（无生成器能补其余键）；消息补该支持面。
+**门**：`SCHEMA-BOUND-REJECT` 加 `mult_multi=1`、`mult_mixed=1`。
+**活体**：`multi_leaf_multipleof` 400 点名（探针截断窗口 200→900 后通过）。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**。
+**明确留拒（排队）**：number 叶浮点界、无界 `multipleOf` > 999999、多叶 multipleOf 的**实现**（需多叶数字生成器）；`propertyNames` 的其他求值形式。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

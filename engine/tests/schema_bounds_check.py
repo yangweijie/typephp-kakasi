@@ -33,7 +33,9 @@ def ask(prompt, schema, max_tokens=64):
         with urllib.request.urlopen(req, timeout=180) as f:
             return f.getcode(), json.loads(f.read().decode())["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as e:
-        return e.code, e.read().decode()[:200]
+        # F431: the refusal message now names several supported surfaces, so a 200-character window
+        # can end before the clause under test - keep enough of the body to assert on the reason.
+        return e.code, e.read().decode()[:900]
 
 
 def val_of(text, key):
@@ -111,6 +113,16 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 250000}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 250000 == 0),
+    # F431: two leaves each carrying multipleOf. Either both keys come back each satisfying its own
+    # multiplier, or the request is refused - what must not happen is a served object that silently
+    # drops the second key while claiming to honour the schema.
+    ("multi_leaf_multipleof", "Give the numbers.",
+     {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 3},
+                                       "b": {"type": "integer", "multipleOf": 5}}},
+     lambda code, txt: (code == 400 and "multipleOf" in txt)
+     or (code == 200 and isinstance(json.loads(txt).get("a"), int)
+         and isinstance(json.loads(txt).get("b"), int)
+         and json.loads(txt)["a"] % 3 == 0 and json.loads(txt)["b"] % 5 == 0)),
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),

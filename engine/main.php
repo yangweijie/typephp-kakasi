@@ -7820,6 +7820,12 @@ function api_schema_bounds_unsupported(string $body): int
             && (int) $mo[1] > 999999) {
             return 1;
         }
+        // F431: the unbounded multipleOf writer emits ONE property. On a schema with more than one
+        // leaf it claimed the whole schema and silently dropped the rest - the live probe answered
+        // {"a":...} for a two-key schema. Refuse instead of dropping keys.
+        if (strpos($body, "\"multipleOf\"") !== false && api_schema_plan_count($body) > 1) {
+            return 1;
+        }
         return 0;
     }
     // F405: the bounded-integer shape the digit-walk writer honours (one integer leaf, any span,
@@ -9634,7 +9640,7 @@ function api_serve(int $port): void
                 // instead. F405/F419: the honoured set is wider now, so the message names it - a
                 // single integer property with bounds of any sign and any span, either side
                 // missing; what remains is float bounds and multi-property bounds.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; an unbounded multipleOf up to 999999 is served by a forced suffix whose width follows the multiplier, and one above that is refused; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; an unbounded multipleOf up to 999999 is served by a forced suffix whose width follows the multiplier, and one above that is refused; a multipleOf on a schema with more than one property is not supported; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
@@ -14490,6 +14496,10 @@ function main(): void
     $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
     $bdAC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":5000}}}');
     $bdAD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":1}}}');
+    // F431: the unbounded multipleOf writer emits one property, so any schema with more than one
+    // leaf is refused rather than answered with the other keys silently dropped.
+    $bdBA = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}');
+    $bdBB = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer"}}}');
     $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
     // F397: the same two cases as they arrive on the wire, with spaces after the colons - the
     // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
@@ -14522,7 +14532,7 @@ function main(): void
         . "] mix_sat=[" . $bdX . "] mix_unsat=[" . $bdY
         . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
-        . "] mult_one_ub=[" . $bdAD . "
+        . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
@@ -14532,7 +14542,8 @@ function main(): void
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
-        && $bdAB == 1 && $bdAC == 0 && $bdAD == 0) {
+        && $bdAB == 1 && $bdAC == 0 && $bdAD == 0
+        && $bdBA == 1 && $bdBB == 1) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
