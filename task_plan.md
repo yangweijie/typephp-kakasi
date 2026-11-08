@@ -970,3 +970,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F437 已完成**：布尔 `":true"` 喂进相邻整数换算（`bool_shape=[n|6|-1|0]`）、拒绝收窄为布尔孤立（`bool_alone=1`）、活体收紧为"必须 200 且 >5"（实测 `{"n":7}`）。
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**、哨兵 **0**（`engine/selftest_f437.log`、`engine/schema_bounds_f437.log`、`engine/api_smoke_f437.log`、`engine/throughput_f437.log`）。
 **顺位**（其后）：多叶 multipleOf 的实现 → number 叶浮点界（小数写入器 + 4 个路由点）→ 分片多卡 / FR-05。
+
+
+## F438 计划与完成（多叶 `multipleOf`：逐叶后缀写入）
+**F437 已完成**：布尔 exclusive 实现。
+**改前**：两叶全倍数 → 200 `{"a":…}`（丢键）→ F431 拒绝。
+**F438 已完成**：`api_multi_multiple_value`（逐叶 `api_multiple_fill`，首叶开对象、其余续写）+ `api_schema_multi_multiple` 检测器（全叶 `i` 且各带 multipleOf）；四处路由在多叶优先；拒绝改为"plan>1 且多叶检测器为空"。
+**门**：`mult_multi` 1→0、新增 `multi_plan=[a|3,b|5]`；`mult_mixed=1` 保持。
+**活体**：`multi_leaf_multipleof` 200 双键且各自整除、`multi_leaf_mixed_refuse` 400。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.506×**、哨兵 **0**（`engine/selftest_f438.log`、`engine/schema_bounds_f438.log`、`engine/api_smoke_f438.log`、`engine/throughput_f438.log`）。
+**明确留拒（排队）**：number 叶浮点界（小数写入器 + 4 个路由点）；无界 `multipleOf` > 999999；tuple 实现；`dependentSchemas`/`dependencies`；多叶中混有非倍数叶的情形（仍 400）。
+**顺位**：number 叶浮点界 → 分片多卡 / FR-05（本机不可验证）。

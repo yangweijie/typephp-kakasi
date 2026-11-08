@@ -5630,6 +5630,117 @@ function api_multiple_value(string $ids, string $prop, int $mult, int $maxSteps,
 
 // Detect an integer property with multipleOf and no bounds; bounded multiples are enumerated by
 // api_schema_candidates. Returns "<prop>|<mult>" or "".
+// F438: the same suffix writer repeated for every leaf of a schema whose properties are each an
+// integer with its own multipleOf. The plan is "prop|mult,prop|mult" in declaration order; the first
+// leaf opens the object, the rest continue the session. Any leaf the writer cannot serve aborts the
+// whole object rather than emitting it in part.
+function api_multi_multiple_value(string $ids, string $plan, int $maxSteps, int $useCache = 1): string
+{
+    $items = explode(",", $plan);
+    if (count($items) == 0) {
+        return "";
+    }
+    $first = explode("|", $items[0]);
+    if (count($first) != 2) {
+        return "";
+    }
+    $s = api_constrained($ids, ["{\"" . $first[0] . "\":"], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $body = api_multiple_fill((int) $first[1], $maxSteps);
+    if ($body == "") {
+        return "";
+    }
+    $s = $s . "," . $body;
+    for ($i = 1; $i < count($items); $i++) {
+        $kv = explode("|", $items[$i]);
+        if (count($kv) != 2) {
+            return "";
+        }
+        $sep = api_constrained_continue([",\"" . $kv[0] . "\":"], 32);
+        if ($sep == "") {
+            return "";
+        }
+        $s = $s . "," . $sep;
+        $body = api_multiple_fill((int) $kv[1], $maxSteps);
+        if ($body == "") {
+            return "";
+        }
+        $s = $s . "," . $body;
+    }
+    $end = api_constrained_continue(["}"], 4);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
+
+// F438: several integer leaves, each carrying its own multipleOf, and no other numeric keyword.
+// Returns "prop|mult,prop|mult" in declaration order, or "" for every other shape.
+function api_schema_multi_multiple(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|exclusiveMinimum|exclusiveMaximum)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) < 2) {
+        return "";
+    }
+    $out = "";
+    foreach ($leaves as $leaf) {
+        $kv = explode(":", $leaf);
+        if (count($kv) != 2 || $kv[1] != "i") {
+            return "";
+        }
+        $pos = strpos($block, "\"" . $kv[0] . "\"");
+        if ($pos === false) {
+            return "";
+        }
+        $lbo = strpos($block, "{", $pos);
+        if ($lbo === false) {
+            return "";
+        }
+        $lblk = api_balance_block($block, $lbo);
+        if ($lblk == "") {
+            return "";
+        }
+        $mm = [];
+        if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $lblk, $mm) != 1) {
+            return "";
+        }
+        $out = $out == "" ? $kv[0] . "|" . $mm[1] : $out . "," . $kv[0] . "|" . $mm[1];
+    }
+    return $out;
+}
+
+function api_response_schema_multi_multiple(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    return api_schema_multi_multiple(api_json_object_after($body, "schema"));
+}
+
 function api_response_schema_multiple_unbounded(string $body): string
 {
     if (preg_match('/"json_schema"/', $body) != 1) {
@@ -6374,8 +6485,11 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
                 $scOut = api_number_nested($ids, $snn[0], $snn[1],
                     (int) $snn[2], 6, 1);
             } else {
+                $scMultM = api_response_schema_multi_multiple($body);
                 $scMult = api_response_schema_multiple_unbounded($body);
-                if ($scMult != "") {
+                if ($scMultM != "") {
+                    $scOut = api_multi_multiple_value($ids, $scMultM, 4, 1);
+                } else if ($scMult != "") {
                     $smu = explode("|", $scMult);
                     $scOut = api_multiple_value($ids, $smu[0], (int) $smu[1], 4, 1);
                 } else {
@@ -7939,10 +8053,12 @@ function api_schema_bounds_unsupported(string $body): int
             && (int) $mo[1] > 999999) {
             return 1;
         }
-        // F431: the unbounded multipleOf writer emits ONE property. On a schema with more than one
-        // leaf it claimed the whole schema and silently dropped the rest - the live probe answered
-        // {"a":...} for a two-key schema. Refuse instead of dropping keys.
-        if (strpos($body, "\"multipleOf\"") !== false && api_schema_plan_count($body) > 1) {
+        // F431/F438: the single-leaf writer emits ONE property, so with several leaves it silently
+        // dropped the rest. F438 added a multi-leaf writer for the shape where every leaf is an
+        // integer carrying its own multipleOf, so that shape is now served and every other
+        // multi-leaf combination is still refused.
+        if (strpos($body, "\"multipleOf\"") !== false && api_schema_plan_count($body) > 1
+            && api_schema_multi_multiple($body) == "") {
             return 1;
         }
         // F433: the multiple writer serves INTEGER leaves only. A number leaf with multipleOf had no
@@ -9368,8 +9484,11 @@ Connection: close
                                         } else {
                                             // Unbounded multipleOf first; bounded multiples come from
                                             // api_schema_candidates and never reach this branch.
+                                            $scMultM = api_response_schema_multi_multiple($body);
                                             $scMult = api_response_schema_multiple_unbounded($body);
-                                            if ($scMult != "") {
+                                            if ($scMultM != "") {
+                                                $scOut = api_multi_multiple_value($ids, $scMultM, 4, 1);
+                                            } else if ($scMult != "") {
                                                 $smu = explode("|", $scMult);
                                                 $scOut = api_multiple_value($ids, $smu[0], (int) $smu[1], 4, 1);
                                             } else {
@@ -10462,8 +10581,11 @@ function api_serve(int $port): void
                                     $sJOut = api_number_nested($ids, $snn2[0], $snn2[1],
                                         (int) $snn2[2], 6, $prefixCache);
                                 } else {
+                                    $sMultM = api_response_schema_multi_multiple($body);
                                     $sMult = api_response_schema_multiple_unbounded($body);
-                                    if ($sMult != "") {
+                                    if ($sMultM != "") {
+                                        $sJOut = api_multi_multiple_value($ids, $sMultM, 4, $prefixCache);
+                                    } else if ($sMult != "") {
                                         $smu2 = explode("|", $sMult);
                                         $sJOut = api_multiple_value($ids, $smu2[0], (int) $smu2[1], 4,
                                             $prefixCache);
@@ -10848,8 +10970,12 @@ function api_serve(int $port): void
                             } else {
                                 // An unbounded integer with multipleOf: digit prefix plus a forced
                                 // divisible suffix, so the value is always a valid multiple.
+                                $numMultM = api_response_schema_multi_multiple($body);
                                 $numMult = api_response_schema_multiple_unbounded($body);
-                                if ($numMult != "") {
+                                if ($numMultM != "") {
+                                    $enumOut = api_multi_multiple_value($ids, $numMultM, 4, $prefixCache);
+                                    $jsonMode = 1;
+                                } else if ($numMult != "") {
                                     $nmu = explode("|", $numMult);
                                     $enumOut = api_multiple_value($ids, $nmu[0], (int) $nmu[1], 4,
                                         $prefixCache);
@@ -14625,6 +14751,9 @@ function main(): void
     // leaf is refused rather than answered with the other keys silently dropped.
     $bdBA = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}');
     $bdBB = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer"}}}');
+    // F438: the all-integer-multipleOf shape is served now; this asserts the writer receives BOTH
+    // leaves with their own multipliers (the refusal above must not swallow them).
+    $bdBH = api_response_schema_multi_multiple('{"json_schema":{"schema":{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}}}');
     // F433: the multiple writer is integer-only, so a number leaf carrying multipleOf is refused.
     $bdBC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"number","multipleOf":3}}}');
     // F436/F437: the draft-4 boolean form is HONOURED now - it tightens the inclusive literal it
@@ -14668,7 +14797,7 @@ function main(): void
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
-        . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "
+        . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
@@ -14679,7 +14808,8 @@ function main(): void
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 1 && $bdAC == 0 && $bdAD == 0
-        && $bdBA == 1 && $bdBB == 1 && $bdBC == 1
+        && $bdBA == 0 && $bdBB == 1 && $bdBC == 1
+        && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)

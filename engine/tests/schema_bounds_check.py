@@ -116,13 +116,19 @@ cases = [
     # F431: two leaves each carrying multipleOf. Either both keys come back each satisfying its own
     # multiplier, or the request is refused - what must not happen is a served object that silently
     # drops the second key while claiming to honour the schema.
+    # F438: two integer leaves with their own multipleOf are now WRITTEN (each value a multiple of
+    # its own multiplier); a leaf without multipleOf beside one with it still has no writer and stays
+    # refused. Before F438 the first case answered only {"a":...}, dropping b.
     ("multi_leaf_multipleof", "Give the numbers.",
      {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 3},
                                        "b": {"type": "integer", "multipleOf": 5}}},
-     lambda code, txt: (code == 400 and "multipleOf" in txt)
-     or (code == 200 and isinstance(json.loads(txt).get("a"), int)
-         and isinstance(json.loads(txt).get("b"), int)
-         and json.loads(txt)["a"] % 3 == 0 and json.loads(txt)["b"] % 5 == 0)),
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("a"), int)
+     and isinstance(json.loads(txt).get("b"), int)
+     and json.loads(txt)["a"] % 3 == 0 and json.loads(txt)["b"] % 5 == 0),
+    ("multi_leaf_mixed_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 3},
+                                       "b": {"type": "integer"}}},
+     lambda code, txt: code == 400 and "multipleOf" in txt),
     # F433: a NUMBER leaf with multipleOf. The suffix writer only serves integer leaves, so either
     # the served number is a multiple or the request is refused - an arbitrary number that happens
     # not to be one is exactly the silent violation this surface keeps closing.

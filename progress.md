@@ -1607,3 +1607,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`excl_bool=0`（旧期望 1 被证伪 ⇒ 改门）、`bool_shape=[n|6|-1|0]`（5 被收紧到 6）、`bool_alone=1`、`excl_bool_false=0`。
 - **活体**：`exclusive_bool_served` **200 `{"n":7}`**、`exclusive_bool_alone_refuse` **400**；bounds/required/count/pattern 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**、哨兵 **0**。
+
+
+## ▶ 状态（F438，2026-11-08 18:16）——多叶 `multipleOf` 从"拒绝"变**实现**（逐叶后缀写入）
+- **改前**：两叶全倍数 schema → **200 `{"a":…}`**（丢 `b`）→ F431 起 **400**。
+- **实现**：新写入器 `api_multi_multiple_value`（首叶开对象、其余 `,"k":` 续写，每叶用同一后缀机制）+ 检测器 `api_schema_multi_multiple`（全部叶子都是 `i` 且各带 `multipleOf`，plan＝`a|3,b|5`）；四处路由在单叶分支**之前**接多叶；拒绝条件改为"plan>1 **且** 多叶检测器为空"。
+- **门**：`mult_multi` 期望 **1→0**（旧期望证伪 ⇒ 改门）、新增 `multi_plan` 断言写入器拿到 `a|3,b|5`；`mult_mixed`（一个 multipleOf + 一个普通整数叶）仍 1。
+- **活体**：`multi_leaf_multipleof` **200 `{"a":1000002,"b":1000000}`**（a%3=0、b%5=0）、`multi_leaf_mixed_refuse` **400**；bounds/required/count/pattern 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.506×**、哨兵 **0**。
+- **过程记一笔**：插入新函数时把单叶检测器的**函数头**吃掉了（留下孤儿 `{`），靠读回发现并补回——**插入型编辑后要读边界**。

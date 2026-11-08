@@ -3716,7 +3716,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
 | multipleOf 有界（任意 m） | **支持**（折叠到区间内最小倍数） | `SCHEMA-BOUND-REJECT bigmult_*`（F420/F424） |
 | multipleOf 无界：m=1 或 2..999999 | **支持**（后缀宽度随位数；m=1 交普通整数） | `unbounded_ok`/`mult_one_ub`（F430） |
-| multipleOf：number 叶 / 多叶 / 无界 >999999 | **显式 400** | `mult_number`/`mult_multi`/`mult_mixed`/`unbounded_big`（F430–F433） |
+| multipleOf：多叶全整数且每叶各带 multipleOf | **支持**（逐叶后缀写入，各值整除各自乘数） | `mult_multi`/`multi_plan`（F438） |
+| multipleOf：number 叶 / 混合叶 / 无界 >999999 | **显式 400** | `mult_number`/`mult_mixed`/`unbounded_big`（F430–F433） |
 | minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN`（F399） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
@@ -4096,3 +4097,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`exclusive_bool_served` **200 `{"n":7}`**、`exclusive_bool_alone_refuse` **400**（改前"或 400 或 >5"的宽松断言被收紧为"必须 200 且 >5"）；bounds/required/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**、哨兵 **0**（`engine/selftest_f437.log`、`engine/schema_bounds_f437.log`、`engine/api_smoke_f437.log`、`engine/throughput_f437.log`）。
 **记法**：**"拒绝 → 实现"的正确路径是复用已有机制**——布尔形式只是"把哪个字面量交给哪个换算"的问题，一旦这样看，改动只是把字面量接进去，组合与边界检查全部沿用；门必须同时断言**收紧后的形状**与**孤立时的拒绝**，否则"接受但没收紧"会漏过去。
+
+
+## F438：多叶 `multipleOf` 由"点名拒绝"转为**逐叶实现**
+**三级演化**（`{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}`）：最初 **200 `{"a":1000002}`**（`b` 被静默丢弃）→ F431 点名 400 → **F438 200 `{"a":1000002,"b":1000000}`**（`a%3=0`、`b%5=0`）。
+**实现**：新写入器 `api_multi_multiple_value($ids,$plan,...)`——plan 形如 `a|3,b|5`，首叶用 `api_constrained` 开对象、其余用 `api_constrained_continue([",\"k\":"])` 续写，**每叶复用同一个后缀写入器**（`api_multiple_fill`）；任一处失败整对象放弃（不发半成品）。检测器 `api_schema_multi_multiple($schema)` 只认"≥2 个叶子、全部 `i`、每叶各带 `multipleOf`、无其它数值关键字"的形状。四处路由（8000 非流/流、8001 两处）都在**单叶分支之前**接多叶；拒绝条件改为 `plan>1 **且** 多叶检测器为空`。
+**门**：`mult_multi` 期望 **1→0**（旧期望被新行为证伪 ⇒ 改门）、新增 `multi_plan=[a|3,b|5]`（证明写入器拿到两叶各自的乘数）；`mult_mixed=1`（一个 multipleOf + 一个普通整数叶）保持——那仍然没有写入器。
+**活体**：`multi_leaf_multipleof` **200 双键且各自整除**（改前 400，更早只有 `a`）、`multi_leaf_mixed_refuse` **400**；bounds/required/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.506×**、哨兵 **0**（`engine/selftest_f438.log`、`engine/schema_bounds_f438.log`、`engine/api_smoke_f438.log`、`engine/throughput_f438.log`）。
+**过程错误（记一笔）**：新增函数时把**被插在后面的那个函数的函数头**一并替换掉了（我的 `old_string` 只有那一行签名，`new_string` 忘了把它带回去），留下孤儿 `{`；读回插入边界时发现并补回。**插入型编辑后必须读一遍边界，而不是假定结构没变。**
+**记法**：**"多叶"不是拒绝的理由，"写入器只能发一个键"才是**——把写入器做成逐叶循环后，拒绝面自然收缩到"存在没有写入器的叶子"（混合叶）；门要同时钉住"多叶被服务"与"混合叶仍拒"。
