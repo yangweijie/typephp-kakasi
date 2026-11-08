@@ -1492,3 +1492,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 **第三步（收尾清点）**：再删 `engine/main.php.f160.bak`（396 KB，F160 的源码备份，代码已在 git 里）、`engine/par_gate_result.txt`（旧 gate 输出，`scripts/par_gate.bat` 会重新生成）、`engine/tests/__pycache__/`。**保留且说明理由**：`engine/build/`（38 MB，删了要全量重建）、`engine/tests/llama_logits*.bin`（51 MB，parity 的 llama.cpp 参考 logits，是**测试 oracle 不是日志**）、`probe/*` 的构建产物（重新跑探针要用）、`engine/models/`（空目录）。清理后体积仍 197 MB——体积大头是 oracle 与构建缓存，不是日志。
 **一处必须如实记下的失误**：`gitignore` 的那 2198 个旧日志是**整批删除、没有先留存名单**。事后核对发现 findings 有 **35 处**、`docs/audit-v0.2.md` 有 **2 处**引用 `build_f1xx.log`，而这些文件现在都不在磁盘/索引里（它们从未入库 ⇒ 无 git 副本可恢复）。**影响范围**：被删的是**编译转录**，不是结果证据；对应结论所依赖的 run/gate/自检日志都还在，且 36 个**已跟踪**的编译转录在删除前已做过"全文档零引用"核对（`CITED_COUNT=0`，含 docs/specs）。**规则修正**：删除 `gitignore` 覆盖的文件前，若文档可能引用，必须先 `git status --ignored` 留名单并与文档交叉核对；"忽略"不等于"无效"。
 **过程问题**：清理命令里的 `cd` 一次失败（`No such file or directory`），但 Bash 工具的工作目录持久化，相对路径仍在仓库内执行——**正是"`cd` 失败后相对路径仍在旧目录执行"那条陷阱**；改为先核 `pwd` 与 `git status` 再继续，未造成误删。
+
+
+## ▶ 状态（F426，2026-11-08 13:40）——结构类关键字：从静默忽略/掉出结构化路径改成**点名 400**
+- **改前活体**：`contains` **200 忽略**、`propertyNames` **200 + 散文**（陌生键挤出数组文法）、`not` 那例 **400 但点的是 `required`**（夹具把 `required` 写进 `not` 子 schema ⇒ 对的结局、错的理由；已改裸 `{"not":{"type":"integer"}}`）。
+- **实现**：`api_schema_structural_unsupported` 按**值形状**匹配 11 个结构关键字（`{`/`[`/数字/布尔），枚举值 `"not"` 不误判；命中即点名拒绝。已知边界（属性名撞关键字）在门里钉住。
+- **门**：新门 `SCHEMA-STRUCT`（8 个点名 + `enum_value=[]`、`prop_named=[not]` 两个对照）⇒ PASS。
+- **活体**：`engine/schema_count_f426.log` 三例全部 **400 且含各自关键字名**；**改前那份日志被本轮清理误删**（13:25 生成、13:29 清扫时一并删除，早于入库），改前数值按当次输出转录记录：`contains` 200 忽略 / `propertyNames` 200 散文 / `not` 400 错理由、`VERDICT: FAIL cases=2`。bounds/required/pattern 不回退。
+- **梯**：自检 **181/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.553×**、哨兵 **0**。
+- **过程错误**：`$stA` 与 session 的 int 同名 ⇒ TypePHP 类型改判失败、`TPC_BUILD_FAILED`、exe 不变；链里的管道掩盖退出码导致自检跑了旧二进制。改名 `$sfA` 并复核 exe 时间戳后通过。**记法：单一 `main()` 作用域内新增变量先 grep 占用；构建失败要看 `TPC_BUILD_FAILED` 与 exe 时间戳，别让管道吞退出码。**

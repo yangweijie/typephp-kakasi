@@ -7481,6 +7481,22 @@ function api_schema_flat_all_string(string $schema): int
 // while returning 200. They are refused with the keyword named, instead of silently ignored.
 // `required` is handled separately below, because refusing it outright would reject requests the
 // decoder already satisfies.
+// F426: structural keywords the decoder neither implements nor can prove satisfied. Each is matched
+// with the shape its VALUE really has, so an enum value spelled "not" is not mistaken for the
+// keyword. Known boundary: a property NAMED like one of these is refused too - the refusal names it,
+// and that is preferred over scanning only the schema root, which would let the same keyword hide
+// inside an item schema and be ignored.
+function api_schema_structural_unsupported(string $schema): string
+{
+    $mk = [];
+    if (preg_match('/"(contains|minContains|maxContains|not|if|dependentRequired|dependentSchemas|'
+        . 'dependencies|propertyNames|unevaluatedItems|unevaluatedProperties)"\s*:\s*'
+        . '(?:\{|\[|[0-9]+|true|false)/', $schema, $mk) == 1) {
+        return $mk[1];
+    }
+    return "";
+}
+
 function api_schema_keywords_unsupported(string $body): string
 {
     foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties uniqueItems") as $kw) {
@@ -7513,6 +7529,13 @@ function api_schema_keywords_unsupported(string $body): string
             continue;
         }
         return $kw;
+    }
+    // F426: the structural keyword set (contains / not / if / dependentRequired / propertyNames /
+    // unevaluated*) - none is implemented, and every one can be violated by what the model emits, so
+    // each is refused by name instead of ignored.
+    $struct = api_schema_structural_unsupported($body);
+    if ($struct != "") {
+        return $struct;
     }
     // required: the generator emits EVERY declared property, so a schema that requires all of them
     // is satisfied by construction. Two things can still break it: a name that is not declared at
@@ -14598,6 +14621,33 @@ function main(): void
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";
+    }
+
+    // SCHEMA-STRUCT (F426): contains / not / if / dependentRequired / propertyNames / unevaluated*
+    // are none of them implemented, and each can be violated by what the model emits - so each is
+    // named instead of ignored. Two controls pin the matching boundary: an enum VALUE spelled "not"
+    // must not be mistaken for the keyword, while a property NAMED "not" is refused (the documented
+    // boundary of scanning the whole schema rather than only its root).
+    $sfA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"}},"contains":{"type":"string"}}}');
+    $sfB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"not":{"type":"integer"}}}');
+    $sfC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"if":{"minLength":1}}}');
+    $sfD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"propertyNames":{"pattern":"^x"}}}');
+    $sfE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"dependentRequired":{"a":["b"]}}');
+    $sfF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"unevaluatedProperties":false}');
+    $sfG = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","enum":["not"]}}}');
+    $sfH = api_schema_keywords_unsupported('{"properties":{"not":{"type":"string"}}}');
+    $sfI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"minContains":2}');
+    $sfJ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"unevaluatedItems":true}');
+    echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
+        . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
+        . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
+        . "] prop_named=[" . $sfH . "] minContains=[" . $sfI . "] unevaluatedItems=[" . $sfJ . "]\n";
+    if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
+        && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
+        && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems") {
+        echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
+    } else {
+        echo "SCHEMA-STRUCT: FAIL\n";
     }
     // SCHEMA-LEN (F399): length bounds are now enforced for a flat all-string object, so the gate
     // checks the EMITTED length, not just that the request was accepted - a bounds feature that

@@ -254,6 +254,23 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
                                                   "uniqueItems": False}}},
      lambda code, txt: code == 200 and n_items(txt, "cities") is not None, ask),
+    # F426: structural keywords are refused by name rather than ignored - each of these could be
+    # violated by what the generator emits, and `contains` would also knock the request out of the
+    # array grammar the way uniqueItems did.
+    ("contains_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"type": "string"}},
+     lambda code, txt: code == 400 and "contains" in txt, ask),
+    # F426: the `not` subschema is deliberately bare - an earlier fixture put `required` inside it
+    # and was refused for THAT keyword, the right outcome for the wrong reason.
+    ("not_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"type": "integer"}},
+     lambda code, txt: code == 400 and "not" in txt, ask),
+    ("propertynames_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "propertyNames": {"pattern": "^x"}},
+     lambda code, txt: code == 400 and "propertyNames" in txt, ask),
 ]
 
 bad = 0

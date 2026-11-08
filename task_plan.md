@@ -838,7 +838,18 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **规则**：①**证据与噪音的分界是"是否入库"**——`.gitignore` 覆盖的产物（`*.log`、`*.kv`、`*.bak`、`__pycache__/`、`engine/par_gate_*.txt`）与未跟踪的一次性文件可删；**已提交的日志只有"零引用且属编译转录"一类才删**，且必须逐类说明。②"改前 FAIL"的成对证据、梯的收尾日志、parity oracle（`llama_logits*.bin`）与构建缓存（`engine/build/`）**不删**。③删完必须核 `git status` 无删除条目（证明没误删已跟踪文件）与体积变化，并记录保留项的理由。
 **本轮执行**：已忽略日志 2198 个、`.kv` 8 个（27 MB）、未跟踪 stray 1 个、零引用编译转录 36 个（2026 行）、`main.php.f160.bak`/`par_gate_result.txt`/`__pycache__`；体积 **259→197 MB**；已跟踪日志从 453 降到 417（只减 36）。
 **规则补充（由一次失误换来的）**：④**"忽略"不等于"无效"**——删除 `.gitignore` 覆盖的文件前，若文档可能引用，必须先 `git status --ignored` **留存文件名清单**并与 `findings/progress/task_plan/docs/specs` 交叉核对；本轮那 2198 个旧日志是整批删的、没留名单，事后发现 findings 35 处 / audit 2 处引用 `build_f1xx.log` 已无文件（且从未入库、无副本可恢复）。被删的是编译转录而非结果证据，结论仍由 run/gate/自检日志支撑；但**下一步该做的是把这条清单核对写进清理流程**，而不是继续批量删。
+**⑤清理不得插在"产出证据"与"提交证据"之间**：同一轮里 F426 的改前活体日志（`schema_count_f426pre.log`，13:25 生成）被 13:29 的清扫当成旧日志删掉，早于它被 `git add -f`。规则：清理只处理**当前轮 tag 之前**的文件，或先把本轮已产出的日志入库再清理。
 **仍保留（待决定）**：216 个零引用的 run/gate/analysis 转录（约 2.3 MB）——它们是各轮梯的原始记录，删不删属于"是否裁剪提交历史"的决定，不擅自处理。
 **操作注意**：`git add -A -- 'glob'` 对**已删除**文件不展开，须 `git ls-files 'glob' | xargs git rm`；本机偶尔 `cd` 报 `No such file or directory`，但 Bash 工作目录持久化，相对路径仍在仓库内执行 ⇒ 每次删除前先核 `pwd` 与 `git status`。
 **工具（把规则变成可执行的）**：`bash scripts/check_citations.sh [--list]` 扫描三份计划文件 + `docs/` + `specs/` 里被引用的 `*.log` 名，报告"被引用但未入库"的数量。首次运行：**cited_logs=627 tracked=279 missing=348**——文档引用的日志数远超仓库实际持有的，说明"引用悬空"是长期现象而非本轮造成；该脚本只报告不判失败。
 **悬空引用的分布（首跑）**：`run` 91、`api_smoke` 71、`build` 47、`par_smoke` 33、`fairness` 33、`serve` 9、`throughput` 5 等 —— 绝大多数是**历史轮次写了日志名但那批日志从未入库**（`.gitignore` 的 `*.log` 之下、只有选择性地 `git add -f`）。**处理口径**：不改写历史文档（那会篡改当时的记录），而是①此后每轮把**被引用的**日志强制入库；②用该脚本在每次清理前报告增量，而不是事后发现。
+
+
+## F426 计划与完成（结构类关键字：`contains`/`not`/`if`/`dependentRequired`/`propertyNames`/`unevaluated*`）
+**F425 已完成**：`uniqueItems:true` 拒绝、`false` 构造满足（检测器容忍该拼写，路由恢复）。
+**改前证据**：11 个关键字在 `main.php` 引用数全 0；活体 `contains` **200 忽略**、`propertyNames` **200 + 散文**、`not` 一例 **400 但点 `required`**（夹具污染）。
+**F426 已完成**：`api_schema_structural_unsupported` 按值形状匹配并点名拒绝；新门 `SCHEMA-STRUCT`（8 点名 + 2 对照）；活体三例 **400 且含关键字名**；bounds/required/pattern 不回退。
+**梯**：自检 **181/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.553×**、哨兵 **0**（`engine/selftest_f426b.log`、`engine/schema_count_f426.log`、`engine/api_smoke_f426.log`、`engine/throughput_f426.log`）。
+**过程错误**：`$stA` 撞 session 的 int 同作用域 ⇒ `TPC_BUILD_FAILED` + exe 不变 + 管道吞退出码 ⇒ 自检跑了旧二进制；改名 `$sfA` 并核 mtime 后通过。
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；结构类关键字目前是**一律拒绝**，后续可逐个判断"是否构造上满足"（如 `propertyNames` 只约束键名，键名来自声明表）再决定实现。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；约束面按"能否产出违反值"继续清点。
