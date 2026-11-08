@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至三位小数，可负**；四位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec_neg`/`dec*_text`（F439–F445） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至四位小数，可负**；五位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`dec*_text`/`float_dec5_refuse`（F439–F450） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -3751,7 +3751,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`if`/`patternProperties`/`unevaluated*`（需要子 schema 求值器）、`minContains`/`maxContains`、`contains` 的值级子 schema、`not` 的值级子 schema、四位以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`if`/`patternProperties`/`unevaluated*`（需要子 schema 求值器）、`minContains`/`maxContains`、`contains` 的值级子 schema、`not` 的值级子 schema、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4219,3 +4219,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`contains_type_ok` **200 `{"cities":["Lyon, France, Prov"]}`**、`contains_mismatch_refuse` **400 点名 contains**、`contains_type_served` 200、`contains_pattern_refuse` 400；bounds/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT: PASS`，新字段如上）；8000 **115/0**；8001 par/fairness **0**；scaling **1.351×**（本轮一次测量，低于近几轮的 1.52–1.55×，未做重复测量，按原值记录）；哨兵 **0**（`engine/selftest_f449.log`、`engine/schema_required_f449.log`、`engine/schema_count_f449.log`、`engine/schema_bounds_f449.log`、`engine/schema_pattern_f449.log`、`engine/api_smoke_f449.log`、`engine/throughput_f449.log`）。
 **记法**：**"构造满足"要先在写出器的控制流里找到那个必然性**（首元素在闭括号可选之前就已发出），再决定支持面；只凭一次输出里"恰好非空"就当保证，会在别的种子/预算下破。旧夹具翻转的规则在 F448 立过，本轮在第二个关键字上直接生效——**新关键字支持化第一步就是 grep 全部 harness 里的该关键字**。
+
+## F450：number 叶小数界扩到**四位**（万分之一格）；五位及以上仍点名拒绝
+**改动**：三处宽度假设一次改全——`api_schema_scaled` 的字面正则 `{1,3}`→`{1,4}` 并加 `$digits==4` 的 `ip*10000+frac`；计划构造里两个字面正则同改、加 `$d=4` 与标记 `-996`；写入器把 `-996` 映射为 `d=4, scale=10000`。没有新增路由——沿用"把缩放值放 lo、把网格标记放 hi"的既有编码。
+**门（旧期望被证伪 ⇒ 改门 + 对照）**：`SCHEMA-NUM-FRAC` 的 `num_dec4` 由 `""` 改为 `n|15111|-996|0`，并加**文本级** `dec4_text=[{"n":1.5111}]`；其余 1/2/3 位与负数断言不变。
+**活体**：`float_dec4_served` **200 `{"n":1.5111}`**（F445 时是 400）、新增 `float_dec5_refuse`（1.51111–1.51119）**400**；1.5/1.51/1.511/-1.9 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.548×**；哨兵 **0**（`engine/selftest_f450.log`、`engine/schema_bounds_f450.log`、`engine/schema_required_f450.log`、`engine/schema_count_f450.log`、`engine/schema_pattern_f450.log`、`engine/api_smoke_f450.log`、`engine/throughput_f450.log`）。
+**记法**：一个"宽度"往往分散在**三处**（字面正则、缩放函数、写入器分支），改其中一处会让另一处静默拒绝——本轮先把 `{1,3}` 全文件 grep 出来再动手；旧夹具（`num_dec4`/`float_dec4_refuse`）照例翻转并各配一个更宽一格的拒绝对照。

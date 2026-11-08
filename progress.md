@@ -1712,3 +1712,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **旧门翻转**：`schema_count_check.py` 的 `contains_refuse` 正是被放行的形式 ⇒ 改 `contains_type_served`（200、数组 ≥1 元素），加对照 `contains_pattern_refuse`（400 点名）。
 - **活体**：`contains_type_ok` **200**、`contains_mismatch_refuse` **400 点名**；count harness 同向通过；bounds/pattern 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.351×**（单次测量，低于近几轮，如实记录）、哨兵 **0**。
+
+
+## ▶ 状态（F450，2026-11-08 22:13）——number 叶小数界扩到**四位**（万分之一格）；五位及以上仍点名拒绝
+- **改动（三处宽度假设一次改全）**：`api_schema_scaled` 字面正则 `{1,3}`→`{1,4}` + `$digits==4` 分支；计划构造两个字面正则同改、加 `$d=4` 与标记 `-996`；写入器 `-996` → `d=4, scale=10000`。沿用"缩放值放 lo、网格标记放 hi"的既有编码，无新路由。
+- **门**：`SCHEMA-NUM-FRAC` 的 `num_dec4` 由 `""` 改为 `n|15111|-996|0`，加文本断言 `dec4_text=[{"n":1.5111}]`。
+- **活体**：`float_dec4_served` **200 `{"n":1.5111}`**、新增 `float_dec5_refuse` **400**；1/2/3 位与负数不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.548×**、哨兵 **0**。

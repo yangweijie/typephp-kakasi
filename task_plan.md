@@ -1062,6 +1062,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：`contains`（需先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F450 计划与完成（number 叶小数界到四位）
+**F449 已完成**：`contains` 的单项类型形式。
+**F450 已完成**：三处宽度假设一次改全——`api_schema_scaled` 正则 `{1,3}`→`{1,4}` + `$digits==4`；计划构造两个字面正则同改、`$d=4` 与标记 `-996`；写入器 `-996` → `d=4, scale=10000`。沿用既有缩放编码，无新路由。
+**门**：`num_dec4` `""` → `n|15111|-996|0`；加 `dec4_text=[{"n":1.5111}]`。
+**活体**：`float_dec4_served` 200 `{"n":1.5111}`、`float_dec5_refuse` 400；1/2/3 位与负数不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.548×**、哨兵 **0**（`engine/selftest_f450.log`、`engine/schema_bounds_f450.log`、`engine/schema_required_f450.log`、`engine/schema_count_f450.log`、`engine/schema_pattern_f450.log`、`engine/api_smoke_f450.log`、`engine/throughput_f450.log`）。
+**明确留拒（排队）**：五位及以上小数；`if`/`patternProperties`/`unevaluated*`（需子 schema 求值器）、`minContains`/`maxContains`、`contains`/`not` 的值级子 schema；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`if/then/else`（先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F449 计划与完成（`contains` 的单项类型形式）
 **F448 已完成**：`not` 的类型矛盾形式。
 **F449 已完成**：`api_schema_contains_ok`——单数组属性 + 根级 `contains` + 子 schema 恰为配对类型（`a`↔string、`an`↔integer、`af`↔number）+ 不带 `minContains`/`maxContains` ⇒ 放行。依据是两个数组写出器**在闭括号可选前先发首元素** ⇒ 数组必然 ≥1 元素、元素类型由写出器保证。`contains` 从 `patternProperties|if` 的 alternation 拆出单独判定。
