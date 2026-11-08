@@ -809,3 +809,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **记法**：**同侧多个界（inclusive/exclusive）的诚实服务是"更严者胜"（下界取 max、上界取 min），任一层取 inclusive 优先都会静默丢更严 exclusive；合并要在每个会发射值/枚举的层各做一次（shape 与候选），只修一层会在另一层的 span 上复发。**
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、`multipleOf` > 1000。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）——exclusive 系（exclusive-only + 同侧混合面）本轮全部关掉。
+
+
+## F424 计划与完成（有界 multipleOf > 1000：拆掉人为上限）
+**动作（计划口径）**：`multipleOf` > 1000（有界面）。
+**复核结果**：改前活体取证（`serve_f424pre.log`）——有界 multipleOf > 1000 被**过度拒绝**（干净 400）：`min1 max1000000 m5000`（可服务，最小倍数 5000）→ **400**；`min1 m5000`（单侧可服务）→ **400**。根因：shape 检测器里 F420 抄了无界 suffix 机制的 `m ≤ 1000` 上限，但**有界路径是"折叠到区间内最小倍数"，该运算对任意 m 都成立**（模运算），上限是人为的。
+**F424 已完成**：拆掉 shape 检测器有界路径的 `m > 1000` 上限（保留 `m < 1` 拒绝 multipleOf:0）。有界可服务（区间内有倍数）⇒ 折叠到最小倍数、数字走位发射该值；区间内无倍数 ⇒ 形状空 ⇒ F420 的"带 multipleOf 而形状不认 ⇒ 拒"照旧 400。**无界 multipleOf > 999 不动**（`api_multiple_fill` 的三位 suffix 机制封顶 m ≤ 999，属另一条更大机制，继续排队）。
+**门**：`SCHEMA-NUM-BND` 加 `bigmult_shape=[n|5000|5000|5000] v9=5000`；`SCHEMA-BOUND-REJECT` 加 `bigmult_sat=0 bigmult_unsat=1`。
+**活体**：bounds harness 加 2 例——`bigmult_served`（`min1 max1000000 m5000` → **200 `{"n":5000}`**，精确发射最小倍数）、`bigmult_unsatisfiable`（`min1 max4000 m5000`，区间内无 5000 倍数 → **400**）；F422/F423 各例不回退。
+**梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.391×**、spec **1.886×/1.522×**、哨兵 **0**；required/pattern/count 复跑不回退。
+**记法**：**"抄来的上限"要问它约束的是哪条机制——有界路径靠"折叠到最小倍数"（对任意 m 成立），无界路径靠三位 suffix（m ≤ 999）；把无界机制的上限套到有界路径上就是人为过度拒绝。拆上限时保留真正的那条（无界 suffix 封顶不动）。**
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、**无界** `multipleOf` > 999（三位 suffix 机制封顶，需更长 suffix）。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

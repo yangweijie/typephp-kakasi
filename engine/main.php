@@ -5361,12 +5361,15 @@ function api_schema_number_bounded_shape(string $schema): string
     // walks emit it unchanged. The cases: both bounds negative walk the magnitude; a positive
     // lower bound starts the search there; otherwise zero lies inside the bounds and is a
     // multiple of everything. No multiple inside the bounds means the constraint is
-    // unsatisfiable and the shape refuses.
+    // unsatisfiable and the shape refuses. F424: the collapse picks the smallest in-interval
+    // multiple for ANY m, so the old m <= 1000 guard (copied from the unbounded suffix path,
+    // where m <= 999 keeps a three-digit suffix legal) is dropped here - a bounded multiple
+    // only needs a multiple to EXIST inside the interval, not a small one.
     $mult = 0;
     $mo = [];
     if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $schema, $mo) == 1) {
         $mult = (int) $mo[1];
-        if ($mult < 1 || $mult > 1000) {
+        if ($mult < 1) {
             return "";
         }
         if ($hiSet && $hi < 0) {
@@ -14253,6 +14256,10 @@ function main(): void
     // but one whose interval rounds empty (n >= 5 AND n < 5) refuses.
     $bdX = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"exclusiveMinimum":5,"maximum":50}}}}}');
     $bdY = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":5,"exclusiveMaximum":5}}}}}');
+    // F424: a bounded multipleOf above the old 1000 guard - the smallest in-interval multiple is
+    // served (satisfiable), and an interval with no such multiple refuses.
+    $bdZ = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":1000000,"multipleOf":5000}}}}}');
+    $bdAA = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":4000,"multipleOf":5000}}}}}');
     echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=[" . $bdC
         . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[" . $bdI
         . "] neg_multi=[ " . $bdL . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK
@@ -14262,7 +14269,8 @@ function main(): void
         . " wire_supported=" . $bdF . " wire_float=" . $bdG
         . " excl_wide=[" . $bdT . "] excl_unsat=[" . $bdU . "] excl_mult=[" . $bdV
         . "] excl_one=[" . $bdW
-        . "] mix_sat=[" . $bdX . "] mix_unsat=[" . $bdY . "
+        . "] mix_sat=[" . $bdX . "] mix_unsat=[" . $bdY
+        . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
@@ -14270,7 +14278,8 @@ function main(): void
         && $bdP == 0 && $bdQ == 1 && $bdR == 1 && $bdS == 0
         && $bdF == 0 && $bdG == 1
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
-        && $bdX == 0 && $bdY == 1) {
+        && $bdX == 0 && $bdY == 1
+        && $bdZ == 0 && $bdAA == 1) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
@@ -14362,11 +14371,23 @@ function main(): void
     }
     $nbT8 = str_replace("Ġ", " ", $nbT8);
     $nbV8 = preg_match('/"n":([0-9]+)\}/', $nbT8, $nbM8) == 1 ? (int) $nbM8[1] : -1;
+    // F424: the collapse picks the smallest in-interval multiple for ANY m, so a bounded
+    // multipleOf above the old 1000 guard now yields a shape too; the walk emits that value.
+    $nbShapeBig = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":1000000,"multipleOf":5000}}}}}');
+    $nbOut9 = api_number_bounded_value($nbIds, "n", 5000, 5000, 0);
+    $nbT9 = "";
+    $nbP9 = explode(",", $nbOut9);
+    for ($i = $nbBase; $i < count($nbP9); $i++) {
+        $nbT9 = $nbT9 . gguf_token_str((int) $nbP9[$i]);
+    }
+    $nbT9 = str_replace("Ġ", " ", $nbT9);
+    $nbV9 = preg_match('/"n":([0-9]+)\}/', $nbT9, $nbM9) == 1 ? (int) $nbM9[1] : -1;
     echo "SCHEMA-NUM-BND shape=[" . $nbA . "] shape2=[" . $nbB . "] shape_one=[" . $nbC
         . "] shape_span=[ " . $nbD . "] shape_multi=[ " . $nbE . "] v1=" . $nbV1
         . " v2=" . $nbV2 . " v3=" . $nbV3 . " v4=" . $nbV4 . " v5=" . $nbV5
         . "] neg_shape=[" . $nbShapeNeg . "] v6=" . $nbV6 . " v7=" . $nbV7
-        . "] mult_shape=[" . $nbShapeM . "] v8=" . $nbV8 . "]\n";
+        . "] mult_shape=[" . $nbShapeM . "] v8=" . $nbV8
+        . "] bigmult_shape=[" . $nbShapeBig . "] v9=" . $nbV9 . "]\n";
     if ($nbA == "n|0|100|0" && $nbB == "n|1|1000|0" && $nbC == "n|5|-1|0" && $nbD == "n|1|5|0"
         && $nbE == ""
         && $nbV1 >= 0 && $nbV1 <= 100 && api_json_ok($nbT1) == 1
@@ -14377,8 +14398,9 @@ function main(): void
         && $nbShapeNeg == "n|-5000|-100|0"
         && $nbV6 <= -5 && $nbV6 >= -100 && api_json_ok($nbT6) == 1
         && $nbV7 >= -1000 && $nbV7 <= 1000 && api_json_ok($nbT7) == 1
-        && $nbShapeM == "n|7|7|7" && $nbV8 == 7 && api_json_ok($nbT8) == 1) {
-        echo "SCHEMA-NUM-BND: PASS (emitted values inside the bounds; refused shapes yield no shape)\n";
+        && $nbShapeM == "n|7|7|7" && $nbV8 == 7 && api_json_ok($nbT8) == 1
+        && $nbShapeBig == "n|5000|5000|5000" && $nbV9 == 5000 && api_json_ok($nbT9) == 1) {
+        echo "SCHEMA-NUM-BND: PASS (emitted values inside the bounds; refused shapes yield no shape; bounded multipleOf serves the smallest in-interval multiple at any m)\n";
     } else {
         echo "SCHEMA-NUM-BND: FAIL\n";
     }

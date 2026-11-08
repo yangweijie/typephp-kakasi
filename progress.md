@@ -1462,3 +1462,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、spec **1.792×/1.449×**、哨兵 **0**（`engine/selftest_f423.log`、`engine/api_smoke_f423.log`、`engine/throughput_f423.log`）。
 - **记法**：合并"更严者胜"要在**每个会发射值/枚举的层**各做一次（shape 与候选）——只修一层会在另一层的 span 上复发。
 - **下一轮顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。exclusive 系（exclusive-only + 同侧混合面）本轮全部关掉。
+
+
+## ▶ 状态（F424，2026-11-08 12:08）——有界 `multipleOf` > 1000：拆掉从机制抄来的上限
+- **改前活体取证**：`engine/serve_f424pre.log`——`min1 max1000000 m5000`（可服务，最小倍数 5000）→ **400**（过度拒绝，非静默违反）；`min1 m5000`（单侧）→ **400**。
+- **根因**：shape 检测器有界路径 F420 抄了无界 suffix 机制的 `m ≤ 1000` 上限，但有界路径靠"折叠到区间内最小倍数"（模运算对任意 m 成立）⇒ 上限人为。
+- **实现**：`if ($mult < 1 || $mult > 1000)` → `if ($mult < 1)`；可服务⇒折叠到最小倍数发射，无倍数⇒形状空⇒F420 拒绝照旧。**无界 `m > 999` 不动**（三位 suffix 封顶 m ≤ 999，需更长 suffix，继续排队）。
+- **门/活体**：`SCHEMA-NUM-BND` 加 `bigmult_shape=[n|5000|5000|5000] v9=5000`；`SCHEMA-BOUND-REJECT` 加 `bigmult_sat=0 bigmult_unsat=1`。活体 `engine/schema_bounds_f424.log` **24 例全绿**（新增 `bigmult_served` 200 `{"n":5000}`、`bigmult_unsatisfiable` 400），F422/F423 各例不回退。
+- **梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.391×**、spec **1.886×/1.522×**、哨兵 **0**（`engine/selftest_f424.log`、`engine/api_smoke_f424.log`、`engine/throughput_f424.log`）。
+- **记法**："抄来的上限"要问它约束的是哪条机制——有界（折叠到最小倍数，对任意 m 成立）vs 无界（三位 suffix，m ≤ 999）；拆错的上限、保留对的上限。
+- **下一轮顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；或有界 `multipleOf` 之外的"多叶 multipleOf / number 叶浮点界"。

@@ -3955,3 +3955,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体改后（`engine/schema_bounds_f423.log`，22 例全绿，新增 4 例混合）**：`mix_strict_min` **200 `{"n":7}`**（≥6）、`mix_strict_max` **200 `{"n":12}`**（≤19）、`mix_incl_stricter` **200 `{"n":5}`**（inclusive 胜，≥5）、`mix_unsatisfiable`（n≥5 且 n<5）**400**；F422 四个 exclusive 例不回退；required/pattern/count 复跑不回退。
 **梯（新二进制，`engine/selftest_f423.log` 11:37 版）**：自检 **180 PASS / 0 FAIL**、`RUN_EXIT=0`（179+新 `EXCL-MIX` 门）；输出含 `mix_strict=[n|6|-1|0]` 与 `SCHEMA-EXCL-MIX [{"n":5}…] PASS` ⇒ 新码确在二进制里；8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、spec **1.792×/1.449×**、哨兵 **0**。
 **记法**：**同侧多个界（inclusive/exclusive）的诚实服务是"更严者胜"（下界 max、上界 min）；任一层取"inclusive 优先"都会静默丢更严 exclusive，而合并必须在每个会发射值/枚举的层各做一次（shape 与候选两层）——只修一层会在另一层的 span 上复发。**
+
+
+## F424（已完成）：**有界 `multipleOf` > 1000**——拆掉从机制抄来的上限（有界路径对任意 m 成立）
+
+**先取"改前"活体证据（不靠读码断言）**：`engine/serve_f424pre.log`——有界 multipleOf > 1000 被**过度拒绝**（干净 400，非静默违反）：`min1 max1000000 m5000`（可服务，最小倍数 5000）→ **400**；`min1 m5000`（单侧可服务）→ **400**。
+**根因**：shape 检测器里 F420 抄了**无界 suffix 机制**的 `m ≤ 1000` 上限；但**有界路径是"折叠到区间内最小倍数"（模运算，对任意 m 都成立）**，上限纯属人为。拆掉它是 un-refuse（可服务面扩大），不是修静默违反。
+**实现**：shape 检测器有界路径 `if ($mult < 1 || $mult > 1000)` → `if ($mult < 1)`（保留拒绝 multipleOf:0）。可服务（区间内有倍数）⇒ 折叠到最小倍数、数字走位发射；无倍数 ⇒ 形状空 ⇒ F420 的"带 multipleOf 而形状不认 ⇒ 拒"照旧 400。**无界 `multipleOf` > 999 不动**（`api_multiple_fill` 三位 suffix 机制封顶 m ≤ 999，需更长 suffix，属另一条更大机制，继续排队）。
+**门**：`SCHEMA-NUM-BND` 加 `bigmult_shape=[n|5000|5000|5000] v9=5000`；`SCHEMA-BOUND-REJECT` 加 `bigmult_sat=0 bigmult_unsat=1`（`min1 max4000 m5000` 区间内无 5000 倍数 ⇒ 拒）。
+**活体改后（`engine/schema_bounds_f424.log`，24 例全绿，新增 2 例 bigmult）**：`bigmult_served` **200 `{"n":5000}`**（精确发射区间内最小 5000 倍数）、`bigmult_unsatisfiable` **400**；F422 exclusive 四例 + F423 混合四例不回退；required/pattern/count 复跑不回退。
+**梯（新二进制，`engine/selftest_f424.log` 12:08 版）**：自检 **180 PASS / 0 FAIL**、`RUN_EXIT=0`；输出含 `bigmult_shape=[n|5000|5000|5000] v9=5000` 与 `bigmult_sat=[0] bigmult_unsat=[1]` ⇒ 新码确在二进制里；8000 **115/0**、8001 par/fairness **0**、scaling **1.391×**、spec **1.886×/1.522×**、哨兵 **0**。
+**记法**：**"抄来的上限"要问它约束的是哪条机制——有界路径靠"折叠到区间内最小倍数"（对任意 m 成立），无界路径靠三位 suffix（m ≤ 999）；把无界机制的上限套到有界路径上就是人为过度拒绝。拆上限时只拆错的那条、保留真正封顶的那条（无界 suffix 不动）。**

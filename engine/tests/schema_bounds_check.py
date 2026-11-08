@@ -154,6 +154,16 @@ cases = [
     ("mix_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5, "exclusiveMaximum": 5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
+    # served deterministically (the subset argument); the value must be exactly that multiple.
+    ("bigmult_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") == 5000),
+    # No multiple of 5000 lies in [1, 4000]: unsatisfiable, so it must be refused.
+    ("bigmult_unsatisfiable", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 4000, "multipleOf": 5000}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
 ]
 
 bad = 0
