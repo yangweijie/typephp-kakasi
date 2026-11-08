@@ -208,6 +208,20 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}},
       "dependentRequired": {"city": ["region"]}},
      lambda code, txt: code == 400 and "dependentRequired" in txt),
+    # F446: dependentSchemas with a bare `required` body is judged by the emitted key set; a
+    # dependency omitted by a required subset and any richer subschema body stay refused.
+    ("depsch_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependentSchemas": {"city": {"required": ["note"]}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("depsch_bad_subset", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "required": ["city"], "dependentSchemas": {"city": {"required": ["note"]}}},
+     lambda code, txt: code == 400 and "dependentSchemas" in txt),
+    ("depsch_other_body", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependentSchemas": {"city": {"properties": {"x": {"type": "string"}}}}},
+     lambda code, txt: code == 400 and "dependentSchemas" in txt),
     # F434: tuple validation - `items` as an ARRAY of schemas, or prefixItems - is a shape no
     # generator claims, so the request must be refused by name instead of answered with prose.
     # F444: the 2-element scalar tuple is served - a list of exactly two elements whose types follow

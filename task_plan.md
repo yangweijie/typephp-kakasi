@@ -1035,6 +1035,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F444 已完成**：`api_tuple_value` + `api_schema_tuple`（单属性、items 数组、2–3 个 string/integer 子 schema）；四处路由接入；拒绝收窄；门改 `tuple_items=""` 并加 `tuple_plan`/`tuple_text`；活体 200 `{"pair":["1000",2000]}`、`prefixItems` 仍 400；梯 **182/0**、8000 **115/0**、8001 绿、scaling **1.611×**。**过程**：第一版在非流作用域用了 `$prefixCache` ⇒ `error C2065` + `TPC_BUILD_FAILED`（改为 `1`）。
 
 
+## F446 计划与完成（dependentSchemas 窄形态）
+**F444 已完成**：tuple 实现。
+**F446 已完成**：`api_schema_dependent_schemas_ok`（子 schema 恰为 `{"required":[…]}`，按发出键集判定）；活体抓到"子 schema 的 required 被当根级 required ⇒ 键丢失"，新增 `api_schema_required_present` 并在两处先剥离 dependentSchemas 块。
+**门**：`depsch_ok=[]`、`depsch_bad`/`depsch_other=[dependentSchemas]`。
+**活体**：ok 200 双键、两例 400；其余不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**（`engine/selftest_f446c.log`、`engine/schema_required_f446.log`、`engine/api_smoke_f446.log`、`engine/throughput_f446.log`）。
+**明确留拒（排队）**：`dependentSchemas` 的其他子 schema 体、`dependencies`（draft-7）、`contains`/`not`/`if`/`patternProperties`/`unevaluated*` 的实现；四位以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+
+
 ## F445 计划与完成（小数网格到三位）
 **F443 已完成**：无界 multipleOf 到九位。
 **F445 已完成**：`api_schema_scaled` 支持 1–3 位；标记 -999/-998/-997；写入器按位数补零。两个连带问题：`$nfM` 与自检数组同名（改 `$nfN`）；全局替换哨兵把 inward/exclusive 的返回值改了却没改比较值（`frac_exp` 变 0 ⇒ 统一为 -2000000000）。

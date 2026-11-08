@@ -1671,3 +1671,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（旧期望证伪 ⇒ 改门）**：`tuple_items` 由 `items` 改为 `""`；新增 `tuple_plan=[pair|s,i]` 与文本断言 `tuple_text=[{"pair":["word",1000]}]`；`prefix_items` 仍 `prefixItems`。
 - **活体**：`tuple_served` **200 `{"pair":["1000",2000]}`**（元素 2 个、类型按位置）、`prefixitems_refuse` **400**；其余 harness 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.611×**、哨兵 **0**。
+
+
+## ▶ 状态（F446，2026-11-08 21:10）——`dependentSchemas`（窄形态）从拒绝变**支持**；活体抓到键丢失
+- **实现**：`api_schema_dependent_schemas_ok` 只认"每个 trigger 的子 schema 恰为 `{"required":[...]}`"，按 F432 的发出键集判定；其他子 schema 体仍拒。
+- **活体抓到的第二层**：`depsch_ok` 先是 **200 但只发 `note`**——`api_schema_required_names` 把 `dependentSchemas` 子 schema 里的 `"required"` 当成了**根级 required**，键过滤因此收缩到 `{note}`。修法：读名字与"是否存在"两处都先**剥离 dependentSchemas 块**（新增 `api_schema_required_present`）。
+- **门**：`SCHEMA-STRUCT` 加 `depsch_ok=[]`、`depsch_bad=[dependentSchemas]`、`depsch_other=[dependentSchemas]`。
+- **活体**：`depsch_ok` **200 双键**、`depsch_bad_subset`/`depsch_other_body` **400 点名**；其余 harness 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**。

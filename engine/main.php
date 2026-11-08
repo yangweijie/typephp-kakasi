@@ -7664,20 +7664,34 @@ function api_response_schema_array_bounds(string $body): string
 // keyword is absent, empty or unreadable.
 function api_schema_required_names(string $schema): string
 {
-    $rp = strpos($schema, "\"required\"");
+    // F446: `required` inside a dependentSchemas subschema is not the root requirement. Strip those
+    // blocks before scanning - otherwise the key filter reads the subschema's list and silently
+    // shrinks the emitted set to it (the live probe answered {"note":...} for a two-key schema).
+    $scan = $schema;
+    $ds = strpos($schema, "\"dependentSchemas\"");
+    if ($ds !== false) {
+        $db = strpos($schema, "{", $ds);
+        if ($db !== false) {
+            $dblk = api_balance_block($schema, $db);
+            if ($dblk != "") {
+                $scan = str_replace($dblk, "", $schema);
+            }
+        }
+    }
+    $rp = strpos($scan, "\"required\"");
     if ($rp === false) {
         return "";
     }
-    $rb = strpos($schema, "[", $rp);
+    $rb = strpos($scan, "[", $rp);
     if ($rb === false) {
         return "";
     }
-    $re = strpos($schema, "]", $rb);
+    $re = strpos($scan, "]", $rb);
     if ($re === false) {
         return "";
     }
     $out = "";
-    foreach (explode(",", substr($schema, $rb + 1, $re - $rb - 1)) as $rq) {
+    foreach (explode(",", substr($scan, $rb + 1, $re - $rb - 1)) as $rq) {
         $rq = str_replace("\"", "", $rq);
         $rq = str_replace(" ", "", $rq);
         if ($rq != "") {
@@ -7685,6 +7699,24 @@ function api_schema_required_names(string $schema): string
         }
     }
     return $out;
+}
+
+// F446: is there a ROOT-level `required`? The presence test has to strip dependentSchemas the same
+// way the name reader does, otherwise a subschema's `required` reads as a root requirement.
+function api_schema_required_present(string $schema): int
+{
+    $scan = $schema;
+    $ds = strpos($schema, "\"dependentSchemas\"");
+    if ($ds !== false) {
+        $db = strpos($schema, "{", $ds);
+        if ($db !== false) {
+            $dblk = api_balance_block($schema, $db);
+            if ($dblk != "") {
+                $scan = str_replace($dblk, "", $schema);
+            }
+        }
+    }
+    return strpos($scan, "\"required\"") === false ? 0 : 1;
 }
 
 // F401: `required` naming a strict subset asks the decoder to OMIT the optional properties. Only the
@@ -7924,6 +7956,97 @@ function api_schema_plan_count(string $schema): int
     return count(explode(",", $plan));
 }
 
+// F446: dependentSchemas is honoured for its narrowest useful form - every trigger's subschema is
+// exactly {"required":[...]}, which is the same key-set judgement dependentRequired makes - and
+// refused for every other subschema body (properties, nested schemas, ...). Same shape restriction:
+// only the flat all-string object, whose emitted key set is known before generation.
+function api_schema_dependent_schemas_ok(string $schema): int
+{
+    if (api_schema_flat_all_string($schema) != 1) {
+        return 0;
+    }
+    $dp = strpos($schema, "\"dependentSchemas\"");
+    if ($dp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $dp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $emit = api_schema_required_filter($schema);
+    if ($emit == "") {
+        $pp = strpos($schema, "\"properties\"");
+        if ($pp === false) {
+            return 0;
+        }
+        $pbo = strpos($schema, "{", $pp);
+        if ($pbo === false) {
+            return 0;
+        }
+        $pblk = api_balance_block($schema, $pbo);
+        if ($pblk == "") {
+            return 0;
+        }
+        $plan = api_top_leaves($pblk, 64);
+        if ($plan == "") {
+            return 0;
+        }
+        $emit = "";
+        foreach (explode(",", $plan) as $leaf) {
+            $kv = explode(":", $leaf);
+            $emit = $emit == "" ? $kv[0] : $emit . "," . $kv[0];
+        }
+    }
+    $off = 0;
+    $entries = 0;
+    while (true) {
+        $q = strpos($block, "\"", $off);
+        if ($q === false) {
+            break;
+        }
+        $qe = strpos($block, "\"", $q + 1);
+        if ($qe === false) {
+            return 0;
+        }
+        $key = substr($block, $q + 1, $qe - $q - 1);
+        $ob = strpos($block, "{", $qe);
+        if ($ob === false) {
+            return 0;
+        }
+        $sub = api_balance_block($block, $ob);
+        if ($sub == "") {
+            return 0;
+        }
+        $off = $ob + strlen($sub) + 1;
+        $entries++;
+        $mr = [];
+        if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mr) != 1) {
+            return 0;               // any subschema body other than a bare `required`
+        }
+        if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+            continue;               // the trigger is not emitted, so the subschema does not apply
+        }
+        foreach (explode(",", $mr[1]) as $dep) {
+            $dep = str_replace("\"", "", $dep);
+            $dep = str_replace(" ", "", $dep);
+            if ($dep == "") {
+                continue;
+            }
+            if (strpos("," . $emit . ",", "," . $dep . ",") === false) {
+                return 0;
+            }
+        }
+    }
+    if ($entries == 0) {
+        return 0;
+    }
+    return 1;
+}
+
 // F432: dependentRequired is satisfied when, for every trigger key the answer will contain, its
 // dependencies are contained too. On the flat all-string shape the emitted key set is the declared
 // plan or its required subset - both known before generation - so the rule can be checked instead
@@ -8131,9 +8254,15 @@ function api_schema_structural_unsupported(string $schema): string
         && api_schema_dependent_required_ok($schema) != 1) {
         return "dependentRequired";
     }
+    // F446: dependentSchemas is judged for its bare-`required` form (same key-set check as
+    // dependentRequired) and refused for every other subschema body.
+    if (preg_match('/"dependentSchemas"\s*:\s*\{/', $schema) == 1
+        && api_schema_dependent_schemas_ok($schema) != 1) {
+        return "dependentSchemas";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"(contains|patternProperties|not|if|dependentSchemas|'
+    if (preg_match('/"(contains|patternProperties|not|if|'
         . 'dependencies)"\s*:\s*\{/', $schema, $mk) == 1) {
         return $mk[1];
     }
@@ -8223,7 +8352,7 @@ function api_schema_keywords_unsupported(string $body): string
     // "all required" - so the names themselves are checked against the plan (F401).
     $req = api_schema_required_names($body);
     if ($req == "") {
-        return strpos($body, "\"required\"") === false ? "" : "required";
+        return api_schema_required_present($body) == 0 ? "" : "required";
     }
     $pp = strpos($body, "\"properties\"");
     if ($pp === false) {
@@ -15517,6 +15646,11 @@ function main(): void
     $tupShape = preg_match('/^\{"pair":\["[a-z ]*",[0-9]+\]\}$/', $tupText);
     $sfAA = api_schema_keywords_unsupported('{"properties":{"pair":{"type":"array","prefixItems":[{"type":"string"}]}}}');
     $sfAB = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
+    // F446: dependentSchemas with a bare `required` body is judged by the emitted key set; any other
+    // subschema body (properties, nested) and any omitted dependency keep the refusal.
+    $sfAD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependentSchemas":{"a":{"required":["b"]}}}');
+    $sfAE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"dependentSchemas":{"a":{"required":["b"]}}}');
+    $sfAF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependentSchemas":{"a":{"properties":{"x":{"type":"string"}}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -15528,7 +15662,8 @@ function main(): void
         . "] pnames_route=" . count($sfU)
         . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
         . "] dep_mixed=[" . $sfY . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
-        . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText . "]\n";
+        . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText
+        . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15540,7 +15675,8 @@ function main(): void
         && $sfV == "" && $sfW == "dependentRequired" && $sfX == "dependentRequired"
         && $sfY == "dependentRequired"
         && $sfZ == "" && $sfAA == "prefixItems" && $sfAB == ""
-        && $sfAC == "pair|s,i" && $tupShape == 1 && api_json_ok($tupText) == 1) {
+        && $sfAC == "pair|s,i" && $tupShape == 1 && api_json_ok($tupText) == 1
+        && $sfAD == "" && $sfAE == "dependentSchemas" && $sfAF == "dependentSchemas") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

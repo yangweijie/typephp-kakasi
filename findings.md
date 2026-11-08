@@ -3735,7 +3735,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
-| contains / minContains / maxContains / not / if / dependentSchemas / dependencies / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| contains / minContains / maxContains / not / if / dependencies / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| dependentSchemas：子 schema 恰为 `{"required":[…]}` | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`（F446） |
+| dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
@@ -4175,3 +4177,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`tuple_served` **200 `{"pair":["1000",2000]}`**（2 元素、`[0]` 是 str、`[1]` 是 int）、`prefixitems_refuse` **400**；required/bounds/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.611×**、哨兵 **0**（`engine/selftest_f444.log`、`engine/schema_required_f444.log`、`engine/api_smoke_f444.log`、`engine/throughput_f444.log`）。
 **记法**：**"位置式"形状要逐位置发**，且**检测器不能依赖"叶子"抽象**——元组叶因花括号数量被判为非叶子，直接正则 + 平衡块才可靠。**编译期失败必须先确认 exe 换了**（否则自检的绿是旧二进制的）。
+
+
+## F446：`dependentSchemas`（窄形态）由拒绝转支持；活体抓到**键丢失**
+**实现**：`api_schema_dependent_schemas_ok($schema)` 只认"每个 trigger 的子 schema **恰为** `{"required":[...]}`"，按 F432 的"会发出键集"判定（trigger 不在集合则跳过；依赖缺席则拒）；任何其他子 schema 体（`properties`、嵌套）返回 0 ⇒ 仍点名拒绝。
+**活体抓到的第二层（同 F429 一族）**：`depsch_ok` 一开始是 **200 但只发 `note`**——`api_schema_required_names` 在**整个 schema** 里找第一个 `"required"`，命中了 `dependentSchemas` 子 schema 里的那个，于是"会发键集"被收缩成 `{note}`。修法两处：①`api_schema_required_names` 先**剥离 dependentSchemas 块**再扫描；②新增 `api_schema_required_present` 做同样的剥离后判断"根级 required 是否存在"（原来兜底那行仍用未剥离的 body）。
+**门**：`SCHEMA-STRUCT` 加 `depsch_ok=[]`、`depsch_bad=[dependentSchemas]`（required 子集省略依赖）、`depsch_other=[dependentSchemas]`（非窄形态）。
+**活体**：`depsch_ok` **200 双键**、`depsch_bad_subset`/`depsch_other_body` **400 点名**；required/bounds/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**（`engine/selftest_f446c.log`、`engine/schema_required_f446.log`、`engine/api_smoke_f446.log`、`engine/throughput_f446.log`）。
+**记法**：**嵌套块里的同名关键字会被"全局扫描"当成根级**——读 `required`（以及任何根级关键字）时，先剥离已知的嵌套容器；"存在性判断"和"取值"必须用**同一份**剥离后的文本，否则一个走剥离、一个走原串，结论就会打架。**单写 `/required/` 的门会漏掉"被服务但键不全"**——活体的键集合断言才是这一层的证据。
