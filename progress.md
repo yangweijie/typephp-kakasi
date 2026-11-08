@@ -1585,3 +1585,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-BOUND-REJECT` 加 `excl_bool=1`、`excl_bool_false=0`。
 - **活体**：`exclusive_bool_refuse` **400**（消息含 exclusive）；bounds PASS。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.534×**、哨兵 **0**。
+
+
+## ▶ 收尾审计（2026-11-08 16:24）——文档契约 ↔ 证据 ↔ 树状态
+- **支持表引用**：`check_gates.sh` ⇒ **56 引用 / 0 未解析**（每行都能落到最新自检的门/字段或已提交活体日志）。
+- **日志引用**：`check_citations.sh` ⇒ **cited=673 tracked=325 missing=348**；tracked 从 283 升到 325（近几轮把自己的证据都入库了，策略生效），missing 保持 348（历史悬空，未改写）。
+- **门**：最新自检 `selftest_f436.log` 里 **48 个 `SCHEMA-*: PASS`**、总计 **182 PASS / 0 FAIL**、`RUN_EXIT=0`。
+- **树**：`git status` 干净、哨兵 **0**、无引擎进程；HEAD `f174214`。
+- **判据**：目标"继续"仍开放（item 列表见 task_plan 的"明确留拒"），但**文档—证据—工作树三者当前一致**，可作为下一位接手者的起点。
