@@ -880,6 +880,169 @@ function api_response_schema_tuple(string $body): string
     return api_schema_tuple(api_json_object_after($body, "schema"));
 }
 
+// F459: "prop|v1~v2" for a single array property whose `items` is a finite STRING enum and carries
+// no other item constraint. The values have to survive the same encoding the plan uses for enums
+// (no ~, comma, quote or backslash), or the shape is not claimed and the refusal stays.
+function api_schema_array_enum(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 2) {
+        return "";
+    }
+    $kind = $lkv[1];
+    $tk = strpos($kind, "~");
+    if ($tk !== false) {
+        $kind = substr($kind, 0, $tk);
+    }
+    if ($kind != "a") {
+        return "";
+    }
+    $kp = strpos($block, "\"" . $lkv[0] . "\"");
+    $vo = strpos($block, "{", $kp);
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return "";
+    }
+    $ipo = strpos($leaf, "\"items\"");
+    if ($ipo === false) {
+        return "";
+    }
+    $ibo = strpos($leaf, "{", $ipo);
+    if ($ibo === false) {
+        return "";
+    }
+    $isub = api_balance_block($leaf, $ibo);
+    if ($isub == "") {
+        return "";
+    }
+    $me = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"string"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $isub, $me) != 1) {
+        return "";
+    }
+    $vals = api_list($me[1]);
+    if (count($vals) < 1) {
+        return "";
+    }
+    $enc = "";
+    for ($i = 0; $i < count($vals); $i++) {
+        if ($vals[$i] == "" || strpos($vals[$i], "~") !== false
+            || strpos($vals[$i], ",") !== false || strpos($vals[$i], "\"") !== false
+            || strpos($vals[$i], "\\") !== false) {
+            return "";
+        }
+        $enc = $enc == "" ? $vals[$i] : $enc . "~" . $vals[$i];
+    }
+    return $lkv[0] . "|" . $enc;
+}
+
+function api_response_schema_array_enum(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    return api_schema_array_enum(api_json_object_after($body, "schema"));
+}
+
+// F459: every element of the enum-item array is one of the enumerants, so the constrained decoder
+// emits each element as a whole candidate continuation (value + closing quote) and only "," / "]"
+// are reachable between elements - the same mechanism the flat enum writer and the bounded-number
+// writer use. At least one element is emitted, like the item-type writer.
+function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = ""): string
+{
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    $vals = explode("~", $valsCsv);
+    if ($commaIds == "" || $bracketIds == "" || count($vals) < 1 || $vals[0] == "") {
+        return "";
+    }
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
+    }
+    $cands = [];
+    for ($i = 0; $i < count($vals); $i++) {
+        $cands[] = $vals[$i] . "\"";
+    }
+    $s = api_constrained($ids, ["{\"" . $prop . "\":[\""], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $endIds = $commaIds . "," . $bracketIds;
+    $done = 0;
+    for ($it = 0; $it < $maxItems; $it++) {
+        if ($it > 0) {
+            $open = api_constrained_continue(["\""], 4);
+            if ($open == "") {
+                return "";
+            }
+            $s = $s . "," . $open;
+        }
+        $f = api_constrained_continue($cands, 24);
+        if ($f == "") {
+            return "";
+        }
+        $s = $s . "," . $f;
+        $offer = $endIds;
+        if ($it + 1 < $bMin) {
+            $offer = $commaIds;
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;
+        }
+        $nx = model_session_next_allowed(0, $offer);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos("," . $commaIds . ",", "," . $nx . ",") === false) {
+            $done = 1;
+            break;
+        }
+    }
+    if ($done == 0) {
+        $rb = api_constrained_continue(["]"], 4);
+        if ($rb != "") {
+            $s = $s . "," . $rb;
+        }
+    }
+    $end = api_constrained_continue(["}"], 4);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
+
 function api_array_string_value(string $ids, string $prop, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $charsetIds = gguf_charset_ids($charset);
@@ -6676,8 +6839,12 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
     if ($scArrObj == "" && $scNest == "" && $scArr == "") {
         $scArrNum = api_response_schema_array_number($body);
     }
-    $scMix = "";
+    $scArrEnum = "";
     if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "") {
+        $scArrEnum = api_response_schema_array_enum($body);
+    }
+    $scMix = "";
+    if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "" && $scArrEnum == "") {
         $scMix = api_response_schema_mixed_object($body);
     }
     $scProp = [];
@@ -6735,6 +6902,10 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $snp = explode("|", $scNest);
         $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
             api_schema_charset(), 8, 1);
+    } else if ($scArrEnum != "") {
+        $sae = explode("|", $scArrEnum);
+        $scOut = api_array_enum_value($ids, $sae[0], $sae[1], 4, 1,
+            api_response_schema_array_bounds($body));
     } else if (api_response_schema_tuple($body) != "") {
         $tup = explode("|", api_response_schema_tuple($body));
         $scOut = api_tuple_value($ids, $tup[0], $tup[1], api_schema_charset(), 4, 1);
@@ -6938,6 +7109,25 @@ function api_schema_candidates(string $tail): array
     // the schema before $tail is narrowed down to the block.
     $reqNames = api_schema_required_names($tail);
     $tail = $block;
+    // F459: an array leaf's `items` object is not a property. Leaving it in made the enum scan read
+    // "items" as a key and emit {"items":"paris"} for an enum-item array, so those blocks are removed
+    // before the scan (the array's own detector/writer takes the shape instead).
+    $ix = strpos($tail, "\"items\"");
+    while ($ix !== false) {
+        $ihead = substr($tail, $ix + 7, 24);
+        if (preg_match('/^\s*:\s*\{/', $ihead) == 1) {
+            $ib = strpos($tail, "{", $ix);
+            if ($ib !== false) {
+                $iblk = api_balance_block($tail, $ib);
+                if ($iblk != "") {
+                    $tail = str_replace($iblk, "", $tail);
+                    $ix = strpos($tail, "\"items\"");
+                    continue;
+                }
+            }
+        }
+        $ix = strpos($tail, "\"items\"", $ix + 7);
+    }
     // Object-valued properties mean this is a NESTED plan. Without this gate, pass 1's enum regex
     // reaches into the deepest leaf and emits a flat object, silently dropping every intermediate
     // level (findings F238: 40-level schema with an enum leaf answered {"city":"Paris"}).
@@ -8548,8 +8738,10 @@ function api_schema_property_names_ok(string $schema): int
 // come from the charset/digit steppers, not from the item schema, so a 200 would carry a violating
 // value. The before-evidence (engine/items_gap_f458.log) is not even the right shape: enum items
 // answered {"items":"paris"} and bounded integers answered {"items":5}. Refused by name until an
-// item-aware writer exists. `properties`/`required` are deliberately absent from the keyword list
-// because the object-array shape is served and legitimately carries them.
+// item-aware writer exists; F459 added one for the finite string-enum form (api_schema_array_enum /
+// api_array_enum_value), so that form is no longer refused here. `properties`/`required` are
+// deliberately absent from the keyword list because the object-array shape is served and
+// legitimately carries them.
 function api_schema_items_constrained(string $schema): int
 {
     $pos = 0;
@@ -8602,7 +8794,9 @@ function api_schema_structural_unsupported(string $schema): string
     }
     // F458: an items block carrying any value constraint (enum/const/pattern/numeric bounds/...)
     // is outside what the array writers honour; a 200 there violates the schema (see the probe).
-    if (api_schema_items_constrained($schema) == 1) {
+    // F459: the finite string-enum items form now has its own writer, so it is not refused.
+    if (api_schema_items_constrained($schema) == 1
+        && api_schema_array_enum($schema) == "") {
         return "items";
     }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
@@ -10506,8 +10700,13 @@ Connection: close
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "") {
                                     $scArrNum = api_response_schema_array_number($body);
                                 }
-                                $scMix = "";
+                                $scArrEnum = "";
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "") {
+                                    $scArrEnum = api_response_schema_array_enum($body);
+                                }
+                                $scMix = "";
+                                if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
+                                    && $scArrEnum == "") {
                                     $scMix = api_response_schema_mixed_object($body);
                                 }
                                 $scProp = [];
@@ -10566,6 +10765,10 @@ Connection: close
                                     $snp = explode("|", $scNest);
                                     $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
                                         api_schema_charset(), 8, 1);
+                                } else if ($scArrEnum != "") {
+                                    $sae2 = explode("|", $scArrEnum);
+                                    $scOut = api_array_enum_value($ids, $sae2[0], $sae2[1], 4, 1,
+                                        api_response_schema_array_bounds($body));
                                 } else if (api_response_schema_tuple($body) != "") {
                                     $tup2 = explode("|", api_response_schema_tuple($body));
                                     $scOut = api_tuple_value($ids, $tup2[0], $tup2[1],
@@ -11611,8 +11814,13 @@ function api_serve(int $port): void
                         if ($sArrObj == "" && $sNest == "" && $sArr == "") {
                             $sArrNum = api_response_schema_array_number($body);
                         }
-                        $sMix = "";
+                        $sArrEnum = "";
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == "") {
+                            $sArrEnum = api_response_schema_array_enum($body);
+                        }
+                        $sMix = "";
+                        if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == ""
+                            && $sArrEnum == "") {
                             $sMix = api_response_schema_mixed_object($body);
                         }
                         if ($sArrNI != "") {
@@ -11670,6 +11878,10 @@ function api_serve(int $port): void
                             $snp = explode("|", $sNest);
                             $sJOut = api_nested_object_value($ids, $snp[0], $snp[1],
                                 api_schema_charset(), 8, $prefixCache);
+                        } else if ($sArrEnum != "") {
+                            $sae3 = explode("|", $sArrEnum);
+                            $sJOut = api_array_enum_value($ids, $sae3[0], $sae3[1], 4,
+                                $prefixCache, api_response_schema_array_bounds($body));
                         } else if (api_response_schema_tuple($body) != "") {
                             $tup3 = explode("|", api_response_schema_tuple($body));
                             $sJOut = api_tuple_value($ids, $tup3[0], $tup3[1],
@@ -11906,7 +12118,8 @@ function api_serve(int $port): void
                 $enumFlat = substr_count($body, "\"properties\"") < 2 ? 1 : 0;
                 if (count($schemaCands) > 0) {
                     $enumOut = api_constrained($ids, $schemaCands, 128, $prefixCache);
-                } else if ($enumFlat == 1 && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', $body, $em)) {
+                } else if ($enumFlat == 1 && api_response_schema_array_enum($body) == ""
+                    && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', $body, $em)) {
                     $evals = api_list($em[1]);
                     if (count($evals) > 0) {
                         $enumOut = api_constrained($ids, $evals, 24, $prefixCache);
@@ -11973,8 +12186,13 @@ function api_serve(int $port): void
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "") {
                         $arrNum = api_response_schema_array_number($body);
                     }
-                    $mixPlan = "";
+                    $arrEnum = "";
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == "") {
+                        $arrEnum = api_response_schema_array_enum($body);
+                    }
+                    $mixPlan = "";
+                    if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == ""
+                        && $arrEnum == "") {
                         $mixPlan = api_response_schema_mixed_object($body);
                     }
                     $strProps = [];
@@ -12047,6 +12265,11 @@ function api_serve(int $port): void
                         $npp = explode("|", $nestProp);
                         $enumOut = api_nested_object_value($ids, $npp[0], $npp[1],
                             api_schema_charset(), 8, $prefixCache);
+                        $jsonMode = 1;
+                    } else if ($arrEnum != "") {
+                        $ae4 = explode("|", $arrEnum);
+                        $enumOut = api_array_enum_value($ids, $ae4[0], $ae4[1], 4,
+                            $prefixCache, api_response_schema_array_bounds($body));
                         $jsonMode = 1;
                     } else if (api_response_schema_tuple($body) != "") {
                         $tup4 = explode("|", api_response_schema_tuple($body));
@@ -16472,6 +16695,23 @@ function main(): void
     $sfCC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris|lyon)$"}}}}');
     $sfCD = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}');
     $sfCE = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
+    // F459: the finite string-enum items form is served now - the detector claims exactly that form
+    // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
+    $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
+    $sfCG = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}}}}}');
+    // F459: the candidate scan must not read a leaf's `items` as a property, or it would emit
+    // {"items":"paris"} and never reach the array chain.
+    $sfCH = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
+    $aeIds = tok_chat("user", "Name some French cities.") . "," . tok_chat_open("assistant");
+    $aeBase = count(explode(",", $aeIds));
+    $aeOut = api_array_enum_value($aeIds, "cities", "paris~lyon", 1, 0);
+    $aeParts = explode(",", $aeOut);
+    $aeText = "";
+    for ($i = $aeBase; $i < count($aeParts); $i++) {
+        $aeText = $aeText . gguf_token_str((int) $aeParts[$i]);
+    }
+    $aeText = str_replace("Ġ", " ", $aeText);
+    $aeShape = preg_match('/^\{"cities":\["(paris|lyon)"\]\}$/', $aeText);
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16503,7 +16743,9 @@ function main(): void
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
         . "] items_enum=[" . $sfCA . "] items_const=[" . $sfCB . "] items_pattern=[" . $sfCC
-        . "] items_min=[" . $sfCD . "] items_plain=[" . $sfCE . "]\n";
+        . "] items_min=[" . $sfCD . "] items_plain=[" . $sfCE . "]"
+        . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
+        . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -16533,8 +16775,10 @@ function main(): void
         && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
-        && $sfCA == "items" && $sfCB == "items" && $sfCC == "items"
-        && $sfCD == "items" && $sfCE == "") {
+        && $sfCA == "" && $sfCB == "items" && $sfCC == "items"
+        && $sfCD == "items" && $sfCE == ""
+        && $sfCF == "cities|paris~lyon" && $sfCG == ""
+        && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

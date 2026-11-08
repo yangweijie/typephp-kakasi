@@ -1795,3 +1795,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`items_enum`/`items_const`/`items_pattern`/`items_min` = `[items]`，`items_plain=[]`。
 - **活体**：两例 400 点名、`items_plain_ok` 200 数组；smoke 仍 **115/0**。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.509×**、哨兵 **0**。
+
+
+## ▶ 状态（F459，2026-11-09 01:13）——枚举项数组从 400 变**逐元素枚举发射**（项感知写入器 v1）
+- **实现**：`api_schema_array_enum` 检测 + `api_array_enum_value` 受限逐元素发射（枚举值+闭引号，元素间只可达 `,`/`]`，元素数走既有 bounds）；四路由接入。
+- **两个更早写者（关键）**：候选扫描把 `items` 当属性（已剥离 items 块，`ae_route=0`）；扁平枚举分支只回裸值（已加数组枚举守卫）。
+- **活体证据链**：`{"items":"paris"}` → `"paris"` → **`{"cities":["paris","paris"]}`**；const/数值界仍 400，裸数组不变。
+- **门**：`items_enum=[]`、`ae_plan`/`ae_text`/`ae_route=0`、`items_const/pattern/min=[items]`。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**。

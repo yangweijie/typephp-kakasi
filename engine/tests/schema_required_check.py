@@ -51,6 +51,14 @@ def keys_of(text):
         return None
 
 
+def obj_of(text):
+    try:
+        d = json.loads(text)
+        return d if isinstance(d, dict) else None
+    except Exception:
+        return None
+
+
 def n_items(text, key):
     # Same rule as the F400 live check: count via json.loads - the served charset contains
     # commas, so splitting the raw text would over-count.
@@ -202,9 +210,17 @@ cases = [
     # F458: items carrying a value constraint is outside every array writer - the before-probe
     # answered {"items":"paris"} / {"items":5}, which is not even the requested shape. Refused by
     # name; the plain-typed items control keeps being served as an array.
-    ("items_enum_refuse", "Name some French cities.",
+    # F459: the finite string-ENUM items form now has its own writer, so it is served with every
+    # element drawn from the enum; const/pattern and numeric item constraints stay refused.
+    ("items_enum_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array",
                                                   "items": {"type": "string", "enum": ["paris", "lyon"]}}}},
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("cities"), list)
+     and len((obj_of(txt) or {}).get("cities", [])) >= 1
+     and all(x in ["paris", "lyon"] for x in (obj_of(txt) or {}).get("cities", []))),
+    ("items_const_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string", "const": "paris"}}}},
      lambda code, txt: code == 400 and "items" in txt),
     ("items_min_refuse", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",

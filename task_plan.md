@@ -1158,6 +1158,17 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：项感知写入器（先写规格：枚举项数组的有限候选发射）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F459 计划与完成（枚举项数组的项感知写入器 v1）
+**F458 已完成**：约束项 items 显式 400。
+**F459 已完成**：`api_schema_array_enum`（单数组属性 + `items` 恰为 `{"type":"string","enum":[…]}`，值可进 `~` 编码）+ `api_array_enum_value`（受限解码逐元素发"枚举值+闭引号"，元素间只可达 `,`/`]`，元素数走既有 bounds）；四路由接入，候选/混合检测之前。
+**路由上抓到的两个更早写者**：①`api_schema_candidates` 把 `items` 当属性（已剥离 items 块，门 `ae_route=0`）；②非流扁平枚举分支只回裸值（已加数组枚举守卫）。
+**活体证据链**：`{"items":"paris"}` → `"paris"` → **`{"cities":["paris","paris"]}`**；const/数值界仍 400，裸数组不变。
+**门**：`items_enum=[]`、`ae_plan`/`ae_text`/`ae_route=0`、`items_const/pattern/min=[items]`。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**（`engine/selftest_f459c.log`、`engine/schema_required_f459c.log`、`engine/schema_bounds_f459.log`、`engine/schema_count_f459.log`、`engine/schema_pattern_f459.log`、`engine/api_smoke_f459.log`、`engine/throughput_f459.log`）。
+**明确留拒（排队，F459 后）**：数组项 schema 的非枚举值约束（const/pattern/数值界）；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：数组项数值界（复用 `api_number_bounded_value` 逐元素发射）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

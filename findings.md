@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F458）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F459）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3756,13 +3756,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | unevaluated*：会真正判定的形状（如非数组上的 `unevaluatedItems`）/ 属性名冒充 | **显式 400** | `uneval_items_wrong`/`uneval_prop_named`（F453） |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
-| 数组项的 schema 带值约束（enum/const/pattern/数值界/format 等） | **显式 400**（写入器只发裸类型元素；改前 200 且连输出形状都错） | `items_enum`/`items_const`/`items_pattern`/`items_min`（F458） |
+| 数组项的 schema 带值约束：**有限字符串枚举**（`items:{"type":"string","enum":[…]}`） | **支持**（逐元素从枚举候选发射；每元素必属枚举） | `ae_plan`/`ae_text`/`ae_route`/`items_enum_ok`（F459） |
+| 数组项的 schema 带其他值约束（const/pattern/数值界/format 等） | **显式 400**（写入器只发裸类型元素；改前 200 且连形状都错） | `items_const`/`items_pattern`/`items_min`（F458） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的值约束（现为显式 400，需项感知写入器）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的**非枚举**值约束（const/pattern/数值界，现为显式 400）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4304,3 +4305,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`items_enum_refuse`/`items_min_refuse` **400 点名 items**；`items_plain_ok` **200 数组**（对照）；`uneval_items_ok` 等既有项不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**（smoke 未因拒绝变化）；8001 par/fairness **0**；scaling **1.509×**；哨兵 **0**（`engine/selftest_f458.log`、`engine/schema_required_f458.log`、`engine/schema_bounds_f458.log`、`engine/schema_count_f458.log`、`engine/schema_pattern_f458.log`、`engine/api_smoke_f458.log`、`engine/throughput_f458.log`、`engine/items_gap_f458.log`）。
 **记法**：**"未实现"的缺口不只体现在违反值上，也可能体现在形状上**——探针若只看状态码会把它当成功；本轮因为输出被打印出来才发现 `{"items":"paris"}` 连键名都不对。支持面审查要定期对"非关键字但带约束的叶子/项"做一次活体，而不是只核对关键字名单。
+
+## F459：枚举项数组从"显式 400"变**逐元素枚举发射**（项感知写入器 v1）
+**实现**：`api_schema_array_enum($schema)` 识别"单数组属性 + `items` 恰为 `{"type":"string","enum":[…]}`"（枚举值须可进 `~` 编码：无 `~ , " \`）；`api_array_enum_value` 用受限解码逐元素发"枚举值 + 闭引号"，元素间只可达 `,`/`]`，至少发一个元素，元素数走 `api_response_schema_array_bounds`（与 `minItems`/`maxItems` 同一预算）。四个路由点（8000 非流、8000 流、8001 两处）都在候选/混合检测之前接入。
+**路由上抓到的两个"更早的写者"（本轮真正的难点）**：
+1. `api_schema_candidates` 的枚举正则把数组叶里的 **`"items"` 当成属性名**（`"items":{"type":"string","enum":[…]}` 没有嵌套花括号），于是先发出 `{"items":"paris"}`。修法：扫描前**剥离 `"items":{…}` 块**（与 F429 剥离 propertyNames 同构）。门 `ae_route=0`。
+2. 非流候选之后的**扁平枚举分支**（`preg_match('"enum"…', $body)`）同样命中 items 里的枚举，只回一个裸值 `paris`。修法：该分支加 `api_response_schema_array_enum($body) == ""` 守卫。
+**活体证据链**：修前（F458 基线）`items` enum → `200 {"items":"paris"}`；F459 第一版 → `200 "paris"`（扁平枚举抢先）；加守卫后 → **`200 {"cities":["paris","paris"]}`**（重复合法，未声明 uniqueItems）。`items_const_refuse`/`items_min_refuse` 仍 400，`items_plain_ok` 仍 200 数组。
+**门**：`items_enum=[]`（不再拒绝）、`ae_plan=[cities|paris~lyon]`、`ae_text=[{"cities":["paris"]}]`（文本级，maxItems=1）、`ae_const=[]`、`ae_route=0`；`items_const/pattern/min=[items]` 不变。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.529×**；哨兵 **0**（`engine/selftest_f459c.log`、`engine/schema_required_f459c.log`、`engine/schema_bounds_f459.log`、`engine/schema_count_f459.log`、`engine/schema_pattern_f459.log`、`engine/api_smoke_f459.log`、`engine/throughput_f459.log`）。
+**过程**：本轮一次 `SYCL_LINK_FAILED`，exe mtime 未变 —— 原因是诊断探针启动的引擎进程仍占着 exe（与既往同族）；杀掉后重建即过。**记法**：**支持一种形状前先把它可能落到的"更早写者"全部找出来**——本轮两个错误写者都不是新代码的 bug，而是旧扫描器把 `items` 当属性；只看"我的分支有没有被调用"会漏掉它们。
