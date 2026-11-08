@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F455）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F456）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至四位小数，可负**；五位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`dec*_text`/`float_dec5_refuse`（F439–F450） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至五位小数，可负**；六位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec5`/`dec*_text`/`float_dec6_refuse`（F439–F456） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -3760,7 +3760,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema、`patternProperties` 的**更丰富**子 schema（值级/嵌套）、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema、`patternProperties` 的**更丰富**子 schema（值级/嵌套）、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、六位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4276,3 +4276,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`patternprops_match_ok` **200 双键**；`patternprops_refuse`（integer over string）**400 点名**；vacuous 与其余 harness 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**；哨兵 **0**（`engine/selftest_f455.log`、`engine/schema_required_f455.log`、`engine/schema_bounds_f455.log`、`engine/schema_count_f455.log`、`engine/schema_pattern_f455.log`、`engine/api_smoke_f455.log`、`engine/throughput_f455.log`）。
 **记法**：**"匹配键 + 裸类型"是空约束的自然下一步**——值不是"碰巧对"，而是由 leaf kind 的写出器保证；判据要落在 **plan 的种类**上（而不是重新解析 schema），因为那正是生成时使用的同一事实。
+
+## F456：number 叶小数界扩到**五位**（十万分之一格）；六位及以上仍点名拒绝
+**改动（与 F450 同构，三处一次改全）**：`api_schema_scaled` 字面正则 `{1,4}`→`{1,5}` 并加 `$digits==5` 的 `ip*100000+frac`；计划构造两个字面正则同改、加 `$d=5` 与标记 `-995`；写入器 `-995` → `d=5, scale=100000`。
+**门（旧期望翻转）**：`SCHEMA-NUM-FRAC` 新增 `num_dec5=n|151111|-995|0`、文本级 `dec5_text=[{"n":1.51111}]`、`num_dec6=[]`；1–4 位与负数断言不变。
+**活体**：`float_dec5_served` **200 `{"n":1.51111}`**（F450 时是 400）、新增 `float_dec6_refuse`（1.511111–1.511119）**400**；1.5/1.51/1.511/1.5111/-1.9 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.454×**（单次测量，低于近几轮 1.5–1.6×，如实记录）；哨兵 **0**（`engine/selftest_f456.log`、`engine/schema_bounds_f456.log`、`engine/schema_required_f456.log`、`engine/schema_count_f456.log`、`engine/schema_pattern_f456.log`、`engine/api_smoke_f456.log`、`engine/throughput_f456.log`）。
+**记法**：宽度阶梯每加一格，改的仍是**同三处**；把"字面正则 / 缩放函数 / 写入器分支"当成一个整体搜一起改，翻转旧夹具并各留一格更宽的拒绝对照——这套流程已可复用，不需要每次重新发现。

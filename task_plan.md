@@ -1115,8 +1115,33 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：新增 `pp_match_ok=[]`；旧 `$sfL`/`$sfAT` 保持拒绝作对照；`pp_multi` 不变。
 **活体**：`patternprops_match_ok` 200 双键；`patternprops_refuse` 400 点名。
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.536×**、哨兵 **0**（`engine/selftest_f455.log`、`engine/schema_required_f455.log`、`engine/schema_bounds_f455.log`、`engine/schema_count_f455.log`、`engine/schema_pattern_f455.log`、`engine/api_smoke_f455.log`、`engine/throughput_f455.log`）。
-**明确留拒（排队，F455 后）**：`contains`/`not`/`patternProperties` 的值级子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；五位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
-**顺位**：真正的子 schema 求值器（值级 `pattern`/`enum`/嵌套约束的统一入口，先写规格）→ 分片多卡 / FR-05（本机不可验证）。
+**明确留拒（排队，F455 后）**：`contains`/`not`/`patternProperties` 的值级子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：基于 plan 的子 schema 判定规格（F457，见下节）→ 分片多卡 / FR-05（本机不可验证）。
+
+
+## F456 计划与完成（number 叶小数界到五位）
+**F455 已完成**：`patternProperties` 匹配键 + 裸类型。
+**F456 已完成**：三处同构改动——`api_schema_scaled` `{1,4}`→`{1,5}` + `$digits==5`；计划构造两个字面正则同改、`$d=5` 与标记 `-995`；写入器 `-995`→`d=5, scale=100000`。
+**门**：`num_dec5=n|151111|-995|0`、`dec5_text=[{"n":1.51111}]`、`num_dec6=[]`。
+**活体**：`float_dec5_served` 200 `{"n":1.51111}`、`float_dec6_refuse` 400；1–4 位与负数不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.454×**、哨兵 **0**（`engine/selftest_f456.log`、`engine/schema_bounds_f456.log`、`engine/schema_required_f456.log`、`engine/schema_count_f456.log`、`engine/schema_pattern_f456.log`、`engine/api_smoke_f456.log`、`engine/throughput_f456.log`）。
+**明确留拒（排队，F456 后）**：`contains`/`not`/`patternProperties` 的值级子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：基于 plan 的子 schema 判定规格（F457，见下节）→ 分片多卡 / FR-05（本机不可验证）。
+
+
+## F457 规格（基于 plan 的子 schema 判定；**待执行**）
+**动机**：剩下所有"值级"关键字（`contains`/`not`/`patternProperties` 的丰富子 schema、`if` 的丰富生效分支）都需要回答同一个问题——"生成器**保证**产出的值是否满足子 schema"。静态答案（构造满足）比动态求值便宜，且与 F449–F455 是同一套证明。
+**统一入口（拟）**：`api_schema_leaf_guarantees(string $kind, string $sub): int`——输入 plan 叶子种类与子 schema 文本，输出"该种类的所有可能输出都满足子 schema"。v1 支持的约束与判据：
+1. `type`：复用 `api_schema_kind_is_type`（`engine/main.php:8625`）。
+2. `enum`/`const`（字符串）：仅 `e:` 种类（有限枚举）可判；要求叶子枚举值集合**包含于**子 schema 的 enum（或全部等于 const），逐值字符串比较。
+3. `pattern`（字符串）：仅 `e:` 种类可判；逐枚举值 `preg_match`（模式长度 1–200，读不出 ⇒ 不算保证）。`p:` 种类**不**提供此保证。
+4. 其他种类（`s`/`i`/`n`/`b`/`p:`/`a*`/`en:`）在 v1 一律返回 0（不保证），除 `type` 外。
+**落点（试点）**：`api_schema_pattern_props_ok`——子 schema 不是裸 type 时改为调用该判定；命中键的种类必须提供保证，否则拒绝。门/活体与 F455 同构（枚举命中正例 + 枚举子集不成立反例）。
+**两个必须先回答的问题**（执行时以门/探针回答，不靠推断）：
+1. **路由**：含 `enum` 叶子和 `patternProperties` 的 schema 是否仍走候选/枚举写入器（F429 的教训：拒绝层放行不等于值路由认领）。先用 `api_response_schema_*` 返回值做门断言，再跑活体。
+2. **枚举值解析**：`api_list` 对子 schema enum 的空白/引号处理需与 `api_top_leaves` 的 `e:` 编码一致；用 PHP CLI 抽取式单测（同 `bound_inward_test.php`）钉住。
+**验收**：①枚举包含的正例被服务且值来自枚举 ②子集不成立/自由字符串种类仍拒绝 ③四个 harness + 8000/8001 不回退 ④`check_gates` 引用全解析。
+**顺位**：F457 执行 → 分片多卡 / FR-05（本机不可验证）。
 
 
 ## F451 计划与完成（`patternProperties` 的空约束形式）

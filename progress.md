@@ -1765,3 +1765,16 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：新增 `pp_match_ok=[]`；旧 `$sfL`/`$sfAT` 保持拒绝作对照。
 - **活体**：`patternprops_match_ok` **200 双键**；`patternprops_refuse` **400 点名**。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.536×**、哨兵 **0**。
+
+
+## ▶ 状态（F456，2026-11-08 23:54）——number 叶小数界扩到**五位**；六位及以上仍点名拒绝
+- **改动**：`api_schema_scaled` `{1,4}`→`{1,5}` + `$digits==5`；计划构造加 `$d=5`/标记 `-995`；写入器 `-995`→`d=5, scale=100000`。
+- **门**：`num_dec5=n|151111|-995|0`、`dec5_text=[{"n":1.51111}]`、`num_dec6=[]`。
+- **活体**：`float_dec5_served` **200 `{"n":1.51111}`**、`float_dec6_refuse` **400**；1–4 位与负数不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.454×**（单次测量，如实记录）、哨兵 **0**。
+
+
+## ▶ 规格（F457，2026-11-08 23:54）——基于 plan 的子 schema 判定已写、待执行
+- **入口**：`api_schema_leaf_guarantees(kind, sub)`——只对 `e:` 有限枚举提供 enum/const/pattern 保证，`type` 复用 `kind_is_type`；其他种类一律不算保证。
+- **试点**：`api_schema_pattern_props_ok` 的丰富子 schema 分支。
+- **执行前必答**：①含 enum 叶 + patternProperties 的路由是否仍被候选/枚举写入器认领（门断言，再活体）②enum 解析用 PHP CLI 抽取式单测钉住 `e:` 编码一致性。

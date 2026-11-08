@@ -175,17 +175,20 @@ cases = [
     ("float_dec2_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51, "maximum": 1.59}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.51}'),
-    # F445/F450: three fraction digits are served on the thousandths grid and four on the
-    # ten-thousandths grid; five have no grid at this width and stay refused. (float_dec4_refuse
-    # used to expect the refusal; F450 flipped it, and float_dec5_refuse is its control.)
+    # F445/F450/F456: three fraction digits on the thousandths grid, four on ten-thousandths and
+    # five on hundred-thousandths; six have no grid at this width and stay refused. (The five-digit
+    # refusal from F450 was flipped here; the six-digit case is its control.)
     ("float_dec3_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511, "maximum": 1.519}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.511}'),
     ("float_dec4_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5111, "maximum": 1.5119}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.5111}'),
-    ("float_dec5_refuse", "Give the number.",
+    ("float_dec5_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51111, "maximum": 1.51119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.51111}'),
+    ("float_dec6_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511111, "maximum": 1.511119}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
     ("float_dec_neg", "Give the number.",
