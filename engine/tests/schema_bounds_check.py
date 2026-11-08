@@ -131,15 +131,17 @@ cases = [
      lambda code, txt: (code == 400 and "multipleOf" in txt)
      or (code == 200 and val_of(txt, "n") is not None
          and val_of(txt, "n") % 3 == 0)),
-    # F436: draft-4 BOOLEAN exclusive bounds ("exclusiveMinimum": true beside "minimum"). The
-    # numeric conversion cannot read them, so an ignored one would silently allow the boundary value
-    # itself; either they are honoured or the request is refused.
-    ("exclusive_bool_refuse", "Give the number.",
+    # F437: the draft-4 BOOLEAN form is now honoured - it tightens the inclusive literal it sits
+    # beside, so minimum 5 with exclusiveMinimum true must serve a value ABOVE 5 (F436 refused the
+    # request instead; before that it served 5). The isolated boolean stays refused.
+    ("exclusive_bool_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5,
                                              "exclusiveMinimum": True}}},
-     lambda code, txt: (code == 400 and "exclusive" in txt)
-     or (code == 200 and val_of(txt, "n") is not None
-         and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") > 5)),
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") > 5),
+    ("exclusive_bool_alone_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": True}}},
+     lambda code, txt: code == 400 and "exclusive" in txt),
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),

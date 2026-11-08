@@ -956,7 +956,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
 
 
-## F437 计划（布尔 exclusive 的**实现**；改前证据已在手）
+## F437 计划与完成（布尔 exclusive 的**实现**：收紧同侧数值界）
+**F436 已完成**：布尔形式点名 400（当时的权宜）。
 **现状证据**（`engine/schema_bounds_f436pre.log`）：`{"n":{"type":"integer","minimum":5,"exclusiveMinimum":true}}` → **200 `{"n":5}`**；当前行为是**点名 400**（F436），因此这是"从拒绝变实现"的一步，不是修违反。
 **语义**：draft-4 里 `exclusiveMinimum:true` 表示把同侧 `minimum` 收紧为严格（整数叶 ⇒ 下界 `floor(min)+1`），`exclusiveMaximum:true` 同理（`ceil(max)-1`）。只有布尔、没有同侧数值界时无意义 ⇒ 继续拒绝。
 **精确改动点**（`engine/main.php`）：
@@ -965,5 +966,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**（`SCHEMA-BOUND-REJECT`）：`excl_bool` 期望由 **1 改 0**（旧期望被新行为证伪 ⇒ 改门），新增 `excl_bool_alone=1`（`exclusiveMinimum:true` 无 `minimum`）；**再加一个取值断言**：用 `api_number_bounded_value($ids,"n",6,6,0)` 生成并断言输出 `{"n":6}`（证明收紧到 6 而不是放行 5）。
 **活体**（`engine/tests/schema_bounds_check.py`）：把 `exclusive_bool_refuse` 的断言从"400 或 200 且 n>5"收紧为"**200 且 n>5**"，并改名 `exclusive_bool_served`。
 **验收**：①布尔+数值界 ⇒ 200 且值 > 下界（门 + 活体）②布尔孤立 ⇒ 400 ③自检与四个 harness 全绿 ④8000/8001 不回退。
-**锚点核对（提交时实测）**：`api_schema_number_bounded_shape`、`$hasExLo/$hasExHi = preg_match`、`$bdBD = api_schema_bounds_unsupported`、活体用例 `exclusive_bool_refuse` 均在当前工作树中存在（各 1 处）⇒ 本规格可按写明的锚点直接执行，无需重新定位。
+**锚点核对（执行前实测）**：`api_schema_number_bounded_shape`、`$hasExLo/$hasExHi = preg_match`、`$bdBD = api_schema_bounds_unsupported`、活体用例名均在执行前存在于工作树（各 1 处），规格按锚点直接落地，未重新定位。
+**F437 已完成**：布尔 `":true"` 喂进相邻整数换算（`bool_shape=[n|6|-1|0]`）、拒绝收窄为布尔孤立（`bool_alone=1`）、活体收紧为"必须 200 且 >5"（实测 `{"n":7}`）。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**、哨兵 **0**（`engine/selftest_f437.log`、`engine/schema_bounds_f437.log`、`engine/api_smoke_f437.log`、`engine/throughput_f437.log`）。
 **顺位**（其后）：多叶 multipleOf 的实现 → number 叶浮点界（小数写入器 + 4 个路由点）→ 分片多卡 / FR-05。

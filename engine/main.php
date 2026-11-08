@@ -5305,6 +5305,20 @@ function api_schema_number_bounded_shape(string $schema): string
     // inclusive one.
     $hasExLo = preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exn) == 1;
     $hasExHi = preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exm) == 1;
+    // F437: the draft-4 BOOLEAN form tightens the inclusive literal it sits beside, so that literal
+    // is fed through the same adjacent-integer conversion the numeric form uses (floor(X)+1 /
+    // ceil(X)-1) and the stricter-side combination below then picks it up. A numeric spelling, when
+    // both are present, keeps precedence because it is the more specific statement.
+    if ($hasExLo == 0 && $hasLo
+        && preg_match('/"exclusiveMinimum"\s*:\s*true/', $schema) == 1) {
+        $exn = $mn;
+        $hasExLo = 1;
+    }
+    if ($hasExHi == 0 && $hasHi
+        && preg_match('/"exclusiveMaximum"\s*:\s*true/', $schema) == 1) {
+        $exm = $mx;
+        $hasExHi = 1;
+    }
     if (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi) {
         return "";
     }
@@ -7907,10 +7921,12 @@ function api_schema_keywords_unsupported(string $body): string
 
 function api_schema_bounds_unsupported(string $body): int
 {
-    // F436: the draft-4 BOOLEAN spelling of an exclusive bound cannot be read by the numeric
-    // conversion, so it was ignored and the boundary value served (live: minimum 5 with
-    // exclusiveMinimum true answered 5). `false` adds no constraint, so only `true` is refused.
-    if (preg_match('/"exclusive(?:Minimum|Maximum)"\s*:\s*true/', $body) == 1) {
+    // F436/F437: the draft-4 BOOLEAN spelling is now HONOURED where the shape can convert it (the
+    // boolean tightens the inclusive literal it accompanies), so only the isolated form - a boolean
+    // with no inclusive bound beside it - is refused, because it states nothing this writer can
+    // apply. `false` adds no constraint and is never refused.
+    if (preg_match('/"exclusive(?:Minimum|Maximum)"\s*:\s*true/', $body) == 1
+        && api_schema_number_bounded_shape($body) == "") {
         return 1;
     }
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
@@ -14611,10 +14627,13 @@ function main(): void
     $bdBB = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer"}}}');
     // F433: the multiple writer is integer-only, so a number leaf carrying multipleOf is refused.
     $bdBC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"number","multipleOf":3}}}');
-    // F436: the draft-4 boolean spelling - `true` tightens the bound and is refused (it cannot be
-    // read by the numeric conversion), `false` adds nothing and must keep being served.
+    // F436/F437: the draft-4 boolean form is HONOURED now - it tightens the inclusive literal it
+    // accompanies, so `excl_bool` is no longer a refusal; `false` adds nothing and is served; the
+    // isolated boolean (no inclusive bound beside it) states nothing applicable and stays refused.
     $bdBD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","minimum":5,"exclusiveMinimum":true}}}');
     $bdBE = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","minimum":5,"exclusiveMinimum":false}}}');
+    $bdBF = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":5,"exclusiveMinimum":true}}}}}');
+    $bdBG = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","exclusiveMinimum":true}}}');
     $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
     // F397: the same two cases as they arrive on the wire, with spaces after the colons - the
     // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
@@ -14648,7 +14667,8 @@ function main(): void
         . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
-        . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE . "
+        . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
+        . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
@@ -14660,7 +14680,8 @@ function main(): void
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 1 && $bdAC == 0 && $bdAD == 0
         && $bdBA == 1 && $bdBB == 1 && $bdBC == 1
-        && $bdBD == 1 && $bdBE == 0) {
+        && $bdBD == 0 && $bdBE == 0
+        && $bdBF == "n|6|-1|0" && $bdBG == 1) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
