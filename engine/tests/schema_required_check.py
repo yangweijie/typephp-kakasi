@@ -210,10 +210,15 @@ cases = [
      lambda code, txt: code == 400 and "dependentRequired" in txt),
     # F434: tuple validation - `items` as an ARRAY of schemas, or prefixItems - is a shape no
     # generator claims, so the request must be refused by name instead of answered with prose.
-    ("tuple_items_refuse", "Give two values.",
+    # F444: the 2-element scalar tuple is served - a list of exactly two elements whose types follow
+    # the positions (string then integer) - while prefixItems has no writer and stays refused.
+    ("tuple_served", "Give two values.",
      {"type": "object", "properties": {"pair": {"type": "array",
                                                 "items": [{"type": "string"}, {"type": "integer"}]}}},
-     lambda code, txt: code == 400 and "items" in txt),
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("pair"), list)
+     and len(json.loads(txt)["pair"]) == 2
+     and isinstance(json.loads(txt)["pair"][0], str)
+     and isinstance(json.loads(txt)["pair"][1], int)),
     ("prefixitems_refuse", "Give two values.",
      {"type": "object", "properties": {"pair": {"type": "array",
                                                 "prefixItems": [{"type": "string"}, {"type": "integer"}]}}},

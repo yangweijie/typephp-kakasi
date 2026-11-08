@@ -1663,3 +1663,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（旧期望证伪 ⇒ 改门）**：`num_dec3` 由 `""` 改为 `n|1511|-997|0`；新增 `num_dec4=[]`、`dec3_text=[{"n":1.511}]`。
 - **活体**：`float_dec3_served` **200 `{"n":1.511}`**（改前 400）、`float_dec4_refuse` **400**；1.5/1.51/-1.9 均不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.521×**、哨兵 **0**。
+
+
+## ▶ 状态（F444，2026-11-08 20:34）——tuple 校验：从"点名拒绝"变**逐位置实现**
+- **实现**：`api_tuple_value`（元素按 plan 顺序：`s` 走字符集步进、`i` 走数字走位，末尾强制 `]}`）；`api_schema_tuple` 只认**单属性 + `items` 数组 + 2–3 个纯 `string`/`integer` 子 schema**；四处路由在数组分支前接入；拒绝收窄为"tuple 检测器为空才拒"。
+- **编译期问题**：第一版在 8000 非流的作用域里用了 `$prefixCache`（该处只有字面量 `1`）⇒ `error C2065`、`TPC_BUILD_FAILED`；改为 `1` 后构建成功（**exe 时间戳确认换了二进制**）。
+- **门（旧期望证伪 ⇒ 改门）**：`tuple_items` 由 `items` 改为 `""`；新增 `tuple_plan=[pair|s,i]` 与文本断言 `tuple_text=[{"pair":["word",1000]}]`；`prefix_items` 仍 `prefixItems`。
+- **活体**：`tuple_served` **200 `{"pair":["1000",2000]}`**（元素 2 个、类型按位置）、`prefixitems_refuse` **400**；其余 harness 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.611×**、哨兵 **0**。

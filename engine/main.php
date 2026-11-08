@@ -748,6 +748,138 @@ function api_response_schema_nested_number(string $body): string
 // An array of charset-filled strings, e.g. {"cities":["paris","lyon"]}. The model decides when to
 // stop: after each element only "," (continue) and "]" (end) are reachable, and the closing brace
 // is forced. Runs BEFORE the flat detectors, which would otherwise mistake "items" for a key.
+// F444: a positional tuple of scalar items, e.g. {"pair":["aa",12]}. Elements are written in order -
+// strings through the charset stepper, integers through the digit walk - and the closing "]}" is
+// forced, so the shape cannot drift into free text. Any element that cannot be produced aborts the
+// whole object rather than emitting it in part.
+function api_tuple_value(string $ids, string $prop, string $kinds, string $charset, int $maxSteps, int $useCache = 1): string
+{
+    $elems = explode(",", $kinds);
+    if (count($elems) == 0) {
+        return "";
+    }
+    $s = api_constrained($ids, ["{\"" . $prop . "\":["], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $charsetIds = gguf_charset_ids($charset);
+    $quoteIds = gguf_charset_ids("\"");
+    if ($charsetIds == "" || $quoteIds == "") {
+        return "";
+    }
+    $q = "," . $quoteIds . ",";
+    $stepIds = $charsetIds . "," . $quoteIds;
+    for ($i = 0; $i < count($elems); $i++) {
+        if ($i > 0) {
+            $c = api_constrained_continue([","], 4);
+            if ($c == "") {
+                return "";
+            }
+            $s = $s . "," . $c;
+        }
+        if ($elems[$i] == "s") {
+            $open = api_constrained_continue(["\""], 4);
+            if ($open == "") {
+                return "";
+            }
+            $s = $s . "," . $open;
+            $closed = 0;
+            for ($d = 0; $d < $maxSteps; $d++) {
+                $nx = model_session_next_allowed(0, $stepIds);
+                if ($nx < 0) {
+                    break;
+                }
+                $s = $s . "," . $nx;
+                if (strpos($q, "," . $nx . ",") !== false) {
+                    $closed = 1;
+                    break;
+                }
+            }
+            if ($closed == 0) {
+                $cq = api_constrained_continue(["\""], 4);
+                if ($cq != "") {
+                    $s = $s . "," . $cq;
+                }
+            }
+        } else {
+            $body = api_number_fill(0, $maxSteps);
+            if ($body == "") {
+                return "";
+            }
+            $s = $s . "," . $body;
+        }
+    }
+    $end = api_constrained_continue(["]}"], 8);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
+
+// F444: the one shape this round serves - a single array property whose `items` is an ARRAY of two
+// or three scalar sub-schemas (string/integer). Returns "<prop>|s,i"; anything else (a single
+// schema, objects, four elements, extra numeric keywords) returns "" and keeps the refusal.
+function api_schema_tuple(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|exclusiveMinimum|exclusiveMaximum|multipleOf)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    if (preg_match_all('/"type"\s*:\s*"array"/', $schema) != 1) {
+        return "";
+    }
+    $pm = [];
+    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\[/s', $schema, $pm) != 1) {
+        return "";
+    }
+    $ip = strpos($schema, "\"items\"");
+    if ($ip === false) {
+        return "";
+    }
+    $ao = strpos($schema, "[", $ip);
+    if ($ao === false) {
+        return "";
+    }
+    $off = $ao + 1;
+    $kinds = "";
+    $n = 0;
+    while ($n < 4) {
+        $o = strpos($schema, "{", $off);
+        if ($o === false) {
+            break;
+        }
+        $sub = api_balance_block($schema, $o);
+        if ($sub == "") {
+            return "";
+        }
+        $mm = [];
+        if (preg_match('/^\{\s*"type"\s*:\s*"(string|integer)"\s*\}$/', $sub, $mm) != 1) {
+            return "";
+        }
+        $kind = "i";
+        if ($mm[1] == "string") {
+            $kind = "s";
+        }
+        $kinds = $kinds == "" ? $kind : $kinds . "," . $kind;
+        $n++;
+        $off = $o + strlen($sub) + 1;
+    }
+    if ($n < 2 || $n > 3) {
+        return "";
+    }
+    return $pm[1] . "|" . $kinds;
+}
+
+function api_response_schema_tuple(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    return api_schema_tuple(api_json_object_after($body, "schema"));
+}
+
 function api_array_string_value(string $ids, string $prop, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $charsetIds = gguf_charset_ids($charset);
@@ -6576,6 +6708,9 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $snp = explode("|", $scNest);
         $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
             api_schema_charset(), 8, 1);
+    } else if (api_response_schema_tuple($body) != "") {
+        $tup = explode("|", api_response_schema_tuple($body));
+        $scOut = api_tuple_value($ids, $tup[0], $tup[1], api_schema_charset(), 4, 1);
     } else if ($scArr != "") {
         $scOut = api_array_string_value($ids, $scArr,
             api_schema_charset(), 4, 6, 1, api_response_schema_array_bounds($body));
@@ -7978,7 +8113,10 @@ function api_schema_structural_unsupported(string $schema): string
     if (preg_match('/"prefixItems"\s*:\s*\[/', $schema, $mk) == 1) {
         return "prefixItems";
     }
-    if (preg_match('/"items"\s*:\s*\[/', $schema, $mk) == 1) {
+    // F434/F444: a tuple `items` is named only when no writer handles its shape (the served shape
+    // is a 2-3 element scalar tuple, see api_schema_tuple).
+    if (preg_match('/"items"\s*:\s*\[/', $schema, $mk) == 1
+        && api_schema_tuple($schema) == "") {
         return "items";
     }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
@@ -9570,6 +9708,10 @@ Connection: close
                                     $snp = explode("|", $scNest);
                                     $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
                                         api_schema_charset(), 8, 1);
+                                } else if (api_response_schema_tuple($body) != "") {
+                                    $tup2 = explode("|", api_response_schema_tuple($body));
+                                    $scOut = api_tuple_value($ids, $tup2[0], $tup2[1],
+                                        api_schema_charset(), 4, 1);
                                 } else if ($scArr != "") {
                                     $scOut = api_array_string_value($ids, $scArr,
                                         api_schema_charset(), 4, 6, 1,
@@ -10670,6 +10812,10 @@ function api_serve(int $port): void
                             $snp = explode("|", $sNest);
                             $sJOut = api_nested_object_value($ids, $snp[0], $snp[1],
                                 api_schema_charset(), 8, $prefixCache);
+                        } else if (api_response_schema_tuple($body) != "") {
+                            $tup3 = explode("|", api_response_schema_tuple($body));
+                            $sJOut = api_tuple_value($ids, $tup3[0], $tup3[1],
+                                api_schema_charset(), 4, $prefixCache);
                         } else if ($sArr != "") {
                             $sJOut = api_array_string_value($ids, $sArr, api_schema_charset(), 4,
                                 6, $prefixCache, api_response_schema_array_bounds($body));
@@ -11043,6 +11189,11 @@ function api_serve(int $port): void
                         $npp = explode("|", $nestProp);
                         $enumOut = api_nested_object_value($ids, $npp[0], $npp[1],
                             api_schema_charset(), 8, $prefixCache);
+                        $jsonMode = 1;
+                    } else if (api_response_schema_tuple($body) != "") {
+                        $tup4 = explode("|", api_response_schema_tuple($body));
+                        $enumOut = api_tuple_value($ids, $tup4[0], $tup4[1],
+                            api_schema_charset(), 4, $prefixCache);
                         $jsonMode = 1;
                     } else if ($arrProp != "") {
                         $enumOut = api_array_string_value($ids, $arrProp, api_schema_charset(), 4, 6,
@@ -15351,6 +15502,19 @@ function main(): void
     $sfY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"dependentRequired":{"city":["count"]}}');
     // F434: tuple validation is named; the control keeps the ordinary object-form items served.
     $sfZ = api_schema_keywords_unsupported('{"properties":{"pair":{"type":"array","items":[{"type":"string"},{"type":"integer"}]}}}');
+    // F444: the scalar tuple is served now - the plan names both element kinds and the emitted text
+    // is asserted by shape (string then integer), not merely parsed.
+    $sfAC = api_schema_tuple('{"properties":{"pair":{"type":"array","items":[{"type":"string"},{"type":"integer"}]}}}');
+    $tupIds = tok_chat("user", "Give a word and a number.") . "," . tok_chat_open("assistant");
+    $tupOut = api_tuple_value($tupIds, "pair", "s,i", "abcdefghijklmnopqrstuvwxyz ", 4, 0);
+    $tupP = explode(",", $tupOut);
+    $tupBase = count(explode(",", $tupIds));
+    $tupText = "";
+    for ($i = $tupBase; $i < count($tupP); $i++) {
+        $tupText = $tupText . gguf_token_str((int) $tupP[$i]);
+    }
+    $tupText = str_replace("Ġ", " ", $tupText);
+    $tupShape = preg_match('/^\{"pair":\["[a-z ]*",[0-9]+\]\}$/', $tupText);
     $sfAA = api_schema_keywords_unsupported('{"properties":{"pair":{"type":"array","prefixItems":[{"type":"string"}]}}}');
     $sfAB = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
@@ -15364,7 +15528,7 @@ function main(): void
         . "] pnames_route=" . count($sfU)
         . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
         . "] dep_mixed=[" . $sfY . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
-        . "] items_obj=[" . $sfAB . "]\n";
+        . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15375,7 +15539,8 @@ function main(): void
         && count($sfU) == 2 && $sfU[0] == "city" && $sfU[1] == "note"
         && $sfV == "" && $sfW == "dependentRequired" && $sfX == "dependentRequired"
         && $sfY == "dependentRequired"
-        && $sfZ == "items" && $sfAA == "prefixItems" && $sfAB == "") {
+        && $sfZ == "" && $sfAA == "prefixItems" && $sfAB == ""
+        && $sfAC == "pair|s,i" && $tupShape == 1 && api_json_ok($tupText) == 1) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

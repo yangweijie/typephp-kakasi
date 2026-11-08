@@ -1032,6 +1032,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体**：`tuple_refuse` 改名为 `tuple_served`（**200** 且 `json.loads` 得到 2 元素、`[0]` 是 str、`[1]` 是 int）；`prefixitems_refuse` 保持 400。
 **验收**：①元组被服务且元素类型按位置正确（门 + 活体）②`prefixItems` 仍拒 ③自检与四个 harness 全绿 ④8000/8001 不回退。
 **顺位**：F444 → 三位小数 → 分片多卡 / FR-05（本机不可验证）。
+**F444 已完成**：`api_tuple_value` + `api_schema_tuple`（单属性、items 数组、2–3 个 string/integer 子 schema）；四处路由接入；拒绝收窄；门改 `tuple_items=""` 并加 `tuple_plan`/`tuple_text`；活体 200 `{"pair":["1000",2000]}`、`prefixItems` 仍 400；梯 **182/0**、8000 **115/0**、8001 绿、scaling **1.611×**。**过程**：第一版在非流作用域用了 `$prefixCache` ⇒ `error C2065` + `TPC_BUILD_FAILED`（改为 `1`）。
 
 
 ## F445 计划与完成（小数网格到三位）

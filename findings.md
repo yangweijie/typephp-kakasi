@@ -3736,7 +3736,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
 | contains / minContains / maxContains / not / if / dependentSchemas / dependencies / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
-| tuple 校验：`items` 数组形式 / `prefixItems` | **显式 400** | `tuple_items`/`prefix_items`（F434） |
+| tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
+| tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
@@ -4164,3 +4165,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`float_dec3_served` **200 `{"n":1.511}`**（改前 400）、`float_dec4_refuse` **400**；1.5 / 1.51 / -1.9 均不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.521×**、哨兵 **0**（`engine/selftest_f445c.log`、`engine/schema_bounds_f445.log`、`engine/api_smoke_f445.log`、`engine/throughput_f445.log`）。
 **记法**：**一次"扩宽"会同时碰到编译期（变量名/类型）与运行期（哨兵/比较）两处**——编译失败先看 `TPC_BUILD_FAILED` 与 exe 时间戳（否则数字来自旧二进制）；运行期的哨兵改动必须成对（产出 + 比较），否则被影响的是**另一条**判据（这里是指数写法）。
+
+
+## F444：tuple 校验由"点名拒绝"转为**逐位置实现**（2–3 元素标量元组）
+**三级演化**（`{"pair":{"type":"array","items":[{string},{integer}]}}`）：F434 前 **200 + 散文** → F434 点名 400 → **F444 200 `{"pair":["1000",2000]}`**。
+**实现**：`api_tuple_value($ids,$prop,$kinds,$charset,$maxSteps,$useCache)`——开头 `{"prop":[`，元素按 plan 顺序（`s` 走"开引号 → 字符集步进 → 闭引号"，`i` 走 `api_number_fill`），元素间强制 `,`，末尾强制 `]}`；任一元素失败整对象放弃。检测器 `api_schema_tuple($schema)` 只认：**单属性 + `items` 是数组 + 每个子 schema 恰为 `{"type":"string"|"integer"}` + 2–3 个 + 无其它数值关键字**（用 `api_balance_block` 逐块解析，不依赖 `api_top_leaves`——4 个花括号的元组叶在 plan 里根本不算叶子，这条路必须先确认）。四处路由在数组分支**之前**接入；拒绝收窄为 `items` 数组形式**且 tuple 检测器为空**才点名。
+**编译期问题**：第一版在 8000 非流的作用域里写了 `$prefixCache`——该处只有字面量 `1` ⇒ `error C2065: 'prefixCache': undeclared identifier`、`TPC_BUILD_FAILED`、**exe 未换**。改为 `1` 后通过；**exe 时间戳 20:22:26 与自检时间确认新码在二进制里**。
+**门（旧期望证伪 ⇒ 改门）**：`tuple_items` 由 `items` 改为 `""`；新增 `tuple_plan=[pair|s,i]` 与文本级 `tuple_text`（`^\{"pair":\["[a-z ]*",[0-9]+\]\}$`）；`prefix_items` 仍 `prefixItems`。
+**活体**：`tuple_served` **200 `{"pair":["1000",2000]}`**（2 元素、`[0]` 是 str、`[1]` 是 int）、`prefixitems_refuse` **400**；required/bounds/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.611×**、哨兵 **0**（`engine/selftest_f444.log`、`engine/schema_required_f444.log`、`engine/api_smoke_f444.log`、`engine/throughput_f444.log`）。
+**记法**：**"位置式"形状要逐位置发**，且**检测器不能依赖"叶子"抽象**——元组叶因花括号数量被判为非叶子，直接正则 + 平衡块才可靠。**编译期失败必须先确认 exe 换了**（否则自检的绿是旧二进制的）。
