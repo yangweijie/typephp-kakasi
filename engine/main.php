@@ -5190,33 +5190,35 @@ function api_response_schema_number_prop(string $body): string
 // 1 for minimum 1.5, and served a value for [1.5, 1.9] where no integer exists; rounding makes that
 // interval empty, which the shape then refuses. Anything that is not a plain decimal (an exponent
 // form, say) returns the sentinel so the request is refused rather than guessed at.
-// F440/F441: a non-negative literal with at most `digits` fraction digits, expressed in units of
-// 10^-digits ("1.5" -> 15 at 1 digit, "1.51" -> 151 at 2). Returns -1 for anything else, so the
-// caller keeps its refusal instead of guessing.
+// F440/F441/F442: a literal with at most `digits` fraction digits and either sign, expressed in
+// units of 10^-digits ("1.5" -> 15, "-1.51" -> -151 at 2). Returns -1000000 when the literal does
+// not fit the grid - a value no grid here can produce - so the caller keeps its refusal; -1 would
+// have collided with the legitimate -0.1.
 function api_schema_scaled(string $lit, int $digits): int
 {
     $m = [];
-    if (preg_match('/^([0-9]+)(?:\.([0-9]{1,2}))?$/', $lit, $m) != 1) {
-        return -1;
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,2}))?$/', $lit, $m) != 1) {
+        return -1000000;
     }
-    $ip = (int) $m[1];
+    $ip = (int) $m[2];
     $fp = "";
-    if (count($m) > 2) {
-        $fp = $m[2];
+    if (count($m) > 3) {
+        $fp = $m[3];
     }
     if (strlen($fp) > $digits) {
-        return -1;
+        return -1000000;
     }
     while (strlen($fp) < $digits) {
         $fp = $fp . "0";
     }
-    if ($digits == 0) {
-        return $ip;
+    $v = $ip * (($digits == 2) ? 100 : (($digits == 1) ? 10 : 1));
+    if ($digits > 0) {
+        $v = $v + (int) $fp;
     }
-    if ($digits == 1) {
-        return $ip * 10 + (int) $fp;
+    if ($m[1] == "-") {
+        $v = -$v;
     }
-    return $ip * 100 + (int) $fp;
+    return $v;
 }
 
 function api_schema_bound_inward(string $lit, int $isMin): int
@@ -5415,15 +5417,15 @@ function api_schema_number_bounded_shape(string $schema): string
         // stays refused. Negative intervals, finer fractions and any multipleOf keep the refusal.
         $k = 0;
         if ($kv[1] == "n" && $hasLo && $hasHi && strpos($schema, "\"multipleOf\"") === false
-            && preg_match('/^[0-9]+(\.[0-9]{1,2})?$/', $mn[1]) == 1
-            && preg_match('/^[0-9]+(\.[0-9]{1,2})?$/', $mx[1]) == 1) {
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,2})?$/', $mn[1]) == 1
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,2})?$/', $mx[1]) == 1) {
             $d = 1;
             if (preg_match('/\.[0-9]{2}/', $mn[1]) == 1 || preg_match('/\.[0-9]{2}/', $mx[1]) == 1) {
                 $d = 2;
             }
             $tLo = api_schema_scaled($mn[1], $d);
             $tHi = api_schema_scaled($mx[1], $d);
-            if ($tLo >= 0 && $tHi >= 0 && $tLo <= $tHi) {
+            if ($tLo != -1000000 && $tHi != -1000000 && $tLo <= $tHi) {
                 $mark = "-999";
                 if ($d == 2) {
                     $mark = "-998";
@@ -5573,15 +5575,17 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
             $scale = 100;
         }
         $k = $lo;
+        $sign = "";
         if ($k < 0) {
-            return "";
+            $sign = "-";
+            $k = -$k;
         }
         $intp = (int) (($k - ($k % $scale)) / $scale);
         $frac = "" . ($k % $scale);
         while (strlen($frac) < $d) {
             $frac = "0" . $frac;
         }
-        $dec = "" . $intp . "." . $frac;
+        $dec = "" . $sign . $intp . "." . $frac;
         $s = api_constrained($ids, ["{\"" . $prop . "\":"], 64, $useCache);
         if ($s == "") {
             return "";
@@ -15056,6 +15060,16 @@ function main(): void
     $nfI = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9}}}}}');
     $nfJ = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.51,"maximum":1.59}}}}}');
     $nfK = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.511,"maximum":1.519}}}}}');
+    // F442: negative decimal bounds ride the same grid - the scaled value is negative and the writer
+    // prefixes the sign after taking the magnitude, so -1.9 is emitted as "-1.9".
+    $nfL = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":-1.9,"maximum":-1.5}}}}}');
+    $nfOut4 = api_number_bounded_value($nbIds, "n", -19, -999, 0);
+    $nfP4 = explode(",", $nfOut4);
+    $nfText4 = "";
+    for ($i = $nbBase; $i < count($nfP4); $i++) {
+        $nfText4 = $nfText4 . gguf_token_str((int) $nfP4[$i]);
+    }
+    $nfText4 = str_replace("Ġ", " ", $nfText4);
     $nfOut2 = api_number_bounded_value($nbIds, "n", 15, -999, 0);
     $nfP2 = explode(",", $nfOut2);
     $nfText2 = "";
@@ -15084,12 +15098,15 @@ function main(): void
         . "] num_float=[" . $nfE . "] num_float_empty=[" . $nfF
         . "] num_float_ok=[" . $nfG . "] num_mult_refuse=[" . $nfH
         . "] num_dec=[" . $nfI . "] num_dec_fine=[" . $nfJ . "] num_dec3=[" . $nfK
-        . "] dec_text=[" . $nfText2 . "] dec2_text=[" . $nfText3 . "]\n";
+        . "] num_dec_neg=[" . $nfL . "] dec_text=[" . $nfText2 . "] dec2_text=[" . $nfText3
+        . "] neg_text=[" . $nfText4 . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
         && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
         && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0 && $nfH == 1
         && $nfI == "n|15|-999|0" && $nfJ == "n|151|-998|0" && $nfK == ""
-        && $nfText2 == "{\"n\":1.5}" && $nfText3 == "{\"n\":1.51}") {
+        && $nfL == "n|-19|-999|0"
+        && $nfText2 == "{\"n\":1.5}" && $nfText3 == "{\"n\":1.51}"
+        && $nfText4 == "{\"n\":-1.9}") {
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";

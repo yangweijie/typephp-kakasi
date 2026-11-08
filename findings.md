@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一位或两位小数**；更细/负数仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`dec2_text`/`num_dec3`（F439–F441） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一或两位小数，可负**；三位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec_neg`/`dec*_text`/`neg_text`（F439–F442） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -4137,3 +4137,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`float_dec2_served` **200 `{"n":1.51}`**（改前 400）、`float_dec3_refuse` **400**；一位小数路径（`float_dec_served` = 1.5）与整数路径（`float_served` = 100）都不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.520×**、哨兵 **0**（`engine/selftest_f441.log`、`engine/schema_bounds_f441.log`、`engine/api_smoke_f441.log`、`engine/throughput_f441.log`）。
 **记法**：**"位数"是网格的宽度，不是新机制**——同一标记 + 比例 + 补零，把一位扩到两位只增了一个枚举值；**补零必须在写入器里做**（`151` 直接拼 `.` 会得到 `1.151` 这样的错值），门里的文本断言正是为此。
+
+
+## F442：小数界支持**负数**（同一网格，符号单独处理）
+**实现**：`api_schema_scaled` 接受前导 `-`（符号 × 幅值，`"-1.9"→-19`）；形状的网格条件从"两侧非负"改为**只要 `tLo ≤ tHi`**；写入器把 `lo` 取绝对值拼小数，再**加符号前缀**（`-19 → "-1.9"`）。
+**一处必须先修的碰撞**：`api_schema_scaled` 原来用 `-1` 表示"解析失败"，而 `-1` 是**合法值**（-0.1 缩放后就是 -1）⇒ 失败会被当成 -0.1 放行。改为 `-1000000`（任何网格都产不出），并在形状里按该哨兵判断。**判据：哨兵必须落在值域之外；负值域尤其要检查。**
+**门**：`SCHEMA-NUM-FRAC` 加 `num_dec_neg=[n|-19|-999|0]` 与文本级 `neg_text=[{"n":-1.9}]`。
+**活体**：`float_dec_neg` **200 `{"n":-1.9}`**；`1.5`/`1.51` 与三位小数 400 都不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**（`engine/selftest_f442.log`、`engine/schema_bounds_f442.log`、`engine/api_smoke_f442.log`、`engine/throughput_f442.log`）。
+**记法**：**负值域里 `-1` 不是安全哨兵**——它太"真"了；哨兵要么取不可能值（这里 -1000000），要么用布尔标志单独返回。**符号处理放在"取幅值之后"**，比在整数除法里对付负数简单得多（整数除法对负数向零截断，余数符号会出错）。

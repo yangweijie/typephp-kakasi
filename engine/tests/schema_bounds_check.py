@@ -168,6 +168,10 @@ cases = [
     ("float_dec3_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511, "maximum": 1.519}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
+    ("float_dec_neg", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": -1.9, "maximum": -1.5}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":-1.9}'),
     # F421: an INTEGER leaf with fractional bounds. The value must be an integer inside the real
     # interval, so 1.5..9.5 means 2..9 - truncating the bound to 1 would serve a violating value.
     ("int_leaf_float_bounds", "Give the number.",
