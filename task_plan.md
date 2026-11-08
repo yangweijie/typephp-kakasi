@@ -1147,6 +1147,17 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：`contains` 的值级形式（复用 `api_schema_leaf_guarantees` 判定元素种类的保证）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F458 计划与完成（修既有静默违约：带值约束的 `items`）
+**F457 已完成**：基于 plan 的子 schema 判定。
+**改前证据**：`items` enum/const/pattern → 200 `{"items":"paris"}`；`items` 数值界 → 200 `{"items":5}`；裸类型正常（`engine/items_gap_f458.log`）。即带约束的 items 未实现也未拒绝，且输出连形状都错。
+**F458 已完成**：`api_schema_items_constrained` 扫描每个 `"items":{…}` 块（含嵌套）的 `enum|const|pattern|minimum|maximum|exclusive*|multipleOf|format|contentEncoding|contentMediaType`；命中返回 `"items"`。`properties`/`required` 故意排除（对象数组受支持）。
+**门**：`items_enum`/`items_const`/`items_pattern`/`items_min` = `[items]`，`items_plain=[]`。
+**活体**：`items_enum_refuse`/`items_min_refuse` 400 点名；`items_plain_ok` 200 数组；smoke 仍 115/0。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.509×**、哨兵 **0**（`engine/selftest_f458.log` 等 + `engine/items_gap_f458.log`）。
+**明确留拒（排队，F458 后）**：数组项 schema 的值约束（需项感知写入器）；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：项感知写入器（先写规格：枚举项数组的有限候选发射）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

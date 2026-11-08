@@ -1787,3 +1787,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`pp_enum=[]`、`pp_pat=[]`、`pp_enum_sub=[patternProperties]`、`pp_pat_miss=[patternProperties]`。
 - **活体**：`patternprops_enum_ok` **200 `{"city":"paris"}`**、`patternprops_enum_sub_refuse` **400 点名**。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.503×**、哨兵 **0**。
+
+
+## ▶ 状态（F458，2026-11-09 00:32）——修既有静默违约：带值约束的 `items` 从"200 且形状错误"改为点名 400
+- **改前证据**：`items` enum/const/pattern → 200 `{"items":"paris"}`；`items` 数值界 → 200 `{"items":5}`；裸类型正常（`engine/items_gap_f458.log`）。
+- **实现**：`api_schema_items_constrained` 扫描每个 `"items":{…}` 块（含嵌套）的值约束键；命中返回 `"items"`。`properties`/`required` 排除（对象数组合法携带）。
+- **门**：`items_enum`/`items_const`/`items_pattern`/`items_min` = `[items]`，`items_plain=[]`。
+- **活体**：两例 400 点名、`items_plain_ok` 200 数组；smoke 仍 **115/0**。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.509×**、哨兵 **0**。

@@ -8544,6 +8544,43 @@ function api_schema_property_names_ok(string $schema): int
     return 1;
 }
 
+// F458: an `items` schema richer than a bare type is not honoured by any array writer - elements
+// come from the charset/digit steppers, not from the item schema, so a 200 would carry a violating
+// value. The before-evidence (engine/items_gap_f458.log) is not even the right shape: enum items
+// answered {"items":"paris"} and bounded integers answered {"items":5}. Refused by name until an
+// item-aware writer exists. `properties`/`required` are deliberately absent from the keyword list
+// because the object-array shape is served and legitimately carries them.
+function api_schema_items_constrained(string $schema): int
+{
+    $pos = 0;
+    $n = strlen($schema);
+    while ($pos < $n) {
+        $ip = strpos($schema, "\"items\"", $pos);
+        if ($ip === false) {
+            return 0;
+        }
+        $head = substr($schema, $ip + 7, 24);
+        if (preg_match('/^\s*:\s*\{/', $head) != 1) {
+            $pos = $ip + 7;
+            continue;
+        }
+        $ibo = strpos($schema, "{", $ip);
+        if ($ibo === false) {
+            return 0;
+        }
+        $iblk = api_balance_block($schema, $ibo);
+        if ($iblk == "") {
+            return 0;
+        }
+        if (preg_match('/"(enum|const|pattern|minimum|maximum|exclusiveMinimum|exclusiveMaximum|'
+            . 'multipleOf|format|contentEncoding|contentMediaType)"\s*:/', $iblk) == 1) {
+            return 1;
+        }
+        $pos = $ibo + 1;        // keep scanning inside this block for a nested items
+    }
+    return 0;
+}
+
 // F426: structural keywords the decoder neither implements nor can prove satisfied. Each is matched
 // with the shape its VALUE really has, so an enum value spelled "not" is not mistaken for the
 // keyword. Known boundary: a property NAMED like one of these is refused too - the refusal names it,
@@ -8561,6 +8598,11 @@ function api_schema_structural_unsupported(string $schema): string
     // is a 2-3 element scalar tuple, see api_schema_tuple).
     if (preg_match('/"items"\s*:\s*\[/', $schema, $mk) == 1
         && api_schema_tuple($schema) == "") {
+        return "items";
+    }
+    // F458: an items block carrying any value constraint (enum/const/pattern/numeric bounds/...)
+    // is outside what the array writers honour; a 200 there violates the schema (see the probe).
+    if (api_schema_items_constrained($schema) == 1) {
         return "items";
     }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
@@ -16423,6 +16465,13 @@ function main(): void
     $sfBO = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","prague"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
     $sfBP = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
     $sfBQ = api_schema_candidates('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"enum":["paris","lyon"]}}}');
+    // F458: items carrying a value constraint is outside every array writer; the plain-type case is
+    // the control that the ordinary array shape keeps being served.
+    $sfCA = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}');
+    $sfCB = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}}}');
+    $sfCC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris|lyon)$"}}}}');
+    $sfCD = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}');
+    $sfCE = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16452,7 +16501,9 @@ function main(): void
         . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
         . " pp_match_ok=[" . $sfBK . "]"
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
-        . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ) . "\n";
+        . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
+        . "] items_enum=[" . $sfCA . "] items_const=[" . $sfCB . "] items_pattern=[" . $sfCC
+        . "] items_min=[" . $sfCD . "] items_plain=[" . $sfCE . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -16481,7 +16532,9 @@ function main(): void
         && $sfBF == "" && $sfBG == "" && $sfBH == "minContains"
         && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
         && $sfBM == "" && $sfBN == "patternProperties"
-        && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2) {
+        && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
+        && $sfCA == "items" && $sfCB == "items" && $sfCC == "items"
+        && $sfCD == "items" && $sfCE == "") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

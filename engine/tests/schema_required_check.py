@@ -199,6 +199,20 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string", "enum": ["paris", "lyon"]}},
       "patternProperties": {"^c": {"enum": ["paris"]}}},
      lambda code, txt: code == 400 and "patternProperties" in txt),
+    # F458: items carrying a value constraint is outside every array writer - the before-probe
+    # answered {"items":"paris"} / {"items":5}, which is not even the requested shape. Refused by
+    # name; the plain-typed items control keeps being served as an array.
+    ("items_enum_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string", "enum": ["paris", "lyon"]}}}},
+     lambda code, txt: code == 400 and "items" in txt),
+    ("items_min_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 5, "maximum": 9}}}},
+     lambda code, txt: code == 400 and "items" in txt),
+    ("items_plain_ok", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)),
     # F452: if/then/else is decided by the bare type: object is true, every other type is false, and
     # the selected branch is the trivial object one. The first case also pins the key set: the
     # `required` nested in the IGNORED else must not be read as a root requirement and shrink the
