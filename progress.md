@@ -1481,3 +1481,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-KEYWORDS` 30 例（含 `uniq_true/uniq_false/uniq_wire/uniq_route`）。
 - **活体**：`engine/schema_count_f425.log` —— `unique_true_refuse` **400**、`unique_false_served` **200 真 JSON**（改前两例 FAIL，`schema_count_f425pre.log`）；bounds/required/pattern 不回退。
 - **梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.558×**、哨兵 **0**。
+
+
+## ▶ 日志清理（2026-11-08 13:29）——只删"不构成记录"的东西
+**口径**：`.gitignore` 覆盖的产物与未跟踪的一次性文件删；**已提交的证据日志一律不动**（含"改前 FAIL"的成对证据）；`engine/models/`、`engine/build/`、`*.gguf` 明确排除。
+**盘点**：已跟踪日志 **453 个 / 5.1 MB**（其中 201 个被三份文档引用）；空文件 **0**；已忽略产物 **52 MB**（主要是 `engine/api_prefix_*.kv` 前缀缓存与历史 `api_smoke_f1xx.log`）；未跟踪 `engine/gates_f201.txt` 一个。
+**执行**：删已忽略日志 **2198 个（407 KB）**、前缀缓存 **8 个 .kv（27 MB）**、未跟踪 stray **1 个**；仓库体积 **259 MB → 197 MB（释放 62 MB）**。删后核验：`git status` 只剩本轮 4 个改动、`ls engine/*.log` 仍 **453**（已跟踪未动）、`engine/build` **38 MB** 完好、exe 为 13:27:57 新构建。
+**未删并说明**：252 个**未被文档引用**的已跟踪日志（2.6 MB，多为各轮中间 build/run/gate 记录）——删它们会破坏历史记录，留给"是否裁剪提交历史"的决定。
+**第二步（同一轮）**：其中 **36 个 `engine/build_f*.log`（288 KB）确认零引用**（纯 TypePHP 编译转录，代码已提交、可重建），单独提交删除；run/gate 类转录是各轮梯的原始记录，保留。**这一步也说明：glob 传给 `git add -A` 对"已删除文件"不展开（暂存区只多了 progress.md），要先用 `git ls-files` 取名单再 `git rm`。**
+**过程问题**：清理命令里的 `cd` 一次失败（`No such file or directory`），但 Bash 工具的工作目录持久化，相对路径仍在仓库内执行——**正是"`cd` 失败后相对路径仍在旧目录执行"那条陷阱**；改为先核 `pwd` 与 `git status` 再继续，未造成误删。
