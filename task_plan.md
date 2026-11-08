@@ -1169,6 +1169,26 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：数组项数值界（复用 `api_number_bounded_value` 逐元素发射）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F460 计划（数组项数值界：双侧整数 `items` 逐元素发射；**规格已写、实现已在树、待全梯验证**）
+**F459 已完成**：枚举项数组逐元素发射。
+**改前状态（F459 提交二进制）**：双侧 `items` 整数界由 F458 的 `items` 点名 400 钉住（门 `items_min=[items]`，`selftest_f459c.log`）；更早的静默违反形态是 200 `{"items":5}`（`items_gap_f458.log`）。
+**目标形状（窄）**：单数组属性 + `items` 恰为 `{"type":"integer","minimum":X,"maximum":Y}`（双侧、纯十进制、X≤Y）⇒ 逐元素发射有界整数数组。元素体＝单属性写入器的同一套数字走位（F419 符号映射：全负区间走幅值＋强制负号、跨零下界钳 0），**每元素必落 [X,Y]（构造保证）**；元素数走既有 `minItems`/`maxItems` 预算（F400 同机制）。
+**实现（已在树，四处）**：
+1. 检测器 `api_schema_array_item_bounds($schema)` → `prop|lo|hi`：plan 恰一叶、kind（剥 `~` 界后缀后）为 `an`、`items` 块正则命中该形状、lo≤hi；否则 ""。
+2. `api_number_bounded_element($lo,$hi)`（从 `api_number_bounded_value` 抽出数字体，无对象壳，F419 符号映射原样）＋数组写入器 `api_array_bounded_int_value`：头 `{"prop":[`，逐元素数字体，元素间只可达 `,`/`]`，`]`/`}` 收口。
+3. `api_number_bounded_value` 改复用 `api_number_bounded_element`（单属性行为不变，`SCHEMA-NUM-BND`/`NUM-EXCL`/`EXCL-MIX`/`NUM-FRAC` 钉回归）。
+4. 四路由（8000 非流／8000 流／8001 两处）在候选/混合检测前接入；`api_schema_structural_unsupported` 的 items 拒绝豁免双侧形态（与 F459 枚举豁免并列）。
+**单侧界的去向（读码判定，写进活体口径）**：单侧 `minimum` 的 items 形态在链上先被 `api_schema_bounds_unsupported` 的成对走位抓住（`maximum` 缺席 ⇒ 400，消息为 "numeric bounds are honoured on a single integer property…"），到不了 items 检查 ⇒ **仍是点名 400**，活体断言两种消息都接。
+**门**：`items_min`（双侧）期望 `items`→``（旧期望被证伪 ⇒ 翻门）；新增 `items_one=[items]`、`ib_plan=[nums|5|9]`、`ib_one=[]`、`ib_text=[{"nums":[<5–9 的数字>]}` 文本断言＋`api_json_ok`。
+**活体**（`engine/tests/schema_required_check.py`）：`items_bounded_ok`（200，数组且每元素为 [5,9] 整数）、`items_one_sided_refuse`（400 点名）；`items_plain_ok` 对照不回退。
+**验收**：①元素值在界内（门＋活体逐元素断言）②单侧与 const/pattern 仍拒 ③自检 182 起、`SCHEMA-STRUCT` 字段齐全且单属性有界门不回退 ④四个 harness＋8000 115/0＋8001 全绿不回退。
+**顺位**：F460 验证 → 单侧 items 界／`number` 型 items 界（小数）→ 分片多卡 / FR-05（本机不可验证）。
+**F460 已完成**：`api_schema_array_item_bounds`（双侧整数 items ⇒ `prop|lo|hi`）+ `api_array_bounded_int_value`（数字体抽成 `api_number_bounded_element` 共享，`api_number_bounded_value` 改复用，单属性行为由 `SCHEMA-NUM-*` 四门钉回归）；四路由在候选/混合检测前接入，items 拒绝并列豁免。门 `items_min` 翻 `[]`、新增 `items_one=[items]`/`ib_plan=[nums|5|9]`/`ib_text=[{"nums":[5]}]`；活体 `items_bounded_ok` 200 `{"nums":[5,6,7,8]}`（每元素 [5,9]）、`items_one_sided_refuse` 400（单侧先被界判据成对走位点名）。**过程**：前一会话已实现＋构建＋活体验证（`schema_required_f460b.log` 01:24）未提交；本轮从当前树重建（07:36）全梯复验后入库。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**（`engine/selftest_f460.log`、`engine/schema_required_f460.log`、`engine/schema_bounds_f460.log`、`engine/schema_count_f460.log`、`engine/schema_pattern_f460.log`、`engine/api_smoke_f460.log`、`engine/throughput_f460.log`）。
+**明确留拒（排队，F460 后）**：数组项 schema 的 const/pattern/单侧或 `number` 型（小数）数值界；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：单侧 items 界 / `number` 型 items 界（小数项写入器）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

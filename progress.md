@@ -1803,3 +1803,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体证据链**：`{"items":"paris"}` → `"paris"` → **`{"cities":["paris","paris"]}`**；const/数值界仍 400，裸数组不变。
 - **门**：`items_enum=[]`、`ae_plan`/`ae_text`/`ae_route=0`、`items_const/pattern/min=[items]`。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**。
+
+
+## ▶ 状态（F460，2026-11-09 08:05）——双侧整数界 `items` 从点名 400 变**逐元素有界整数发射**（项感知写入器 v2）
+- **实现**：`api_schema_array_item_bounds`（单数组属性 + `items` 恰为双侧整数界 ⇒ `prop|lo|hi`）+ `api_array_bounded_int_value`（数字体抽成 `api_number_bounded_element` 共享，F419 符号映射原样；`api_number_bounded_value` 改复用，单属性行为由 `SCHEMA-NUM-*` 四门钉回归）；四路由接入、items 拒绝并列豁免。
+- **门（含翻转）**：`items_min`（双侧）翻 `[]`；新增 `items_one=[items]`、`ib_plan=[nums|5|9]`、`ib_text=[{"nums":[5]}]`＋`api_json_ok`。
+- **活体**：`items_bounded_ok` **200 `{"nums":[5,6,7,8]}`**（每元素 [5,9] 整数）；`items_one_sided_refuse` **400**（单侧先被界判据成对走位点名）；四个 harness 全绿、smoke 不回退。
+- **过程**：前一会话已实现＋构建＋活体验证（01:24 `schema_required_f460b.log`）但未提交；本轮重建（07:36）全梯复验后入库。`schema_required_f460pre.log` 跑在前会话构建上，只证"旧 exe 非 F459 源码"，非改前证据。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**。

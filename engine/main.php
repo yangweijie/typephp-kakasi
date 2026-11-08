@@ -966,6 +966,149 @@ function api_response_schema_array_enum(string $body): string
     return api_schema_array_enum(api_json_object_after($body, "schema"));
 }
 
+// F460: "prop|lo|hi" for a single array property whose `items` is an integer with BOTH inclusive
+// bounds. Both are required: a one-sided bound would need the one-sided sentinel conventions, and
+// that form stays refused rather than getting a second encoding here.
+function api_schema_array_item_bounds(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 2) {
+        return "";
+    }
+    $kind = $lkv[1];
+    $tk = strpos($kind, "~");
+    if ($tk !== false) {
+        $kind = substr($kind, 0, $tk);
+    }
+    if ($kind != "an") {
+        return "";
+    }
+    $kp = strpos($block, "\"" . $lkv[0] . "\"");
+    $vo = strpos($block, "{", $kp);
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return "";
+    }
+    $ipo = strpos($leaf, "\"items\"");
+    if ($ipo === false) {
+        return "";
+    }
+    $ibo = strpos($leaf, "{", $ipo);
+    if ($ibo === false) {
+        return "";
+    }
+    $isub = api_balance_block($leaf, $ibo);
+    if ($isub == "") {
+        return "";
+    }
+    $mm = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"integer"\s*,\s*"minimum"\s*:\s*(-?[0-9]+)\s*,'
+        . '\s*"maximum"\s*:\s*(-?[0-9]+)\s*\}$/', $isub, $mm) != 1) {
+        return "";
+    }
+    $lo = (int) $mm[1];
+    $hi = (int) $mm[2];
+    if ($lo > $hi) {
+        return "";
+    }
+    return $lkv[0] . "|" . $lo . "|" . $hi;
+}
+
+function api_response_schema_array_item_bounds(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    return api_schema_array_item_bounds(api_json_object_after($body, "schema"));
+}
+
+// F460: an array of bounded integers. Each element is the same number body the single-property
+// writer uses (forced dash for a negative interval, then the digit walk), so every element lies in
+// [lo, hi]; the element count uses the same minItems/maxItems budget as the plain array writers.
+function api_array_bounded_int_value(string $ids, string $prop, int $lo, int $hi, int $maxItems, int $useCache = 1, string $bounds = ""): string
+{
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($commaIds == "" || $bracketIds == "") {
+        return "";
+    }
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
+    }
+    $s = api_constrained($ids, ["{\"" . $prop . "\":["], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $endIds = $commaIds . "," . $bracketIds;
+    $done = 0;
+    for ($it = 0; $it < $maxItems; $it++) {
+        $b = api_number_bounded_element($lo, $hi);
+        if ($b == "") {
+            return "";
+        }
+        $s = $s . "," . $b;
+        $offer = $endIds;
+        if ($it + 1 < $bMin) {
+            $offer = $commaIds;
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;
+        }
+        $nx = model_session_next_allowed(0, $offer);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos("," . $commaIds . ",", "," . $nx . ",") === false) {
+            $done = 1;
+            break;
+        }
+    }
+    if ($done == 0) {
+        $rb = api_constrained_continue(["]"], 4);
+        if ($rb != "") {
+            $s = $s . "," . $rb;
+        }
+    }
+    $end = api_constrained_continue(["}"], 4);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
+
 // F459: every element of the enum-item array is one of the enumerants, so the constrained decoder
 // emits each element as a whole candidate continuation (value + closing quote) and only "," / "]"
 // are reachable between elements - the same mechanism the flat enum writer and the bounded-number
@@ -5941,12 +6084,28 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
     if ($s == "") {
         return "";
     }
+    // F460: the number body (sign + digits) is shared with the bounded-integer array writer.
+    $b = api_number_bounded_element($lo, $hi);
+    if ($b == "") {
+        return "";
+    }
+    $s = $s . "," . $b;
+    $end = api_constrained_continue(["}"], 4);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
+
+// F460: one bounded integer as token ids (a forced dash when the whole interval is negative, then
+// the digit walk). No object wrapper, so the array writer can emit it element by element.
+function api_number_bounded_element(int $lo, int $hi): string
+{
     // F419: the sign mapping - both bounds negative walks the MAGNITUDE in [-hi, -lo] behind a
     // forced dash (the value -(mag) lands in [lo, hi]); a range straddling or touching zero
     // clamps the lower bound to zero (every value in [0, hi] is >= lo when lo < 0 - the same
     // subset argument the whole bounded walk uses); a one-sided negative minimum clamps to zero
-    // for the same reason; a one-sided negative maximum walks the magnitude's one-sided minimum
-    // behind the dash (any magnitude >= |hi| gives a value <= hi).
+    // for the same reason.
     $wlo = $lo;
     $whi = $hi;
     $neg = 0;
@@ -5957,22 +6116,19 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
     } else if ($lo < 0) {
         $wlo = 0;
     }
+    $s = "";
     if ($neg == 1) {
         $dash = api_constrained_continue(["-"], 4);
         if ($dash == "") {
             return "";
         }
-        $s = $s . "," . $dash;
+        $s = $dash;
     }
     $body = api_number_bounded_fill($wlo, $whi);
-    if ($body != "") {
-        $s = $s . "," . $body;
+    if ($body == "") {
+        return "";
     }
-    $end = api_constrained_continue(["}"], 4);
-    if ($end != "") {
-        $s = $s . "," . $end;
-    }
-    return $s;
+    return $s == "" ? $body : $s . "," . $body;
 }
 // Unbounded integer multipleOf. No finite candidate set exists, so decode a short digit prefix
 // and force a three-digit suffix x = (m - (p*1000) % m) % m. Since m <= 999, x < 1000 and
@@ -6839,12 +6995,18 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
     if ($scArrObj == "" && $scNest == "" && $scArr == "") {
         $scArrNum = api_response_schema_array_number($body);
     }
-    $scArrEnum = "";
+    $scArrItemB = "";
     if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "") {
+        $scArrItemB = api_response_schema_array_item_bounds($body);
+    }
+    $scArrEnum = "";
+    if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
+        && $scArrItemB == "") {
         $scArrEnum = api_response_schema_array_enum($body);
     }
     $scMix = "";
-    if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "" && $scArrEnum == "") {
+    if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
+        && $scArrEnum == "" && $scArrItemB == "") {
         $scMix = api_response_schema_mixed_object($body);
     }
     $scProp = [];
@@ -6902,6 +7064,10 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $snp = explode("|", $scNest);
         $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
             api_schema_charset(), 8, 1);
+    } else if ($scArrItemB != "") {
+        $sib = explode("|", $scArrItemB);
+        $scOut = api_array_bounded_int_value($ids, $sib[0], (int) $sib[1], (int) $sib[2], 4, 1,
+            api_response_schema_array_bounds($body));
     } else if ($scArrEnum != "") {
         $sae = explode("|", $scArrEnum);
         $scOut = api_array_enum_value($ids, $sae[0], $sae[1], 4, 1,
@@ -8794,9 +8960,11 @@ function api_schema_structural_unsupported(string $schema): string
     }
     // F458: an items block carrying any value constraint (enum/const/pattern/numeric bounds/...)
     // is outside what the array writers honour; a 200 there violates the schema (see the probe).
-    // F459: the finite string-enum items form now has its own writer, so it is not refused.
+    // F459/F460: the finite string-enum items form and the bounded-integer items form now have
+    // their own writers, so they are not refused.
     if (api_schema_items_constrained($schema) == 1
-        && api_schema_array_enum($schema) == "") {
+        && api_schema_array_enum($schema) == ""
+        && api_schema_array_item_bounds($schema) == "") {
         return "items";
     }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
@@ -10700,13 +10868,18 @@ Connection: close
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "") {
                                     $scArrNum = api_response_schema_array_number($body);
                                 }
-                                $scArrEnum = "";
+                                $scArrItemB = "";
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == "") {
+                                    $scArrItemB = api_response_schema_array_item_bounds($body);
+                                }
+                                $scArrEnum = "";
+                                if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
+                                    && $scArrItemB == "") {
                                     $scArrEnum = api_response_schema_array_enum($body);
                                 }
                                 $scMix = "";
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
-                                    && $scArrEnum == "") {
+                                    && $scArrEnum == "" && $scArrItemB == "") {
                                     $scMix = api_response_schema_mixed_object($body);
                                 }
                                 $scProp = [];
@@ -10765,6 +10938,11 @@ Connection: close
                                     $snp = explode("|", $scNest);
                                     $scOut = api_nested_object_value($ids, $snp[0], $snp[1],
                                         api_schema_charset(), 8, 1);
+                                } else if ($scArrItemB != "") {
+                                    $sib2 = explode("|", $scArrItemB);
+                                    $scOut = api_array_bounded_int_value($ids, $sib2[0],
+                                        (int) $sib2[1], (int) $sib2[2], 4, 1,
+                                        api_response_schema_array_bounds($body));
                                 } else if ($scArrEnum != "") {
                                     $sae2 = explode("|", $scArrEnum);
                                     $scOut = api_array_enum_value($ids, $sae2[0], $sae2[1], 4, 1,
@@ -11814,13 +11992,18 @@ function api_serve(int $port): void
                         if ($sArrObj == "" && $sNest == "" && $sArr == "") {
                             $sArrNum = api_response_schema_array_number($body);
                         }
-                        $sArrEnum = "";
+                        $sArrItemB = "";
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == "") {
+                            $sArrItemB = api_response_schema_array_item_bounds($body);
+                        }
+                        $sArrEnum = "";
+                        if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == ""
+                            && $sArrItemB == "") {
                             $sArrEnum = api_response_schema_array_enum($body);
                         }
                         $sMix = "";
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == ""
-                            && $sArrEnum == "") {
+                            && $sArrEnum == "" && $sArrItemB == "") {
                             $sMix = api_response_schema_mixed_object($body);
                         }
                         if ($sArrNI != "") {
@@ -11878,6 +12061,11 @@ function api_serve(int $port): void
                             $snp = explode("|", $sNest);
                             $sJOut = api_nested_object_value($ids, $snp[0], $snp[1],
                                 api_schema_charset(), 8, $prefixCache);
+                        } else if ($sArrItemB != "") {
+                            $sib3 = explode("|", $sArrItemB);
+                            $sJOut = api_array_bounded_int_value($ids, $sib3[0], (int) $sib3[1],
+                                (int) $sib3[2], 4, $prefixCache,
+                                api_response_schema_array_bounds($body));
                         } else if ($sArrEnum != "") {
                             $sae3 = explode("|", $sArrEnum);
                             $sJOut = api_array_enum_value($ids, $sae3[0], $sae3[1], 4,
@@ -12186,13 +12374,18 @@ function api_serve(int $port): void
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "") {
                         $arrNum = api_response_schema_array_number($body);
                     }
-                    $arrEnum = "";
+                    $arrItemB = "";
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == "") {
+                        $arrItemB = api_response_schema_array_item_bounds($body);
+                    }
+                    $arrEnum = "";
+                    if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == ""
+                        && $arrItemB == "") {
                         $arrEnum = api_response_schema_array_enum($body);
                     }
                     $mixPlan = "";
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == ""
-                        && $arrEnum == "") {
+                        && $arrEnum == "" && $arrItemB == "") {
                         $mixPlan = api_response_schema_mixed_object($body);
                     }
                     $strProps = [];
@@ -12265,6 +12458,12 @@ function api_serve(int $port): void
                         $npp = explode("|", $nestProp);
                         $enumOut = api_nested_object_value($ids, $npp[0], $npp[1],
                             api_schema_charset(), 8, $prefixCache);
+                        $jsonMode = 1;
+                    } else if ($arrItemB != "") {
+                        $aib = explode("|", $arrItemB);
+                        $enumOut = api_array_bounded_int_value($ids, $aib[0], (int) $aib[1],
+                            (int) $aib[2], 4, $prefixCache,
+                            api_response_schema_array_bounds($body));
                         $jsonMode = 1;
                     } else if ($arrEnum != "") {
                         $ae4 = explode("|", $arrEnum);
@@ -16695,6 +16894,21 @@ function main(): void
     $sfCC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris|lyon)$"}}}}');
     $sfCD = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}');
     $sfCE = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
+    // F460: both-bounds integer items are served; a one-sided bound keeps the refusal.
+    $sfCI = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5}}}}');
+    $ibPlan = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}}}');
+    $ibOne = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5}}}}}}');
+    $ibIds = tok_chat("user", "Give the numbers.") . "," . tok_chat_open("assistant");
+    $ibBase = count(explode(",", $ibIds));
+    $ibOut = api_array_bounded_int_value($ibIds, "nums", 5, 9, 1, 0);
+    $ibParts = explode(",", $ibOut);
+    $ibText = "";
+    for ($i = $ibBase; $i < count($ibParts); $i++) {
+        $ibText = $ibText . gguf_token_str((int) $ibParts[$i]);
+    }
+    $ibText = str_replace("Ġ", " ", $ibText);
+    $ibShape = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $ibText, $ibM) == 1;
+    $ibVal = $ibShape == 1 ? (int) $ibM[1] : -100000;
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -16744,6 +16958,8 @@ function main(): void
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
         . "] items_enum=[" . $sfCA . "] items_const=[" . $sfCB . "] items_pattern=[" . $sfCC
         . "] items_min=[" . $sfCD . "] items_plain=[" . $sfCE . "]"
+        . " items_one=[" . $sfCI . "] ib_plan=[" . $ibPlan . "] ib_one=[" . $ibOne
+        . "] ib_text=[" . $ibText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -16776,7 +16992,9 @@ function main(): void
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
         && $sfCA == "" && $sfCB == "items" && $sfCC == "items"
-        && $sfCD == "items" && $sfCE == ""
+        && $sfCD == "" && $sfCE == "" && $sfCI == "items"
+        && $ibPlan == "nums|5|9" && $ibOne == "" && $ibShape == 1
+        && $ibVal >= 5 && $ibVal <= 9 && api_json_ok($ibText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

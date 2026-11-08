@@ -222,10 +222,18 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array",
                                                   "items": {"type": "string", "const": "paris"}}}},
      lambda code, txt: code == 400 and "items" in txt),
-    ("items_min_refuse", "Give the numbers.",
+    # F460: both-bounds integer items are served element by element; a one-sided bound is not
+    # (the writer's sentinel conventions are not reused here) and stays refused by name.
+    ("items_bounded_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "minimum": 5, "maximum": 9}}}},
-     lambda code, txt: code == 400 and "items" in txt),
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
+     and len((obj_of(txt) or {}).get("nums", [])) >= 1
+     and all(isinstance(x, int) and 5 <= x <= 9 for x in (obj_of(txt) or {}).get("nums", []))),
+    ("items_one_sided_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 5}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
     ("items_plain_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}}},
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)),
