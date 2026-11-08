@@ -193,6 +193,21 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "propertyNames": {"maxLength": 3}},
      lambda code, txt: code == 400 and "propertyNames" in txt),
+    # F432: dependentRequired is satisfied when every declared key is emitted, and violated when the
+    # trigger is emitted but its dependency was omitted by a required subset - so it must be judged,
+    # not blanket-refused.
+    ("dep_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependentRequired": {"city": ["note"]}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("dep_bad_subset", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "required": ["city"], "dependentRequired": {"city": ["note"]}},
+     lambda code, txt: code == 400 and "dependentRequired" in txt),
+    ("dep_undeclared", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}},
+      "dependentRequired": {"city": ["region"]}},
+     lambda code, txt: code == 400 and "dependentRequired" in txt),
 ]
 
 bad = 0

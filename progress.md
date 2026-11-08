@@ -1546,3 +1546,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **探针修正**：错误体截断窗口 200 → 900（新消息的相关子句在 200 之后，导致假红）。
 - **活体**：`multi_leaf_multipleof` **400 点名**；bounds/required/count/pattern PASS。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**。
+
+
+## ▶ 状态（F432，2026-11-08 15:38）——`dependentRequired`：条件约束可判，不再一律拒绝
+- **改前活体**：`{"city","note"}` + `dependentRequired:{"city":["note"]}` 本已满足却 **400 误拒**。
+- **实现**：`api_schema_dependent_required_ok` —— 会发出的键集合（required 子集优先，否则 plan）；trigger 不在集合则跳过，在则要求依赖都在；未声明依赖/混合形状仍拒。
+- **门**：`SCHEMA-STRUCT` 24 项（`dep_ok=[]`、`dep_subset/dep_undeclared/dep_mixed` 点名）。
+- **活体**：`dep_ok` **200 双键**（改前 400）、两例违反 **400 点名**；其余 harness 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**。

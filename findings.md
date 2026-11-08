@@ -4039,3 +4039,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`multi_leaf_multipleof` **400 且消息含 multipleOf**（改前 200 丢键）。**探针假红**：`schema_bounds_check.py` 把错误体截断在 200 字符，而新消息的 multipleOf 子句在更后面 ⇒ 断言落空；把窗口放到 900 字符后通过——**探针的截断长度也是判据的一部分**。
 **梯**：自检 **182/0**、`RUN_EXIT=0`；bounds 活体 PASS、required/count/pattern PASS；8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**（`engine/selftest_f431.log`、`engine/schema_bounds_f431.log`、`engine/api_smoke_f431.log`、`engine/throughput_f431.log`）。
 **记法**：**"只发一个属性"的生成器必须先证明 schema 只有一个属性**——否则它不是" honoured"，而是**用完整的外观交出不完整的对象**；多叶情形在没有对应生成器前只能拒绝。**错误体的截断窗口要能容下被测子句**，否则"消息里没有"可能只是"没读到"。
+
+
+## F432：`dependentRequired`——键集合已知 ⇒ 可判，不再一律拒绝
+**改前活体（`engine/schema_required_f432pre.log`）**：`{"city","note"}` + `dependentRequired:{"city":["note"]}` —— 两个键都会发出、依赖天然成立，却被 **400 误拒**（`VERDICT: FAIL cases=1`）；另两例（required 子集下省略依赖、依赖未声明的键）拒绝是对的。
+**实现**：`api_schema_dependent_required_ok($schema)`——①只在扁平全字符串形状；②"会发出的键集合"＝required 子集（F401）优先，否则＝声明表；③逐个依赖对：**trigger 不在集合里就跳过**（依赖只在 trigger 出现时生效），在就把每个依赖都要求在同一集合里；未声明的依赖必然不在集合 ⇒ 拒；④形状未证明 ⇒ 拒。结构判据里先单独判 `dependentRequired`，不通过才点名。
+**门**：`SCHEMA-STRUCT` 扩到 24 项：`dep_ok=[]`、`dep_subset=[dependentRequired]`（required 子集省略了依赖）、`dep_undeclared=[dependentRequired]`、`dep_mixed=[dependentRequired]`（混合形状边界）。
+**活体**：`dep_ok` **200 双键**（改前 400）、`dep_bad_subset`/`dep_undeclared` **400 点名**；bounds/required/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**（`engine/selftest_f432.log`、`engine/schema_required_f432.log`、`engine/api_smoke_f432.log`、`engine/throughput_f432.log`）。
+**记法**：**"条件约束"的判据是"条件是否真的触发"**——trigger 不在发出的键里时依赖不适用；把"会发出哪些键"算出来（plan 或 required 子集），条件约束就和普通约束一样可判。**这是"构造满足 ⇒ 不该拒绝"在条件语义上的第三次复用（F398/F402/F429 之后）。**

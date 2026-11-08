@@ -7533,6 +7533,89 @@ function api_schema_plan_count(string $schema): int
     return count(explode(",", $plan));
 }
 
+// F432: dependentRequired is satisfied when, for every trigger key the answer will contain, its
+// dependencies are contained too. On the flat all-string shape the emitted key set is the declared
+// plan or its required subset - both known before generation - so the rule can be checked instead
+// of refused. Shapes whose key set is not proven, or a dependency on a key that is never emitted,
+// keep the refusal.
+function api_schema_dependent_required_ok(string $schema): int
+{
+    if (api_schema_flat_all_string($schema) != 1) {
+        return 0;
+    }
+    $dp = strpos($schema, "\"dependentRequired\"");
+    if ($dp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $dp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $emit = api_schema_required_filter($schema);
+    if ($emit == "") {
+        $pp = strpos($schema, "\"properties\"");
+        if ($pp === false) {
+            return 0;
+        }
+        $pbo = strpos($schema, "{", $pp);
+        if ($pbo === false) {
+            return 0;
+        }
+        $pblk = api_balance_block($schema, $pbo);
+        if ($pblk == "") {
+            return 0;
+        }
+        $plan = api_top_leaves($pblk, 64);
+        if ($plan == "") {
+            return 0;
+        }
+        $emit = "";
+        foreach (explode(",", $plan) as $leaf) {
+            $kv = explode(":", $leaf);
+            $emit = $emit == "" ? $kv[0] : $emit . "," . $kv[0];
+        }
+    }
+    $off = 0;
+    while (true) {
+        $q = strpos($block, "\"", $off);
+        if ($q === false) {
+            break;
+        }
+        $qe = strpos($block, "\"", $q + 1);
+        if ($qe === false) {
+            break;
+        }
+        $key = substr($block, $q + 1, $qe - $q - 1);
+        $ao = strpos($block, "[", $qe);
+        if ($ao === false) {
+            break;
+        }
+        $ac = strpos($block, "]", $ao);
+        if ($ac === false) {
+            break;
+        }
+        $off = $ac + 1;
+        if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+            continue;               // the trigger is absent, so its dependencies do not apply
+        }
+        foreach (explode(",", substr($block, $ao + 1, $ac - $ao - 1)) as $dep) {
+            $dep = str_replace("\"", "", $dep);
+            $dep = str_replace(" ", "", $dep);
+            if ($dep == "") {
+                continue;
+            }
+            if (strpos("," . $emit . ",", "," . $dep . ",") === false) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 // F429: propertyNames constrains KEY NAMES, and on the flat all-string shape the emitted keys are
 // exactly the declared plan - so the subschema can be evaluated against those names before
 // generation. Only the forms that can be checked are honoured (pattern, min/maxLength, enum, const,
@@ -7640,9 +7723,15 @@ function api_schema_structural_unsupported(string $schema): string
         && api_schema_property_names_ok($schema) != 1) {
         return "propertyNames";
     }
+    // F432: dependentRequired is judged against the keys the answer will contain, the same way
+    // propertyNames is judged against their names.
+    if (preg_match('/"dependentRequired"\s*:\s*\{/', $schema) == 1
+        && api_schema_dependent_required_ok($schema) != 1) {
+        return "dependentRequired";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"(contains|patternProperties|not|if|dependentRequired|dependentSchemas|'
+    if (preg_match('/"(contains|patternProperties|not|if|dependentSchemas|'
         . 'dependencies)"\s*:\s*\{/', $schema, $mk) == 1) {
         return $mk[1];
     }
@@ -14885,6 +14974,12 @@ function main(): void
     // F429: the refusal layer alone is not enough - the key-name pattern must not disqualify the
     // VALUE generator either, or the request is accepted and then answered with prose.
     $sfU = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"pattern":"^[a-z]+$"}}}}');
+    // F432: dependentRequired is honoured when the emitted keys contain the dependency and refused
+    // when the trigger is emitted while a dependency is omitted (required subset) or never emitted.
+    $sfV = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"dependentRequired":{"city":["note"]}}');
+    $sfW = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"required":["city"],"dependentRequired":{"city":["note"]}}');
+    $sfX = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"dependentRequired":{"city":["region"]}}');
+    $sfY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"dependentRequired":{"city":["count"]}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -14893,7 +14988,9 @@ function main(): void
         . "] contentMediaType=[" . $sfN . "] format_prop=[" . $sfO
         . "] pnames_ok=[" . $sfP . "] pnames_bad=[" . $sfQ . "] pnames_len_ok=[" . $sfR
         . "] pnames_enum=[" . $sfS . "] pnames_mixed=[" . $sfT
-        . "] pnames_route=" . count($sfU) . "]\n";
+        . "] pnames_route=" . count($sfU)
+        . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
+        . "] dep_mixed=[" . $sfY . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -14901,7 +14998,9 @@ function main(): void
         && $sfN == "contentMediaType" && $sfO == ""
         && $sfP == "" && $sfQ == "propertyNames" && $sfR == "" && $sfS == "propertyNames"
         && $sfT == "propertyNames"
-        && count($sfU) == 2 && $sfU[0] == "city" && $sfU[1] == "note") {
+        && count($sfU) == 2 && $sfU[0] == "city" && $sfU[1] == "note"
+        && $sfV == "" && $sfW == "dependentRequired" && $sfX == "dependentRequired"
+        && $sfY == "dependentRequired") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

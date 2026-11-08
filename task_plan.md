@@ -909,3 +909,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**。
 **明确留拒（排队）**：number 叶浮点界、无界 `multipleOf` > 999999、多叶 multipleOf 的**实现**（需多叶数字生成器）；`propertyNames` 的其他求值形式。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F432 计划与完成（`dependentRequired`：条件按"会发出的键"判定）
+**F431 已完成**：多叶 multipleOf 显式拒绝。
+**改前活体**：满足的 `dependentRequired` 被 400 误拒。
+**F432 已完成**：`api_schema_dependent_required_ok` —— 会发键集合＝required 子集或 plan；trigger 缺席则跳过；依赖缺席/未声明、形状未证明 ⇒ 拒。
+**门**：`SCHEMA-STRUCT` 24 项（`dep_ok=[]` / `dep_subset` / `dep_undeclared` / `dep_mixed`）。
+**活体**：`dep_ok` 200 双键、两例 400 点名。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**（`engine/selftest_f432.log`、`engine/schema_required_f432.log`、`engine/api_smoke_f432.log`、`engine/throughput_f432.log`）。
+**明确留拒（排队）**：number 叶浮点界、无界 `multipleOf` > 999999、多叶 multipleOf 的实现；`dependentSchemas`/`dependencies` 仍未实现（条件 schema，不是键集合）。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
