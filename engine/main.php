@@ -8659,6 +8659,72 @@ function api_schema_kind_is_type(string $kind, string $t): int
     return 0;
 }
 
+// F457: does an emitted leaf kind GUARANTEE that every value satisfies this subschema? Only the
+// finite string-enum kind exposes its values, so it is the only kind that can promise more than a
+// bare type: enum/const become set inclusion and pattern becomes "every enumerant matches". Every
+// other kind (free string, pattern-spec, numeric, boolean, array) is opaque - it guarantees only its
+// type, which the caller checks with api_schema_kind_is_type. The subschema forms accepted here are
+// exactly one of enum/const/pattern with an optional `"type":"string"` prefix; anything richer is
+// not a guarantee this judgement can make.
+function api_schema_leaf_guarantees(string $kind, string $sub): int
+{
+    if (substr($kind, 0, 2) != "e:") {
+        return 0;
+    }
+    $vals = explode("~", substr($kind, 2));
+    if (count($vals) < 1 || $vals[0] == "") {
+        return 0;
+    }
+    $pre = '(?:"type"\s*:\s*"string"\s*,\s*)?';
+    $mc = [];
+    if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mc) == 1) {
+        $want = api_unesc($mc[1]);
+        for ($i = 0; $i < count($vals); $i++) {
+            if ($vals[$i] != $want) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    $me = [];
+    if (preg_match('/^\{\s*' . $pre . '"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $me) == 1) {
+        $allowed = api_list($me[1]);
+        if (count($allowed) < 1) {
+            return 0;
+        }
+        for ($i = 0; $i < count($vals); $i++) {
+            $hit = 0;
+            for ($j = 0; $j < count($allowed); $j++) {
+                if ($vals[$i] == $allowed[$j]) {
+                    $hit = 1;
+                }
+            }
+            if ($hit != 1) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    $mp = [];
+    if (preg_match('/^\{\s*' . $pre . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mp) == 1) {
+        if (strlen($mp[1]) < 1 || strlen($mp[1]) > 200) {
+            return 0;
+        }
+        $re = "#" . str_replace("#", "\\#", $mp[1]) . "#";
+        for ($i = 0; $i < count($vals); $i++) {
+            $r = preg_match($re, $vals[$i]);
+            if ($r != 0 && $r != 1) {
+                return 0;       // unreadable pattern: refuse rather than read the error as a match
+            }
+            if ($r != 1) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
+}
+
 function api_schema_leaf_kind(string $plan, string $name): string
 {
     $pre = $name . ":";
@@ -8739,9 +8805,13 @@ function api_schema_pattern_props_ok(string $schema): int
             return 0;       // unreadable pattern: refuse rather than read the error as "no match"
         }
         if ($r == 1) {
-            if ($vtype == "" || $plan == ""
-                || api_schema_kind_is_type(api_schema_leaf_kind($plan, $name), $vtype) != 1) {
-                return 0;   // the value would have to be evaluated, or the kind cannot prove the type
+            $kind = $plan == "" ? "" : api_schema_leaf_kind($plan, $name);
+            if ($vtype != "") {
+                if (api_schema_kind_is_type($kind, $vtype) != 1) {
+                    return 0;   // the declared kind cannot prove the type
+                }
+            } else if (api_schema_leaf_guarantees($kind, $vblk) != 1) {
+                return 0;       // richer subschema the kind cannot guarantee
             }
         }
     }
@@ -16344,6 +16414,15 @@ function main(): void
     // F455: a matching pattern is honoured when the bare type is the one the matched keys' declared
     // kinds guarantee; the existing $sfL (^a over a string key, integer subschema) is its control.
     $sfBK = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^c":{"type":"string"}}}');
+    // F457: the enum kind's values are known, so enum/const/pattern subschemas become provable
+    // (inclusion / equality / every value matches). The subset-broken and pattern-miss cases are the
+    // controls; the route case answers the spec's first question - the enum writer still claims the
+    // schema once patternProperties is honoured.
+    $sfBM = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]},"note":{"type":"string"}},"patternProperties":{"^c":{"enum":["paris","lyon"]}}}');
+    $sfBN = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]},"note":{"type":"string"}},"patternProperties":{"^c":{"enum":["paris"]}}}');
+    $sfBO = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","prague"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
+    $sfBP = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
+    $sfBQ = api_schema_candidates('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"enum":["paris","lyon"]}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16371,7 +16450,9 @@ function main(): void
         . "] uneval_prop_named=[" . $sfBE . "]"
         . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
         . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
-        . " pp_match_ok=[" . $sfBK . "]\n";
+        . " pp_match_ok=[" . $sfBK . "]"
+        . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
+        . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -16398,7 +16479,9 @@ function main(): void
         && $sfBA == "" && $sfBB == "" && $sfBC == ""
         && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties"
         && $sfBF == "" && $sfBG == "" && $sfBH == "minContains"
-        && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == "") {
+        && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
+        && $sfBM == "" && $sfBN == "patternProperties"
+        && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

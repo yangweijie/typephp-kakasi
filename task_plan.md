@@ -1129,7 +1129,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：基于 plan 的子 schema 判定规格（F457，见下节）→ 分片多卡 / FR-05（本机不可验证）。
 
 
-## F457 规格（基于 plan 的子 schema 判定；**待执行**）
+## F457 规格与完成（基于 plan 的子 schema 判定；**已执行**）
 **动机**：剩下所有"值级"关键字（`contains`/`not`/`patternProperties` 的丰富子 schema、`if` 的丰富生效分支）都需要回答同一个问题——"生成器**保证**产出的值是否满足子 schema"。静态答案（构造满足）比动态求值便宜，且与 F449–F455 是同一套证明。
 **统一入口（拟）**：`api_schema_leaf_guarantees(string $kind, string $sub): int`——输入 plan 叶子种类与子 schema 文本，输出"该种类的所有可能输出都满足子 schema"。v1 支持的约束与判据：
 1. `type`：复用 `api_schema_kind_is_type`（`engine/main.php:8625`）。
@@ -1142,6 +1142,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 2. **枚举值解析**：`api_list` 对子 schema enum 的空白/引号处理需与 `api_top_leaves` 的 `e:` 编码一致；用 PHP CLI 抽取式单测（同 `bound_inward_test.php`）钉住。
 **验收**：①枚举包含的正例被服务且值来自枚举 ②子集不成立/自由字符串种类仍拒绝 ③四个 harness + 8000/8001 不回退 ④`check_gates` 引用全解析。
 **顺位**：F457 执行 → 分片多卡 / FR-05（本机不可验证）。
+**F457 已完成**：`api_schema_leaf_guarantees`（仅 `e:` 提供 enum/const/pattern 保证）+ `patternProperties` 试点；两问各以证据收口——门 `pp_enum_route=2`（候选写入器仍认领）、单测 `engine/tests/leaf_guarantees_test.php` **12/12**（含带空格枚举值）；门 `pp_enum=[]`/`pp_pat=[]`/`pp_enum_sub=[patternProperties]`/`pp_pat_miss=[patternProperties]`；活体 `patternprops_enum_ok` 200 `{"city":"paris"}`、子集 400。梯 **182/0**、8000 **115/0**、8001 绿、scaling **1.503×**、哨兵 **0**（`engine/selftest_f457.log` 等）。
+**明确留拒（排队，F457 后）**：`contains`/`not` 的值级子 schema；`patternProperties` 对非枚举种类的值级约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`contains` 的值级形式（复用 `api_schema_leaf_guarantees` 判定元素种类的保证）→ 分片多卡 / FR-05（本机不可验证）。
 
 
 ## F451 计划与完成（`patternProperties` 的空约束形式）

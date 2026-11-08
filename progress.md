@@ -1778,3 +1778,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **入口**：`api_schema_leaf_guarantees(kind, sub)`——只对 `e:` 有限枚举提供 enum/const/pattern 保证，`type` 复用 `kind_is_type`；其他种类一律不算保证。
 - **试点**：`api_schema_pattern_props_ok` 的丰富子 schema 分支。
 - **执行前必答**：①含 enum 叶 + patternProperties 的路由是否仍被候选/枚举写入器认领（门断言，再活体）②enum 解析用 PHP CLI 抽取式单测钉住 `e:` 编码一致性。
+
+
+## ▶ 状态（F457，2026-11-09 00:13）——基于 plan 的子 schema 判定落地（`e:` 枚举保证），试点 patternProperties
+- **入口**：`api_schema_leaf_guarantees(kind,sub)`——`e:` 枚举提供 enum 包含 / const 相等 / pattern 逐值匹配；其他种类只由 `kind_is_type` 负责 type。
+- **前缀**：`api_schema_pattern_props_ok` 的丰富子 schema 分支改调该判定。
+- **规格两问的证据**：门 `pp_enum_route=2`（候选写入器仍认领）；PHP CLI 单测 `leaf_guarantees_test.php` **12/12**（含带空格枚举值）。
+- **门**：`pp_enum=[]`、`pp_pat=[]`、`pp_enum_sub=[patternProperties]`、`pp_pat_miss=[patternProperties]`。
+- **活体**：`patternprops_enum_ok` **200 `{"city":"paris"}`**、`patternprops_enum_sub_refuse` **400 点名**。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.503×**、哨兵 **0**。

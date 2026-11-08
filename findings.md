@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F456）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F457）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3747,7 +3747,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | contains：类型不匹配 / 值级规则（pattern 等） | **显式 400** | `contains_mismatch`/`contains_pattern`（F449） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / array↔数组种类） | **支持**（值由该种类写出器保证） | `pp_match_ok`（F455） |
-| patternProperties：类型不匹配 / 更丰富子 schema / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`（F451/F455） |
+| patternProperties：匹配键为**有限字符串枚举**（`e:` 种类），子 schema 为 enum（包含关系）/ const（相等）/ pattern（逐枚举值匹配） | **支持**（枚举值集合已知 ⇒ 静态可证；值来自枚举） | `pp_enum`/`pp_pat`/`pp_enum_route`（F457） |
+| patternProperties：类型不匹配 / 枚举子集不成立 / pattern 未覆盖全部枚举值 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`/`pp_enum_sub`/`pp_pat_miss`（F451–F457） |
 | if/then/else：`if` 恰为单 `type`，按类型选中 `then`/`else`，生效分支缺省或恰为 `{"type":"object"}`（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`（F452） |
 | if/then/else：生效分支更丰富（required/bounds/嵌套）/ 其他形状 | **显式 400** | `if_rich`（F452） |
 | unevaluatedProperties：键集可证明且全部键由根级 `properties` 求值 | **支持**（该关键字无可判对象，任意值/子 schema 均满足） | `uneval_props`/`uneval_props_schema`（F453） |
@@ -3760,7 +3761,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema、`patternProperties` 的**更丰富**子 schema（值级/嵌套）、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、六位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4283,3 +4284,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`float_dec5_served` **200 `{"n":1.51111}`**（F450 时是 400）、新增 `float_dec6_refuse`（1.511111–1.511119）**400**；1.5/1.51/1.511/1.5111/-1.9 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.454×**（单次测量，低于近几轮 1.5–1.6×，如实记录）；哨兵 **0**（`engine/selftest_f456.log`、`engine/schema_bounds_f456.log`、`engine/schema_required_f456.log`、`engine/schema_count_f456.log`、`engine/schema_pattern_f456.log`、`engine/api_smoke_f456.log`、`engine/throughput_f456.log`）。
 **记法**：宽度阶梯每加一格，改的仍是**同三处**；把"字面正则 / 缩放函数 / 写入器分支"当成一个整体搜一起改，翻转旧夹具并各留一格更宽的拒绝对照——这套流程已可复用，不需要每次重新发现。
+
+## F457：基于 plan 的**子 schema 判定**落地（`e:` 枚举的 enum/const/pattern 保证），试点 `patternProperties`
+**统一入口**：`api_schema_leaf_guarantees(kind, sub)`——只有有限字符串枚举 `e:v1~v2` 暴露值集合，因此也只有它能承诺超出裸 type 的保证：`enum` 判**包含**、`const` 判**相等**、`pattern` 判**每个枚举值都匹配**（模式长度 1–200，读不出结果不算匹配）。其他种类（`s`/`p:`/`i`/`n`/`b`/`a*`/`en:`）一律返回 0，只由调用方的 `api_schema_kind_is_type` 负责 type。子 schema 只接受"单 enum/const/pattern + 可选 `"type":"string"` 前缀"这几种形态，更丰富的一律不算保证。
+**规格里两个先行问题的答案（都由证据给出，不靠推断）**：
+1. **路由**：门 `pp_enum_route=2` —— 含枚举叶子 + `patternProperties` 的 schema 仍被候选/枚举写入器认领（两个候选），活体 `patternprops_enum_ok` **200 `{"city":"paris"}`** 进一步证明值来自枚举。
+2. **枚举解析**：新增 PHP CLI 抽取式单测 `engine/tests/leaf_guarantees_test.php`（运行时从 `main.php` 抽取 `api_unesc`/`api_list`/`api_schema_leaf_guarantees`，12 例）——**PASS 12/12**，其中带空格值 `e:new work` 与 `{"enum":["new work"]}` 一致，钉住两侧解析同一规范化。
+**门**：`pp_enum=[]`（枚举包含）、`pp_pat=[]`（枚举全部匹配 `^p`）、`pp_enum_sub=[patternProperties]`（子集不成立）、`pp_pat_miss=[patternProperties]`（有枚举值不匹配）。
+**活体**：`patternprops_enum_ok` 200 且 `city ∈ {paris,lyon}`；`patternprops_enum_sub_refuse` 400 点名。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；单测 **12/12**；8000 **115/0**；8001 par/fairness **0**；scaling **1.503×**；哨兵 **0**（`engine/selftest_f457.log`、`engine/schema_required_f457.log`、`engine/schema_bounds_f457.log`、`engine/schema_count_f457.log`、`engine/schema_pattern_f457.log`、`engine/api_smoke_f457.log`、`engine/throughput_f457.log`）。
+**记法**：**静态判定要把"已知集合"作为唯一依据**——`e:` 是唯一暴露值集合的种类，所以 v1 只让它作保证；把 `s`/`p:` 也算进来会变成"看起来能证明"的假阳性。规格中"先回答路由与解析"的两问各用一条证据收口，避免把推断写进支持表。

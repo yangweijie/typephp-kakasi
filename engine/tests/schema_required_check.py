@@ -188,6 +188,17 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "patternProperties": {"^c": {"type": "string"}}},
      lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    # F457: the enum kind exposes its values, so an enum/const/pattern subschema over a matching key
+    # is provable - and the served value must come from that enum. A subschema that admits fewer
+    # values than the enum stays refused (the control).
+    ("patternprops_enum_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string", "enum": ["paris", "lyon"]}},
+      "patternProperties": {"^c": {"enum": ["paris", "lyon"]}}},
+     lambda code, txt: code == 200 and json.loads(txt).get("city") in ["paris", "lyon"]),
+    ("patternprops_enum_sub_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string", "enum": ["paris", "lyon"]}},
+      "patternProperties": {"^c": {"enum": ["paris"]}}},
+     lambda code, txt: code == 400 and "patternProperties" in txt),
     # F452: if/then/else is decided by the bare type: object is true, every other type is false, and
     # the selected branch is the trivial object one. The first case also pins the key set: the
     # `required` nested in the IGNORED else must not be read as a root requirement and shrink the
