@@ -5298,46 +5298,61 @@ function api_schema_number_bounded_shape(string $schema): string
     // served 1 for minimum 1.5 and served a value at all for [1.5, 1.9].
     $hasLo = preg_match('/"minimum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $mn) == 1;
     $hasHi = preg_match('/"maximum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $mx) == 1;
-    // F422: exclusive bounds on an integer leaf - the inclusive form wins when both are present
-    // (the same precedence as the candidates tier), otherwise the exclusive literal is converted
-    // to an inclusive integer bound (floor(X)+1 / ceil(X)-1) and served by the same digit walk.
-    $hasExLo = !$hasLo && preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exn) == 1;
-    $hasExHi = !$hasHi && preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exm) == 1;
+    // F422/F423: exclusive bounds on an integer leaf convert to the adjacent integer bound
+    // (floor(X)+1 / ceil(X)-1) and are served by the same digit walk. Both forms may sit on the
+    // same side; when they do the STRICTER governs (F423) - the maximum of the two lower bounds and
+    // the minimum of the two upper - so a stricter exclusive bound is not shadowed by a looser
+    // inclusive one.
+    $hasExLo = preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exn) == 1;
+    $hasExHi = preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9.eE+]+)/', $schema, $exm) == 1;
     if (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi) {
         return "";
-    }
-    $lo = -1;
-    $hi = -1;
-    if ($hasLo) {
-        // F419: negative bounds are served - the writer maps the sign (both-negative walks the
-        // magnitude behind a dash; straddling clamps to the non-negative side). The -1 sentinel
-        // for an absent side collides with a real -1 only in cases where the subset walk stays
-        // legal, recorded in findings.
-        $lo = api_schema_bound_inward($mn[1], 1);
-        if ($lo == -1000000) {
-            return "";
-        }
-    } else if ($hasExLo) {
-        $lo = api_schema_bound_exclusive($exn[1], 1);
-        if ($lo == -1000000) {
-            return "";
-        }
-    }
-    if ($hasHi) {
-        $hi = api_schema_bound_inward($mx[1], 0);
-        if ($hi == -1000000) {
-            return "";
-        }
-    } else if ($hasExHi) {
-        $hi = api_schema_bound_exclusive($exm[1], 0);
-        if ($hi == -1000000) {
-            return "";
-        }
     }
     // F422: a side is "set" when it came from the inclusive OR the exclusive literal - the interval
     // and the multipleOf walk below must reason about whichever bound is present, not only the one.
     $loSet = $hasLo || $hasExLo;
     $hiSet = $hasHi || $hasExHi;
+    $lo = -1;
+    $hi = -1;
+    if ($loSet) {
+        // Seed the running bound at the extreme and tighten: the stricter of the two lower bounds.
+        $lo = PHP_INT_MIN;
+        if ($hasLo) {
+            // F419: negative bounds are served - the writer maps the sign (both-negative walks the
+            // magnitude behind a dash; straddling clamps to the non-negative side). The -1 sentinel
+            // for an absent side collides with a real -1 only in cases where the subset walk stays
+            // legal, recorded in findings.
+            $t = api_schema_bound_inward($mn[1], 1);
+            if ($t == -1000000) {
+                return "";
+            }
+            $lo = max($lo, $t);
+        }
+        if ($hasExLo) {
+            $t = api_schema_bound_exclusive($exn[1], 1);
+            if ($t == -1000000) {
+                return "";
+            }
+            $lo = max($lo, $t);
+        }
+    }
+    if ($hiSet) {
+        $hi = PHP_INT_MAX;
+        if ($hasHi) {
+            $t = api_schema_bound_inward($mx[1], 0);
+            if ($t == -1000000) {
+                return "";
+            }
+            $hi = min($hi, $t);
+        }
+        if ($hasExHi) {
+            $t = api_schema_bound_exclusive($exm[1], 0);
+            if ($t == -1000000) {
+                return "";
+            }
+            $hi = min($hi, $t);
+        }
+    }
     if ($loSet && $hiSet && $lo > $hi) {
         return "";
     }
@@ -6614,18 +6629,37 @@ function api_schema_candidates(string $tail): array
             $hi = 0;
             $haveLo = 0;
             $haveHi = 0;
+            // F423: both an inclusive and an exclusive bound may sit on the same side; the STRICTER
+            // governs (max of the two lower bounds, min of the two upper), so a stricter exclusive
+            // is not shadowed by the looser inclusive one. Each form is read independently, then
+            // merged - the exclusive literal still converts to the adjacent integer (exclMin -> +1,
+            // exclMax -> -1) as before.
+            $loIncl = 0; $haveInclLo = 0;
             if (preg_match('/"minimum"\s*:\s*(-?[0-9]+)/', $obj, $mm)) {
-                $lo = (int) $mm[1];
-                $haveLo = 1;
-            } else if (preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9]+)/', $obj, $mm)) {
-                $lo = (int) $mm[1] + 1;
+                $loIncl = (int) $mm[1];
+                $haveInclLo = 1;
+            }
+            $loExcl = 0; $haveExclLo = 0;
+            if (preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9]+)/', $obj, $mm)) {
+                $loExcl = (int) $mm[1] + 1;
+                $haveExclLo = 1;
+            }
+            if ($haveInclLo || $haveExclLo) {
+                $lo = ($haveInclLo && $haveExclLo) ? max($loIncl, $loExcl) : ($haveInclLo ? $loIncl : $loExcl);
                 $haveLo = 1;
             }
+            $hiIncl = 0; $haveInclHi = 0;
             if (preg_match('/"maximum"\s*:\s*(-?[0-9]+)/', $obj, $xm)) {
-                $hi = (int) $xm[1];
-                $haveHi = 1;
-            } else if (preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9]+)/', $obj, $xm)) {
-                $hi = (int) $xm[1] - 1;
+                $hiIncl = (int) $xm[1];
+                $haveInclHi = 1;
+            }
+            $hiExcl = 0; $haveExclHi = 0;
+            if (preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9]+)/', $obj, $xm)) {
+                $hiExcl = (int) $xm[1] - 1;
+                $haveExclHi = 1;
+            }
+            if ($haveInclHi || $haveExclHi) {
+                $hi = ($haveInclHi && $haveExclHi) ? min($hiIncl, $hiExcl) : ($haveInclHi ? $hiIncl : $hiExcl);
                 $haveHi = 1;
             }
             if ($haveLo == 0 || $haveHi == 0) {
@@ -14215,6 +14249,10 @@ function main(): void
     $bdU = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5,"exclusiveMaximum":6}}}}}');
     $bdV = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":0,"exclusiveMaximum":5,"multipleOf":7}}}}}');
     $bdW = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5}}}}}');
+    // F423: a mixed inclusive+exclusive pair. A satisfiable one is served (the stricter governs),
+    // but one whose interval rounds empty (n >= 5 AND n < 5) refuses.
+    $bdX = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"exclusiveMinimum":5,"maximum":50}}}}}');
+    $bdY = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":5,"exclusiveMaximum":5}}}}}');
     echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=[" . $bdC
         . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[" . $bdI
         . "] neg_multi=[ " . $bdL . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK
@@ -14223,14 +14261,16 @@ function main(): void
         . "] frac_neg=[" . $bdS . "] none=" . $bdE
         . " wire_supported=" . $bdF . " wire_float=" . $bdG
         . " excl_wide=[" . $bdT . "] excl_unsat=[" . $bdU . "] excl_mult=[" . $bdV
-        . "] excl_one=[" . $bdW . "
+        . "] excl_one=[" . $bdW
+        . "] mix_sat=[" . $bdX . "] mix_unsat=[" . $bdY . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
         && $bdM == 0 && $bdN == 1 && $bdO == 0
         && $bdP == 0 && $bdQ == 1 && $bdR == 1 && $bdS == 0
         && $bdF == 0 && $bdG == 1
-        && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0) {
+        && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
+        && $bdX == 0 && $bdY == 1) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
@@ -14379,6 +14419,12 @@ function main(): void
     $neD = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":5,"exclusiveMaximum":6}}}}}');
     $neE = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":1.5,"exclusiveMaximum":9.5}}}}}');
     $neF = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","exclusiveMinimum":0,"exclusiveMaximum":100,"multipleOf":7}}}}}');
+    // F423: both forms on the same side - the STRICTER governs, so the looser inclusive bound no
+    // longer shadows a stricter exclusive one.
+    $neG = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"exclusiveMinimum":5}}}}}');
+    $neH = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","maximum":50,"exclusiveMaximum":20}}}}}');
+    $neI = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":5,"exclusiveMinimum":1}}}}}');
+    $neJ = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"exclusiveMinimum":5,"maximum":50}}}}}');
     $neOut = api_number_bounded_value($nbIds, "n", 2, 9, 0);
     $neP = explode(",", $neOut);
     $neText = "";
@@ -14389,11 +14435,14 @@ function main(): void
     $neM = [];
     $neV = preg_match('/"n":(-?[0-9]+)\}/', $neText, $neM) == 1 ? (int) $neM[1] : -100000;
     echo "SCHEMA-NUM-EXCL wide=[" . $neA . "] min1=[" . $neB . "] max1=[" . $neC
-        . "] unsat=[" . $neD . "] frac=[" . $neE . "] mult=[" . $neF . "] v=" . $neV . "]\n";
+        . "] unsat=[" . $neD . "] frac=[" . $neE . "] mult=[" . $neF
+        . "] mix_strict=[" . $neG . "] mix_strictMax=[" . $neH . "] mix_loose=[" . $neI
+        . "] mix_both=[" . $neJ . "] v=" . $neV . "]\n";
     if ($neA == "n|1|99999|0" && $neB == "n|6|-1|0" && $neC == "n|-1|49|0"
         && $neD == "" && $neE == "n|2|9|0" && $neF == "n|7|7|7"
+        && $neG == "n|6|-1|0" && $neH == "n|-1|19|0" && $neI == "n|5|-1|0" && $neJ == "n|6|50|0"
         && $neV >= 2 && $neV <= 9 && api_json_ok($neText) == 1) {
-        echo "SCHEMA-NUM-EXCL: PASS (exclusive bounds convert to the adjacent integer interval; empty interval yields no shape)\n";
+        echo "SCHEMA-NUM-EXCL: PASS (exclusive bounds convert to the adjacent integer interval; the stricter of an inclusive+exclusive pair governs; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-EXCL: FAIL\n";
     }
@@ -15307,6 +15356,24 @@ function main(): void
         echo "SCHEMA-EXCL: PASS (exclusive bounds respected)\n";
     } else {
         echo "SCHEMA-EXCL: FAIL\n";
+    }
+
+    // F423: a mixed inclusive+exclusive pair on the narrow (enumerated) tier - the STRICTER bound
+    // governs, so the looser inclusive minimum no longer shadows the stricter exclusive one. The
+    // candidate set must start at the exclusive-derived lower bound, not the inclusive one.
+    $emSchema = '{"type":"object","properties":{"n":{"type":"integer",'
+        . '"minimum":1,"exclusiveMinimum":4,"maximum":10}}}';
+    $emC = api_schema_candidates($emSchema);
+    $emJoin = "";
+    for ($i = 0; $i < count($emC); $i++) {
+        $emJoin = $emJoin . $emC[$i];
+    }
+    echo "SCHEMA-EXCL-MIX n=" . count($emC) . " [" . $emJoin . "]\n";
+    if (count($emC) == 6 && strpos($emJoin, '{"n":5}') !== false && strpos($emJoin, '{"n":10}') !== false
+        && strpos($emJoin, '{"n":1}') === false && strpos($emJoin, '{"n":4}') === false) {
+        echo "SCHEMA-EXCL-MIX: PASS (stricter exclusive bound governs the enumeration)\n";
+    } else {
+        echo "SCHEMA-EXCL-MIX: FAIL\n";
     }
 
     // Numeric const and numeric enum both land in the finite candidate set.

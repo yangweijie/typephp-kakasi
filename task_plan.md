@@ -797,3 +797,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **记法**：**exclusive 界的诚实服务是"相邻整数界"（floor(X)+1 / ceil(X)-1），值严格落在开区间内（子集论证）；拒绝函数的早退必须把 exclusive 关键字也纳入，否则 exclusive-only 请求绕过所有拒绝落入忽略约束的生成器——静默违反比过度拒绝更难发现。**
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、`multipleOf` > 1000、同侧 inclusive+exclusive 更严 exclusive 的混合面。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F423 计划与完成（同侧 inclusive+exclusive 混合面：更严者胜）
+**动作（计划口径）**：把 F422 记录的"同侧 inclusive+exclusive 更严 exclusive 混合面"关掉。
+**复核结果（改前活体取证，`serve_f423pre.log`）**：更严 exclusive 被更宽 inclusive 遮蔽——`minimum:1 + exclusiveMinimum:5` → **200 `{"n":2}`**（应 n≥6，违反）；`maximum:50 + exclusiveMaximum:20` → **200 `{"n":23}`**（应 n≤19，违反）。更严 inclusive 侧正常（`minimum:5 + exclusiveMinimum:1` → n≥5）。两层都漏：宽/单侧走 shape 层、窄侧（span≤15）走候选层，都取 inclusive 优先、丢弃更严 exclusive。
+**F423 已完成**：同一侧可同时给 inclusive+exclusive，**更严者胜**（下界取两者较大、上界取两者较小）。①shape 层：`$hasExLo/$hasExHi` 不再被 `!$hasLo/!$hasHi` 门控，两侧各自独立解析后 `max`（下界）/`min`（上界）合并（seed 于 `PHP_INT_MIN/MAX`）；②候选层：inclusive 与 exclusive 各自读、`max/min` 合并后枚举，使窄侧的枚举从更严 exclusive 推出的界起（`minimum:1, exclusiveMinimum:4, maximum:10` 枚举 5..10，不再发 1..4）；③拒绝函数与 400 消息沿用 F422（混合可服务 shape 非空即放行、空区间/多叶仍拒）。
+**门**：`SCHEMA-NUM-EXCL` 加 `mix_strict=[n|6|-1|0] mix_strictMax=[n|-1|19|0] mix_loose=[n|5|-1|0] mix_both=[n|6|50|0]`；新门 `SCHEMA-EXCL-MIX`（候选层更严 exclusive 起枚举，n=5..10、无 1..4）；`SCHEMA-BOUND-REJECT` 加 `mix_sat=0 mix_unsat=1`（`minimum:5, exclusiveMaximum:5` 空区间拒）。
+**活体**：bounds harness 加 4 例——`mix_strict_min`（值≥6）、`mix_strict_max`（值≤19）、`mix_incl_stricter`（值≥5，inclusive 胜）、`mix_unsatisfiable`（n≥5 且 n<5 → **400**）；F422 exclusive 四例不回退。
+**梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、spec **1.792×/1.449×**、哨兵 **0**；required/pattern/count 复跑不回退。
+**记法**：**同侧多个界（inclusive/exclusive）的诚实服务是"更严者胜"（下界取 max、上界取 min），任一层取 inclusive 优先都会静默丢更严 exclusive；合并要在每个会发射值/枚举的层各做一次（shape 与候选），只修一层会在另一层的 span 上复发。**
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、`multipleOf` > 1000。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）——exclusive 系（exclusive-only + 同侧混合面）本轮全部关掉。

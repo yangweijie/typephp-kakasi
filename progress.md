@@ -1453,3 +1453,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **179/0**（178+新门）、8000 **115/0**、8001 par/fairness **0**、scaling **1.431×**、spec greedy **1.991×**/sampled **1.551×**、哨兵 **0**（`engine/selftest_f422.log`、`engine/api_smoke_f422.log`、`engine/throughput_f422.log`）。
 - **已知限制（记录）**：同侧 inclusive+exclusive 时 inclusive 优先；若 exclusive 更严则发射值可能违反——本轮只覆盖 exclusive-only 面，混合面留后续。
 - **下一轮顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；或同侧 inclusive+exclusive 混合面。
+
+
+## ▶ 状态（F423，2026-11-08 11:37）——同侧 inclusive+exclusive 混合面：更严者胜
+- **改前活体取证**：`engine/serve_f423pre.log`——`minimum:1 + exclusiveMinimum:5` → **200 `{"n":2}`**（应 n≥6，违反）；`maximum:50 + exclusiveMaximum:20` → **200 `{"n":23}`**（应 n≤19，违反）。两层都漏：shape 层（宽/单侧）与候选层（窄，span≤15）都取 inclusive 优先、丢同侧更严 exclusive。
+- **实现**：同一侧可同时给两种界，**更严者胜**（下界 max、上界 min）。①shape 层：`$hasExLo/$hasExHi` 去掉 `!$hasLo/!$hasHi` 门控，两侧独立解析后 seed 于 `PHP_INT_MIN/MAX` 再 max/min 合并；②候选层：inclusive/exclusive 各自读、max/min 合并后枚举（窄侧枚举从更严 exclusive 界起）；③拒绝/400 消息沿用 F422（空区间仍拒）。
+- **门/活体**：`SCHEMA-NUM-EXCL` 加 mix_strict/max/loose/both；新门 `SCHEMA-EXCL-MIX`（候选 `[{"n":5}…{"n":10}]`）；`SCHEMA-BOUND-REJECT` 加 `mix_sat=0 mix_unsat=1`。活体 `engine/schema_bounds_f423.log` **22 例全绿**（新增 4 例混合：strict_min 7 / strict_max 12 / incl_stricter 5 / unsat 400），F422 四例 exclusive 不回退。
+- **梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、spec **1.792×/1.449×**、哨兵 **0**（`engine/selftest_f423.log`、`engine/api_smoke_f423.log`、`engine/throughput_f423.log`）。
+- **记法**：合并"更严者胜"要在**每个会发射值/枚举的层**各做一次（shape 与候选）——只修一层会在另一层的 span 上复发。
+- **下一轮顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。exclusive 系（exclusive-only + 同侧混合面）本轮全部关掉。

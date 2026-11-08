@@ -135,6 +135,25 @@ cases = [
     ("excl_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": 5, "exclusiveMaximum": 6}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F423: both an inclusive and an exclusive bound on the same side - the STRICTER governs, so the
+    # looser inclusive bound no longer shadows a stricter exclusive one.
+    ("mix_strict_min", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "exclusiveMinimum": 5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") >= 6),
+    ("mix_strict_max", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": 50, "exclusiveMaximum": 20}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") <= 19),
+    # Here the inclusive bound is the stricter one, so it governs (n >= 5, not n >= 2).
+    ("mix_incl_stricter", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5, "exclusiveMinimum": 1}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") >= 5),
+    # n >= 5 AND n < 5 is empty: unsatisfiable, so it must be refused.
+    ("mix_unsatisfiable", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5, "exclusiveMaximum": 5}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
 ]
 
 bad = 0

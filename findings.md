@@ -3945,3 +3945,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **已知限制（记录，不修本轮）**：同一侧同时给 inclusive+exclusive 时 inclusive 优先（与候选层同优先级），若 exclusive 更严则发射值可能违反该更严 exclusive——本轮只覆盖 exclusive-only 面，混合面留作后续。
 **梯（新二进制，`engine/selftest_f422.log` 11:10 版）**：自检 **179 PASS / 0 FAIL**、`RUN_EXIT=0`（178+新 `NUM-EXCL` 门）；输出含 `excl_wide=[0] excl_unsat=[1] excl_mult=[1] excl_one=[0]` 与 `SCHEMA-NUM-EXCL wide=[n|1|99999|0] ... PASS` ⇒ 新码确在二进制里；8000 **115/0**、8001 par/fairness **0**、scaling **1.431×**（PASS measured）、spec greedy **1.991×**/sampled **1.551×**、哨兵 **0**（`engine/throughput_f422.log`）。
 **活体改后（`engine/schema_bounds_f422.log`，18 例全绿，新增 4 例 exclusive）**：`excl_wide_served` **200 `{"n":23456}`**（∈[1,99999]，改前同请求会发越界的 234567）、`excl_onesided_min` **200 `{"n":7}`**（≥6）、`excl_onesided_max` **200 `{"n":23}`**（≤49）、`excl_unsatisfiable`（5<n<6）**400**（消息点名 exclusive）；required/pattern/count 三个 harness 复跑不回退。
+
+
+## F423（已完成）：**同侧 inclusive+exclusive 混合面**——更严者胜，关掉 F422 记录的"更严 exclusive 被遮蔽"限制
+
+**先取"改前"活体证据（不靠读码断言）**：`engine/serve_f423pre.log`——更严 exclusive 被更宽 inclusive 遮蔽：`minimum:1 + exclusiveMinimum:5` → **200 `{"n":2}`**（应 n≥6，**违反**）；`maximum:50 + exclusiveMaximum:20` → **200 `{"n":23}`**（应 n≤19，**违反**）；`minimum:5 + exclusiveMinimum:1` → **200 `{"n":2}`**（inclusive 更严，正确）。**两层都漏**：宽/单侧走 shape 层、窄侧（span≤15）走候选层，都取 inclusive 优先、丢弃同侧更严的 exclusive。
+**实现（同一侧可同时给两种界，更严者胜——下界取 max、上界取 min）**：①**shape 层** `api_schema_number_bounded_shape`：`$hasExLo/$hasExHi` 不再被 `!$hasLo/!$hasHi` 门控，两侧各自解析后 seed 于 `PHP_INT_MIN/MAX` 再 `max`（下）/`min`（上）合并；②**候选层** `api_schema_candidates`：inclusive 与 exclusive 各自读、`max/min` 合并后枚举，窄侧枚举从更严 exclusive 推出的界起（`minimum:1, exclusiveMinimum:4, maximum:10` → 枚举 5..10，不发 1..4）；③拒绝函数与 400 消息沿用 F422（可服务混合 shape 非空即放行；`minimum:5, exclusiveMaximum:5` 空区间仍 400）。
+**门**：`SCHEMA-NUM-EXCL` 加 `mix_strict=[n|6|-1|0] mix_strictMax=[n|-1|19|0] mix_loose=[n|5|-1|0] mix_both=[n|6|50|0]`；新门 `SCHEMA-EXCL-MIX`（候选层 `[{"n":5}…{"n":10}]`，无 1..4）；`SCHEMA-BOUND-REJECT` 加 `mix_sat=0 mix_unsat=1`。
+**活体改后（`engine/schema_bounds_f423.log`，22 例全绿，新增 4 例混合）**：`mix_strict_min` **200 `{"n":7}`**（≥6）、`mix_strict_max` **200 `{"n":12}`**（≤19）、`mix_incl_stricter` **200 `{"n":5}`**（inclusive 胜，≥5）、`mix_unsatisfiable`（n≥5 且 n<5）**400**；F422 四个 exclusive 例不回退；required/pattern/count 复跑不回退。
+**梯（新二进制，`engine/selftest_f423.log` 11:37 版）**：自检 **180 PASS / 0 FAIL**、`RUN_EXIT=0`（179+新 `EXCL-MIX` 门）；输出含 `mix_strict=[n|6|-1|0]` 与 `SCHEMA-EXCL-MIX [{"n":5}…] PASS` ⇒ 新码确在二进制里；8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、spec **1.792×/1.449×**、哨兵 **0**。
+**记法**：**同侧多个界（inclusive/exclusive）的诚实服务是"更严者胜"（下界 max、上界 min）；任一层取"inclusive 优先"都会静默丢更严 exclusive，而合并必须在每个会发射值/枚举的层各做一次（shape 与候选两层）——只修一层会在另一层的 span 上复发。**
