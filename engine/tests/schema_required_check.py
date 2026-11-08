@@ -179,6 +179,20 @@ cases = [
     ("contentenc_refuse", "Say where you are.",
      {"type": "object", "properties": {"blob": {"type": "string", "contentEncoding": "base64"}}},
      lambda code, txt: code == 400 and "contentEncoding" in txt),
+    # F429: propertyNames constrains KEY NAMES, and those names come from the declared plan - so a
+    # constraint the keys already satisfy must be honoured, while one they cannot satisfy is refused.
+    ("pnames_pattern_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "propertyNames": {"pattern": "^[a-z]+$"}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("pnames_pattern_bad", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "propertyNames": {"pattern": "^x"}},
+     lambda code, txt: code == 400 and "propertyNames" in txt),
+    ("pnames_len_bad", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "propertyNames": {"maxLength": 3}},
+     lambda code, txt: code == 400 and "propertyNames" in txt),
 ]
 
 bad = 0

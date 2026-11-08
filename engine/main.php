@@ -7505,6 +7505,99 @@ function api_schema_plan_count(string $schema): int
     return count(explode(",", $plan));
 }
 
+// F429: propertyNames constrains KEY NAMES, and on the flat all-string shape the emitted keys are
+// exactly the declared plan - so the subschema can be evaluated against those names before
+// generation. Only the forms that can be checked are honoured (pattern, min/maxLength, enum, const,
+// type:string); any constraint this check cannot evaluate, or a shape whose key set is not proven,
+// keeps the refusal instead of approving by omission. The pattern is length-bounded before it is
+// compiled, so a pathological request cannot turn this into a backtracking probe.
+function api_schema_property_names_ok(string $schema): int
+{
+    if (api_schema_flat_all_string($schema) != 1) {
+        return 0;
+    }
+    if (preg_match('/"(format|contentEncoding|contentMediaType|patternProperties|contains|not|if|'
+        . 'dependentRequired|dependentSchemas|dependencies|unevaluatedItems|unevaluatedProperties|'
+        . 'additionalProperties)"\s*:/', $schema) == 1) {
+        return 0;
+    }
+    $pn = strpos($schema, "\"propertyNames\"");
+    if ($pn === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pn);
+    if ($bo === false) {
+        return 0;
+    }
+    $sub = api_balance_block($schema, $bo);
+    if ($sub == "") {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $pbo = strpos($schema, "{", $pp);
+    if ($pbo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $pbo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 64);
+    if ($plan == "") {
+        return 0;
+    }
+    $mc = [];
+    $hasConst = preg_match('/"const"\s*:\s*"([^"]*)"/', $sub, $mc) == 1;
+    $hasEnum = preg_match('/"enum"\s*:\s*\[/', $sub) == 1;
+    $enumInner = "";
+    if ($hasEnum) {
+        $eb = strpos($sub, "[");
+        $ee = strpos($sub, "]", $eb);
+        if ($eb === false || $ee === false) {
+            return 0;
+        }
+        $enumInner = substr($sub, $eb + 1, $ee - $eb - 1);
+    }
+    $mt = [];
+    $hasType = preg_match('/"type"\s*:\s*"([a-z]+)"/', $sub, $mt) == 1;
+    if ($hasType && $mt[1] != "string") {
+        return 0;
+    }
+    $mp = [];
+    $hasPattern = preg_match('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $sub, $mp) == 1;
+    if ($hasPattern && (strlen($mp[1]) == 0 || strlen($mp[1]) > 200)) {
+        return 0;
+    }
+    foreach (explode(",", $plan) as $leaf) {
+        $kv = explode(":", $leaf);
+        $name = $kv[0];
+        if ($hasPattern) {
+            $re = "#" . str_replace("#", "\\#", $mp[1]) . "#";
+            if (preg_match($re, $name) != 1) {
+                return 0;
+            }
+        }
+        $mn = api_schema_bound_value($sub, "\"minLength\"", 0);
+        if ($mn != "" && strlen($name) < (int) $mn) {
+            return 0;
+        }
+        $mx = api_schema_bound_value($sub, "\"maxLength\"", 0);
+        if ($mx != "" && strlen($name) > (int) $mx) {
+            return 0;
+        }
+        if ($hasConst && $mc[1] != $name) {
+            return 0;
+        }
+        if ($hasEnum && strpos($enumInner, "\"" . $name . "\"") === false) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 // F426: structural keywords the decoder neither implements nor can prove satisfied. Each is matched
 // with the shape its VALUE really has, so an enum value spelled "not" is not mistaken for the
 // keyword. Known boundary: a property NAMED like one of these is refused too - the refusal names it,
@@ -7513,10 +7606,16 @@ function api_schema_plan_count(string $schema): int
 function api_schema_structural_unsupported(string $schema): string
 {
     $mk = [];
+    // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
+    // subschema it is honoured, otherwise (or when it cannot be evaluated) it is refused by name.
+    if (preg_match('/"propertyNames"\s*:\s*\{/', $schema) == 1
+        && api_schema_property_names_ok($schema) != 1) {
+        return "propertyNames";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
     if (preg_match('/"(contains|patternProperties|not|if|dependentRequired|dependentSchemas|'
-        . 'dependencies|propertyNames)"\s*:\s*\{/', $schema, $mk) == 1) {
+        . 'dependencies)"\s*:\s*\{/', $schema, $mk) == 1) {
         return $mk[1];
     }
     if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
@@ -8169,8 +8268,22 @@ function api_response_schema_string_props(string $body): array
     if ($schema == "") {
         return $out;
     }
-    // Finite domains (enum/const/pattern) are handled by api_schema_candidates.
-    if (preg_match('/"(enum|const|pattern)"\s*:/', $schema) == 1) {
+    // Finite domains (enum/const/pattern) are handled by api_schema_candidates. F429: a pattern
+    // inside propertyNames constrains KEY NAMES, not the emitted values, so that block is removed
+    // before the scan - otherwise a legitimate key-name pattern disqualifies the value generator
+    // and the request falls back to prose.
+    $scan = $schema;
+    $pnp = strpos($schema, "\"propertyNames\"");
+    if ($pnp !== false) {
+        $pnbo = strpos($schema, "{", $pnp);
+        if ($pnbo !== false) {
+            $pnblk = api_balance_block($schema, $pnbo);
+            if ($pnblk != "") {
+                $scan = str_replace($pnblk, "", $schema);
+            }
+        }
+    }
+    if (preg_match('/"(enum|const|pattern)"\s*:/', $scan) == 1) {
         return $out;
     }
     if (api_schema_is_object($schema) != 1) {
@@ -14707,17 +14820,33 @@ function main(): void
     $sfM = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","contentEncoding":"base64"}}}');
     $sfN = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","contentMediaType":"image/png"}}}');
     $sfO = api_schema_keywords_unsupported('{"properties":{"format":{"type":"string"}}}');
+    // F429: propertyNames is honoured when the declared key names satisfy it and refused when they
+    // cannot (or when the shape's key set is not the proven one).
+    $sfP = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"pattern":"^[a-z]+$"}}');
+    $sfQ = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"pattern":"^x"}}');
+    $sfR = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"maxLength":6}}');
+    $sfS = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"enum":["a","b"]}}');
+    $sfT = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"propertyNames":{"pattern":"^[a-z]+$"}}');
+    // F429: the refusal layer alone is not enough - the key-name pattern must not disqualify the
+    // VALUE generator either, or the request is accepted and then answered with prose.
+    $sfU = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"pattern":"^[a-z]+$"}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
         . "] prop_named=[" . $sfH . "] minContains=[" . $sfI . "] unevaluatedItems=[" . $sfJ
         . "] format=[" . $sfK . "] patternProperties=[" . $sfL . "] contentEncoding=[" . $sfM
-        . "] contentMediaType=[" . $sfN . "] format_prop=[" . $sfO . "]\n";
+        . "] contentMediaType=[" . $sfN . "] format_prop=[" . $sfO
+        . "] pnames_ok=[" . $sfP . "] pnames_bad=[" . $sfQ . "] pnames_len_ok=[" . $sfR
+        . "] pnames_enum=[" . $sfS . "] pnames_mixed=[" . $sfT
+        . "] pnames_route=" . count($sfU) . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
         && $sfK == "format" && $sfL == "patternProperties" && $sfM == "contentEncoding"
-        && $sfN == "contentMediaType" && $sfO == "") {
+        && $sfN == "contentMediaType" && $sfO == ""
+        && $sfP == "" && $sfQ == "propertyNames" && $sfR == "" && $sfS == "propertyNames"
+        && $sfT == "propertyNames"
+        && count($sfU) == 2 && $sfU[0] == "city" && $sfU[1] == "note") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

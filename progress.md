@@ -1518,3 +1518,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-STRUCT` 扩到 15 项，含新关键字 + `format_prop=[]` 对照。
 - **活体**：三例应从 200 翻成 **400 点名**。
 - **梯（新二进制 14:17:44）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT` 15 项全对，含 `format_prop=[]` 对照）；活体三例 400 点名（改前 200 违反，`schema_required_f428pre.log`）；count/bounds/pattern 不回退；8000 **115/0**、8001 par/fairness **0**、scaling **1.530×**、哨兵 **0**。
+
+
+## ▶ 状态（F429，2026-11-08 14:31）——`propertyNames`：从误拒改成**对声明键名求值**
+- **改前活体**：`pattern:"^[a-z]+$"` 对 city/note 本已匹配却 **400 误拒**；`^x` 与 `maxLength:3` 拒绝是对的。
+- **实现**：`api_schema_property_names_ok` —— 只在扁平全字符串形状；白名单求值（pattern≤200 / min-maxLength / enum / const / type:string）；子 schema 含任何**不能评估**的约束即返回 0（不靠"没看见"放行）。
+- **门**：`SCHEMA-STRUCT` 扩到 20 项（`pnames_ok=[]`、`pnames_bad`、`pnames_len_ok=[]`、`pnames_enum`、`pnames_mixed` 边界）。
+- **第二层（活体抓到）**：只放宽拒绝不够——`api_response_schema_string_props` 的"含 `pattern` 即让位候选层"守卫把 `propertyNames` 里的键名模式当成了值模式 ⇒ **接受后返回散文**。修法：把 `propertyNames` 块摘出该守卫的扫描面；门加路由断言 `pnames_route=2`。
+- **活体**：`pnames_pattern_ok` **200 真 JSON**、两例不可满足 **400 点名**（改前满足例被 400 误拒）。
+- **梯（第二颗二进制 14:41:28）**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.564×**、哨兵 **0**。

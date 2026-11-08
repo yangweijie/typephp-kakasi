@@ -875,3 +875,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯（新二进制 14:17:44）**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.530×**、哨兵 **0**（`engine/selftest_f428.log`、`engine/schema_required_f428.log`、`engine/api_smoke_f428.log`、`engine/throughput_f428.log`）。
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；`propertyNames` 等"可能构造满足"的结构关键字逐个评估。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F429 计划与完成（`propertyNames`：键名来自声明表 ⇒ 生成前可求值）
+**F428 已完成**：`format`/`patternProperties`/`contentEncoding`·`contentMediaType` 按名拒绝。
+**改前活体**：满足的 `pattern:"^[a-z]+$"` 被 **400 误拒**（`schema_required_f429pre.log`），另两例拒绝正确。
+**F429 已完成**：`api_schema_property_names_ok` 在扁平全字符串形状上按**白名单**求值（pattern ≤200 / min-maxLength / enum / const / type:string），子 schema 含不能评估的约束即判不支持；结构判据先单独判 `propertyNames`，不通过才点名拒绝。
+**门**：`SCHEMA-STRUCT` 20 项（含 `pnames_mixed` 边界：混合形状仍拒）**+ 路由断言 `pnames_route=2`**。
+**第二层**：只放宽拒绝不够——值生成器的检测器把 `propertyNames` 里的 `pattern` 当成值模式，接受后返回散文；已把该块摘出扫描面并在门里断言路由（F425 同族）。
+**活体**：`pnames_pattern_ok` 200 真 JSON、`pnames_pattern_bad`/`pnames_len_bad` 400 点名。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.564×**、哨兵 **0**（`engine/selftest_f429b.log`、`engine/schema_required_f429.log`、`engine/api_smoke_f429.log`、`engine/throughput_f429.log`）。
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；`propertyNames` 的其他求值形式（如嵌套 schema、format）。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

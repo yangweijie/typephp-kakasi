@@ -4008,3 +4008,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`format_refuse`/`patternprops_refuse`/`contentenc_refuse` 三例应 **400 且含各自关键字名**（改前三例 200 违反）。
 **过程问题（纠正上一轮的归因）**：F427 与 F428 各有一次后台自检"失败"，真因是**我把仓库路径写成了 `/c/git/typephp-kakasi`（少一层 `c`）**，不是"cwd 不对"，也不是文件系统故障——`ls /c/git/c | grep kakasi` 与 `cmd dir` 都证明仓库完好。**判据：`No such file or directory` 先核路径拼写与 `pwd`，再怀疑挂载；后台任务的退出码来自脚本最后一步，不等于引擎退出码。**
 **记法**：**值级约束（format/contentEncoding/…）没有"构造满足"可言——生成器的字符串是模型选的，所以只能拒绝；但"拒绝谁"要看值的形状，"名叫 format 的属性"不是 format。**
+
+
+## F429：`propertyNames`——从"一律拒绝"改成**对声明键名逐一求值**（可满足就支持）
+**改前活体（`engine/schema_required_f429pre.log`）**：`{"properties":{"city","note"},"propertyNames":{"pattern":"^[a-z]+$"}}` —— 两个键名本来就匹配，却被 **400 拒绝**（误拒）；另两例（`^x`、`maxLength:3`）拒绝是对的 ⇒ `VERDICT: FAIL cases=1`。**这是"约束本已满足却被拒"的第 N 次复现**（F398 的 required-all、F402 的 additionalProperties 同类）。
+**为什么可判**：键名不来自模型，而是**声明表**（F401 之后还有 required 子集），所以在生成前就能把它们逐个拿去和 `propertyNames` 的子 schema 比对。
+**实现**：`api_schema_property_names_ok($schema)`——①只在该形状（`api_schema_flat_all_string`）成立时求值；②只认能评估的形式：`pattern`（长度 ≤200 才编译，避免病态回溯）、`minLength`/`maxLength`、`enum`、`const`、`type:string`；③子 schema 里出现**任何本函数不能评估的约束**（format/contains/not/addProperties/…）就返回 0，**不靠"没看见"放行**；④每个声明键都通过才 1。结构判据里 `propertyNames` 先单独判，不通过才点名拒绝，其余关键字仍走 F428 的分形状匹配。
+**门**：`SCHEMA-STRUCT` 扩到 20 项：`pnames_ok=[]`（`^[a-z]+$` 对 city/note）、`pnames_bad=[propertyNames]`（`^x`）、`pnames_len_ok=[]`（maxLength 6）、`pnames_enum=[propertyNames]`（enum 不含这些键）、`pnames_mixed=[propertyNames]`（混合形状＝键集合未证明的边界）。
+**活体**：`pnames_pattern_ok` 应 **200**、`pnames_pattern_bad`/`pnames_len_bad` **400 点名**（改前第一例 400 误拒）。
+**记法**：**"键名约束"要问键名从哪来——来自声明表就能在生成前求值；求值范围要白名单（只认能评估的形式），未识别的一律按不支持处理，否则"没看见"会变成"放行"。**
+**第二层（活体抓到，F425 同族）**：仅放宽拒绝还不够——`api_response_schema_string_props` 里有一条"含 `pattern` 即交给候选层"的守卫，而 `propertyNames` 的子 schema 正是 `pattern`，于是**接受后路由失败、返回散文**（活体：200 + "I am currently located in…"）。修法：把 `propertyNames` 块从该守卫的扫描面里**摘出去**（键名模式不是值模式）；门同时加**路由断言** `pnames_route=2`——只断言"不拒绝"会漏掉这一层。
+**梯（第二颗二进制 14:41:28）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`，`pnames_route=2` 已打印；活体 `engine/schema_required_f429.log`：`pnames_pattern_ok` **200 真 JSON**、两例不可满足 **400 点名**（改前 `schema_required_f429pre.log`：满足例被 400 误拒）；count/bounds/pattern 不回退。8000 **115/0**、8001 par/fairness **0**、scaling **1.564×**、哨兵 **0**（`engine/selftest_f429b.log`、`engine/api_smoke_f429.log`、`engine/throughput_f429.log`）。
