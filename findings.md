@@ -3712,6 +3712,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
 | 数值界：number 叶的小数界 | **显式 400** | `SCHEMA-BOUND-REJECT` float 侧（F397/F421） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
+| exclusive 界：draft-4 布尔拼写（`":true"`） | **显式 400**（读不进数值转换；`false` 不加约束仍服务） | `excl_bool`/`excl_bool_false`（F436） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
 | multipleOf 有界（任意 m） | **支持**（折叠到区间内最小倍数） | `SCHEMA-BOUND-REJECT bigmult_*`（F420/F424） |
 | multipleOf 无界：m=1 或 2..999999 | **支持**（后缀宽度随位数；m=1 交普通整数） | `unbounded_ok`/`mult_one_ub`（F430） |
@@ -4084,3 +4085,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：两例 **400 且含各自关键字名**（改前 200 散文）；required/bounds/count/pattern 不回退。
 **梯**：自检 **182/0**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.559×**、哨兵 **0**（`engine/selftest_f434.log`、`engine/schema_required_f434.log`、`engine/api_smoke_f434.log`、`engine/throughput_f434.log`）。
 **记法**：**同一关键字的不同"值形状"要走不同的判据**——`items` 的对象形式是已支持的数组文法，数组形式（tuple）没有生成器；按形状区分既能拒绝后者，又不误伤前者。**"没有路由"的请求会以散文返回，所以拒绝面要覆盖这些形态。**
+**（F436）**：同一族的漏网——**draft-4 布尔形式**的 `exclusiveMinimum/exclusiveMaximum`（`":true`）读不进数值转换，于是被忽略，活体 `minimum:5 + exclusiveMinimum:true` 返回 **`{"n":5}`**（正好是被排除的边界值）。判据：`":true"` ⇒ 点名拒绝（`false` 不加约束，保持服务，门里 `excl_bool_false=0` 对照）；消息补明该拼写不支持。梯：自检 **182/0**、bounds 活体 PASS、8000 **115/0**、8001 **0/0**、scaling **1.534×**、哨兵 **0**（`engine/selftest_f436.log`、`engine/schema_bounds_f436.log`）。
+**记法**：**同一关键字的"值类型"也是契约**——数值形式能读不等于布尔形式能读；读不到的形式若不加拒绝，就会以"边界值被放行"的形式静默违反。

@@ -1577,3 +1577,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - 首跑：**cited_names=54 unresolved=0**（`tool_req_subset` 一开始报未解析，真因是初版只查最新 8 份活体日志；改为全量后解析成功）。
 - 意义：支持表上一轮刚重写，这个脚本把"每行都有证据"从**声明**变成**可执行验证**；表再漂移会直接报出来。
 - **记法**：文档里的证据引用要能被脚本解析；"只查最新 N 份"会让老证据变成假未解析，全量搜索才对。
+
+
+## ▶ 状态（F436，2026-11-08 16:21）——布尔形式的 exclusive 界：读不到 ⇒ 点名拒绝
+- **改前活体**：`minimum:5 + exclusiveMinimum:true` → **200 `{"n":5}`**（边界值被放行）。
+- **实现**：`":true"` 拼写 ⇒ 400 点名（`false` 不加约束、保持服务）；消息补明。
+- **门**：`SCHEMA-BOUND-REJECT` 加 `excl_bool=1`、`excl_bool_false=0`。
+- **活体**：`exclusive_bool_refuse` **400**（消息含 exclusive）；bounds PASS。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.534×**、哨兵 **0**。

@@ -943,3 +943,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.559×**、哨兵 **0**（`engine/selftest_f434.log`、`engine/schema_required_f434.log`、`engine/api_smoke_f434.log`、`engine/throughput_f434.log`）。
 **明确留拒（排队）**：number 叶浮点界实现；无界 `multipleOf` > 999999；多叶 multipleOf 实现；`dependentSchemas`/`dependencies`；tuple 校验的实现（需按位置发不同类型）。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F436 计划与完成（布尔形式的 exclusive 界）
+**F435 已完成**：支持表引用检查器（54 引用 / 0 未解析）。
+**改前活体**：`minimum:5 + exclusiveMinimum:true` → **200 `{"n":5}`**。
+**F436 已完成**：`":true"` 拼写点名拒绝；`false` 保持服务（对照）；消息补明。
+**门**：`SCHEMA-BOUND-REJECT` 加 `excl_bool`/`excl_bool_false`。
+**活体**：`exclusive_bool_refuse` 400；其余不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.534×**、哨兵 **0**。
+**明确留拒（排队）**：number 叶浮点界实现；无界 `multipleOf` > 999999；多叶 multipleOf 实现；`dependentSchemas`/`dependencies`；tuple 实现；布尔 exclusive 的**实现**（需按布尔语义收紧数值界）。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
