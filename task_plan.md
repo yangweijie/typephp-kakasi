@@ -1034,6 +1034,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F444 → 三位小数 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F445 计划与完成（小数网格到三位）
+**F443 已完成**：无界 multipleOf 到九位。
+**F445 已完成**：`api_schema_scaled` 支持 1–3 位；标记 -999/-998/-997；写入器按位数补零。两个连带问题：`$nfM` 与自检数组同名（改 `$nfN`）；全局替换哨兵把 inward/exclusive 的返回值改了却没改比较值（`frac_exp` 变 0 ⇒ 统一为 -2000000000）。
+**门**：`num_dec3` "" → `n|1511|-997|0`；加 `num_dec4=[]`、`dec3_text=[{"n":1.511}]`。
+**活体**：三位的 1.511 服务、四位 400；1.5/1.51/-1.9 不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.521×**、哨兵 **0**（`engine/selftest_f445c.log`、`engine/schema_bounds_f445.log`、`engine/api_smoke_f445.log`、`engine/throughput_f445.log`）。
+**明确留拒（排队）**：四位及以上小数、无界 `multipleOf` > 999999999、tuple 实现（F444 规格已写）、`dependentSchemas`/`dependencies`。
+**顺位**：F444（tuple）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F443 计划与完成（无界 multipleOf 上限提到九位）
 **F442 已完成**：小数界支持负数。
 **F443 已完成**：后缀宽度阶梯到 9 位；拒绝阈值 `>999999999`；门改 `unbounded_big` 夹具（2e9）并加 `unbounded_2m=0`；活体 2,000,000 与 987,654,321 均 200 且整除。

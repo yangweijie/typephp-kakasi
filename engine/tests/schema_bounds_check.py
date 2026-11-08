@@ -175,8 +175,13 @@ cases = [
     ("float_dec2_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51, "maximum": 1.59}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.51}'),
-    ("float_dec3_refuse", "Give the number.",
+    # F445: three fraction digits are served on the thousandths grid (1.511); four have no grid at
+    # this width and stay refused.
+    ("float_dec3_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511, "maximum": 1.519}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.511}'),
+    ("float_dec4_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5111, "maximum": 1.5119}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
     ("float_dec_neg", "Give the number.",

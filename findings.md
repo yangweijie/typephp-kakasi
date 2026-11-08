@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一或两位小数，可负**；三位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec_neg`/`dec*_text`/`neg_text`（F439–F442） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至三位小数，可负**；四位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec_neg`/`dec*_text`（F439–F445） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -4154,3 +4154,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：2,000,000 → **200 `{"n":23450000000}`（%2e6=0）**、987,654,321 → **200 `{"n":2345679012375}`（%m=0，用满 9 位后缀）**；5,000 / 250,000 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**、哨兵 **0**（`engine/selftest_f443.log`、`engine/schema_bounds_f443.log`、`engine/api_smoke_f443.log`、`engine/throughput_f443.log`）。
 **记法**：**"上限"要跟着"位宽"一起改**——只改宽度不改阈值，旧上限会继续误拒；只改阈值不改宽度，会发出错误余数。改上限时把**旧上限的那个数当负例**（2,000,000 从"应拒"变"应服务"），门就不会停留在旧结论上。**9 位乘数需要 9 位强制后缀 + 前缀**，实测值 2.3e12 仍在 64 位整数内。
+
+
+## F445：小数网格到**三位**（同一标记，两个连带问题被门抓住）
+**实现**：`api_schema_scaled` 支持 1–3 位小数；形状按边界的最大小数位数取 `d∈{1,2,3}`，标记 **-999/-998/-997**；写入器按 `d` 选比例并补零（`1511 → "1.511"`）。
+**连带问题一（编译期）**：新夹具变量 `$nfM` 与自检里已有的**数组** `$nfM` 同名 ⇒ `Cannot re-assign $nfM from Array to Str` ⇒ `TPC_BUILD_FAILED`、exe 不变（自检跑的是旧二进制，182/0 是**旧码**的结果）。改名 `$nfN` 后通过。
+**连带问题二（运行期，门抓住）**：为扩大哨兵做的全局替换把 `api_schema_bound_inward/exclusive` 的返回值也改成了 -2000000000，但调用方仍比较 -1000000 ⇒ **指数写法 `1e1` 从"拒绝"变成"服务"**（`frac_exp` 1→0）。统一比较值后恢复 1。**判据：全局替换哨兵要同时改"产出端"与"比较端"，或者干脆只改一个函数。**
+**门（旧期望证伪 ⇒ 改门）**：`num_dec3` 由 `""` 改为 `n|1511|-997|0`；新增 `num_dec4=[]`（四位无格点）、`dec3_text=[{"n":1.511}]`（文本级）。
+**活体**：`float_dec3_served` **200 `{"n":1.511}`**（改前 400）、`float_dec4_refuse` **400**；1.5 / 1.51 / -1.9 均不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.521×**、哨兵 **0**（`engine/selftest_f445c.log`、`engine/schema_bounds_f445.log`、`engine/api_smoke_f445.log`、`engine/throughput_f445.log`）。
+**记法**：**一次"扩宽"会同时碰到编译期（变量名/类型）与运行期（哨兵/比较）两处**——编译失败先看 `TPC_BUILD_FAILED` 与 exe 时间戳（否则数字来自旧二进制）；运行期的哨兵改动必须成对（产出 + 比较），否则被影响的是**另一条**判据（这里是指数写法）。
