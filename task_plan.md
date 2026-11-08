@@ -931,3 +931,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.606×**、哨兵 **0**（`engine/selftest_f433.log`、`engine/schema_bounds_f433.log`、`engine/api_smoke_f433.log`、`engine/throughput_f433.log`）。
 **明确留拒（排队）**：number 叶浮点界的**实现**（需小数写入器）；无界 `multipleOf` > 999999；多叶 multipleOf 的实现；`dependentSchemas`/`dependencies`。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F434 计划与完成（tuple 校验：`items` 数组形式 / `prefixItems`）
+**F433 已完成**：number 叶 multipleOf 拒绝。
+**改前活体**：`"items":[…]` 与 `"prefixItems":[…]` → 200 + 散文。
+**F434 已完成**：结构判据按值形状加两条 ⇒ 点名拒绝；对象形式 `items` 保持服务（门里对照）。
+**门**：`SCHEMA-STRUCT` 27 项。
+**活体**：两例 400 点名。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.559×**、哨兵 **0**（`engine/selftest_f434.log`、`engine/schema_required_f434.log`、`engine/api_smoke_f434.log`、`engine/throughput_f434.log`）。
+**明确留拒（排队）**：number 叶浮点界实现；无界 `multipleOf` > 999999；多叶 multipleOf 实现；`dependentSchemas`/`dependencies`；tuple 校验的实现（需按位置发不同类型）。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

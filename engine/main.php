@@ -7717,6 +7717,14 @@ function api_schema_property_names_ok(string $schema): int
 function api_schema_structural_unsupported(string $schema): string
 {
     $mk = [];
+    // F434: tuple validation - `items` as an ARRAY of schemas, or prefixItems - is a shape no
+    // generator claims; the live probe answered prose for both, so each is refused by name.
+    if (preg_match('/"prefixItems"\s*:\s*\[/', $schema, $mk) == 1) {
+        return "prefixItems";
+    }
+    if (preg_match('/"items"\s*:\s*\[/', $schema, $mk) == 1) {
+        return "items";
+    }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
     // subschema it is honoured, otherwise (or when it cannot be evaluated) it is refused by name.
     if (preg_match('/"propertyNames"\s*:\s*\{/', $schema) == 1
@@ -14989,6 +14997,10 @@ function main(): void
     $sfW = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"required":["city"],"dependentRequired":{"city":["note"]}}');
     $sfX = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"dependentRequired":{"city":["region"]}}');
     $sfY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"dependentRequired":{"city":["count"]}}');
+    // F434: tuple validation is named; the control keeps the ordinary object-form items served.
+    $sfZ = api_schema_keywords_unsupported('{"properties":{"pair":{"type":"array","items":[{"type":"string"},{"type":"integer"}]}}}');
+    $sfAA = api_schema_keywords_unsupported('{"properties":{"pair":{"type":"array","prefixItems":[{"type":"string"}]}}}');
+    $sfAB = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -14999,7 +15011,8 @@ function main(): void
         . "] pnames_enum=[" . $sfS . "] pnames_mixed=[" . $sfT
         . "] pnames_route=" . count($sfU)
         . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
-        . "] dep_mixed=[" . $sfY . "]\n";
+        . "] dep_mixed=[" . $sfY . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
+        . "] items_obj=[" . $sfAB . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15009,7 +15022,8 @@ function main(): void
         && $sfT == "propertyNames"
         && count($sfU) == 2 && $sfU[0] == "city" && $sfU[1] == "note"
         && $sfV == "" && $sfW == "dependentRequired" && $sfX == "dependentRequired"
-        && $sfY == "dependentRequired") {
+        && $sfY == "dependentRequired"
+        && $sfZ == "items" && $sfAA == "prefixItems" && $sfAB == "") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

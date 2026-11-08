@@ -1562,3 +1562,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-BOUND-REJECT` 加 `mult_number`（期望 1）。
 - **活体**：`number_leaf_multipleof` **400 点名**（改前 200 散文）；其余 harness 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.606×**、哨兵 **0**。
+
+
+## ▶ 状态（F434，2026-11-08 16:06）——tuple 校验：`items` 数组形式 / `prefixItems` 点名拒绝
+- **改前活体**：两种 tuple 形态都 **200 + 散文**（无路由）。
+- **实现**：结构判据按**值形状**加两条（`"items":[…]`、`"prefixItems":[…]`）；对象形式 `items` 不受影响。
+- **门**：`SCHEMA-STRUCT` 27 项（`tuple_items`、`prefix_items`、`items_obj=[]` 对照）。
+- **活体**：两例 400 点名；其余 harness 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.559×**、哨兵 **0**。

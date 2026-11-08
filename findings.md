@@ -4057,3 +4057,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`number_leaf_multipleof` **400 且消息含 multipleOf**（改前 200 散文）；bounds/required/count/pattern 不回退。
 **梯**：自检 **182/0**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.606×**、哨兵 **0**（`engine/selftest_f433.log`、`engine/schema_bounds_f433.log`、`engine/api_smoke_f433.log`、`engine/throughput_f433.log`）。
 **记法**：**"没有路由"本身就是一种回答**——它会把 schema 请求变成散文；对只服务整数叶的机制，非整数叶必须**点名拒绝**，否则调用方连"约束被忽略"都看不出来。**改前探针要断言"输出是 JSON 且取值合规"，只看状态码会把散文当成通过。**
+
+
+## F434：tuple 校验（`items` 数组形式 / `prefixItems`）——无路由 ⇒ 点名拒绝
+**改前活体（`engine/schema_required_f434pre.log`）**：`"items":[{…},{…}]` 与 `"prefixItems":[…]` 都返回 **200 + 散文**（`Sure, here are two values:`）——检测器只认对象形式的 `items`，两种 tuple 形态没有路由、也没有拒绝。
+**实现**：结构判据最前面加两条**值形状**匹配——`"prefixItems"\s*:\s*\[` ⇒ `prefixItems`、`"items"\s*:\s*\[` ⇒ `items`；对象形式的 `items`（正常数组）不受影响（门里 `items_obj=[]` 对照）。
+**门**：`SCHEMA-STRUCT` 扩到 27 项：`tuple_items=[items]`、`prefix_items=[prefixItems]`、`items_obj=[]`。
+**活体**：两例 **400 且含各自关键字名**（改前 200 散文）；required/bounds/count/pattern 不回退。
+**梯**：自检 **182/0**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.559×**、哨兵 **0**（`engine/selftest_f434.log`、`engine/schema_required_f434.log`、`engine/api_smoke_f434.log`、`engine/throughput_f434.log`）。
+**记法**：**同一关键字的不同"值形状"要走不同的判据**——`items` 的对象形式是已支持的数组文法，数组形式（tuple）没有生成器；按形状区分既能拒绝后者，又不误伤前者。**"没有路由"的请求会以散文返回，所以拒绝面要覆盖这些形态。**

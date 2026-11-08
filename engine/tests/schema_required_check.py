@@ -208,6 +208,16 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}},
       "dependentRequired": {"city": ["region"]}},
      lambda code, txt: code == 400 and "dependentRequired" in txt),
+    # F434: tuple validation - `items` as an ARRAY of schemas, or prefixItems - is a shape no
+    # generator claims, so the request must be refused by name instead of answered with prose.
+    ("tuple_items_refuse", "Give two values.",
+     {"type": "object", "properties": {"pair": {"type": "array",
+                                                "items": [{"type": "string"}, {"type": "integer"}]}}},
+     lambda code, txt: code == 400 and "items" in txt),
+    ("prefixitems_refuse", "Give two values.",
+     {"type": "object", "properties": {"pair": {"type": "array",
+                                                "prefixItems": [{"type": "string"}, {"type": "integer"}]}}},
+     lambda code, txt: code == 400 and "prefixItems" in txt),
 ]
 
 bad = 0
