@@ -837,5 +837,6 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 ## 日志卫生（2026-11-08，随 F426 同轮）
 **规则**：①**证据与噪音的分界是"是否入库"**——`.gitignore` 覆盖的产物（`*.log`、`*.kv`、`*.bak`、`__pycache__/`、`engine/par_gate_*.txt`）与未跟踪的一次性文件可删；**已提交的日志只有"零引用且属编译转录"一类才删**，且必须逐类说明。②"改前 FAIL"的成对证据、梯的收尾日志、parity oracle（`llama_logits*.bin`）与构建缓存（`engine/build/`）**不删**。③删完必须核 `git status` 无删除条目（证明没误删已跟踪文件）与体积变化，并记录保留项的理由。
 **本轮执行**：已忽略日志 2198 个、`.kv` 8 个（27 MB）、未跟踪 stray 1 个、零引用编译转录 36 个（2026 行）、`main.php.f160.bak`/`par_gate_result.txt`/`__pycache__`；体积 **259→197 MB**；已跟踪日志从 453 降到 417（只减 36）。
+**规则补充（由一次失误换来的）**：④**"忽略"不等于"无效"**——删除 `.gitignore` 覆盖的文件前，若文档可能引用，必须先 `git status --ignored` **留存文件名清单**并与 `findings/progress/task_plan/docs/specs` 交叉核对；本轮那 2198 个旧日志是整批删的、没留名单，事后发现 findings 35 处 / audit 2 处引用 `build_f1xx.log` 已无文件（且从未入库、无副本可恢复）。被删的是编译转录而非结果证据，结论仍由 run/gate/自检日志支撑；但**下一步该做的是把这条清单核对写进清理流程**，而不是继续批量删。
 **仍保留（待决定）**：216 个零引用的 run/gate/analysis 转录（约 2.3 MB）——它们是各轮梯的原始记录，删不删属于"是否裁剪提交历史"的决定，不擅自处理。
 **操作注意**：`git add -A -- 'glob'` 对**已删除**文件不展开，须 `git ls-files 'glob' | xargs git rm`；本机偶尔 `cd` 报 `No such file or directory`，但 Bash 工作目录持久化，相对路径仍在仓库内执行 ⇒ 每次删除前先核 `pwd` 与 `git status`。
