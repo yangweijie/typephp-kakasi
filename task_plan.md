@@ -1016,5 +1016,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F441 已完成**：两位小数。
 **F442 已完成**：`api_schema_scaled` 接受符号并改用 `-1000000` 哨兵（`-1` 与 -0.1 碰撞）；形状去掉非负限制；写入器取幅值后加符号。门加 `num_dec_neg`/`neg_text`；活体 `float_dec_neg` 200 `{"n":-1.9}`。
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**（`engine/selftest_f442.log`、`engine/schema_bounds_f442.log`、`engine/api_smoke_f442.log`、`engine/throughput_f442.log`）。
-**明确留拒（排队）**：三位及以上小数、无界 `multipleOf` > 999999、tuple 实现、`dependentSchemas`/`dependencies`。
+**明确留拒（排队）**：三位及以上小数、无界 `multipleOf` > 999999999、tuple 实现、`dependentSchemas`/`dependencies`。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F443 计划与完成（无界 multipleOf 上限提到九位）
+**F442 已完成**：小数界支持负数。
+**F443 已完成**：后缀宽度阶梯到 9 位；拒绝阈值 `>999999999`；门改 `unbounded_big` 夹具（2e9）并加 `unbounded_2m=0`；活体 2,000,000 与 987,654,321 均 200 且整除。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**、哨兵 **0**（`engine/selftest_f443.log`、`engine/schema_bounds_f443.log`、`engine/api_smoke_f443.log`、`engine/throughput_f443.log`）。
+**明确留拒（排队）**：三位及以上小数、无界 `multipleOf` > 999999999（需更长后缀或换机制）、tuple 实现、`dependentSchemas`/`dependencies`。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

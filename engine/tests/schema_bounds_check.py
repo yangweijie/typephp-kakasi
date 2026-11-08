@@ -113,6 +113,16 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 250000}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 250000 == 0),
+    # F443: the suffix width follows the multiplier up to nine digits, so 2,000,000 (formerly the
+    # "beyond the mechanism" case) and a nine-digit multiplier are both served as exact multiples.
+    ("multipleof_unbounded_2000000", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 2000000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 2000000 == 0),
+    ("multipleof_unbounded_987654321", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 987654321}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 987654321 == 0),
     # F431: two leaves each carrying multipleOf. Either both keys come back each satisfying its own
     # multiplier, or the request is refused - what must not happen is a served object that silently
     # drops the second key while claiming to honour the schema.

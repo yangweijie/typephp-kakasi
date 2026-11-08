@@ -5644,11 +5644,11 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
 function api_multiple_fill(int $mult, int $maxSteps): string
 {
     $single = api_digit_ids(1);
-    // F430: the forced suffix needs enough digits to express any residue below the multiplier, so
-    // its width follows the multiplier: three digits up to 999, four to 9999, five to 99999, six to
-    // 999999. Beyond that this mechanism cannot honour the constraint at all and the request is
-    // refused upstream instead of emitting a partial number.
-    if ($single == "" || $mult < 2 || $mult > 999999) {
+    // F430/F443: the forced suffix needs enough digits to express any residue below the multiplier,
+    // so its width follows the multiplier: three digits up to 999, four to 9999, five to 99999, six
+    // to 999999, and on to nine digits at 999999999. Beyond that this mechanism cannot honour the
+    // constraint at all and the request is refused upstream instead of emitting a partial number.
+    if ($single == "" || $mult < 2 || $mult > 999999999) {
         return "";
     }
     $k = 3;
@@ -5664,6 +5664,18 @@ function api_multiple_fill(int $mult, int $maxSteps): string
     if ($mult > 99999) {
         $k = 6;
         $pow = 1000000;
+    }
+    if ($mult > 999999) {
+        $k = 7;
+        $pow = 10000000;
+    }
+    if ($mult > 9999999) {
+        $k = 8;
+        $pow = 100000000;
+    }
+    if ($mult > 99999999) {
+        $k = 9;
+        $pow = 1000000000;
     }
     $nonzero = "";
     $parts = explode(",", $single);
@@ -8159,7 +8171,7 @@ function api_schema_bounds_unsupported(string $body): int
         // JSON ("{"n":").
         $mo = [];
         if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $body, $mo) == 1
-            && (int) $mo[1] > 999999) {
+            && (int) $mo[1] > 999999999) {
             return 1;
         }
         // F431/F438: the single-leaf writer emits ONE property, so with several leaves it silently
@@ -14847,9 +14859,12 @@ function main(): void
     $bdS = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": -9.5, "maximum": -1.5}}}}}');
     // F430: unbounded multipleOf - up to 999999 is served by a suffix whose width follows the
     // multiplier, beyond that it is refused, and 1 is trivially satisfied so it is not refused.
-    $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
+    $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000000}}}');
     $bdAC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":5000}}}');
     $bdAD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":1}}}');
+    // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
+    // case - is served, and only values above 999,999,999 are refused.
+    $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
     // F431: the unbounded multipleOf writer emits one property, so any schema with more than one
     // leaf is refused rather than answered with the other keys silently dropped.
     $bdBA = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}');
@@ -14900,7 +14915,8 @@ function main(): void
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
-        . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH . "
+        . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
+        . "] unbounded_2m=[" . $bdBI . "
 ";
     if ($bdA == 0 && $bdB == 0 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 0 && $bdK == 1 && $bdE == 0
@@ -14910,7 +14926,7 @@ function main(): void
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
-        && $bdAB == 1 && $bdAC == 0 && $bdAD == 0
+        && $bdAB == 1 && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdBA == 0 && $bdBB == 1 && $bdBC == 1
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0

@@ -3715,9 +3715,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
 | multipleOf 有界（任意 m） | **支持**（折叠到区间内最小倍数） | `SCHEMA-BOUND-REJECT bigmult_*`（F420/F424） |
-| multipleOf 无界：m=1 或 2..999999 | **支持**（后缀宽度随位数；m=1 交普通整数） | `unbounded_ok`/`mult_one_ub`（F430） |
+| multipleOf 无界：m=1 或 2..999999999 | **支持**（后缀宽度随位数 3–9；m=1 交普通整数） | `unbounded_ok`/`unbounded_2m`/`mult_one_ub`（F430/F443） |
 | multipleOf：多叶全整数且每叶各带 multipleOf | **支持**（逐叶后缀写入，各值整除各自乘数） | `mult_multi`/`multi_plan`（F438） |
-| multipleOf：number 叶 / 混合叶 / 无界 >999999 | **显式 400** | `mult_number`/`mult_mixed`/`unbounded_big`（F430–F433） |
+| multipleOf：number 叶 / 混合叶 / 无界 >999999999 | **显式 400** | `mult_number`/`mult_mixed`/`unbounded_big`（F430–F443） |
 | minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN`（F399） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
@@ -4146,3 +4146,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`float_dec_neg` **200 `{"n":-1.9}`**；`1.5`/`1.51` 与三位小数 400 都不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**（`engine/selftest_f442.log`、`engine/schema_bounds_f442.log`、`engine/api_smoke_f442.log`、`engine/throughput_f442.log`）。
 **记法**：**负值域里 `-1` 不是安全哨兵**——它太"真"了；哨兵要么取不可能值（这里 -1000000），要么用布尔标志单独返回。**符号处理放在"取幅值之后"**，比在整数除法里对付负数简单得多（整数除法对负数向零截断，余数符号会出错）。
+
+
+## F443：无界 `multipleOf` 上限从 999999 提到 **999999999**（后缀宽度 9 位）
+**实现**：`api_multiple_fill` 的宽度阶梯加三档（7→1e7、8→1e8、9→1e9），上限与 `api_schema_bounds_unsupported` 的拒绝阈值同步改为 `999999999`。机制没变：`x = (m − (p·10^k) % m) % m < m ≤ 10^k` ⇒ k 位足以表达余数。
+**门（旧期望证伪 ⇒ 改门）**：`unbounded_big` 夹具由 **2,000,000**（旧的"超出机制"例）改为 **2,000,000,000**（仍应 1）；新增 `unbounded_2m=0`——2,000,000 现在是**服务**侧。
+**活体**：2,000,000 → **200 `{"n":23450000000}`（%2e6=0）**、987,654,321 → **200 `{"n":2345679012375}`（%m=0，用满 9 位后缀）**；5,000 / 250,000 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**、哨兵 **0**（`engine/selftest_f443.log`、`engine/schema_bounds_f443.log`、`engine/api_smoke_f443.log`、`engine/throughput_f443.log`）。
+**记法**：**"上限"要跟着"位宽"一起改**——只改宽度不改阈值，旧上限会继续误拒；只改阈值不改宽度，会发出错误余数。改上限时把**旧上限的那个数当负例**（2,000,000 从"应拒"变"应服务"），门就不会停留在旧结论上。**9 位乘数需要 9 位强制后缀 + 前缀**，实测值 2.3e12 仍在 64 位整数内。
