@@ -67,9 +67,18 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0, "maximum": 100000},
                                        "city": {"type": "string"}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
-    ("negative_refuse", "Give the number.",
+    # F419 flipped this one: BOTH-NEGATIVE bounds are served by the magnitude walk behind a dash
+    # (the value -(mag) with the magnitude in [-hi, -lo]).
+    ("negative_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": -5000, "maximum": -100}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and -5000 <= val_of(txt, "n") <= -100),
+    # F419: a range STRADDLING zero clamps to the non-negative side (the subset argument) - the
+    # served values stay inside the schema's bounds.
+    ("straddling_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -1000, "maximum": 1000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and -1000 <= val_of(txt, "n") <= 1000),
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),

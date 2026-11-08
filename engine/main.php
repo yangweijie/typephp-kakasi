@@ -5225,16 +5225,14 @@ function api_schema_number_bounded_shape(string $schema): string
     $lo = -1;
     $hi = -1;
     if ($hasLo) {
+        // F419: negative bounds are served - the writer maps the sign (both-negative walks the
+        // magnitude behind a dash; straddling clamps to the non-negative side). The -1 sentinel
+        // for an absent side collides with a real -1 only in cases where the subset walk stays
+        // legal, recorded in findings.
         $lo = (int) $mn[1];
-        if ($lo < 0) {
-            return "";
-        }
     }
     if ($hasHi) {
         $hi = (int) $mx[1];
-        if ($hi < 0) {
-            return "";
-        }
     }
     if ($hasLo && $hasHi && $lo > $hi) {
         return "";
@@ -5330,7 +5328,30 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
     if ($s == "") {
         return "";
     }
-    $body = api_number_bounded_fill($lo, $hi);
+    // F419: the sign mapping - both bounds negative walks the MAGNITUDE in [-hi, -lo] behind a
+    // forced dash (the value -(mag) lands in [lo, hi]); a range straddling or touching zero
+    // clamps the lower bound to zero (every value in [0, hi] is >= lo when lo < 0 - the same
+    // subset argument the whole bounded walk uses); a one-sided negative minimum clamps to zero
+    // for the same reason; a one-sided negative maximum walks the magnitude's one-sided minimum
+    // behind the dash (any magnitude >= |hi| gives a value <= hi).
+    $wlo = $lo;
+    $whi = $hi;
+    $neg = 0;
+    if ($lo < 0 && $hi < 0) {
+        $neg = 1;
+        $wlo = -$hi;
+        $whi = -$lo;
+    } else if ($lo < 0) {
+        $wlo = 0;
+    }
+    if ($neg == 1) {
+        $dash = api_constrained_continue(["-"], 4);
+        if ($dash == "") {
+            return "";
+        }
+        $s = $s . "," . $dash;
+    }
+    $body = api_number_bounded_fill($wlo, $whi);
     if ($body != "") {
         $s = $s . "," . $body;
     }
@@ -9158,10 +9179,10 @@ function api_serve(int $port): void
             } else if (api_schema_bounds_unsupported($schBody) == 1) {
                 // F397: same rule as the pattern branch - a bound combination the grammar cannot
                 // enumerate used to be served as unconstrained text. Refuse it with the reason
-                // instead. F405: the honoured set is wider now, so the message names it - a
-                // single integer property with non-negative bounds of any span and either side
-                // missing; the rest still refuses.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with non-negative minimum and/or maximum (any span); float bounds, negative bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                // instead. F405/F419: the honoured set is wider now, so the message names it - a
+                // single integer property with bounds of any sign and any span, either side
+                // missing; what remains is float bounds and multi-property bounds.
+                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); float bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
@@ -13989,7 +14010,11 @@ function main(): void
     $bdC = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1}}}}}');
     $bdD = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100}}}}}');
     $bdH = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1},"s":{"type":"string"}}}}}');
+    // F419 flipped bdI: a one-sided NEGATIVE minimum on the single-leaf shape is served (the
+    // subset walk clamps to the non-negative side - every value there is >= the negative
+    // minimum); the multi-leaf negative keeps refusing.
     $bdI = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-100}}}}}');
+    $bdL = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-100},"s":{"type":"string"}}}}}');
     $bdJ = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":0,"maximum":100}}}}}');
     $bdK = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":0,"maximum":100},"m":{"type":"integer","multipleOf":3}}}}}');
     $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
@@ -13998,14 +14023,14 @@ function main(): void
     $bdF = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5}}}}}');
     $bdG = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 5.5}}}}}');
     echo "SCHEMA-BOUND-REJECT supported=" . $bdA . " float=" . $bdB . " onesided=[" . $bdC
-        . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[ " . $bdI
-        . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK . "] none=" . $bdE
+        . "] wide=[" . $bdD . "] multi_leaf=[ " . $bdH . "] neg_one=[" . $bdI
+        . "] neg_multi=[ " . $bdL . "] float_wide=[ " . $bdJ . "] mult_of=[ " . $bdK . "] none=" . $bdE
         . " wire_supported=" . $bdF . " wire_float=" . $bdG . "
 ";
-    if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 1
-        && $bdJ == 1 && $bdK == 1 && $bdE == 0
+    if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
+        && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
         && $bdF == 0 && $bdG == 1) {
-        echo "SCHEMA-BOUND-REJECT: PASS (single-leaf non-negative bounds honoured at any span; others flagged)
+        echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
         echo "SCHEMA-BOUND-REJECT: FAIL
@@ -14066,16 +14091,39 @@ function main(): void
     }
     $nbT5 = str_replace("Ġ", " ", $nbT5);
     $nbV5 = preg_match('/"n":([0-9]+)\}/', $nbT5, $nbM5) == 1 ? (int) $nbM5[1] : -1;
+    // F419: the negative walks - both-negative behind a dash (the magnitude in [-hi, -lo]) and a
+    // straddling range clamped to the non-negative side (the subset argument).
+    $nbOut6 = api_number_bounded_value($nbIds, "n", -100, -5, 0);
+    $nbT6 = "";
+    $nbP6 = explode(",", $nbOut6);
+    for ($i = $nbBase; $i < count($nbP6); $i++) {
+        $nbT6 = $nbT6 . gguf_token_str((int) $nbP6[$i]);
+    }
+    $nbT6 = str_replace("Ġ", " ", $nbT6);
+    $nbV6 = preg_match('/"n":(-[0-9]+)\}/', $nbT6, $nbM6) == 1 ? (int) $nbM6[1] : 1;
+    $nbOut7 = api_number_bounded_value($nbIds, "n", -1000, 1000, 0);
+    $nbT7 = "";
+    $nbP7 = explode(",", $nbOut7);
+    for ($i = $nbBase; $i < count($nbP7); $i++) {
+        $nbT7 = $nbT7 . gguf_token_str((int) $nbP7[$i]);
+    }
+    $nbT7 = str_replace("Ġ", " ", $nbT7);
+    $nbV7 = preg_match('/"n":(-?[0-9]+)\}/', $nbT7, $nbM7) == 1 ? (int) $nbM7[1] : -100000;
+    $nbShapeNeg = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-5000,"maximum":-100}}}}}');
     echo "SCHEMA-NUM-BND shape=[" . $nbA . "] shape2=[" . $nbB . "] shape_one=[" . $nbC
         . "] shape_span=[ " . $nbD . "] shape_multi=[ " . $nbE . "] v1=" . $nbV1
-        . " v2=" . $nbV2 . " v3=" . $nbV3 . " v4=" . $nbV4 . " v5=" . $nbV5 . "]\n";
+        . " v2=" . $nbV2 . " v3=" . $nbV3 . " v4=" . $nbV4 . " v5=" . $nbV5
+        . "] neg_shape=[" . $nbShapeNeg . "] v6=" . $nbV6 . " v7=" . $nbV7 . "]\n";
     if ($nbA == "n|0|100" && $nbB == "n|1|1000" && $nbC == "n|5|-1" && $nbD == "n|1|5"
         && $nbE == ""
         && $nbV1 >= 0 && $nbV1 <= 100 && api_json_ok($nbT1) == 1
         && $nbV2 >= 1 && $nbV2 <= 1000 && api_json_ok($nbT2) == 1
         && $nbV3 >= 5 && $nbV3 <= 9 && api_json_ok($nbT3) == 1
         && $nbV4 >= 1 && $nbV4 <= 5 && api_json_ok($nbT4) == 1
-        && $nbV5 >= 0 && $nbV5 <= 15 && api_json_ok($nbT5) == 1) {
+        && $nbV5 >= 0 && $nbV5 <= 15 && api_json_ok($nbT5) == 1
+        && $nbShapeNeg == "n|-5000|-100"
+        && $nbV6 <= -5 && $nbV6 >= -100 && api_json_ok($nbT6) == 1
+        && $nbV7 >= -1000 && $nbV7 <= 1000 && api_json_ok($nbT7) == 1) {
         echo "SCHEMA-NUM-BND: PASS (emitted values inside the bounds; refused shapes yield no shape)\n";
     } else {
         echo "SCHEMA-NUM-BND: FAIL\n";
