@@ -1016,8 +1016,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F441 已完成**：两位小数。
 **F442 已完成**：`api_schema_scaled` 接受符号并改用 `-1000000` 哨兵（`-1` 与 -0.1 碰撞）；形状去掉非负限制；写入器取幅值后加符号。门加 `num_dec_neg`/`neg_text`；活体 `float_dec_neg` 200 `{"n":-1.9}`。
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.529×**、哨兵 **0**（`engine/selftest_f442.log`、`engine/schema_bounds_f442.log`、`engine/api_smoke_f442.log`、`engine/throughput_f442.log`）。
-**明确留拒（排队）**：三位及以上小数、无界 `multipleOf` > 999999999、tuple 实现、`dependentSchemas`/`dependencies`。
+**明确留拒（排队）**：三位及以上小数、无界 `multipleOf` > 999999999（需更长后缀或换机制）、tuple 实现、`dependentSchemas`/`dependencies`。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F444 计划（tuple 校验的**实现**：位置式标量元组，规格待执行）
+**现状**：`items` 数组形式与 `prefixItems` 由 F434 **点名拒绝**（活体 400）；`SCHEMA-STRUCT` 的 `tuple_items`/`prefix_items` 钉住该结论。
+**目标形状**：属性是数组、`items` 为 2–3 个**标量**子 schema（`string`/`integer`）的数组，无其它关键字。
+**实现（四处，缺一不可）**：
+1. 写入器 `api_tuple_value($ids,$prop,$kinds,$charset,$maxSteps,$useCache)`：`{"prop":[` 开头；逐元素发 `,` 分隔；`s` 元素走"开引号 → 字符集步进 → 闭引号"（与 `api_array_string_value` 的内层一致），`i` 元素走 `api_number_fill(0,$maxSteps)`；末尾强制 `]}`；任一元素失败则返回 ""（不发半成品）。
+2. 检测器 `api_response_schema_tuple($schema)` → `prop|s,i`；只认上述窄形状。
+3. 路由：四处数组分支（8000 非流约 5500/6490、流式约 9480、8001 约 10580/10970）在既有数组检测**之前**接入 tuple 分支。
+4. 校验：`api_schema_structural_unsupported` 的 `"items"\s*:\s*\[` 分支改为"tuple 检测器为空才拒"。
+**门**：`SCHEMA-STRUCT` 的 `tuple_items` 期望 **1→0**（旧期望被证伪就改门），`prefix_items` 仍 1（不在本轮范围），新增 `tuple_plan=[pair|s,i]` 与**文本断言** `tuple_text=[{"pair":["…",<digits>]}]`。
+**活体**：`tuple_refuse` 改名为 `tuple_served`（**200** 且 `json.loads` 得到 2 元素、`[0]` 是 str、`[1]` 是 int）；`prefixitems_refuse` 保持 400。
+**验收**：①元组被服务且元素类型按位置正确（门 + 活体）②`prefixItems` 仍拒 ③自检与四个 harness 全绿 ④8000/8001 不回退。
+**顺位**：F444 → 三位小数 → 分片多卡 / FR-05（本机不可验证）。
 
 
 ## F443 计划与完成（无界 multipleOf 上限提到九位）
