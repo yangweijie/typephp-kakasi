@@ -182,6 +182,12 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "patternProperties": {"^x": {"type": "integer"}}},
      lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    # F455: a MATCHING pattern is served when the bare type is what the matched key's declared kind
+    # guarantees; the integer form over a string key below/above stays refused.
+    ("patternprops_match_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "patternProperties": {"^c": {"type": "string"}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
     # F452: if/then/else is decided by the bare type: object is true, every other type is false, and
     # the selected branch is the trivial object one. The first case also pins the key set: the
     # `required` nested in the IGNORED else must not be read as a root requirement and shrink the

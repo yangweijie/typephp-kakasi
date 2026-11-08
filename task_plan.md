@@ -1109,6 +1109,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：真正的子 schema 求值器（值级 `pattern`/`enum`/嵌套约束的统一入口，先写规格）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F455 计划与完成（`patternProperties` 的匹配键 + 裸类型）
+**F454 已完成**：`minContains`/`maxContains` 折成元素上下界。
+**F455 已完成**：命中键时若子 schema 恰为裸 type 且等于该键声明种类必然产出的类型（s/e/p→string、i→integer、i|n→number、b→boolean、a*→array），值构造满足 ⇒ 放行。新增 `api_schema_leaf_kind` + `api_schema_kind_is_type`；更丰富子 schema 或类型不匹配仍拒。
+**门**：新增 `pp_match_ok=[]`；旧 `$sfL`/`$sfAT` 保持拒绝作对照；`pp_multi` 不变。
+**活体**：`patternprops_match_ok` 200 双键；`patternprops_refuse` 400 点名。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.536×**、哨兵 **0**（`engine/selftest_f455.log`、`engine/schema_required_f455.log`、`engine/schema_bounds_f455.log`、`engine/schema_count_f455.log`、`engine/schema_pattern_f455.log`、`engine/api_smoke_f455.log`、`engine/throughput_f455.log`）。
+**明确留拒（排队，F455 后）**：`contains`/`not`/`patternProperties` 的值级子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；五位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：真正的子 schema 求值器（值级 `pattern`/`enum`/嵌套约束的统一入口，先写规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

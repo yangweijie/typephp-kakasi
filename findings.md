@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F454）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F455）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3746,7 +3746,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
 | contains：类型不匹配 / 值级规则（pattern 等） | **显式 400** | `contains_mismatch`/`contains_pattern`（F449） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
-| patternProperties：模式匹配到已发出键 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`（F451） |
+| patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / array↔数组种类） | **支持**（值由该种类写出器保证） | `pp_match_ok`（F455） |
+| patternProperties：类型不匹配 / 更丰富子 schema / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`（F451/F455） |
 | if/then/else：`if` 恰为单 `type`，按类型选中 `then`/`else`，生效分支缺省或恰为 `{"type":"object"}`（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`（F452） |
 | if/then/else：生效分支更丰富（required/bounds/嵌套）/ 其他形状 | **显式 400** | `if_rich`（F452） |
 | unevaluatedProperties：键集可证明且全部键由根级 `properties` 求值 | **支持**（该关键字无可判对象，任意值/子 schema 均满足） | `uneval_props`/`uneval_props_schema`（F453） |
@@ -3759,7 +3760,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式形式、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema、`patternProperties` 的**更丰富**子 schema（值级/嵌套）、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4267,3 +4268,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体（断言个数而不是状态码）**：`cont_min_ok`（min 3）→ **200，4 个元素**；`cont_max_ok`（max 2）→ **200，1 个元素**；`cont_min_big_refuse`（min 9）与 `cont_min_over_refuse`（min 3 > max 2）**400 点名 minContains**；`contains_*` 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.575×**；哨兵 **0**（`engine/selftest_f454.log`、`engine/schema_required_f454.log`、`engine/schema_bounds_f454.log`、`engine/schema_count_f454.log`、`engine/schema_pattern_f454.log`、`engine/api_smoke_f454.log`、`engine/throughput_f454.log`）。
 **记法**：**计数关键字先问"匹配集合是否等于全集"**——等于全集时计数就退化为元素计数，复用已有预算；不等于全集才需要真正的子 schema 求值。落点是**写入器实际消费的那个函数**（`api_response_schema_array_bounds`），而不是形状检测器，这样四个调用点一次生效。
+
+## F455：`patternProperties` 的**匹配键 + 裸类型**形式支持（值由声明种类保证）
+**观察**：F451 只放行"模式不命中任何键"的空约束。命中键时，若子 schema 恰为**裸 type**，而该键在 plan 里的叶子种类**必然产出**这个类型（`s`/`e:`/`p:`→string、`i`→integer、`i|n`→number、`b`→boolean、`a/an/af/ab`→array），值也是构造满足的——不需要求值。
+**实现**：`api_schema_pattern_props_ok` 在单条模式的循环里加一步：命中键先取 `api_schema_leaf_kind(plan,name)`（按 `name:` 前缀从 plan 叶子切出种类），再用 `api_schema_kind_is_type(kind,type)` 判定；子 schema 不是可证明的裸类型或种类不匹配 ⇒ 拒绝。`~` 边界后缀在判定前剥掉。
+**门**：新增 `pp_match_ok=[]`（`^c` + `{"type":"string"}`，扁平双键）；旧 `$sfL`/`$sfAT`（`^a`/`^c` + integer，而键是 string）**保持拒绝**，作为类型不匹配的对照；`pp_multi` 不变。
+**活体**：`patternprops_match_ok` **200 双键**；`patternprops_refuse`（integer over string）**400 点名**；vacuous 与其余 harness 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**；哨兵 **0**（`engine/selftest_f455.log`、`engine/schema_required_f455.log`、`engine/schema_bounds_f455.log`、`engine/schema_count_f455.log`、`engine/schema_pattern_f455.log`、`engine/api_smoke_f455.log`、`engine/throughput_f455.log`）。
+**记法**：**"匹配键 + 裸类型"是空约束的自然下一步**——值不是"碰巧对"，而是由 leaf kind 的写出器保证；判据要落在 **plan 的种类**上（而不是重新解析 schema），因为那正是生成时使用的同一事实。

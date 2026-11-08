@@ -1757,3 +1757,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`cont_min=[]`、`cont_max=[]`、`cont_min_big=[minContains]`、`cont_min_over=[minContains]`、`cont_bounds=[2:3]`。
 - **活体（断言个数）**：min 3 → **4 元素**；max 2 → **1 元素**；min 9 / min 3+max 2 → **400 点名**。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.575×**、哨兵 **0**。
+
+
+## ▶ 状态（F455，2026-11-08 23:39）——`patternProperties` 的**匹配键 + 裸类型**形式支持
+- **观察**：命中键时，裸 type 若等于该键声明种类必然产出的类型（s/e/p→string、i→integer、i|n→number、b→boolean、a*→array），值构造满足。
+- **实现**：`api_schema_pattern_props_ok` 增加 `api_schema_leaf_kind` + `api_schema_kind_is_type` 判定；更丰富子 schema 或类型不匹配仍拒。
+- **门**：新增 `pp_match_ok=[]`；旧 `$sfL`/`$sfAT` 保持拒绝作对照。
+- **活体**：`patternprops_match_ok` **200 双键**；`patternprops_refuse` **400 点名**。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.536×**、哨兵 **0**。

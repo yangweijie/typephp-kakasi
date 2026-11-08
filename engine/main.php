@@ -8619,12 +8619,54 @@ function api_schema_structural_unsupported(string $schema): string
     return "";
 }
 
+// F455: does a plan leaf kind guarantee the JSON type the subschema names? String leaves include
+// enum/pattern encodings (they all emit strings); number accepts an integer kind; arrays accept all
+// four array kinds (with or without element bounds in the kind).
+function api_schema_kind_is_type(string $kind, string $t): int
+{
+    $k = $kind;
+    $tk = strpos($k, "~");
+    if ($tk !== false) {
+        $k = substr($k, 0, $tk);
+    }
+    if ($t == "string" && ($k == "s" || substr($k, 0, 2) == "e:" || substr($k, 0, 2) == "p:")) {
+        return 1;
+    }
+    if ($t == "integer" && $k == "i") {
+        return 1;
+    }
+    if ($t == "number" && ($k == "i" || $k == "n")) {
+        return 1;
+    }
+    if ($t == "boolean" && $k == "b") {
+        return 1;
+    }
+    if ($t == "array" && ($k == "a" || $k == "an" || $k == "af" || $k == "ab")) {
+        return 1;
+    }
+    return 0;
+}
+
+function api_schema_leaf_kind(string $plan, string $name): string
+{
+    $pre = $name . ":";
+    foreach (explode(",", $plan) as $leaf) {
+        if (substr($leaf, 0, strlen($pre)) == $pre) {
+            return substr($leaf, strlen($pre));
+        }
+    }
+    return "";
+}
+
 // F451: patternProperties is honoured for its VACUOUS form only - a single pattern that matches
 // none of the keys the answer will contain. The block then constrains no property, so it holds by
 // construction. A pattern that does match an emitted key would constrain that property's VALUE,
 // which needs the value evaluated, and more than one pattern entry would need every entry checked -
 // both keep the refusal. The key set is the one the conditional keywords use, and the pattern goes
 // through the same length guard as propertyNames.
+// F455: a matching key is also honoured when the subschema is a bare type the key's declared leaf
+// kind guarantees - the value is emitted by that kind, so `{"type":"string"}` over string keys
+// holds by construction. A type the kind does not guarantee keeps the refusal.
 function api_schema_pattern_props_ok(string $schema): int
 {
     $pp = strpos($schema, "\"patternProperties\"");
@@ -8662,6 +8704,22 @@ function api_schema_pattern_props_ok(string $schema): int
     if ($emit == "") {
         return 0;
     }
+    // F455: a bare type in the subschema is satisfied by construction when every MATCHING key's
+    // declared leaf kind guarantees that type; the plan is the same leaf list the generators use.
+    $mv = [];
+    $vtype = "";
+    if (preg_match('/^\{\s*"type"\s*:\s*"(string|integer|number|boolean|array)"\s*\}$/', $vblk, $mv) == 1) {
+        $vtype = $mv[1];
+    }
+    $prp = strpos($schema, "\"properties\"");
+    $prblk = "";
+    if ($prp !== false) {
+        $prb = strpos($schema, "{", $prp);
+        if ($prb !== false) {
+            $prblk = api_balance_block($schema, $prb);
+        }
+    }
+    $plan = $prblk == "" ? "" : api_top_leaves($prblk, 64);
     $re = "#" . str_replace("#", "\\#", $mp[1]) . "#";
     foreach (explode(",", $emit) as $name) {
         $r = preg_match($re, $name);
@@ -8669,7 +8727,10 @@ function api_schema_pattern_props_ok(string $schema): int
             return 0;       // unreadable pattern: refuse rather than read the error as "no match"
         }
         if ($r == 1) {
-            return 0;       // matches an emitted key: the value would have to be evaluated
+            if ($vtype == "" || $plan == ""
+                || api_schema_kind_is_type(api_schema_leaf_kind($plan, $name), $vtype) != 1) {
+                return 0;   // the value would have to be evaluated, or the kind cannot prove the type
+            }
         }
     }
     return 1;
@@ -16254,6 +16315,9 @@ function main(): void
     $sfBH = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":9}');
     $sfBI = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":3,"maxContains":2}');
     $sfBJ = api_response_schema_array_bounds('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":2,"maxContains":3}}}');
+    // F455: a matching pattern is honoured when the bare type is the one the matched keys' declared
+    // kinds guarantee; the existing $sfL (^a over a string key, integer subschema) is its control.
+    $sfBK = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^c":{"type":"string"}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16280,7 +16344,8 @@ function main(): void
         . "] uneval_items=[" . $sfBC . "] uneval_items_wrong=[" . $sfBD
         . "] uneval_prop_named=[" . $sfBE . "]"
         . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
-        . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]\n";
+        . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
+        . " pp_match_ok=[" . $sfBK . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -16307,7 +16372,7 @@ function main(): void
         && $sfBA == "" && $sfBB == "" && $sfBC == ""
         && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties"
         && $sfBF == "" && $sfBG == "" && $sfBH == "minContains"
-        && $sfBI == "minContains" && $sfBJ == "2:3") {
+        && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == "") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";
