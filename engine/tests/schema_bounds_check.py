@@ -160,8 +160,13 @@ cases = [
     ("float_dec_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 1.9}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.5}'),
-    ("float_dec_fine_refuse", "Give the number.",
+    # F441: two fraction digits are served on the hundredths grid (1.51); a three-digit interval has
+    # no grid at this width and stays refused.
+    ("float_dec2_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51, "maximum": 1.59}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.51}'),
+    ("float_dec3_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511, "maximum": 1.519}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F421: an INTEGER leaf with fractional bounds. The value must be an integer inside the real
     # interval, so 1.5..9.5 means 2..9 - truncating the bound to 1 would serve a violating value.

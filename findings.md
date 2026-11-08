@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一位小数**；更细/负数仍 400） | `num_float`/`num_dec`/`dec_text`/`num_dec_fine`（F439/F440） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一位或两位小数**；更细/负数仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`dec2_text`/`num_dec3`（F439–F441） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -4128,3 +4128,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`float_dec_served` **200 `{"n":1.5}`**（改前 400）、`float_dec_fine_refuse` **400**（[1.51,1.59]）；`float_served`（F439 的 100）与 bounds/required/count/pattern 均不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.464×**、哨兵 **0**（`engine/selftest_f440c.log`、`engine/schema_bounds_f440.log`、`engine/api_smoke_f440.log`、`engine/throughput_f440.log`）。
 **记法**：**用"形状字段编码 + 同一写入器分支"可以避免多点路由改动**——`hi=-999` 是显式标记，代价是写入器要知道这个约定；**新分支必须按叶子类型设防**（integer 叶不能发小数），否则门会用"另一类叶子也被改坏"红给你看。**文本级断言**（`dec_text`）比"能解析成数字"更强，小数点的出现与位数都被钉住。
+
+
+## F441：小数网格从一位推广到**两位**（同一标记机制）
+**改前**：`{"n":{"type":"number","minimum":1.51,"maximum":1.59}}` → **400**（F440 只管十分位）。
+**实现**：`api_schema_tenths` 泛化为 `api_schema_scaled($lit,$digits)`（`"1.51"→151`）；形状的"无整数"分支按两个边界的**最大小数位数**取 `d∈{1,2}`，标记为 **-999**（d=1）或 **-998**（d=2），`lo` 存 `value·10^d`；写入器按 `d` 取比例并**左侧补零**（`151 → "1.51"`）。三位以上小数、负数、含 `multipleOf` 仍拒。
+**门（旧期望证伪 ⇒ 改门）**：`num_dec_fine` 期望由 `""` 改为 `n|151|-998|0`；新增 `num_dec3=[]`（[1.511,1.519] 无格点）与 `dec2_text=[{"n":1.51}]`（文本级）。
+**活体**：`float_dec2_served` **200 `{"n":1.51}`**（改前 400）、`float_dec3_refuse` **400**；一位小数路径（`float_dec_served` = 1.5）与整数路径（`float_served` = 100）都不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.520×**、哨兵 **0**（`engine/selftest_f441.log`、`engine/schema_bounds_f441.log`、`engine/api_smoke_f441.log`、`engine/throughput_f441.log`）。
+**记法**：**"位数"是网格的宽度，不是新机制**——同一标记 + 比例 + 补零，把一位扩到两位只增了一个枚举值；**补零必须在写入器里做**（`151` 直接拼 `.` 会得到 `1.151` 这样的错值），门里的文本断言正是为此。
