@@ -954,3 +954,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.534×**、哨兵 **0**。
 **明确留拒（排队）**：number 叶浮点界实现；无界 `multipleOf` > 999999；多叶 multipleOf 实现；`dependentSchemas`/`dependencies`；tuple 实现；布尔 exclusive 的**实现**（需按布尔语义收紧数值界）。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F437 计划（布尔 exclusive 的**实现**；改前证据已在手）
+**现状证据**（`engine/schema_bounds_f436pre.log`）：`{"n":{"type":"integer","minimum":5,"exclusiveMinimum":true}}` → **200 `{"n":5}`**；当前行为是**点名 400**（F436），因此这是"从拒绝变实现"的一步，不是修违反。
+**语义**：draft-4 里 `exclusiveMinimum:true` 表示把同侧 `minimum` 收紧为严格（整数叶 ⇒ 下界 `floor(min)+1`），`exclusiveMaximum:true` 同理（`ceil(max)-1`）。只有布尔、没有同侧数值界时无意义 ⇒ 继续拒绝。
+**精确改动点**（`engine/main.php`）：
+1. `api_schema_number_bounded_shape`：在 `$hasExLo/$hasExHi` 的数值探测之后加两段——`/"exclusiveMinimum"\s*:\s*true/` 且 `$hasLo` ⇒ `$exn = $mn; $hasExLo = 1;`；`exclusiveMaximum` 同理用 `$mx`。已有的"同侧更严者胜"组合逻辑随即生效（`minimum:5` + 布尔 ⇒ `max(5, floor(5)+1)=6`），无需新代码。
+2. `api_schema_bounds_unsupported`：把 F436 的早退条件收窄为 `preg_match(...":true") == 1 && api_schema_number_bounded_shape($body) == ""`（形状能处理就放行；布尔孤立仍拒）。
+**门**（`SCHEMA-BOUND-REJECT`）：`excl_bool` 期望由 **1 改 0**（旧期望被新行为证伪 ⇒ 改门），新增 `excl_bool_alone=1`（`exclusiveMinimum:true` 无 `minimum`）；**再加一个取值断言**：用 `api_number_bounded_value($ids,"n",6,6,0)` 生成并断言输出 `{"n":6}`（证明收紧到 6 而不是放行 5）。
+**活体**（`engine/tests/schema_bounds_check.py`）：把 `exclusive_bool_refuse` 的断言从"400 或 200 且 n>5"收紧为"**200 且 n>5**"，并改名 `exclusive_bool_served`。
+**验收**：①布尔+数值界 ⇒ 200 且值 > 下界（门 + 活体）②布尔孤立 ⇒ 400 ③自检与四个 harness 全绿 ④8000/8001 不回退。
+**顺位**（其后）：多叶 multipleOf 的实现 → number 叶浮点界（小数写入器 + 4 个路由点）→ 分片多卡 / FR-05。
