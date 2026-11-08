@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F451）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F452）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3735,7 +3735,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
-| minContains / maxContains / if / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| minContains / maxContains / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
 | dependentSchemas：子 schema 恰为 `{"required":[…]}` | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`（F446） |
 | dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
 | dependencies：数组形式 / `{"required":[…]}` 对象形式 | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`（F447） |
@@ -3746,6 +3746,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | contains：类型不匹配 / 值级规则（pattern 等）/ 同带 min-maxContains | **显式 400** | `contains_mismatch`/`contains_pattern`（F449） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：模式匹配到已发出键 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`（F451） |
+| if/then/else：`if` 恰为单 `type`，按类型选中 `then`/`else`，生效分支缺省或恰为 `{"type":"object"}`（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`（F452） |
+| if/then/else：生效分支更丰富（required/bounds/嵌套）/ 其他形状 | **显式 400** | `if_rich`（F452） |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
@@ -3753,7 +3755,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`if`/`unevaluated*`（需要子 schema 求值器）、`minContains`/`maxContains`、`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式形式、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`unevaluated*`（需要子 schema 求值器）、`minContains`/`maxContains`、`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式形式、`if` 的丰富生效分支、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4237,3 +4239,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **本轮自伤与修复（记下来）**：把 `if` 从 `"(patternProperties|if)"` 拆成单键模式时，正则里的**捕获组没了，但 `return $mk[1];` 还在** ⇒ 一遇含 `"if"` 的 schema 就 `Return value must be of type string, null returned`，自检在第 127 个 PASS 后**致命退出**（`selftest_f451.log`，`==RUN_EXIT=255==`）。修法是直接 `return "if";`（`selftest_f451b.log` 全绿）。**这是 F438"插入吃掉函数头"的同族：拆正则/插入代码后要重读返回路径，捕获组号与返回表达式必须一起改。**
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.519×**；哨兵 **0**（`engine/selftest_f451b.log`、`engine/schema_required_f451.log`、`engine/schema_bounds_f451.log`、`engine/schema_count_f451.log`、`engine/schema_pattern_f451.log`、`engine/api_smoke_f451.log`、`engine/throughput_f451.log`）。
 **记法**：**"空约束"是支持化里最便宜也最容易证明的一类**（模式不命中任何键 ⇒ 无约束），但判据必须包含"模式可读"与"只有一条模式"两个护栏，否则会把"读错当无匹配"和"第二条命中"变成静默放行。
+
+## F452：`if/then/else` 的类型窄形态支持（生效分支恒真）；丰富生效分支仍点名拒绝
+**实现**：`api_schema_if_ok`——键集可证明的对象形状（`api_schema_emitted_set != ""`）+ **根级** `if` + 子 schema 恰为 `{"type":"<t>"}`；`t=="object"` ⇒ 真、生效分支 `then`，其余 ⇒ 假、生效分支 `else`；生效分支**缺省**或恰为 `{"type":"object"}`（对键集可证明的对象恒真）⇒ 放行，更丰富的体 ⇒ 拒绝。不生效分支按 JSON Schema 语义忽略、不检查。
+**连带修复（F446 同族，这次是预防性）**：`api_schema_required_scan` 的剥离列表从 `dependentSchemas,dependencies` 扩到 **`if,then,else`**——否则被忽略的 `else` 里的嵌套 `required` 会被读成根级要求、把输出键集收缩（活体 `if_true_ok` 正是这个断言：`else:{"required":["z"]}` 下仍输出 `city,note`）。
+**门**：`SCHEMA-STRUCT` 新增 `if_else=[]`（真分支 + 被忽略的 else 携带 required）、`if_rich=[if]`（生效分支为 required）、`if_noelse=[]`（生效分支缺省）、`if_route=2`（值路由保留）；旧 `$sfC`（属性名 `if`）保持 `if`。
+**活体**：`if_true_ok`/`if_false_ok` **200 双键**（真/假两条分支各一例）、`if_rich_refuse` **400 点名 if**；bounds/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.579×**；哨兵 **0**（`engine/selftest_f452.log`、`engine/schema_required_f452.log`、`engine/schema_bounds_f452.log`、`engine/schema_count_f452.log`、`engine/schema_pattern_f452.log`、`engine/api_smoke_f452.log`、`engine/throughput_f452.log`）。
+**记法**：**"被忽略的分支"仍是输入的一部分**——语义上它不生效，但任何全局扫描（required 名、键集、边界检测）都会看到它；支持一个条件关键字时，必须同时把它的容器加入所有"剥离后再扫"的名单，否则会在忽略分支上重演键丢失。

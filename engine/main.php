@@ -7683,7 +7683,9 @@ function api_response_schema_array_bounds(string $body): string
 function api_schema_required_scan(string $schema): string
 {
     $scan = $schema;
-    foreach (explode(",", "dependentSchemas,dependencies") as $k) {
+    // F446/F447: a `required` nested in a conditional container is not a root requirement. F452 adds
+    // the if/then/else blocks: an ignored `else` (or `then`) must not shrink the emitted key set.
+    foreach (explode(",", "dependentSchemas,dependencies,if,then,else") as $k) {
         $ds = strpos($scan, "\"" . $k . "\"");
         if ($ds === false) {
             continue;
@@ -8535,9 +8537,9 @@ function api_schema_structural_unsupported(string $schema): string
         && api_schema_pattern_props_ok($schema) != 1) {
         return "patternProperties";
     }
-    // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
-    // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"if"\s*:\s*\{/', $schema) == 1) {
+    // F452: if/then/else is judged for its bare-type form; a richer selected branch keeps the
+    // refusal (it would need the value evaluated).
+    if (preg_match('/"if"\s*:\s*\{/', $schema) == 1 && api_schema_if_ok($schema) != 1) {
         return "if";
     }
     if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
@@ -8605,6 +8607,76 @@ function api_schema_pattern_props_ok(string $schema): int
         if ($r == 1) {
             return 0;       // matches an emitted key: the value would have to be evaluated
         }
+    }
+    return 1;
+}
+
+// F452: if/then/else is honoured for the form that needs no value evaluation. On a shape whose
+// emitted key set is proven, an `if` that is just a bare type is decided by that type alone: object
+// is true, every other type is false. The selected branch (then when true, else when false) is
+// honoured only when it is the trivial {"type":"object"}, which a keyed object satisfies; every
+// richer selected body needs evaluation and keeps the refusal. The unselected branch is ignored by
+// JSON Schema semantics, so its content is not inspected - which is why api_schema_required_scan
+// strips then/else as well, or a nested required there would be read as a root requirement.
+function api_schema_if_ok(string $schema): int
+{
+    if (api_schema_emitted_set($schema) == "") {
+        return 0;
+    }
+    $ip = strpos($schema, "\"if\"");
+    if ($ip === false) {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $pbo = strpos($schema, "{", $pp);
+    if ($pbo === false) {
+        return 0;
+    }
+    $pblk = api_balance_block($schema, $pbo);
+    if ($pblk == "") {
+        return 0;
+    }
+    // A property NAMED "if" sits inside the properties block; only a root-level keyword counts.
+    if ($ip < $pbo + strlen($pblk)) {
+        return 0;
+    }
+    $ibo = strpos($schema, "{", $ip);
+    if ($ibo === false) {
+        return 0;
+    }
+    $iblk = api_balance_block($schema, $ibo);
+    if ($iblk == "") {
+        return 0;
+    }
+    $mt = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"(object|string|integer|number|boolean|array)"\s*\}$/',
+        $iblk, $mt) != 1) {
+        return 0;
+    }
+    $branch = "else";
+    if ($mt[1] == "object") {
+        $branch = "then";
+    }
+    $bp = strpos($schema, "\"" . $branch . "\"");
+    if ($bp === false) {
+        return 1;               // the selected branch is absent: satisfied by construction
+    }
+    if ($bp < $pbo + strlen($pblk)) {
+        return 0;               // a property named like the branch: keep the refusal
+    }
+    $bbo = strpos($schema, "{", $bp);
+    if ($bbo === false) {
+        return 0;
+    }
+    $bblk = api_balance_block($schema, $bbo);
+    if ($bblk == "") {
+        return 0;
+    }
+    if (preg_match('/^\{\s*"type"\s*:\s*"object"\s*\}$/', $bblk) != 1) {
+        return 0;
     }
     return 1;
 }
@@ -15929,11 +16001,11 @@ function main(): void
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour
-    // paths, and contains/not gained narrow ones (F449/F448); `if` and unevaluated* are still not
-    // implemented, and each can be violated by what the model emits - so each is named instead of
-    // ignored. Two controls pin the matching boundary: an enum VALUE spelled "not"
-    // must not be mistaken for the keyword, while a property NAMED "not" is refused (the documented
-    // boundary of scanning the whole schema rather than only its root).
+    // paths, and contains/not/patternProperties/if gained narrow ones (F449/F448/F451/F452);
+    // unevaluated* is still not implemented, and each can be violated by what the model emits - so
+    // each is named instead of ignored. Two controls pin the matching boundary: an enum VALUE
+    // spelled "not" must not be mistaken for the keyword, while a property NAMED "not" is refused
+    // (the documented boundary of scanning the whole schema rather than only its root).
     $sfA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"}},"contains":{"type":"string"}}}');
     $sfB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"not":{"type":"integer"}}}');
     $sfC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"if":{"minLength":1}}}');
@@ -16016,6 +16088,14 @@ function main(): void
     $sfAT = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^c":{"type":"integer"}}}');
     $sfAU = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^x":{"type":"integer"},"^c":{"type":"integer"}}}');
     $sfAV = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^x":{"type":"integer"}}}}}');
+    // F452: if/then/else is honoured when the `if` is a bare type and the SELECTED branch is the
+    // trivial object one; the unselected branch is ignored by semantics. The second case is the key
+    // set assertion that matters: a nested `required` in the ignored `else` must not be read as a
+    // root requirement and shrink the answer, so the emitted names are compared, not just the status.
+    $sfAW = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"object"},"then":{"type":"object"},"else":{"required":["z"]}}');
+    $sfAX = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"string"},"else":{"required":["city"]}}');
+    $sfAY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"string"}}');
+    $sfAZ = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"object"},"then":{"type":"object"},"else":{"required":["z"]}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16035,7 +16115,9 @@ function main(): void
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
         . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
         . " pp_vacuous=[" . $sfAS . "] pp_match=[" . $sfAT . "] pp_multi=[" . $sfAU
-        . "] pp_route=" . count($sfAV) . "\n";
+        . "] pp_route=" . count($sfAV)
+        . "] if_else=[" . $sfAW . "] if_rich=[" . $sfAX . "] if_noelse=[" . $sfAY
+        . "] if_route=" . count($sfAZ) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -16056,7 +16138,9 @@ function main(): void
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
         && $sfAR == "cities"
         && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
-        && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note") {
+        && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note"
+        && $sfAW == "" && $sfAX == "if" && $sfAY == ""
+        && count($sfAZ) == 2 && $sfAZ[0] == "city" && $sfAZ[1] == "note") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

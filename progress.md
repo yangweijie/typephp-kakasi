@@ -1734,3 +1734,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **锚点核对**：`api_schema_structural_unsupported` 在 `engine/main.php:8485`，`return "if";` 全文件恰一处（`:8541`）；`api_schema_emitted_set` 在 `:7975`；门变量 `$sfAW`–`$sfAZ` 未用；`engine/tests/*.py` 无 `if` 夹具。
 - **门/活体/验收**：见 `task_plan.md` 的 F452 规格节（含插入点行号与两例活体）。
 - **顺位**：F452 执行 → `unevaluated*`（空约束形态）→ 分片多卡 / FR-05（本机不可验证）。
+
+
+## ▶ 状态（F452，2026-11-08 22:51）——`if/then/else` 的类型窄形态从拒绝变支持；丰富生效分支仍点名拒绝
+- **实现**：`api_schema_if_ok`——键集可证明对象 + 根级 `if` 恰为单 `type`；`object`⇒`then`、其余⇒`else`；生效分支缺省或恰为 `{"type":"object"}` ⇒ 放行，丰富体 ⇒ 拒绝；不生效分支按语义忽略。
+- **连带修复**：`api_schema_required_scan` 剥离列表扩到 `if,then,else`（预防 F446 同族的键丢失）。
+- **门**：`if_else=[]`、`if_rich=[if]`、`if_noelse=[]`、`if_route=2`；旧 `$sfC`（属性名 if）不变。
+- **活体**：`if_true_ok`/`if_false_ok` **200 双键**、`if_rich_refuse` **400 点名**。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.579×**、哨兵 **0**。

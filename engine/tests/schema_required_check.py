@@ -182,6 +182,22 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "patternProperties": {"^x": {"type": "integer"}}},
      lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    # F452: if/then/else is decided by the bare type: object is true, every other type is false, and
+    # the selected branch is the trivial object one. The first case also pins the key set: the
+    # `required` nested in the IGNORED else must not be read as a root requirement and shrink the
+    # answer to {z}. A richer SELECTED branch still needs evaluation and stays refused.
+    ("if_true_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"type": "object"}, "then": {"type": "object"}, "else": {"required": ["z"]}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("if_false_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"type": "string"}, "else": {"type": "object"}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("if_rich_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"type": "string"}, "else": {"required": ["city"]}},
+     lambda code, txt: code == 400 and "if" in txt),
     ("contentenc_refuse", "Say where you are.",
      {"type": "object", "properties": {"blob": {"type": "string", "contentEncoding": "base64"}}},
      lambda code, txt: code == 400 and "contentEncoding" in txt),

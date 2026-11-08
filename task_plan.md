@@ -1085,6 +1085,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 - `if_rich_refuse`：`else` 换成 `{"required":["city"]}` ⇒ **400 点名 if**。
 **验收**：①生效分支按类型判定且被服务（门 + 活体）②丰富分支与属性名冒充仍拒绝 ③四个 harness + 8000/8001 不回退 ④自检 182 PASS 起、`SCHEMA-STRUCT` 字段齐全。
 **顺位**：F452（本规格）→ `unevaluated*`（空约束形态，同 F451 思路）→ 分片多卡 / FR-05（本机不可验证）。
+**F452 已完成**：`api_schema_if_ok` 落地；`if` 守卫接入；`api_schema_required_scan` 剥离列表扩到 `if,then,else`（活体 `if_true_ok` 断言被忽略的 `else` 里的 `required:["z"]` 不会收缩输出键集）。门 `if_else=[]`/`if_rich=[if]`/`if_noelse=[]`/`if_route=2`；活体真/假分支各 200 双键、丰富分支 400；梯 **182/0**、8000 **115/0**、8001 绿、scaling **1.579×**、哨兵 **0**。
+**明确留拒（排队，F452 后）**：`unevaluated*` 的实现（空约束形态）、`if` 的丰富生效分支、`minContains`/`maxContains`、`contains`/`not`/`patternProperties` 的值级形式；五位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
 
 
 ## F451 计划与完成（`patternProperties` 的空约束形式）
