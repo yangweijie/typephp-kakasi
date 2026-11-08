@@ -142,6 +142,15 @@ cases = [
                                        "nums": {"type": "array", "items": {"type": "integer"}}},
       "required": ["name"]},
      lambda code, txt: code == 400 and "required" in txt),
+    # F418 flipped this one: the required subset on a shape with a COUNTED ARRAY leaf - the filter
+    # drops the array leaf from the plan and the stepper emits only the required keys; the omitted
+    # key cannot violate its own bounds, and the served key set proves the omission.
+    ("array_leaf_subset", "Say where you are.",
+     {"type": "object", "properties": {"cities": {"type": "array", "minItems": 2, "maxItems": 2,
+                                                  "items": {"type": "string"}},
+                                       "note": {"type": "string"}},
+      "required": ["note"]},
+     lambda code, txt: code == 200 and keys_of(txt) == ["note"]),
 ]
 
 bad = 0

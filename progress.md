@@ -1402,3 +1402,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：21 例全绿（`engine/schema_pattern_f417c.log`）——`^[a-z]*[0-9]{2}$` 值匹配（星号段发 0 字符）；断言类 400。required/bounds/count 复跑不回退。
 - **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.468×**、哨兵 **0**。
 - **排队收敛**：pattern 支持面至此覆盖常见真实形式的全部主干；剩余仅极少 exotic 变体（归档为正确拒绝）。分片多卡 / FR-05 本机不可验证保持排队。
+
+
+## ▶ 状态（F418，2026-11-08 06:40）——取消**数组叶子 required 子集**过度拒绝（F403② 钉住的已知项，机制天然支持）
+- **实现**：`api_schema_mixed_omittable` 的 kind 集接受计数数组前缀（a~/an~/af~/ab~）——过滤 plan 丢弃该叶，步进器只发 required 键；被省略的键不可能违反自己的界。
+- **门**：SCHEMA-REQ-SUBSET 加数组叶例（arr_keep=[note] arr_plan=[note:s] arr_keys note=1 cities=0）；活体 19 例。
+- **活体**：19 例全绿（`engine/schema_required_f418.log`）——数组叶子子集 200 且键集合=["note"]。pattern/bounds/count 复跑不回退。
+- **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.603×**、哨兵 **0**。
+- **排队收敛**：F403② 钉住的两个已知过度拒绝中，数组叶子子集已取消；{mode:e,flag:b} 全必需经候选层仲裁已服务（验证见 F403②）。
+- **下一轮顺位**：清理剩余边缘项 → 分片多卡 / FR-05（本机不可验证，保持排队）。

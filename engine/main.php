@@ -7108,12 +7108,21 @@ function api_schema_mixed_omittable(string $schema): int
     $hasNum = 0;
     for ($i = 0; $i < count($items); $i++) {
         $kv = explode(":", $items[$i]);
-        // Three-part entries (e:/en:/ao:) and array kinds are not emitted correctly by the flat
-        // mixed generator, so this path stays refused for them rather than half-honoured.
+        // Three-part entries (e:/en:/ao:) are not emitted by the flat mixed generator, so this
+        // path stays refused for them. F418: the COUNTED ARRAY kinds ("a~min~max") ARE emitted -
+        // and the required subset drops them from the plan entirely (an omitted key cannot
+        // violate its bounds), so they count toward omittability like the scalars.
         if (count($kv) != 2) {
             return 0;
         }
-        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b") {
+        $isCounted = 0;
+        if (strpos($kv[1], "~") !== false) {
+            $apfx = substr($kv[1], 0, strpos($kv[1], "~"));
+            if ($apfx == "a" || $apfx == "an" || $apfx == "af" || $apfx == "ab") {
+                $isCounted = 1;
+            }
+        }
+        if ($kv[1] != "s" && $kv[1] != "i" && $kv[1] != "n" && $kv[1] != "b" && $isCounted == 0) {
             return 0;
         }
         if ($kv[1] != "s") {
@@ -14629,6 +14638,26 @@ function main(): void
     if (count($b2Cands) > 0) {
         $b2Full = (strpos($b2Cands[0], "\"flag\"") !== false && strpos($b2Cands[0], "\"num\"") !== false) ? 1 : 0;
     }
+    // F418: the required subset on a shape with a COUNTED ARRAY leaf - the filter drops the array
+    // leaf from the plan and the stepper emits only the required keys; the omitted key cannot
+    // violate its own bounds, and the served key set proves the omission.
+    $raSch = '{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":2,'
+        . '"items":{"type":"string"}},"note":{"type":"string"}},"required":["note"]}';
+    $raKeep = api_schema_required_filter($raSch);
+    $raRefuse = api_schema_keywords_unsupported($raSch);
+    $raBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"req6","schema":'
+        . '{"type":"object","properties":{"cities":{"type":"array","minItems":2,"maxItems":2,'
+        . '"items":{"type":"string"}},"note":{"type":"string"}},"required":["note"]}}}}';
+    $raPlan = api_response_schema_mixed_object($raBody);
+    $raOut = api_object_mixed($rqIds, $raPlan, "abcdefghijklmnopqrstuvwxyz", 16, 0);
+    $raText = "";
+    $raParts = explode(",", $raOut);
+    for ($i = $rqBase; $i < count($raParts); $i++) {
+        $raText = $raText . gguf_token_str((int) $raParts[$i]);
+    }
+    $raText = str_replace("Ġ", " ", $raText);
+    $raHasNote = strpos($raText, "\"note\"") !== false ? 1 : 0;
+    $raHasCities = strpos($raText, "\"cities\"") !== false ? 1 : 0;
     echo "SCHEMA-REQ-SUBSET keep=[" . $rqKeep . "] refuse=[" . $rqRefuse . "] props="
         . count($rqProps) . "] bounds=[" . $rqBounds . "] keys city=" . $rqHasCity
         . " note=" . $rqHasNote . " zip=" . $rqHasZip . "] text=[" . $rqText
@@ -14638,7 +14667,10 @@ function main(): void
         . "] mix2_plan=[" . $m2Plan . "] mix2_keys=" . $m2Both . " mix2_int=" . $m2Int
         . "] bool_cands=" . count($bCands) . "] bool_plan=[" . $bPlan . "] bool_keys="
         . $bBoth . " bool_bool=" . $bBool
-        . "] enum_int_cands=" . count($b2Cands) . " enum_int_full=" . $b2Full . "]\n";
+        . "] enum_int_cands=" . count($b2Cands) . " enum_int_full=" . $b2Full
+        . "] arr_keep=[" . $raKeep . "] arr_refuse=[" . $raRefuse . "] arr_plan=[" . $raPlan
+        . "] arr_keys note=" . $raHasNote . " cities=" . $raHasCities . "] arr_text=["
+        . $raText . "]\n";
     if ($rqKeep == "city,note" && $rqRefuse == "" && count($rqProps) == 2 && $rqBounds == "0:0,0:0"
         && $rqHasCity == 1 && $rqHasNote == 1 && $rqHasZip == 0 && api_json_ok($rqText) == 1
         && count($r2Props) == 2 && $r3Keep == "" && count($r3Props) == 2
@@ -14646,7 +14678,9 @@ function main(): void
         && $m2Plan == "city:s,count:i" && $m2Both == 2 && $m2Int == 1 && api_json_ok($m2Text) == 1
         && count($bCands) == 0 && $bPlan == "flag:b,count:i" && $bBoth == 2 && $bBool == 1
         && api_json_ok($bText) == 1
-        && count($b2Cands) > 0 && $b2Full == 1) {
+        && count($b2Cands) > 0 && $b2Full == 1
+        && $raKeep == "note" && $raRefuse == "" && $raPlan == "note:s"
+        && $raHasNote == 1 && $raHasCities == 0 && api_json_ok($raText) == 1) {
         echo "SCHEMA-REQ-SUBSET: PASS (emitted keys equal the required subset; optional omitted)\n";
     } else {
         echo "SCHEMA-REQ-SUBSET: FAIL\n";
