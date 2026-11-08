@@ -1742,3 +1742,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`if_else=[]`、`if_rich=[if]`、`if_noelse=[]`、`if_route=2`；旧 `$sfC`（属性名 if）不变。
 - **活体**：`if_true_ok`/`if_false_ok` **200 双键**、`if_rich_refuse` **400 点名**。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.579×**、哨兵 **0**。
+
+
+## ▶ 状态（F453，2026-11-08 23:07）——`unevaluated*` 的**空判定**形式从拒绝变支持；会真正判定的形状仍点名拒绝
+- **实现**：`api_schema_unevaluated_props_ok`（键集可证明 + 根级关键字 ⇒ 无对象可判）与 `api_schema_unevaluated_items_ok`（单标量数组 + 根级 ⇒ 元素全由 items 求值）；结构判定拆出各自守卫。
+- **门（含翻转）**：旧 `$sfF` 从 `unevaluatedProperties` 翻为 `""`；新增 `uneval_props=[]`、`uneval_props_schema=[]`、`uneval_items=[]`、`uneval_items_wrong=[unevaluatedItems]`、`uneval_prop_named=[unevaluatedProperties]`。
+- **活体**：`uneval_props_ok`/`uneval_props_schema_ok` **200 双键**、`uneval_items_ok` **200 数组**、`uneval_items_wrong_refuse` **400 点名**；用故意违反的子 schema 证明是空判定。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.505×**、哨兵 **0**。

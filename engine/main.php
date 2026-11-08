@@ -8542,9 +8542,16 @@ function api_schema_structural_unsupported(string $schema): string
     if (preg_match('/"if"\s*:\s*\{/', $schema) == 1 && api_schema_if_ok($schema) != 1) {
         return "if";
     }
-    if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
-        $schema, $mk) == 1) {
-        return $mk[1];
+    // F453: unevaluatedProperties is vacuous when every emitted key is declared (root `properties`
+    // evaluates each one); unevaluatedItems is vacuous when the single array shape's writer emits
+    // only item-typed elements. Anything the proof does not cover keeps the refusal.
+    if (preg_match('/"unevaluatedProperties"\s*:\s*(?:\{|true|false)/', $schema) == 1
+        && api_schema_unevaluated_props_ok($schema) != 1) {
+        return "unevaluatedProperties";
+    }
+    if (preg_match('/"unevaluatedItems"\s*:\s*(?:\{|true|false)/', $schema) == 1
+        && api_schema_unevaluated_items_ok($schema) != 1) {
+        return "unevaluatedItems";
     }
     if (preg_match('/"(format|contentEncoding|contentMediaType)"\s*:\s*"[^"]*"/', $schema, $mk) == 1) {
         return $mk[1];
@@ -8676,6 +8683,84 @@ function api_schema_if_ok(string $schema): int
         return 0;
     }
     if (preg_match('/^\{\s*"type"\s*:\s*"object"\s*\}$/', $bblk) != 1) {
+        return 0;
+    }
+    return 1;
+}
+
+// F453: unevaluatedProperties is honoured when the answer cannot contain an unevaluated property:
+// every key it emits is declared in `properties` and validated by its schema, so no property is
+// left for this keyword to judge and ANY value (false, true or a schema) is satisfied. Uses the
+// same key-set proof as the conditionals; the keyword must be at the schema root, not a property.
+function api_schema_unevaluated_props_ok(string $schema): int
+{
+    if (api_schema_emitted_set($schema) == "") {
+        return 0;
+    }
+    $kp = strpos($schema, "\"unevaluatedProperties\"");
+    if ($kp === false) {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $pbo = strpos($schema, "{", $pp);
+    if ($pbo === false) {
+        return 0;
+    }
+    $pblk = api_balance_block($schema, $pbo);
+    if ($pblk == "") {
+        return 0;
+    }
+    if ($kp < $pbo + strlen($pblk)) {
+        return 0;
+    }
+    return 1;
+}
+
+// F453: unevaluatedItems is honoured when the answer's elements are all evaluated by `items` - the
+// single scalar-array shape, whose writer emits only item-typed elements. Any value (false, true or
+// a schema) then applies to no item. Same root-level guard.
+function api_schema_unevaluated_items_ok(string $schema): int
+{
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $pbo = strpos($schema, "{", $pp);
+    if ($pbo === false) {
+        return 0;
+    }
+    $pblk = api_balance_block($schema, $pbo);
+    if ($pblk == "") {
+        return 0;
+    }
+    $kp = strpos($schema, "\"unevaluatedItems\"");
+    if ($kp === false) {
+        return 0;
+    }
+    if ($kp < $pbo + strlen($pblk)) {
+        return 0;
+    }
+    $plan = api_top_leaves($pblk, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return 0;
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 2) {
+        return 0;
+    }
+    $kind = $lkv[1];
+    $tk = strpos($kind, "~");
+    if ($tk !== false) {
+        $kind = substr($kind, 0, $tk);
+    }
+    if ($kind != "a" && $kind != "an" && $kind != "af" && $kind != "ab") {
         return 0;
     }
     return 1;
@@ -16001,11 +16086,11 @@ function main(): void
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour
-    // paths, and contains/not/patternProperties/if gained narrow ones (F449/F448/F451/F452);
-    // unevaluated* is still not implemented, and each can be violated by what the model emits - so
-    // each is named instead of ignored. Two controls pin the matching boundary: an enum VALUE
-    // spelled "not" must not be mistaken for the keyword, while a property NAMED "not" is refused
-    // (the documented boundary of scanning the whole schema rather than only its root).
+    // paths, and contains/not/patternProperties/if/unevaluated* gained narrow ones
+    // (F449/F448/F451/F452/F453); each can be violated by what the model emits, so each is named
+    // instead of ignored. Two controls pin the matching boundary: an enum VALUE spelled "not" must
+    // not be mistaken for the keyword, while a property NAMED "not" is refused (the documented
+    // boundary of scanning the whole schema rather than only its root).
     $sfA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"}},"contains":{"type":"string"}}}');
     $sfB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"not":{"type":"integer"}}}');
     $sfC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"if":{"minLength":1}}}');
@@ -16096,6 +16181,14 @@ function main(): void
     $sfAX = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"string"},"else":{"required":["city"]}}');
     $sfAY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"string"}}');
     $sfAZ = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"object"},"then":{"type":"object"},"else":{"required":["z"]}}}}');
+    // F453: unevaluated* is honoured only when it judges nothing - every emitted key is declared and
+    // evaluated by root `properties`, or the single array shape's elements are all evaluated by
+    // `items`. The property-name case is the control that a name is not the keyword.
+    $sfBA = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"unevaluatedProperties":false}');
+    $sfBB = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"unevaluatedProperties":{"type":"integer"}}');
+    $sfBC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"unevaluatedItems":false}');
+    $sfBD = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"unevaluatedItems":false}');
+    $sfBE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"unevaluatedProperties":false}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16117,9 +16210,12 @@ function main(): void
         . " pp_vacuous=[" . $sfAS . "] pp_match=[" . $sfAT . "] pp_multi=[" . $sfAU
         . "] pp_route=" . count($sfAV)
         . "] if_else=[" . $sfAW . "] if_rich=[" . $sfAX . "] if_noelse=[" . $sfAY
-        . "] if_route=" . count($sfAZ) . "\n";
+        . "] if_route=" . count($sfAZ)
+        . "] uneval_props=[" . $sfBA . "] uneval_props_schema=[" . $sfBB
+        . "] uneval_items=[" . $sfBC . "] uneval_items_wrong=[" . $sfBD
+        . "] uneval_prop_named=[" . $sfBE . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
-        && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
+        && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
         && $sfK == "format" && $sfL == "patternProperties" && $sfM == "contentEncoding"
         && $sfN == "contentMediaType" && $sfO == ""
@@ -16140,7 +16236,9 @@ function main(): void
         && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
         && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note"
         && $sfAW == "" && $sfAX == "if" && $sfAY == ""
-        && count($sfAZ) == 2 && $sfAZ[0] == "city" && $sfAZ[1] == "note") {
+        && count($sfAZ) == 2 && $sfAZ[0] == "city" && $sfAZ[1] == "note"
+        && $sfBA == "" && $sfBB == "" && $sfBC == ""
+        && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

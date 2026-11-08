@@ -1089,6 +1089,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **明确留拒（排队，F452 后）**：`unevaluated*` 的实现（空约束形态）、`if` 的丰富生效分支、`minContains`/`maxContains`、`contains`/`not`/`patternProperties` 的值级形式；五位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
 
 
+## F453 计划与完成（`unevaluated*` 的空判定形式）
+**F452 已完成**：`if/then/else` 类型窄形态。
+**F453 已完成**：`api_schema_unevaluated_props_ok`（键集可证明 + 根级关键字 ⇒ 无对象可判，任意值/子 schema 满足）与 `api_schema_unevaluated_items_ok`（单标量数组 + 根级 ⇒ 元素全由 `items` 求值）；结构判定从 alternation 拆出各自守卫。
+**门（含旧期望翻转）**：旧 `$sfF` 由 `unevaluatedProperties` 翻为 `""`；新增 `uneval_props=[]`、`uneval_props_schema=[]`、`uneval_items=[]`、`uneval_items_wrong=[unevaluatedItems]`、`uneval_prop_named=[unevaluatedProperties]`；旧 `$sfJ` 仍 `unevaluatedItems`。
+**活体**：`uneval_props_ok`/`uneval_props_schema_ok` 200 双键、`uneval_items_ok` 200 数组、`uneval_items_wrong_refuse` 400 点名；用故意违反的子 schema 证明空判定。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.505×**、哨兵 **0**（`engine/selftest_f453.log`、`engine/schema_required_f453.log`、`engine/schema_bounds_f453.log`、`engine/schema_count_f453.log`、`engine/schema_pattern_f453.log`、`engine/api_smoke_f453.log`、`engine/throughput_f453.log`）。
+**明确留拒（排队，F453 后）**：`minContains`/`maxContains`、`contains`/`not`/`patternProperties` 的值级形式、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状；五位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`minContains`/`maxContains`（在 F449 的 `contains` 构造上按元素计数判定，可先写规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

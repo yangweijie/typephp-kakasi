@@ -198,6 +198,27 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "if": {"type": "string"}, "else": {"required": ["city"]}},
      lambda code, txt: code == 400 and "if" in txt),
+    # F453: unevaluated* judges only what root `properties`/`items` did NOT evaluate. Every emitted
+    # key is declared and every array element is item-typed, so the keyword judges nothing and any
+    # value is satisfied - including a schema that the values would otherwise violate. A shape the
+    # keyword really would judge (bool/object on a non-array shape) stays refused.
+    ("uneval_props_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "unevaluatedProperties": False},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("uneval_props_schema_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "unevaluatedProperties": {"type": "integer"}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("uneval_items_ok", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "unevaluatedItems": False},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and len(json.loads(txt)["cities"]) >= 1),
+    ("uneval_items_wrong_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "unevaluatedItems": False},
+     lambda code, txt: code == 400 and "unevaluatedItems" in txt),
     ("contentenc_refuse", "Say where you are.",
      {"type": "object", "properties": {"blob": {"type": "string", "contentEncoding": "base64"}}},
      lambda code, txt: code == 400 and "contentEncoding" in txt),
