@@ -101,6 +101,16 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5,
                                              "multipleOf": 7}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F430: an UNBOUNDED multipleOf above 999 - the suffix width is chosen from the multiplier's
+    # digit count, so 5000 needs four digits and 250000 six. The value must be a multiple.
+    ("multipleof_unbounded_5000", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 5000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 5000 == 0),
+    ("multipleof_unbounded_250000", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 250000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 250000 == 0),
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),

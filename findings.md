@@ -4019,3 +4019,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**"键名约束"要问键名从哪来——来自声明表就能在生成前求值；求值范围要白名单（只认能评估的形式），未识别的一律按不支持处理，否则"没看见"会变成"放行"。**
 **第二层（活体抓到，F425 同族）**：仅放宽拒绝还不够——`api_response_schema_string_props` 里有一条"含 `pattern` 即交给候选层"的守卫，而 `propertyNames` 的子 schema 正是 `pattern`，于是**接受后路由失败、返回散文**（活体：200 + "I am currently located in…"）。修法：把 `propertyNames` 块从该守卫的扫描面里**摘出去**（键名模式不是值模式）；门同时加**路由断言** `pnames_route=2`——只断言"不拒绝"会漏掉这一层。
 **梯（第二颗二进制 14:41:28）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`，`pnames_route=2` 已打印；活体 `engine/schema_required_f429.log`：`pnames_pattern_ok` **200 真 JSON**、两例不可满足 **400 点名**（改前 `schema_required_f429pre.log`：满足例被 400 误拒）；count/bounds/pattern 不回退。8000 **115/0**、8001 par/fairness **0**、scaling **1.564×**、哨兵 **0**（`engine/selftest_f429b.log`、`engine/api_smoke_f429.log`、`engine/throughput_f429.log`）。
+
+
+## F430：无界 `multipleOf` > 999——后缀宽度按乘数位数取，**且不再发出半个数字**
+**改前活体（`engine/schema_bounds_f430pre.log`）**：无界 `multipleOf:5000` 与 `:250000` 都返回 **200 且 `{"n":}`** ——**非法 JSON**（写入器发出键与冒号后 bail，`api_multiple_value` 把半个对象当结果返回）。
+**机制**：强制后缀 `x = (m - (p·10^k) % m) % m < m`，只需 `10^k ≥ m` ⇒ 后缀宽度取**乘数位数**：m≤999 → 3 位、≤9999 → 4 位、≤99999 → 5 位、≤999999 → 6 位；`p·10^k + x ≡ 0 (mod m)` 恒成立。
+**实现**：①`api_multiple_fill` 的上限 999 → 999999，`$k`/`$pow` 按位数选择，填充与逐位强制循环改用 `$k`；②`api_multiple_value` 在 `$body == ""` 时返回 ""——**绝不再返回裸头部**（那正是 200+非法 JSON 的来源）；③`api_schema_bounds_unsupported` 对**无界** `multipleOf > 999999` 显式拒绝；④检测器对 `multipleOf:1` 返回 ""（交给普通整数生成器——整数天然是 1 的倍数，拒它会误拒）；⑤400 消息补上无界倍数的支持范围。
+**门**：`SCHEMA-BOUND-REJECT` 加 `unbounded_big=1`（2000000 ⇒ 拒）、`unbounded_ok=0`（5000 ⇒ 服务）、`mult_one_ub=0`（1 ⇒ 不拒）。
+**活体**：`multipleof_unbounded_5000` → **200 `{"n":23450000}`（%5000=0）**、`multipleof_unbounded_250000` → **200 `{"n":2345000000}`（%250000=0）**（改前两例 `{"n":}`）；required/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.512×**、哨兵 **0**（`engine/selftest_f430.log`、`engine/schema_bounds_f430.log`、`engine/api_smoke_f430.log`、`engine/throughput_f430.log`）。
+**记法**：**机制的上限要跟着机制走**——后缀宽度是"能表达余数"的函数，不是常量 3；**写入器 bail 时必须让调用方知道**，否则"半个对象"会以 200 返回；**可满足的平凡情形（m=1）不该拒绝**。

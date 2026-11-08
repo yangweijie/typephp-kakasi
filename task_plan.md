@@ -887,3 +887,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.564×**、哨兵 **0**（`engine/selftest_f429b.log`、`engine/schema_required_f429.log`、`engine/api_smoke_f429.log`、`engine/throughput_f429.log`）。
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；`propertyNames` 的其他求值形式（如嵌套 schema、format）。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F430 计划与完成（无界 `multipleOf`：后缀宽度按乘数位数，超出即拒绝）
+**F429 已完成**：`propertyNames` 对声明键名求值。
+**改前活体**：无界 `multipleOf:5000`/`:250000` → **200 `{"n":}`（非法 JSON）**。
+**F430 已完成**：`api_multiple_fill` 上限 999→999999、后缀宽度 `$k` 按位数（3–6）与 `$pow` 配套；`api_multiple_value` 空 body 返回 ""（不再发裸头部）；无界 `m>999999` 显式拒绝；`m=1` 交给普通整数生成器；消息补支持范围。
+**门**：`SCHEMA-BOUND-REJECT` 加 `unbounded_big/unbounded_ok/mult_one_ub`。
+**活体**：`{"n":23450000}`（%5000=0）、`{"n":2345000000}`（%250000=0）。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.512×**、哨兵 **0**（`engine/selftest_f430.log`、`engine/schema_bounds_f430.log`、`engine/api_smoke_f430.log`、`engine/throughput_f430.log`）。
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999999；`propertyNames` 的其他求值形式。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

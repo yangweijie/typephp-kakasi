@@ -5528,8 +5528,26 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
 function api_multiple_fill(int $mult, int $maxSteps): string
 {
     $single = api_digit_ids(1);
-    if ($single == "" || $mult < 2 || $mult > 999) {
+    // F430: the forced suffix needs enough digits to express any residue below the multiplier, so
+    // its width follows the multiplier: three digits up to 999, four to 9999, five to 99999, six to
+    // 999999. Beyond that this mechanism cannot honour the constraint at all and the request is
+    // refused upstream instead of emitting a partial number.
+    if ($single == "" || $mult < 2 || $mult > 999999) {
         return "";
+    }
+    $k = 3;
+    $pow = 1000;
+    if ($mult > 999) {
+        $k = 4;
+        $pow = 10000;
+    }
+    if ($mult > 9999) {
+        $k = 5;
+        $pow = 100000;
+    }
+    if ($mult > 99999) {
+        $k = 6;
+        $pow = 1000000;
     }
     $nonzero = "";
     $parts = explode(",", $single);
@@ -5561,12 +5579,12 @@ function api_multiple_fill(int $mult, int $maxSteps): string
     if ($got == 0) {
         return "";
     }
-    $x = ($mult - ($p * 1000) % $mult) % $mult;
+    $x = ($mult - ($p * $pow) % $mult) % $mult;
     $digits = "" . $x;
-    while (strlen($digits) < 3) {
+    while (strlen($digits) < $k) {
         $digits = "0" . $digits;
     }
-    for ($i = 0; $i < 3; $i++) {
+    for ($i = 0; $i < $k; $i++) {
         $f = api_constrained_continue([substr($digits, $i, 1)], 4);
         if ($f == "") {
             return $s;
@@ -5583,9 +5601,12 @@ function api_multiple_value(string $ids, string $prop, int $mult, int $maxSteps,
         return "";
     }
     $body = api_multiple_fill($mult, $maxSteps);
-    if ($body != "") {
-        $s = $s . "," . $body;
+    // F430: a writer that could not produce the number must not emit the bare head - that is what
+    // answered 200 with "{"n":" for a multipleOf the suffix mechanism could not reach.
+    if ($body == "") {
+        return "";
     }
+    $s = $s . "," . $body;
     $end = api_constrained_continue(["}"], 4);
     if ($end != "") {
         $s = $s . "," . $end;
@@ -5608,13 +5629,20 @@ function api_response_schema_multiple_unbounded(string $body): string
         return "";
     }
     $mm = [];
+    $mp = [];
     if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"type"\s*:\s*"integer"[^{}]*?"multipleOf"\s*:\s*([0-9]+)[^{}]*?\}/s', $schema, $mm) == 1) {
-        return $mm[1] . "|" . $mm[2];
+        $mp = $mm;
+    } else if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"multipleOf"\s*:\s*([0-9]+)[^{}]*?"type"\s*:\s*"integer"[^{}]*?\}/s', $schema, $mm) == 1) {
+        $mp = $mm;
+    } else {
+        return "";
     }
-    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"multipleOf"\s*:\s*([0-9]+)[^{}]*?"type"\s*:\s*"integer"[^{}]*?\}/s', $schema, $mm) == 1) {
-        return $mm[1] . "|" . $mm[2];
+    // F430: multipleOf 1 is satisfied by every integer, so it falls through to the plain integer
+    // generator rather than being refused here (refusing it would reject a satisfied request).
+    if ((int) $mp[2] < 2) {
+        return "";
     }
-    return "";
+    return $mp[1] . "|" . $mp[2];
 }
 
 // Tool-call plumbing (FR-08.2 / FR-09.1). Two paths, both honest about their guarantee:
@@ -7784,6 +7812,14 @@ function api_schema_bounds_unsupported(string $body): int
 {
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
         && strpos($body, "\"exclusiveMinimum\"") === false && strpos($body, "\"exclusiveMaximum\"") === false) {
+        // F430: an unbounded multipleOf the suffix writer cannot reach (> 999999) is refused here.
+        // Before this the writer bailed after emitting the key, and the answer was 200 with invalid
+        // JSON ("{"n":").
+        $mo = [];
+        if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $body, $mo) == 1
+            && (int) $mo[1] > 999999) {
+            return 1;
+        }
         return 0;
     }
     // F405: the bounded-integer shape the digit-walk writer honours (one integer leaf, any span,
@@ -9598,7 +9634,7 @@ function api_serve(int $port): void
                 // instead. F405/F419: the honoured set is wider now, so the message names it - a
                 // single integer property with bounds of any sign and any span, either side
                 // missing; what remains is float bounds and multi-property bounds.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; an unbounded multipleOf up to 999999 is served by a forced suffix whose width follows the multiplier, and one above that is refused; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
@@ -14449,6 +14485,11 @@ function main(): void
     $bdQ = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1.5,"maximum":1.9}}}}}');
     $bdR = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1e1,"maximum":12}}}}}');
     $bdS = api_schema_bounds_unsupported('{"json_schema": {"schema": {"properties": {"n": {"type": "integer", "minimum": -9.5, "maximum": -1.5}}}}}');
+    // F430: unbounded multipleOf - up to 999999 is served by a suffix whose width follows the
+    // multiplier, beyond that it is refused, and 1 is trivially satisfied so it is not refused.
+    $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
+    $bdAC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":5000}}}');
+    $bdAD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":1}}}');
     $bdE = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"string"}}}}}');
     // F397: the same two cases as they arrive on the wire, with spaces after the colons - the
     // compact-only fixture above is what let a whitespace-sensitive detector pass the gate.
@@ -14479,7 +14520,9 @@ function main(): void
         . " excl_wide=[" . $bdT . "] excl_unsat=[" . $bdU . "] excl_mult=[" . $bdV
         . "] excl_one=[" . $bdW
         . "] mix_sat=[" . $bdX . "] mix_unsat=[" . $bdY
-        . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA . "
+        . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA
+        . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
+        . "] mult_one_ub=[" . $bdAD . "
 ";
     if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
@@ -14488,7 +14531,8 @@ function main(): void
         && $bdF == 0 && $bdG == 1
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
         && $bdX == 0 && $bdY == 1
-        && $bdZ == 0 && $bdAA == 1) {
+        && $bdZ == 0 && $bdAA == 1
+        && $bdAB == 1 && $bdAC == 0 && $bdAD == 0) {
         echo "SCHEMA-BOUND-REJECT: PASS (single-leaf bounds of any sign honoured at any span; others flagged)
 ";
     } else {
