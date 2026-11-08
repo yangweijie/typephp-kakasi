@@ -1727,3 +1727,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`patternprops_vacuous_ok` **200 双键**、`patternprops_refuse`（`^c` 命中 city）**400 点名**。
 - **本轮自伤**：拆 `(patternProperties|if)` 时捕获组消失但 `return $mk[1];` 未改 ⇒ 含 `"if"` 的 schema 触发 `null returned` 致命错误（自检 127 PASS 后退出，`selftest_f451.log`）。修为 `return "if";`，`selftest_f451b.log` 182/0。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.519×**、哨兵 **0**。
+
+
+## ▶ 规格（F452，2026-11-08 22:37）——`if/then/else` 第一窄形态已写、锚点已核、未执行
+- **形态**：键集可证明的对象形状 + 根级 `if` + 子 schema 恰为 `{"type":"<t>"}`；`t==object` ⇒ 生效分支 `then`，其余 ⇒ `else`；生效分支若存在须恰为 `{"type":"object"}`（恒真），更丰富的体需求值 ⇒ 仍点名拒绝；不生效分支按语义忽略、不检查。
+- **锚点核对**：`api_schema_structural_unsupported` 在 `engine/main.php:8485`，`return "if";` 全文件恰一处（`:8541`）；`api_schema_emitted_set` 在 `:7975`；门变量 `$sfAW`–`$sfAZ` 未用；`engine/tests/*.py` 无 `if` 夹具。
+- **门/活体/验收**：见 `task_plan.md` 的 F452 规格节（含插入点行号与两例活体）。
+- **顺位**：F452 执行 → `unevaluated*`（空约束形态）→ 分片多卡 / FR-05（本机不可验证）。

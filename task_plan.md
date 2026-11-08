@@ -1062,6 +1062,31 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：`contains`（需先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F452 规格（`if/then/else` 的第一窄形态；**已写、锚点已核、未执行**）
+**现状**：`api_schema_structural_unsupported` 里 `if` 直接 `return "if"`（`engine/main.php:8541`，全文件仅此一处）；门 `$sfC`（**属性名**恰好叫 `if` 的夹具）钉住"名字不当关键字"的边界；`engine/tests/*.py` 里没有 `if` 夹具。`then`/`else` 单独出现时按 JSON Schema 语义本就无效，不列为拒绝关键字是正确的。
+**目标形状（无需值求值，可构造证明）**：
+1. 键集可证明的**对象**形状：`api_schema_emitted_set($schema) != ""`（`engine/main.php:7975`）。
+2. `"if"` 是**根级**关键字（位置须在 `properties` 块之外，同 F448/F449 的守卫）。
+3. `if` 子 schema 恰为 `{"type":"<t>"}`，`t ∈ {object,string,integer,number,boolean,array}`。
+4. 条件判定只看类型：`t == "object"` ⇒ 真，生效分支是 `then`；其余 ⇒ 假，生效分支是 `else`。
+5. **生效分支**若存在，必须恰为 `{"type":"object"}`（对键集可证明的对象形状恒真）；更丰富的体（required/bounds/嵌套…）需要求值 ⇒ 拒绝。**不生效的分支按语义被忽略，不检查其内容**。
+**实现（三处）**：
+1. 新函数 `api_schema_if_ok(string $schema): int`（放在 `api_schema_pattern_props_ok` 之后、`api_schema_keywords_unsupported` 之前）：根级守卫 → `if` 块用 `api_balance_block` 取体 → 正则 `^\{\s*"type"\s*:\s*"(object|string|integer|number|boolean|array)"\s*\}$` → 按第 4 条选分支名 → 根级定位该分支块；存在则要求体恰为 `^\{\s*"type"\s*:\s*"object"\s*\}$`。
+2. `api_schema_structural_unsupported` 第 8541 行改为谓词守卫：`if (preg_match('/"if"\s*:\s*\{/', $schema) == 1 && api_schema_if_ok($schema) != 1) { return "if"; }`。
+3. 注意：`if` 分支目前**没有捕获组**（F451 已改为 `return "if";`），改守卫时不要重新引入 `$mk[1]`。
+**门**（`SCHEMA-STRUCT`，变量名 `$sfAW`/`$sfAX`/`$sfAY`/`$sfAZ` 已确认全文件未用；插入点在 `$sfAV`（`engine/main.php:16018`）之后，echo 在 16038、条件在 16059）：
+- `$sfAW`（`if:{"type":"string"}` + `else:{"type":"object"}`，扁平双键对象）⇒ `""`；
+- `$sfAX`（同上但 `else` 为 `{"required":["city"]}`）⇒ `"if"`（生效分支需值级判断）；
+- `$sfAY`（`if:{"type":"object"}` + `then:{"type":"object"}`）⇒ `""`；
+- `$sfAZ = api_response_schema_string_props(... if/else ...)` ⇒ 2 键（路由保留）；
+- 旧 `$sfC`（属性名 `if`）保持 `"if"`。
+**活体**（`engine/tests/schema_required_check.py`，插在 `patternprops_vacuous_ok` 之后）：
+- `if_else_ok`：`{"type":"object","properties":{"city":...,"note":...},"if":{"type":"string"},"else":{"type":"object"}}` ⇒ **200 双键**；
+- `if_rich_refuse`：`else` 换成 `{"required":["city"]}` ⇒ **400 点名 if**。
+**验收**：①生效分支按类型判定且被服务（门 + 活体）②丰富分支与属性名冒充仍拒绝 ③四个 harness + 8000/8001 不回退 ④自检 182 PASS 起、`SCHEMA-STRUCT` 字段齐全。
+**顺位**：F452（本规格）→ `unevaluated*`（空约束形态，同 F451 思路）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
