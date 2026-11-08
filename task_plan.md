@@ -840,3 +840,4 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **规则补充（由一次失误换来的）**：④**"忽略"不等于"无效"**——删除 `.gitignore` 覆盖的文件前，若文档可能引用，必须先 `git status --ignored` **留存文件名清单**并与 `findings/progress/task_plan/docs/specs` 交叉核对；本轮那 2198 个旧日志是整批删的、没留名单，事后发现 findings 35 处 / audit 2 处引用 `build_f1xx.log` 已无文件（且从未入库、无副本可恢复）。被删的是编译转录而非结果证据，结论仍由 run/gate/自检日志支撑；但**下一步该做的是把这条清单核对写进清理流程**，而不是继续批量删。
 **仍保留（待决定）**：216 个零引用的 run/gate/analysis 转录（约 2.3 MB）——它们是各轮梯的原始记录，删不删属于"是否裁剪提交历史"的决定，不擅自处理。
 **操作注意**：`git add -A -- 'glob'` 对**已删除**文件不展开，须 `git ls-files 'glob' | xargs git rm`；本机偶尔 `cd` 报 `No such file or directory`，但 Bash 工作目录持久化，相对路径仍在仓库内执行 ⇒ 每次删除前先核 `pwd` 与 `git status`。
+**工具（把规则变成可执行的）**：`bash scripts/check_citations.sh [--list]` 扫描三份计划文件 + `docs/` + `specs/` 里被引用的 `*.log` 名，报告"被引用但未入库"的数量。首次运行：**cited_logs=627 tracked=279 missing=348**——文档引用的日志数远超仓库实际持有的，说明"引用悬空"是长期现象而非本轮造成；该脚本只报告不判失败。
