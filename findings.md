@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F434）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3706,24 +3706,42 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 对象数组项 ≤8 叶子 | **支持** | `SCHEMA-ARROBJ5`（F395） |
 | 嵌套对象 ≤6 叶子、各层数组、顶层数组 | **支持** | `SCHEMA-NEST-OBJ`/`DEEP*`/`ARR*`/`TOPARR*` |
 | enum / const / bool | **支持** | `CONST-*`/`BOOL` |
-| pattern：字面、字面 alternation、`^…$`/`^(…)$` | **支持** | `SCHEMA-PAT-REJECT` 的 0 侧 + 活体 200 |
-| pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 的 1 侧 + 活体 400（F396） |
-| 数值边界：integer + 双边界 + 跨度 ≤15 | **支持** | `SCHEMA-BOUND-REJECT` 0 侧 + 活体 200 |
-| 数值边界：float / 单侧 / 跨度 >15 | **显式 400** | 同上 1 侧 + 活体 400（F397） |
-| minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN` + 活体 200（F399） |
-| minItems / maxItems：单属性标量数组（string/integer/number，元素 ≤8） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT` + 活体 200/400（F400） |
-| minItems / maxItems / minLength / maxLength：**其他形状** | **显式 400** | `SCHEMA-KEYWORDS` + 活体（F398/F399/F400） |
-| additionalProperties（布尔拼写，全字符串叶子） | **支持**（键名来自声明表，构造上已满足） | `SCHEMA-KEYWORDS` addProps/addprops_wire + 活体 200（F402） |
-| additionalProperties：schema 形式 / 嵌套 / 含非字符串叶子 / 与数组界同时 | **显式 400** | addprops_form / nested / mixed / arr（F402；`arr` 是**已知过度拒绝**，F403 还债） |
-| required = 全部声明属性 | **支持**（构造上满足） | `SCHEMA-KEYWORDS` req_all + 活体 200 |
-| required ⊂ 声明属性：扁平全字符串对象 | **支持**（省略可选属性，输出键集合＝required） | `SCHEMA-REQ-SUBSET` + 活体 200（F401） |
-| required ⊂ 声明属性：其他形状；或名字未声明 | **显式 400** | `SCHEMA-KEYWORDS` req_mixed / req_undeclared + 活体 400（F401） |
+| pattern：字面、字面 alternation、`^…$`/`^(…)$` | **支持** | `SCHEMA-PAT-REJECT` 0 侧 + 活体 200 |
+| pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
+| 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
+| 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
+| 数值界：number 叶的小数界 | **显式 400** | `SCHEMA-BOUND-REJECT` float 侧（F397/F421） |
+| exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
+| 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
+| multipleOf 有界（任意 m） | **支持**（折叠到区间内最小倍数） | `SCHEMA-BOUND-REJECT bigmult_*`（F420/F424） |
+| multipleOf 无界：m=1 或 2..999999 | **支持**（后缀宽度随位数；m=1 交普通整数） | `unbounded_ok`/`mult_one_ub`（F430） |
+| multipleOf：number 叶 / 多叶 / 无界 >999999 | **显式 400** | `mult_number`/`mult_multi`/`mult_mixed`/`unbounded_big`（F430–F433） |
+| minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN`（F399） |
+| minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
+| 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
+| minItems / maxItems / minLength / maxLength：**其他形状** | **显式 400** | `SCHEMA-KEYWORDS`（F398–F400） |
+| uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
+| uniqueItems:true | **显式 400** | `uniq_true`（F425） |
+| additionalProperties:true/false（键名来自 plan，可与数组界并存） | **支持** | `addprops_*`（F402/F403） |
+| additionalProperties：schema 形式 / 嵌套 / 含非字符串叶子 | **显式 400** | `addprops_form/nested/enum`（F402） |
+| required = 全部声明属性 | **支持**（构造上满足） | `req_all`（F398） |
+| required ⊂ 声明属性：扁平全字符串对象 | **支持**（省略可选属性） | `SCHEMA-REQ-SUBSET`（F401） |
+| required ⊂ 声明属性：其他形状（含数组叶） | **显式 400** | `req_mixed`/`req_undeclared`/`req_arr_sub`（F401/F418 边界） |
+| minProperties / maxProperties：键数可满足的扁平全字符串 | **支持**（按键数判定） | `SCHEMA-PROPS-COUNT`（F427） |
+| minProperties / maxProperties：其他形状 / 不可满足 | **显式 400** | 同上 + `mixed` 边界（F427） |
+| propertyNames（pattern/min-maxLength/enum/const/type:string，对声明键名求值） | **支持** | `pnames_*` + `pnames_route`（F429） |
+| propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
+| dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
+| format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
+| contains / minContains / maxContains / not / if / dependentSchemas / dependencies / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| tuple 校验：`items` 数组形式 / `prefixItems` | **显式 400** | `tuple_items`/`prefix_items`（F434） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
-**仍未实现（不装作支持）**：pattern/边界的**真正约束执行**（现在只是明确拒绝）、required 真子集的**省略语义**、oneOf 的更多分支。
-**梯**：自检 **172 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**（回归已修）；8001 `par` **0**、`fairness` **0**；scaling **1.510×**；哨兵 **0**。
+
+**仍未实现（不装作支持）**：number 叶浮点界（需小数写入器）、多叶 multipleOf 的实现、tuple 校验的实现、`dependentSchemas`/`dependencies` 的实现；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
 ## F399：`minLength`/`maxLength` 从"显式拒绝"变成**真正支持**（扁平全字符串对象），并且是**按字符**而不是按 token 计数
