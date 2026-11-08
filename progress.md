@@ -1694,3 +1694,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **文档**：支持表 **58 引用 / 0 未解析**；三个条件关键字与 tuple 的行都已入表。
 - **门与梯**：最新自检 **182 PASS / 0 FAIL**、**48 个 `SCHEMA-*` 门**；8000 **115/0**、8001 par/fairness **0**、scaling **1.537×**、哨兵 **0**；工作树干净。
 - **仍未实现（明确排队）**：`contains`/`not`/`if`/`patternProperties`/`unevaluated*` 的**实现**（都需要子 schema 求值器）、四位以上小数、无界 `multipleOf` > 999999999、`minContains/maxContains`；分片多卡 / FR-05 本机不可验证。
+
+
+## ▶ 状态（F448，2026-11-08 21:41）——`not` 的**类型矛盾**形式从拒绝变支持；值级规则与其他形状仍点名拒绝
+- **实现**：`api_schema_not_ok`——扁平全字符串 + **根级** `"not"` + 子 schema 恰为 `{"type":"integer"|"number"|"boolean"|"array"|"object"}` ⇒ 放行（发出的值全是字符串，构造上不可能违反）。结构判定把 `not` 从 `contains|patternProperties|if` 的 alternation 中拆出单独判定；其余子 schema（pattern/enum/嵌套）返回值 `not`。
+- **名字冒充的守卫**：`"not"` 的位置须在 `properties` 块之外，属性名恰好叫 `not`（旧夹具 `prop_named`）仍拒；`enum` 值 `"not"` 不误判。
+- **门**：`SCHEMA-STRUCT` 新增 `not_type=[]`（放行）、`not_pattern=[not]`、`not_mixed=[not]`，以及 `not_route=2`（放行后值生成路由仍在）。
+- **旧门翻转**：`schema_count_check.py` 的 `not_refuse` 夹具正是被新行为证伪的那一种（`cities` 字符串 + `not:{"type":"integer"}`）⇒ 改为 `not_type_served`（200 且值为字符串），并加对照 `not_pattern_refuse`（400 点名）。
+- **活体**：`not_type_ok` **200 双键**；`not_pattern_refuse`/`not_mixed_refuse` **400 点名 not**；bounds/required/count/pattern 不回退。
+- **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.554×**；哨兵 **0**。

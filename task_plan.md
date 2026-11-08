@@ -1051,6 +1051,17 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **明确留拒（排队）**：`contains`/`not`/`if`/`patternProperties`/`unevaluated*` 的实现；`dependencies`/`dependentSchemas` 的更丰富子 schema 体；四位以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
 
 
+## F448 计划与完成（`not` 的类型矛盾形式）
+**F447 已完成**：dependencies 两种拼写。
+**F448 已完成**：`api_schema_not_ok`——扁平全字符串 + 根级 `"not"` + 子 schema 恰为 `{"type":"integer"|"number"|"boolean"|"array"|"object"}` ⇒ 放行（构造满足）；`not` 从 `contains|patternProperties|if` 的 alternation 拆出单独判定，其他子 schema（pattern/enum/嵌套）仍点名拒绝。根级守卫让"属性名恰好叫 `not`"不被当成关键字。
+**门**：`SCHEMA-STRUCT` 加 `not_type=[]`、`not_pattern=[not]`、`not_mixed=[not]`、`not_route=2`。
+**旧门翻转**：`schema_count_check.py` 的 `not_refuse` 改成 `not_type_served`（200、值为字符串），并加 `not_pattern_refuse`（400 点名）作对照。
+**活体**：`not_type_ok` 200 双键；`not_pattern_refuse`/`not_mixed_refuse` 400 点名 not。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.554×**、哨兵 **0**（`engine/selftest_f448.log`、`engine/schema_required_f448.log`、`engine/schema_count_f448b.log`、`engine/schema_bounds_f448.log`、`engine/schema_pattern_f448.log`、`engine/api_smoke_f448.log`、`engine/throughput_f448.log`）。
+**明确留拒（排队）**：`contains`/`if`/`patternProperties`/`unevaluated*` 的实现（需子 schema 求值器）、`minContains`/`maxContains`；`not` 的值级子 schema；四位以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`contains`（需先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F445 计划与完成（小数网格到三位）
 **F443 已完成**：无界 multipleOf 到九位。
 **F445 已完成**：`api_schema_scaled` 支持 1–3 位；标记 -999/-998/-997；写入器按位数补零。两个连带问题：`$nfM` 与自检数组同名（改 `$nfN`）；全局替换哨兵把 inward/exclusive 的返回值改了却没改比较值（`frac_exp` 变 0 ⇒ 统一为 -2000000000）。

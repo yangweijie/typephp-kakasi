@@ -251,6 +251,21 @@ cases = [
      {"type": "object", "properties": {"pair": {"type": "array",
                                                 "prefixItems": [{"type": "string"}, {"type": "integer"}]}}},
      lambda code, txt: code == 400 and "prefixItems" in txt),
+    # F448: `not` is honoured when its subschema is just a type the flat all-string answer cannot
+    # have; a value rule inside it (pattern) or a shape whose leaves are not all strings stays
+    # refused, because either needs the value evaluated rather than reasoned about up front.
+    ("not_type_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "not": {"type": "integer"}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("not_pattern_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "not": {"pattern": "^x"}},
+     lambda code, txt: code == 400 and "not" in txt),
+    ("not_mixed_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
+      "not": {"type": "integer"}},
+     lambda code, txt: code == 400 and "not" in txt),
 ]
 
 bad = 0

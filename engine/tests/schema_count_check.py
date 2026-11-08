@@ -261,11 +261,17 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
       "contains": {"type": "string"}},
      lambda code, txt: code == 400 and "contains" in txt, ask),
-    # F426: the `not` subschema is deliberately bare - an earlier fixture put `required` inside it
-    # and was refused for THAT keyword, the right outcome for the wrong reason.
-    ("not_refuse", "Name some French cities.",
+    # F448: the bare type-contradiction form is served now - every emitted value is a string, so
+    # `not: {"type": "integer"}` holds by construction - while a value rule inside `not` still needs
+    # the value evaluated and stays refused by name. (This case used to expect the refusal; F448
+    # flipped its expectation, and the pattern case below is its control.)
+    ("not_type_served", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "not": {"type": "integer"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), str), ask),
+    ("not_pattern_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"pattern": "^x"}},
      lambda code, txt: code == 400 and "not" in txt, ask),
     ("propertynames_refuse", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "string"}},

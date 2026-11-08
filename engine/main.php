@@ -8077,6 +8077,51 @@ function api_schema_dependencies_ok(string $schema): int
     return 1;
 }
 
+// F448: `not` is honoured for the one form that is satisfied by construction - a subschema that is
+// just a `type` contradicting the leaf type. On the flat all-string shape every emitted value is a
+// string, so `not: {"type": "integer"|"number"|"boolean"|"array"|"object"}` cannot be violated.
+// Every other subschema (pattern, enum, nested rules) would need value evaluation and keeps the
+// refusal.
+function api_schema_not_ok(string $schema): int
+{
+    if (api_schema_flat_all_string($schema) != 1) {
+        return 0;
+    }
+    $np = strpos($schema, "\"not\"");
+    if ($np === false) {
+        return 0;
+    }
+    // A property NAMED "not" sits inside the properties block; only a root-level keyword counts.
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $pbo = strpos($schema, "{", $pp);
+    if ($pbo === false) {
+        return 0;
+    }
+    $pblk = api_balance_block($schema, $pbo);
+    if ($pblk == "") {
+        return 0;
+    }
+    if ($np < $pbo + strlen($pblk)) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $np);
+    if ($bo === false) {
+        return 0;
+    }
+    $sub = api_balance_block($schema, $bo);
+    if ($sub == "") {
+        return 0;
+    }
+    $mt = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"(integer|number|boolean|array|object)"\s*\}$/', $sub, $mt) != 1) {
+        return 0;
+    }
+    return 1;
+}
+
 // F446: dependentSchemas is honoured for its narrowest useful form - every trigger's subschema is
 // exactly {"required":[...]}, which is the same key-set judgement dependentRequired makes - and
 // refused for every other subschema body (properties, nested schemas, ...). Same shape restriction:
@@ -8386,9 +8431,13 @@ function api_schema_structural_unsupported(string $schema): string
         && api_schema_dependencies_ok($schema) != 1) {
         return "dependencies";
     }
+    // F448: `not` is judged for its type-contradiction form; every other subschema keeps the refusal.
+    if (preg_match('/"not"\s*:\s*\{/', $schema) == 1 && api_schema_not_ok($schema) != 1) {
+        return "not";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"(contains|patternProperties|not|if)"\s*:\s*\{/', $schema, $mk) == 1) {
+    if (preg_match('/"(contains|patternProperties|if)"\s*:\s*\{/', $schema, $mk) == 1) {
         return $mk[1];
     }
     if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
@@ -15782,6 +15831,13 @@ function main(): void
     $sfAH = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":{"required":["b"]}}}');
     $sfAI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"dependencies":{"a":["b"]}}');
     $sfAJ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":{"properties":{"x":{"type":"string"}}}}}');
+    // F448: `not` is honoured only for a type contradiction the flat all-string answer satisfies by
+    // construction; a value rule (pattern) or a shape whose leaves are not all strings keeps the
+    // refusal. The route case pins that the honoured form still reaches the value generator.
+    $sfAK = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"type":"integer"}}');
+    $sfAL = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"pattern":"^x"}}');
+    $sfAM = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"not":{"type":"integer"}}');
+    $sfAN = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"type":"integer"}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -15796,7 +15852,8 @@ function main(): void
         . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText
         . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF
         . "] deps_arr=[" . $sfAG . "] deps_obj=[" . $sfAH . "] deps_bad=[" . $sfAI
-        . "] deps_other=[" . $sfAJ . "]\n";
+        . "] deps_other=[" . $sfAJ . "] not_type=[" . $sfAK . "] not_pattern=[" . $sfAL
+        . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15811,7 +15868,9 @@ function main(): void
         && $sfAC == "pair|s,i" && $tupShape == 1 && api_json_ok($tupText) == 1
         && $sfAD == "" && $sfAE == "dependentSchemas" && $sfAF == "dependentSchemas"
         && $sfAG == "" && $sfAH == "" && $sfAI == "dependencies"
-        && $sfAJ == "dependencies") {
+        && $sfAJ == "dependencies"
+        && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
+        && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";
