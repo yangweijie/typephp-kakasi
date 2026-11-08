@@ -1441,3 +1441,4 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **纯 helper 单测**：新增 `engine/tests/bound_inward_test.php`（PHP CLI，**运行时从 main.php 抽取函数**防漂移）⇒ **22 例全绿**，覆盖正负小数两侧、±0.5、小数全 0、整数、指数哨兵。
 - **活体改后**：`engine/schema_bounds_f421.log` **14 例全绿**——空区间由 200 `{"n":1}` 翻 **400**，`[1.5,9.5]` → `{"n":2}`；required/pattern/count 不回退。改前证据 `schema_bounds_f421pre.log` 一并留档成对。
 - **梯**：8000 **115/0**、8001 par/fairness **0**、scaling **1.421×**（实测，门 PASS measured）、哨兵 **0**。
+- **提交后清理（同类第二次）**：commit `0ce1e89` 之后发现 `engine/serve.on`（10:55）与一个仍在跑的引擎 PID 783840——**门禁报完 SENTINELS_LEFT=0 之后**才出现的排队后台副本。处置：停进程、删三个哨兵、复查 0/0；`api_smoke_f421.log`/`spec_req.log` 一度被改写，副本跑完后内容与已提交版本一致（`git status` 回到干净）。**判据：门禁的"哨兵 0"只是那一刻的快照；提交后再查一次进程与哨兵，排队副本会在之后启动。另：`Get-CimInstance Win32_Process` 在本机会卡死（WMI），查进程用 `Get-Process`，要命令行才考虑 WMI 且预期它挂起。**
