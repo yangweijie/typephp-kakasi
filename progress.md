@@ -1501,3 +1501,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`engine/schema_count_f426.log` 三例全部 **400 且含各自关键字名**；**改前那份日志被本轮清理误删**（13:25 生成、13:29 清扫时一并删除，早于入库），改前数值按当次输出转录记录：`contains` 200 忽略 / `propertyNames` 200 散文 / `not` 400 错理由、`VERDICT: FAIL cases=2`。bounds/required/pattern 不回退。
 - **梯**：自检 **181/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.553×**、哨兵 **0**。
 - **过程错误**：`$stA` 与 session 的 int 同名 ⇒ TypePHP 类型改判失败、`TPC_BUILD_FAILED`、exe 不变；链里的管道掩盖退出码导致自检跑了旧二进制。改名 `$sfA` 并复核 exe 时间戳后通过。**记法：单一 `main()` 作用域内新增变量先 grep 占用；构建失败要看 `TPC_BUILD_FAILED` 与 exe 时间戳，别让管道吞退出码。**
+
+
+## ▶ 状态（F427，2026-11-08 14:10）——`minProperties`/`maxProperties`：键数可满足则支持、不可满足则拒
+- **改前活体**：2 键对象上 `minProperties:3` / `maxProperties:1` 都是 **200 且 2 个键**（静默违反）；`minProperties:2` 本就满足。关键字引用数 0。
+- **实现**：`api_schema_plan_count` 数 plan；只在扁平全字符串形状计算会发出的键数（required 子集优先），满足则放行、否则点名拒绝；其他形状键集合未证明 ⇒ 仍拒。
+- **门**：`SCHEMA-PROPS-COUNT` 8 例（含 required 子集 `sub1=[]`/`sub2=[minProperties]`、混合边界 `mixed=[minProperties]`、空格排版）⇒ PASS；`SCHEMA-KEYWORDS` 40 例同时通过。
+- **活体**：`engine/schema_required_f427.log` —— 可满足 200、两例不可满足 **400 点名**；count/bounds/pattern 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.493×**、哨兵 **0**。
+- **过程问题**：后台自检命令用相对路径 grep 日志（cwd 不对）⇒ 任务标"失败"，但日志 `RUN_EXIT=0`。**判据：后台失败先看输出里失败的是哪一步，探针的退出码不是引擎的退出码。**

@@ -151,6 +151,21 @@ cases = [
                                        "note": {"type": "string"}},
       "required": ["note"]},
      lambda code, txt: code == 200 and keys_of(txt) == ["note"]),
+    # F427: minProperties/maxProperties count the keys the generator emits, and those keys come from
+    # the declared plan - so a bound the plan already satisfies must be honoured, and one it cannot
+    # satisfy must be refused rather than answered with the wrong number of keys.
+    ("minproperties_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "minProperties": 2},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("minproperties_bad", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "minProperties": 3},
+     lambda code, txt: code == 400 and "minProperties" in txt),
+    ("maxproperties_bad", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "maxProperties": 1},
+     lambda code, txt: code == 400 and "maxProperties" in txt),
 ]
 
 bad = 0

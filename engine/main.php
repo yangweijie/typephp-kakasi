@@ -7481,6 +7481,30 @@ function api_schema_flat_all_string(string $schema): int
 // while returning 200. They are refused with the keyword named, instead of silently ignored.
 // `required` is handled separately below, because refusing it outright would reject requests the
 // decoder already satisfies.
+// F427: how many keys the declared plan holds. minProperties/maxProperties count keys, and on a
+// shape whose key set is exactly this plan the count is known before generation - so the bound can
+// be checked rather than ignored.
+function api_schema_plan_count(string $schema): int
+{
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 64);
+    if ($plan == "") {
+        return 0;
+    }
+    return count(explode(",", $plan));
+}
+
 // F426: structural keywords the decoder neither implements nor can prove satisfied. Each is matched
 // with the shape its VALUE really has, so an enum value spelled "not" is not mistaken for the
 // keyword. Known boundary: a property NAMED like one of these is refused too - the refusal names it,
@@ -7499,7 +7523,7 @@ function api_schema_structural_unsupported(string $schema): string
 
 function api_schema_keywords_unsupported(string $body): string
 {
-    foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties uniqueItems") as $kw) {
+    foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties uniqueItems minProperties maxProperties") as $kw) {
         if (strpos($body, "\"" . $kw . "\"") === false) {
             continue;
         }
@@ -7527,6 +7551,32 @@ function api_schema_keywords_unsupported(string $body): string
             && preg_match('/"uniqueItems"\s*:\s*false/', $body) == 1
             && preg_match_all('/"uniqueItems"\s*:/', $body) == 1) {
             continue;
+        }
+        // F427: minProperties/maxProperties count keys. On the flat all-string shape the emitted key
+        // set is the declared plan (or its required subset), so the count is known up front: a bound
+        // that count satisfies is honoured, one it cannot satisfy is refused rather than answered
+        // with the wrong number of keys. Every other shape still refuses, because its key set is not
+        // proven.
+        if ($kw == "minProperties" || $kw == "maxProperties") {
+            $emitN = 0;
+            if (api_schema_flat_all_string($body) == 1) {
+                $emitKeep = api_schema_required_filter($body);
+                if ($emitKeep != "") {
+                    $emitN = count(explode(",", $emitKeep));
+                } else {
+                    $emitN = api_schema_plan_count($body);
+                }
+            }
+            $bdv = api_schema_bound_value($body, "\"" . $kw . "\"", 0);
+            if ($emitN > 0 && $bdv != "" && strpos($bdv, ".") === false) {
+                if ($kw == "minProperties" && $emitN >= (int) $bdv) {
+                    continue;
+                }
+                if ($kw == "maxProperties" && $emitN <= (int) $bdv) {
+                    continue;
+                }
+            }
+            return $kw;
         }
         return $kw;
     }
@@ -9440,7 +9490,8 @@ function api_serve(int $port): void
                     . "minLength/maxLength and a required subset on a flat all-string object; "
                     . "additionalProperties:true/false wherever every key is named from the "
                     . "declared plan; uniqueItems:false, which allows the duplicates the "
-                    . "generator may emit)"
+                    . "generator may emit; minProperties/maxProperties whose bound the counted key "
+                    . "set can satisfy)"
                     . "\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else {
@@ -14648,6 +14699,29 @@ function main(): void
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";
+    }
+
+    // SCHEMA-PROPS-COUNT (F427): minProperties/maxProperties are judged against the number of keys
+    // the shape will actually emit - the declared plan, or the required subset on the flat all-string
+    // shape. A bound that count satisfies is honoured, one it cannot satisfy is refused, and shapes
+    // whose key set is not proven still refuse (the mixed case below is that boundary, pinned).
+    $pcA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"minProperties":2}');
+    $pcB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"minProperties":3}');
+    $pcC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"maxProperties":1}');
+    $pcD = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"maxProperties":2}');
+    $pcE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"minProperties":1}');
+    $pcF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"minProperties":2}');
+    $pcG = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"minProperties":1}');
+    $pcH = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "minProperties": 3}');
+    echo "SCHEMA-PROPS-COUNT min2=[" . $pcA . "] min3=[" . $pcB . "] max1=[" . $pcC
+        . "] max2=[" . $pcD . "] sub1=[" . $pcE . "] sub2=[" . $pcF
+        . "] mixed=[" . $pcG . "] wire3=[" . $pcH . "]\n";
+    if ($pcA == "" && $pcB == "minProperties" && $pcC == "maxProperties" && $pcD == ""
+        && $pcE == "" && $pcF == "minProperties" && $pcG == "minProperties"
+        && $pcH == "minProperties") {
+        echo "SCHEMA-PROPS-COUNT: PASS (key count checked; unreachable bounds and unproven shapes refused)\n";
+    } else {
+        echo "SCHEMA-PROPS-COUNT: FAIL\n";
     }
     // SCHEMA-LEN (F399): length bounds are now enforced for a flat all-string object, so the gate
     // checks the EMITTED length, not just that the request was accepted - a bounds feature that

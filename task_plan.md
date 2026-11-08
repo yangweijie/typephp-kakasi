@@ -853,3 +853,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **过程错误**：`$stA` 撞 session 的 int 同作用域 ⇒ `TPC_BUILD_FAILED` + exe 不变 + 管道吞退出码 ⇒ 自检跑了旧二进制；改名 `$sfA` 并核 mtime 后通过。
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；结构类关键字目前是**一律拒绝**，后续可逐个判断"是否构造上满足"（如 `propertyNames` 只约束键名，键名来自声明表）再决定实现。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；约束面按"能否产出违反值"继续清点。
+
+
+## F427 计划与完成（`minProperties`/`maxProperties`：先算键数，再决定支持或拒绝）
+**F426 已完成**：11 个结构类关键字点名拒绝。
+**改前活体**：2 键对象上 `minProperties:3` / `maxProperties:1` 返回 **200 且 2 个键**（`schema_required_f427pre.log`，两例违反）；关键字引用数 0。
+**F427 已完成**：`api_schema_plan_count` 数 plan；例外分支只在扁平全字符串形状上、按"required 子集优先"的会发键数判断——可满足则放行（F402 口径：构造满足的约束不该拒），不可满足则点名拒绝；其他形状键集合未证明，仍拒（`mixed` 边界钉在门里）。
+**门**：`SCHEMA-PROPS-COUNT` 8 例全过；`SCHEMA-KEYWORDS` 40 例同时通过。
+**活体**：三例（可满足 200、不可满足两例 400 点名）+ count/bounds/pattern 不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.493×**、哨兵 **0**（`engine/selftest_f427.log`、`engine/schema_required_f427.log`、`engine/api_smoke_f427.log`、`engine/throughput_f427.log`）。
+**明确留拒（排队）**：`format`、`patternProperties`、`contentEncoding`/`contentMediaType`（尚未复核口径）；number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；结构类关键字中"可能构造满足"的（如 `propertyNames` 只约束键名）逐个评估。
+**顺位**：`format`/`patternProperties` 口径复核 → 分片多卡 / FR-05（本机不可验证）。
