@@ -1687,3 +1687,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`deps_arr=[]`、`deps_obj=[]`、`deps_bad=[dependencies]`、`deps_other=[dependencies]`。
 - **活体**：两种拼写 **200 双键**、required 子集省略依赖 **400 点名**；其余 harness 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.537×**、哨兵 **0**。
+
+
+## ▶ 收尾审计（2026-11-08 21:25）——约束面"每个关键字都有归宿"
+- **不变量核对**：`api_schema_structural_unsupported` 里逐个确认 17 个关键字仍在判据内（contains/patternProperties/not/if/dependentRequired/dependentSchemas/dependencies/propertyNames/unevaluatedItems/unevaluatedProperties/minContains/maxContains/format/contentEncoding/contentMediaType/prefixItems/items），其中 `dependentRequired`/`dependentSchemas`/`dependencies`/`propertyNames`/`items`（元组）有专门的**实现/ honoured** 分支，其余仍**点名拒绝** ⇒ 没有"既不实现也不拒绝"的静默面。
+- **文档**：支持表 **58 引用 / 0 未解析**；三个条件关键字与 tuple 的行都已入表。
+- **门与梯**：最新自检 **182 PASS / 0 FAIL**、**48 个 `SCHEMA-*` 门**；8000 **115/0**、8001 par/fairness **0**、scaling **1.537×**、哨兵 **0**；工作树干净。
+- **仍未实现（明确排队）**：`contains`/`not`/`if`/`patternProperties`/`unevaluated*` 的**实现**（都需要子 schema 求值器）、四位以上小数、无界 `multipleOf` > 999999999、`minContains/maxContains`；分片多卡 / FR-05 本机不可验证。
