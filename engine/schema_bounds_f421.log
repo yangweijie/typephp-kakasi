@@ -1,0 +1,16 @@
+wide_0_100000        status=200 ok=True text={"n":100000}
+wide_1000_999999     status=200 ok=True text={"n":234567}
+onesided_min_5       status=200 ok=True text={"n":5}
+onesided_max_15      status=200 ok=True text={"n":12}
+narrow_1_5           status=200 ok=True text={"n":2}
+multi_leaf_refuse    status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); fractional
+negative_served      status=200 ok=True text={"n":-1000}
+straddling_served    status=200 ok=True text={"n":1000}
+multipleof_served    status=200 ok=True text={"n":7}
+multipleof_negative  status=200 ok=True text={"n":-14}
+multipleof_unsatisfiable status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); fractional
+float_refuse         status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); fractional
+int_leaf_float_bounds status=200 ok=True text={"n":2}
+int_leaf_float_unsatisfiable status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum and/or maximum of any sign (any span); fractional
+VERDICT: PASS - emitted values inside the bounds; refused shapes still 400
+CHECK_EXIT=0

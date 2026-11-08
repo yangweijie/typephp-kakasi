@@ -104,6 +104,16 @@ cases = [
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F421: an INTEGER leaf with fractional bounds. The value must be an integer inside the real
+    # interval, so 1.5..9.5 means 2..9 - truncating the bound to 1 would serve a violating value.
+    ("int_leaf_float_bounds", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1.5, "maximum": 9.5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and 2 <= val_of(txt, "n") <= 9),
+    # No integer lies in [1.5, 1.9]: unsatisfiable for an integer leaf, so it must be refused.
+    ("int_leaf_float_unsatisfiable", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1.5, "maximum": 1.9}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
 ]
 
 bad = 0

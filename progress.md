@@ -1429,3 +1429,15 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **机制核对**：`api_number_bounded_value` 的符号映射使折叠后的 `lo==hi` 在正/双负/零三个分支都发射该值（双负 = dash + 幅值 fill），与"确定性单值＝子集合法解"的论证一致。
 - **过程错误（记下来，同类第三次）**：第一次重建报 **`SYCL_LINK_FAILED`**，随后自检打印的是**旧二进制**的门文本（有 `mult_shape` 没有我新加的 `mult_one`）⇒ 差点把陈旧结果当本轮结论。处置：杀残留进程 → 重建 → **查 exe mtime/size**（4231680 → 4233216，10:10:26）→ 复跑。**判据：链接失败之后的一切数字都属于上一个二进制，必须先证明二进制换了。**
 - **梯（复跑，新二进制）**：自检 **177 PASS / 0 FAIL**、`RUN_EXIT=0`（输出里出现 `mult_one=[0] mult_unsat=[1] mult_wire=[0]` ⇒ 证明新码在二进制里）；`SCHEMA-NUM-BND` `mult_shape=[n|7|7|7] v8=7`；活体 bounds **12 例全绿**（`{"n":7}`、双负 `{"n":-14}`、不可满足 **400**），required/pattern/count 复跑不回退；8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**（`engine/selftest_f420b.log`、`engine/schema_bounds_f420.log`、`engine/api_smoke_f420.log`、`engine/throughput_f420.log`）。
+
+
+## ▶ 状态（F421，2026-11-08 10:40）——整数叶 + 浮点界：向内取整；空区间/指数写法显式拒绝
+- **改前活体取证**：`engine/schema_bounds_f421pre.log` —— integer 叶 `[1.5,1.9]` → **200 `{"n":1}`**（区间内无整数却发了小于下界的值）⇒ `VERDICT: FAIL cases=1`；`[1.5,9.5]` → `{"n":2}`（碰巧合法，说明单看一例会漏）。
+- **根因**：形状界正则 `(-?[0-9]+)` 丢小数 ⇒ 空区间变 `[1,1]`；拒绝函数先问形状，旧的"含小数点即拒"永远走不到。
+- **实现**：`api_schema_bound_inward`（下界 ceil / 上界 floor，负数截断方向天然正确，小数全 0 不动，非纯十进制返回哨兵）；形状取整后 `lo>hi` ⇒ 无形状；拒绝函数补"界字面量非纯十进制 ⇒ 拒"（压住 `1e1..12` 这种小跨度指数）；400 消息改为实际支持面。
+- **门**：新门 `SCHEMA-NUM-FRAC`（pos/neg/empty/integral + 发射值 ∈[2,9]）；`SCHEMA-BOUND-REJECT` 加 `frac_int=0 frac_unsat=1 frac_exp=1 frac_neg=0`。活体加 2 例（整数叶浮点界服务、空区间 400）。
+- **错误日志**：第一次自检 **`RUN_EXIT=-1`**，日志停在 `PARITY 164`（277 行，远早于 schema 门）⇒ 先查竞争：无引擎进程、无哨兵、exe 时间戳正常；**重跑一次**（`selftest_f421b.log`）以区分偶发设备中止与真回归。若第二次仍停在同一处，则按回归处理（本轮改动全在 PHP schema 判据，parity 环不经过它，需二分定位）。
+- **重跑结果**：越过 164 跑完 ⇒ 偶发中止定性成立。自检 **178/0**、`RUN_EXIT=0`，新门字段已打印（`frac_int=0 frac_unsat=1 frac_exp=1 frac_neg=0`、`SCHEMA-NUM-FRAC pos=[n|2|9|0] neg=[n|-9|-2|0] empty=[] v=2`）。
+- **纯 helper 单测**：新增 `engine/tests/bound_inward_test.php`（PHP CLI，**运行时从 main.php 抽取函数**防漂移）⇒ **22 例全绿**，覆盖正负小数两侧、±0.5、小数全 0、整数、指数哨兵。
+- **活体改后**：`engine/schema_bounds_f421.log` **14 例全绿**——空区间由 200 `{"n":1}` 翻 **400**，`[1.5,9.5]` → `{"n":2}`；required/pattern/count 不回退。改前证据 `schema_bounds_f421pre.log` 一并留档成对。
+- **梯**：8000 **115/0**、8001 par/fairness **0**、scaling **1.421×**（实测，门 PASS measured）、哨兵 **0**。

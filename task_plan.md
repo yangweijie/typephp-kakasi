@@ -769,5 +769,18 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **177/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.562×**、哨兵 **0**（`engine/selftest_f420b.log`、`engine/schema_bounds_f420.log`、`engine/api_smoke_f420.log`、`engine/throughput_f420.log`）。
 **过程错误**：第一次重建 `SYCL_LINK_FAILED` 后自检跑的是**旧二进制**（门文本缺新字段）⇒ 杀残留进程、重建、查 exe mtime/size、复跑，并以"输出里出现新门字段"作为新码在二进制里的证明。
 **记法**：**确定性单值发射是 multipleOf 的诚实服务——一个合法解即满足"界内"要求（子集论证复用）；不可满足的约束必须拒绝，否则候选层会静默发出违反值。**
-**明确留拒（排队）**：浮点界（含浮点 multipleOf）、多叶 multipleOf、`multipleOf` > 1000。
-**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；如继续约束面，则先做浮点界的诚实拒绝口径复核，再谈实现。
+**明确留拒（排队）**：多叶 multipleOf、`multipleOf` > 1000、number（非整数）叶的浮点界（整数叶的浮点界已由 F421 向内取整服务）。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F421 计划与完成（浮点界口径复核：复核出的是**漏拒**，不是过度拒绝）
+**动作（计划口径）**：先复核"浮点界一律拒绝"是否诚实，再谈实现。
+**复核结果**：number 叶的浮点界确实拒了；**integer 叶的浮点界被静默截断后放行**——形状正则 `(-?[0-9]+)` 丢掉小数，`[1.5,1.9]` 变成 `[1,1]`，拒绝函数又先问形状（非空即放行），旧的"含小数点即拒"永远走不到。改前活体取证：**200 `{"n":1}`**（区间内无整数却发了小于下界的值）。
+**F421 已完成**：①`api_schema_bound_inward` **向内取整**（下界 ceil、上界 floor；负数截断方向天然正确；小数全 0 不动；非纯十进制返回哨兵）；②形状取整后 `lo>hi` ⇒ 无形状（不可满足）；③拒绝函数补"界字面量非纯十进制 ⇒ 拒"，压住 `1e1..12` 这类**小跨度指数**（否则旧跨度规则判受支持并从 1 发）；④400 消息改为实际支持面。
+**门**：新门 `SCHEMA-NUM-FRAC`（pos/neg/empty/integral + 发射值 ∈[2,9]）；`SCHEMA-BOUND-REJECT` 加 `frac_int=0 frac_unsat=1 frac_exp=1 frac_neg=0`；**纯 helper 单测** `engine/tests/bound_inward_test.php`（PHP CLI、运行时抽取被测函数防漂移）**22 例全绿**。
+**活体**：bounds **14 例全绿**，空区间由 200 `{"n":1}` 翻 **400**、`[1.5,9.5]` → `{"n":2}`；改前/改后成对留证（`schema_bounds_f421pre.log` vs `schema_bounds_f421.log`）；required/pattern/count 不回退。
+**梯**：自检 **178/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.421×**、哨兵 **0**（`engine/selftest_f421b.log`、`engine/api_smoke_f421.log`、`engine/throughput_f421.log`）。
+**过程错误**：首次自检 `RUN_EXIT=-1` 停在 `PARITY 164`；排除竞争（无进程/无哨兵/exe 正常）后重跑一次即跑完 ⇒ 定性为偶发设备中止。**判据：崩在与改动无关的阶段先排除竞争再重跑，只有复现在同一处才按回归二分。**
+**记法**：**"拒绝口径复核"复核出来的往往是漏拒而非过度拒绝；判据要问"发射器会不会产出违反值"。取整必须向内（收紧后的整数区间里每个值都满足原实数区间——子集论证）。纯算术 helper 用 PHP CLI 抽取式单测，不必占设备。**
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、`multipleOf` > 1000、`exclusiveMinimum/exclusiveMaximum`（尚未复核口径）。
+**顺位**：exclusive 边界口径复核 → 分片多卡 / FR-05（本机不可验证，保持排队）。
