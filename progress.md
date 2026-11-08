@@ -1703,3 +1703,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **旧门翻转**：`schema_count_check.py` 的 `not_refuse` 夹具正是被新行为证伪的那一种（`cities` 字符串 + `not:{"type":"integer"}`）⇒ 改为 `not_type_served`（200 且值为字符串），并加对照 `not_pattern_refuse`（400 点名）。
 - **活体**：`not_type_ok` **200 双键**；`not_pattern_refuse`/`not_mixed_refuse` **400 点名 not**；bounds/required/count/pattern 不回退。
 - **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.554×**；哨兵 **0**。
+
+
+## ▶ 状态（F449，2026-11-08 21:58）——`contains` 的**单项类型**形式从拒绝变支持；值规则/类型不匹配/计数仍点名拒绝
+- **实现**：`api_schema_contains_ok`——单数组属性 + 根级 `contains` + 子 schema 恰为配对类型（`a`↔string、`an`↔integer、`af`↔number）+ 不带 `minContains`/`maxContains` ⇒ 放行。结构判定把 `contains` 从 `patternProperties|if` 拆出单独判定。
+- **构造满足的依据是控制流**：两个数组写出器都在闭括号可选**之前**先发出首元素 ⇒ 数组必然 ≥1 元素且元素类型由写出器保证，首元素即匹配。
+- **门**：`SCHEMA-STRUCT` 加 `contains_type=[]`、`contains_mismatch=[contains]`、`contains_pattern=[contains]`、`contains_route=[cities]`（数组路由仍认领）。
+- **旧门翻转**：`schema_count_check.py` 的 `contains_refuse` 正是被放行的形式 ⇒ 改 `contains_type_served`（200、数组 ≥1 元素），加对照 `contains_pattern_refuse`（400 点名）。
+- **活体**：`contains_type_ok` **200**、`contains_mismatch_refuse` **400 点名**；count harness 同向通过；bounds/pattern 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.351×**（单次测量，低于近几轮，如实记录）、哨兵 **0**。

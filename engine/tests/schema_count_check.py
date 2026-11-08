@@ -254,12 +254,18 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
                                                   "uniqueItems": False}}},
      lambda code, txt: code == 200 and n_items(txt, "cities") is not None, ask),
-    # F426: structural keywords are refused by name rather than ignored - each of these could be
-    # violated by what the generator emits, and `contains` would also knock the request out of the
-    # array grammar the way uniqueItems did.
-    ("contains_refuse", "Name some French cities.",
+    # F449: the item-type form is served now - the array writer always emits the first element
+    # before offering the close, and that element is the declared item type, so `contains:
+    # {"type":"string"}` holds by construction. (This case used to expect the refusal, mirroring the
+    # F448 fixture flip; the value-rule case below keeps the refusal side pinned.)
+    ("contains_type_served", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
       "contains": {"type": "string"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and len(json.loads(txt)["cities"]) >= 1, ask),
+    ("contains_pattern_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"pattern": "^x"}},
      lambda code, txt: code == 400 and "contains" in txt, ask),
     # F448: the bare type-contradiction form is served now - every emitted value is a string, so
     # `not: {"type": "integer"}` holds by construction - while a value rule inside `not` still needs

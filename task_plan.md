@@ -1062,6 +1062,17 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：`contains`（需先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F449 计划与完成（`contains` 的单项类型形式）
+**F448 已完成**：`not` 的类型矛盾形式。
+**F449 已完成**：`api_schema_contains_ok`——单数组属性 + 根级 `contains` + 子 schema 恰为配对类型（`a`↔string、`an`↔integer、`af`↔number）+ 不带 `minContains`/`maxContains` ⇒ 放行。依据是两个数组写出器**在闭括号可选前先发首元素** ⇒ 数组必然 ≥1 元素、元素类型由写出器保证。`contains` 从 `patternProperties|if` 的 alternation 拆出单独判定。
+**门**：`SCHEMA-STRUCT` 加 `contains_type=[]`、`contains_mismatch=[contains]`、`contains_pattern=[contains]`、`contains_route=[cities]`。
+**旧门翻转**：`schema_count_check.py` 的 `contains_refuse` 改成 `contains_type_served`（200、数组 ≥1 元素），加 `contains_pattern_refuse` 作对照。
+**活体**：`contains_type_ok` 200、`contains_mismatch_refuse` 400 点名；其余 harness 不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.351×**、哨兵 **0**（`engine/selftest_f449.log`、`engine/schema_required_f449.log`、`engine/schema_count_f449.log`、`engine/schema_bounds_f449.log`、`engine/schema_pattern_f449.log`、`engine/api_smoke_f449.log`、`engine/throughput_f449.log`）。
+**明确留拒（排队）**：`if`/`patternProperties`/`unevaluated*` 的实现（需子 schema 求值器）、`minContains`/`maxContains`、`contains`/`not` 的值级子 schema；四位以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`if/then/else`（先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F445 计划与完成（小数网格到三位）
 **F443 已完成**：无界 multipleOf 到九位。
 **F445 已完成**：`api_schema_scaled` 支持 1–3 位；标记 -999/-998/-997；写入器按位数补零。两个连带问题：`$nfM` 与自检数组同名（改 `$nfN`）；全局替换哨兵把 inward/exclusive 的返回值改了却没改比较值（`frac_exp` 变 0 ⇒ 统一为 -2000000000）。

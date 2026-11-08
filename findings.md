@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F448）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F449）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3735,13 +3735,15 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
-| contains / minContains / maxContains / if / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| minContains / maxContains / if / patternProperties / unevaluated* | **显式 400** | `SCHEMA-STRUCT`（F426） |
 | dependentSchemas：子 schema 恰为 `{"required":[…]}` | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`（F446） |
 | dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
 | dependencies：数组形式 / `{"required":[…]}` 对象形式 | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`（F447） |
 | dependencies：其他对象体 | **显式 400** | `deps_bad`/`deps_other`（F447） |
 | not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`（扁平全字符串） | **支持**（构造满足；值路由保留） | `not_type`/`not_route`（F448） |
 | not：子 schema 含值级规则（pattern 等）/ 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`（F448） |
+| contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
+| contains：类型不匹配 / 值级规则（pattern 等）/ 同带 min-maxContains | **显式 400** | `contains_mismatch`/`contains_pattern`（F449） |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
@@ -3749,7 +3751,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`if`/`patternProperties`/`unevaluated*`（需要子 schema 求值器）、`minContains`/`maxContains`、小数四位及以上、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`if`/`patternProperties`/`unevaluated*`（需要子 schema 求值器）、`minContains`/`maxContains`、`contains` 的值级子 schema、`not` 的值级子 schema、四位以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4208,3 +4210,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`not_type_ok` **200 双键**、`not_pattern_refuse`/`not_mixed_refuse` **400 点名 not**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT: PASS`，新字段 `not_type=[] not_pattern=[not] not_mixed=[not] not_route=2`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.554×**；哨兵 **0**（`engine/selftest_f448.log`、`engine/schema_required_f448.log`、`engine/schema_count_f448b.log`、`engine/schema_bounds_f448.log`、`engine/schema_pattern_f448.log`、`engine/api_smoke_f448.log`）。
 **记法**：**"关键字被点名拒绝"的旧门夹具可能恰好是即将支持的那种形式**——支持化改动先搜全部夹具里的该关键字，把"被证伪的旧期望"改成"新行为 + 一个仍应拒绝的对照"，而不是等哪条 harness 红了再回头改。
+
+## F449：`contains` 的"单项类型"形式支持（构造满足）；值规则、类型不匹配与计数仍点名拒绝
+**实现**：`api_schema_contains_ok($schema)`——单数组属性（`api_top_leaves` 恰好一个叶子），叶子种类配对：`a`↔`string`、`an`↔`integer`、`af`↔`number`；`contains` 须是**根级**关键字（不在 `properties` 块内），子 schema 恰为 `{"type":"<配对类型>"}`；带 `minContains`/`maxContains` 一律不放行。结构判定把 `contains` 从 `patternProperties|if` 的 alternation 拆出单独判定。
+**"构造满足"的证明看控制流，不看样例**：`api_array_string_value` 在进入循环前先 `api_constrained` 发 `{"prop":["`，循环第一轮**先追加元素**再提供 `,`/`]`；`api_array_number_value` 同构 ⇒ 该形状的数组**必然至少一个元素**，且元素类型由写出器保证。因此首元素即匹配 `contains`。
+**门**：`SCHEMA-STRUCT` 新增 `contains_type=[]`、`contains_mismatch=[contains]`、`contains_pattern=[contains]`、`contains_route=[cities]`（放行后数组路由仍认领该 schema —— 数组路由的正则只约束数组对象**内部**的兄弟键，根级 `contains` 不在其中，这是不需要改路由正则的原因，但已由门断言而不是推断）。
+**旧门翻转（F448 规则再次适用）**：`schema_count_check.py` 的 `contains_refuse` 就是"字符串数组 + `contains:{"type":"string"}`"这一将被放行的形式 ⇒ 改成 `contains_type_served`（200 且数组 ≥1 元素），并加对照 `contains_pattern_refuse`（400 点名）。
+**活体**：`contains_type_ok` **200 `{"cities":["Lyon, France, Prov"]}`**、`contains_mismatch_refuse` **400 点名 contains**、`contains_type_served` 200、`contains_pattern_refuse` 400；bounds/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT: PASS`，新字段如上）；8000 **115/0**；8001 par/fairness **0**；scaling **1.351×**（本轮一次测量，低于近几轮的 1.52–1.55×，未做重复测量，按原值记录）；哨兵 **0**（`engine/selftest_f449.log`、`engine/schema_required_f449.log`、`engine/schema_count_f449.log`、`engine/schema_bounds_f449.log`、`engine/schema_pattern_f449.log`、`engine/api_smoke_f449.log`、`engine/throughput_f449.log`）。
+**记法**：**"构造满足"要先在写出器的控制流里找到那个必然性**（首元素在闭括号可选之前就已发出），再决定支持面；只凭一次输出里"恰好非空"就当保证，会在别的种子/预算下破。旧夹具翻转的规则在 F448 立过，本轮在第二个关键字上直接生效——**新关键字支持化第一步就是 grep 全部 harness 里的该关键字**。

@@ -266,6 +266,19 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},
       "not": {"type": "integer"}},
      lambda code, txt: code == 400 and "not" in txt),
+    # F449: `contains` is honoured when it is just the item type of the single array property - the
+    # writer always emits the first element and it is that type. A different type would be a value
+    # the writer never promises, so it stays refused.
+    ("contains_type_ok", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"type": "string"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and len(json.loads(txt)["cities"]) >= 1
+     and all(isinstance(x, str) for x in json.loads(txt)["cities"])),
+    ("contains_mismatch_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"type": "integer"}},
+     lambda code, txt: code == 400 and "contains" in txt),
 ]
 
 bad = 0

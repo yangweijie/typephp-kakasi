@@ -8122,6 +8122,79 @@ function api_schema_not_ok(string $schema): int
     return 1;
 }
 
+// F449: `contains` is honoured for the one form the array writers satisfy by construction. Both
+// writers emit the opening bracket and then the FIRST element before offering the closing one, so
+// an array from this shape always has at least one element; when the subschema is just the item
+// type, that element matches. minContains/maxContains can demand more than one match, and a
+// value-level subschema would need the value evaluated - both keep the refusal.
+function api_schema_contains_ok(string $schema): int
+{
+    if (preg_match('/"(minContains|maxContains)"\s*:\s*[0-9]+/', $schema) == 1) {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return 0;
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 2) {
+        return 0;
+    }
+    $kind = $lkv[1];
+    $tk = strpos($kind, "~");
+    if ($tk !== false) {
+        $kind = substr($kind, 0, $tk);
+    }
+    $want = "";
+    if ($kind == "a") {
+        $want = "string";
+    } else if ($kind == "an") {
+        $want = "integer";
+    } else if ($kind == "af") {
+        $want = "number";
+    }
+    if ($want == "") {
+        return 0;
+    }
+    $np = strpos($schema, "\"contains\"");
+    if ($np === false) {
+        return 0;
+    }
+    // A property NAMED "contains" sits inside the properties block; only a root-level keyword counts.
+    if ($np < $bo + strlen($block)) {
+        return 0;
+    }
+    $cbo = strpos($schema, "{", $np);
+    if ($cbo === false) {
+        return 0;
+    }
+    $sub = api_balance_block($schema, $cbo);
+    if ($sub == "") {
+        return 0;
+    }
+    $mt = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"([a-z]+)"\s*\}$/', $sub, $mt) != 1) {
+        return 0;
+    }
+    return $mt[1] == $want ? 1 : 0;
+}
+
 // F446: dependentSchemas is honoured for its narrowest useful form - every trigger's subschema is
 // exactly {"required":[...]}, which is the same key-set judgement dependentRequired makes - and
 // refused for every other subschema body (properties, nested schemas, ...). Same shape restriction:
@@ -8435,9 +8508,15 @@ function api_schema_structural_unsupported(string $schema): string
     if (preg_match('/"not"\s*:\s*\{/', $schema) == 1 && api_schema_not_ok($schema) != 1) {
         return "not";
     }
+    // F449: `contains` is judged for the item-type form the array writers satisfy by construction
+    // (at least one element, and that element is the declared item type); value rules and counts
+    // keep the refusal.
+    if (preg_match('/"contains"\s*:\s*\{/', $schema) == 1 && api_schema_contains_ok($schema) != 1) {
+        return "contains";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"(contains|patternProperties|if)"\s*:\s*\{/', $schema, $mk) == 1) {
+    if (preg_match('/"(patternProperties|if)"\s*:\s*\{/', $schema, $mk) == 1) {
         return $mk[1];
     }
     if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
@@ -15765,9 +15844,10 @@ function main(): void
         echo "SCHEMA-KEYWORDS: FAIL\n";
     }
 
-    // SCHEMA-STRUCT (F426): contains / not / if / dependentRequired / propertyNames / unevaluated*
-    // are none of them implemented, and each can be violated by what the model emits - so each is
-    // named instead of ignored. Two controls pin the matching boundary: an enum VALUE spelled "not"
+    // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour
+    // paths, and contains/not gained narrow ones (F449/F448); `if` and unevaluated* are still not
+    // implemented, and each can be violated by what the model emits - so each is named instead of
+    // ignored. Two controls pin the matching boundary: an enum VALUE spelled "not"
     // must not be mistaken for the keyword, while a property NAMED "not" is refused (the documented
     // boundary of scanning the whole schema rather than only its root).
     $sfA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"}},"contains":{"type":"string"}}}');
@@ -15838,6 +15918,13 @@ function main(): void
     $sfAL = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"pattern":"^x"}}');
     $sfAM = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"not":{"type":"integer"}}');
     $sfAN = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"type":"integer"}}}}');
+    // F449: `contains` is honoured when it is just the item type of the single array property (the
+    // writers always emit at least one element); a different type, a value rule or a count keeps the
+    // refusal, and the route case proves the array writer still claims the schema.
+    $sfAO = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"}}');
+    $sfAP = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"integer"}}');
+    $sfAQ = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"pattern":"^x"}}');
+    $sfAR = api_response_schema_array_string('{"json_schema":{"schema":{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -15853,7 +15940,9 @@ function main(): void
         . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF
         . "] deps_arr=[" . $sfAG . "] deps_obj=[" . $sfAH . "] deps_bad=[" . $sfAI
         . "] deps_other=[" . $sfAJ . "] not_type=[" . $sfAK . "] not_pattern=[" . $sfAL
-        . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN) . "\n";
+        . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN)
+        . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
+        . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15870,7 +15959,9 @@ function main(): void
         && $sfAG == "" && $sfAH == "" && $sfAI == "dependencies"
         && $sfAJ == "dependencies"
         && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
-        && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note") {
+        && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
+        && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
+        && $sfAR == "cities") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";
