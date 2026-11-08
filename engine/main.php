@@ -7670,9 +7670,51 @@ function api_schema_array_element_bounds(string $schema): string
 
 // Same bounds, from the request body (the generator call sites hold the body, the refusal holds the
 // extracted schema).
+// F454: minContains/maxContains on the F449 contains form are folded into the element bounds - every
+// element matches, so "at least k matches" is "at least k elements" and "at most m" is "at most m".
 function api_response_schema_array_bounds(string $body): string
 {
-    return api_schema_array_element_bounds(api_json_object_after($body, "schema"));
+    $schema = api_json_object_after($body, "schema");
+    $b = api_schema_array_element_bounds($schema);
+    $mn = api_schema_bound_value($schema, "\"minContains\"", 0);
+    $mx = api_schema_bound_value($schema, "\"maxContains\"", 0);
+    if ($mn == "" && $mx == "") {
+        return $b;
+    }
+    if ($b == "") {
+        return "";              // the counts need the counted shape; the refusal layer names it
+    }
+    $bp = explode(":", $b);
+    $bMin = (int) $bp[0];
+    $bMax = (int) $bp[1];
+    if ($mn != "") {
+        if (strpos($mn, ".") !== false || strpos($mn, "-") !== false) {
+            return "";
+        }
+        if ((int) $mn > $bMin) {
+            $bMin = (int) $mn;
+        }
+    }
+    if ($mx != "") {
+        if (strpos($mx, ".") !== false || strpos($mx, "-") !== false) {
+            return "";
+        }
+        if ($bMax == 0 || (int) $mx < $bMax) {
+            $bMax = (int) $mx;
+        }
+    }
+    // maxContains 0 asks for zero matches, which contains (one by default) contradicts; the writer
+    // always emits the first element, so this is unsatisfiable rather than merely unservable.
+    if ($mx != "" && $bMax < 1) {
+        return "";
+    }
+    if ($bMax > 0 && $bMin > $bMax) {
+        return "";
+    }
+    if ($bMin > 8) {
+        return "";
+    }
+    return $bMin . ":" . $bMax;
 }
 
 // F401: the names listed in `required`, comma-joined in the order they appear, or "" when the
@@ -8146,9 +8188,6 @@ function api_schema_not_ok(string $schema): int
 // value-level subschema would need the value evaluated - both keep the refusal.
 function api_schema_contains_ok(string $schema): int
 {
-    if (preg_match('/"(minContains|maxContains)"\s*:\s*[0-9]+/', $schema) == 1) {
-        return 0;
-    }
     $pp = strpos($schema, "\"properties\"");
     if ($pp === false) {
         return 0;
@@ -8210,6 +8249,20 @@ function api_schema_contains_ok(string $schema): int
         return 0;
     }
     return $mt[1] == $want ? 1 : 0;
+}
+
+// F454: minContains/maxContains on the F449 `contains` form. Every element of that shape matches
+// the contains subschema, so the counts are element-count bounds: the writer's budget narrows the
+// same way minItems/maxItems narrow it, and an interval it cannot serve (no element allowed even
+// though contains needs a match, more than the element ceiling, min above max) is refused rather
+// than served with a violating count.
+function api_schema_minmax_contains_ok(string $schema): int
+{
+    if (api_schema_contains_ok($schema) != 1) {
+        return 0;
+    }
+    $body = '{"json_schema":{"schema":' . $schema . '}}';
+    return api_response_schema_array_bounds($body) == "" ? 0 : 1;
 }
 
 // F446: dependentSchemas is honoured for its narrowest useful form - every trigger's subschema is
@@ -8556,8 +8609,12 @@ function api_schema_structural_unsupported(string $schema): string
     if (preg_match('/"(format|contentEncoding|contentMediaType)"\s*:\s*"[^"]*"/', $schema, $mk) == 1) {
         return $mk[1];
     }
+    // F454: the counts are honoured only on the F449 contains form (where every element matches and
+    // the count is an element bound the writer can enforce); an unservable pair is refused by name.
     if (preg_match('/"(minContains|maxContains)"\s*:\s*[0-9]+/', $schema, $mk) == 1) {
-        return $mk[1];
+        if (api_schema_minmax_contains_ok($schema) != 1) {
+            return $mk[1];
+        }
     }
     return "";
 }
@@ -16086,10 +16143,10 @@ function main(): void
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour
-    // paths, and contains/not/patternProperties/if/unevaluated* gained narrow ones
-    // (F449/F448/F451/F452/F453); each can be violated by what the model emits, so each is named
-    // instead of ignored. Two controls pin the matching boundary: an enum VALUE spelled "not" must
-    // not be mistaken for the keyword, while a property NAMED "not" is refused (the documented
+    // paths, and contains/not/patternProperties/if/unevaluated*/minContains/maxContains gained narrow
+    // ones (F449/F448/F451/F452/F453/F454); each can be violated by what the model emits, so each is
+    // named instead of ignored. Two controls pin the matching boundary: an enum VALUE spelled "not"
+    // must not be mistaken for the keyword, while a property NAMED "not" is refused (the documented
     // boundary of scanning the whole schema rather than only its root).
     $sfA = api_schema_keywords_unsupported('{"properties":{"a":{"type":"array","items":{"type":"string"}},"contains":{"type":"string"}}}');
     $sfB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"not":{"type":"integer"}}}');
@@ -16189,6 +16246,14 @@ function main(): void
     $sfBC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"unevaluatedItems":false}');
     $sfBD = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"unevaluatedItems":false}');
     $sfBE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"unevaluatedProperties":false}}');
+    // F454: minContains/maxContains fold into the element bounds on the F449 contains form; an
+    // unservable pair (ceiling exceeded, min above max) is refused by name, and the bounds function
+    // must return the folded interval the writers will receive.
+    $sfBF = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":2}');
+    $sfBG = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"maxContains":2}');
+    $sfBH = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":9}');
+    $sfBI = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":3,"maxContains":2}');
+    $sfBJ = api_response_schema_array_bounds('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":2,"maxContains":3}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -16213,7 +16278,9 @@ function main(): void
         . "] if_route=" . count($sfAZ)
         . "] uneval_props=[" . $sfBA . "] uneval_props_schema=[" . $sfBB
         . "] uneval_items=[" . $sfBC . "] uneval_items_wrong=[" . $sfBD
-        . "] uneval_prop_named=[" . $sfBE . "]\n";
+        . "] uneval_prop_named=[" . $sfBE . "]"
+        . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
+        . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -16238,7 +16305,9 @@ function main(): void
         && $sfAW == "" && $sfAX == "if" && $sfAY == ""
         && count($sfAZ) == 2 && $sfAZ[0] == "city" && $sfAZ[1] == "note"
         && $sfBA == "" && $sfBB == "" && $sfBC == ""
-        && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties") {
+        && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties"
+        && $sfBF == "" && $sfBG == "" && $sfBH == "minContains"
+        && $sfBI == "minContains" && $sfBJ == "2:3") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

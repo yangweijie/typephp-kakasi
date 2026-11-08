@@ -1099,6 +1099,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：`minContains`/`maxContains`（在 F449 的 `contains` 构造上按元素计数判定，可先写规格）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F454 计划与完成（`minContains`/`maxContains` 折成元素上下界）
+**F453 已完成**：`unevaluated*` 空判定形式。
+**F454 已完成**：F449 形态每元素皆匹配 ⇒ `minContains: k` ≡ 元素数 ≥ k、`maxContains: m` ≡ 元素数 ≤ m。`api_response_schema_array_bounds` 折叠两组计数（取更严；`maxContains:0`、`min>bMax`、`min>8` 不可服务）；`api_schema_contains_ok` 去掉计数早退；新增 `api_schema_minmax_contains_ok` 谓词守卫，`minContains|maxContains` 分支改名守卫。
+**门**：`cont_min=[]`、`cont_max=[]`、`cont_min_big=[minContains]`、`cont_min_over=[minContains]`、`cont_bounds=[2:3]`；旧 `$sfI` 仍 `minContains`。
+**活体（断言个数）**：min 3 → 200 四元素；max 2 → 200 一元素；min 9 / min3+max2 → 400 点名。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.575×**、哨兵 **0**（`engine/selftest_f454.log`、`engine/schema_required_f454.log`、`engine/schema_bounds_f454.log`、`engine/schema_count_f454.log`、`engine/schema_pattern_f454.log`、`engine/api_smoke_f454.log`、`engine/throughput_f454.log`）。
+**明确留拒（排队，F454 后）**：`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式形式、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状；五位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：真正的子 schema 求值器（值级 `pattern`/`enum`/嵌套约束的统一入口，先写规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

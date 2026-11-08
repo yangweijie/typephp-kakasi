@@ -1749,3 +1749,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：旧 `$sfF` 从 `unevaluatedProperties` 翻为 `""`；新增 `uneval_props=[]`、`uneval_props_schema=[]`、`uneval_items=[]`、`uneval_items_wrong=[unevaluatedItems]`、`uneval_prop_named=[unevaluatedProperties]`。
 - **活体**：`uneval_props_ok`/`uneval_props_schema_ok` **200 双键**、`uneval_items_ok` **200 数组**、`uneval_items_wrong_refuse` **400 点名**；用故意违反的子 schema 证明是空判定。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.505×**、哨兵 **0**。
+
+
+## ▶ 状态（F454，2026-11-08 23:24）——`minContains`/`maxContains` 在 `contains` 形态上支持（计数折成元素上下界）
+- **观察**：F449 形态里每元素皆匹配 ⇒ 计数＝元素数，可复用 `minItems`/`maxItems` 的预算。
+- **实现**：`api_response_schema_array_bounds` 折叠两组计数（取更严者；`maxContains:0`、`min>bMax`、`min>8` 返回不可服务）；`api_schema_contains_ok` 去掉计数早退；新增 `api_schema_minmax_contains_ok` 谓词守卫。
+- **门**：`cont_min=[]`、`cont_max=[]`、`cont_min_big=[minContains]`、`cont_min_over=[minContains]`、`cont_bounds=[2:3]`。
+- **活体（断言个数）**：min 3 → **4 元素**；max 2 → **1 元素**；min 9 / min 3+max 2 → **400 点名**。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.575×**、哨兵 **0**。

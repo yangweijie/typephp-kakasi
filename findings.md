@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F453）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F454）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3735,7 +3735,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
-| minContains / maxContains | **显式 400** | `SCHEMA-STRUCT`（F426） |
+| minContains / maxContains：F449 `contains` 形态（每个元素都匹配 ⇒ 计数就是元素数） | **支持**（折算为元素上下界；活体断言个数） | `cont_min`/`cont_max`/`cont_bounds`（F454） |
+| minContains / maxContains：无 `contains` / 其他形状 / 不可服务的计数对 | **显式 400** | `cont_min_big`/`cont_min_over`（F454） |
 | dependentSchemas：子 schema 恰为 `{"required":[…]}` | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`（F446） |
 | dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
 | dependencies：数组形式 / `{"required":[…]}` 对象形式 | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`（F447） |
@@ -3743,7 +3744,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`（扁平全字符串） | **支持**（构造满足；值路由保留） | `not_type`/`not_route`（F448） |
 | not：子 schema 含值级规则（pattern 等）/ 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`（F448） |
 | contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
-| contains：类型不匹配 / 值级规则（pattern 等）/ 同带 min-maxContains | **显式 400** | `contains_mismatch`/`contains_pattern`（F449） |
+| contains：类型不匹配 / 值级规则（pattern 等） | **显式 400** | `contains_mismatch`/`contains_pattern`（F449） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：模式匹配到已发出键 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`（F451） |
 | if/then/else：`if` 恰为单 `type`，按类型选中 `then`/`else`，生效分支缺省或恰为 `{"type":"object"}`（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`（F452） |
@@ -3758,7 +3759,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`minContains`/`maxContains`、`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式形式、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式形式、`if` 的丰富生效分支、`unevaluated*` 会真正判定的形状、五位及以上小数、无界 `multipleOf` > 999999999、oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4258,3 +4259,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`uneval_props_ok`/`uneval_props_schema_ok` **200 双键**、`uneval_items_ok` **200 数组 ≥1 元素**、`uneval_items_wrong_refuse` **400 点名**；bounds/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.505×**；哨兵 **0**（`engine/selftest_f453.log`、`engine/schema_required_f453.log`、`engine/schema_bounds_f453.log`、`engine/schema_count_f453.log`、`engine/schema_pattern_f453.log`、`engine/api_smoke_f453.log`、`engine/throughput_f453.log`）。
 **记法**：**"空判定"比"空约束"更强**——前者断言关键字根本没有可判对象（连子 schema 都不该被求值），所以要用一个**故意违反的子 schema** 做活体，才能区分"真的没判"与"碰巧满足"。
+
+## F454：`minContains`/`maxContains` 在 `contains` 形态上支持（计数折成元素上下界）
+**观察**：F449 形态里**每个元素都匹配** `contains`（单数组 + 单项类型），所以"至少 k 个匹配"就是"至少 k 个元素"，"至多 m 个"就是"至多 m 个元素"——计数约束与 `minItems`/`maxItems` 共用同一个写入器预算。
+**实现**：`api_response_schema_array_bounds` 在原有形状检测之上读 `minContains`/`maxContains` 并折叠：`bMin=max(bMin,minContains)`、`bMax` 取两者更严；`maxContains:0` 与 `min>bMax` 或 `bMin>8` 返回 `""`（不可服务）。`api_schema_contains_ok` 去掉"带计数一律拒绝"的早退；新增 `api_schema_minmax_contains_ok`（要求 contains 形态成立且折叠后的界可服务），结构判定的 `minContains|maxContains` 分支改为**谓词守卫**，不满足才点名。
+**门**：`cont_min=[]`、`cont_max=[]`、`cont_min_big=[minContains]`、`cont_min_over=[minContains]`、`cont_bounds=[2:3]`（折叠后的界就是要交给写入器的值）；旧 `$sfI`（无 contains 的 `minContains:2`）仍 `minContains`。
+**活体（断言个数而不是状态码）**：`cont_min_ok`（min 3）→ **200，4 个元素**；`cont_max_ok`（max 2）→ **200，1 个元素**；`cont_min_big_refuse`（min 9）与 `cont_min_over_refuse`（min 3 > max 2）**400 点名 minContains**；`contains_*` 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**；8001 par/fairness **0**；scaling **1.575×**；哨兵 **0**（`engine/selftest_f454.log`、`engine/schema_required_f454.log`、`engine/schema_bounds_f454.log`、`engine/schema_count_f454.log`、`engine/schema_pattern_f454.log`、`engine/api_smoke_f454.log`、`engine/throughput_f454.log`）。
+**记法**：**计数关键字先问"匹配集合是否等于全集"**——等于全集时计数就退化为元素计数，复用已有预算；不等于全集才需要真正的子 schema 求值。落点是**写入器实际消费的那个函数**（`api_response_schema_array_bounds`），而不是形状检测器，这样四个调用点一次生效。
