@@ -832,3 +832,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **过程错误**：第一版只加了值感知例外、**忘了把 `uniqueItems` 加回关键字名单**（早先为避让并行会话的 F424 撤回过那行）⇒ 例外是死代码，门 `uniq_true=[]` 抓住，补回名单后 PASS。**记法：例外与名单成对改；门必须断言该拒的一侧确实被拒。**
 **明确留拒（排队）**：`contains`、`not`、`if/then/else`、`dependentRequired`、`propertyNames`、`unevaluatedItems/Properties`（同样会静默降级或违反，需逐个判断"是否构造上满足"再决定实现/拒绝）；number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999。
 **顺位**：结构类关键字的"实现或显式拒绝"清扫 → 分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## 日志卫生（2026-11-08，随 F426 同轮）
+**规则**：①**证据与噪音的分界是"是否入库"**——`.gitignore` 覆盖的产物（`*.log`、`*.kv`、`*.bak`、`__pycache__/`、`engine/par_gate_*.txt`）与未跟踪的一次性文件可删；**已提交的日志只有"零引用且属编译转录"一类才删**，且必须逐类说明。②"改前 FAIL"的成对证据、梯的收尾日志、parity oracle（`llama_logits*.bin`）与构建缓存（`engine/build/`）**不删**。③删完必须核 `git status` 无删除条目（证明没误删已跟踪文件）与体积变化，并记录保留项的理由。
+**本轮执行**：已忽略日志 2198 个、`.kv` 8 个（27 MB）、未跟踪 stray 1 个、零引用编译转录 36 个（2026 行）、`main.php.f160.bak`/`par_gate_result.txt`/`__pycache__`；体积 **259→197 MB**；已跟踪日志从 453 降到 417（只减 36）。
+**仍保留（待决定）**：216 个零引用的 run/gate/analysis 转录（约 2.3 MB）——它们是各轮梯的原始记录，删不删属于"是否裁剪提交历史"的决定，不擅自处理。
+**操作注意**：`git add -A -- 'glob'` 对**已删除**文件不展开，须 `git ls-files 'glob' | xargs git rm`；本机偶尔 `cd` 报 `No such file or directory`，但 Bash 工作目录持久化，相对路径仍在仓库内执行 ⇒ 每次删除前先核 `pwd` 与 `git status`。

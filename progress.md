@@ -1489,4 +1489,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 **执行**：删已忽略日志 **2198 个（407 KB）**、前缀缓存 **8 个 .kv（27 MB）**、未跟踪 stray **1 个**；仓库体积 **259 MB → 197 MB（释放 62 MB）**。删后核验：`git status` 只剩本轮 4 个改动、`ls engine/*.log` 仍 **453**（已跟踪未动）、`engine/build` **38 MB** 完好、exe 为 13:27:57 新构建。
 **未删并说明**：252 个**未被文档引用**的已跟踪日志（2.6 MB，多为各轮中间 build/run/gate 记录）——删它们会破坏历史记录，留给"是否裁剪提交历史"的决定。
 **第二步（同一轮）**：其中 **36 个 `engine/build_f*.log`（288 KB）确认零引用**（纯 TypePHP 编译转录，代码已提交、可重建），单独提交删除；run/gate 类转录是各轮梯的原始记录，保留。**这一步也说明：glob 传给 `git add -A` 对"已删除文件"不展开（暂存区只多了 progress.md），要先用 `git ls-files` 取名单再 `git rm`。**
+**第三步（收尾清点）**：再删 `engine/main.php.f160.bak`（396 KB，F160 的源码备份，代码已在 git 里）、`engine/par_gate_result.txt`（旧 gate 输出，`scripts/par_gate.bat` 会重新生成）、`engine/tests/__pycache__/`。**保留且说明理由**：`engine/build/`（38 MB，删了要全量重建）、`engine/tests/llama_logits*.bin`（51 MB，parity 的 llama.cpp 参考 logits，是**测试 oracle 不是日志**）、`probe/*` 的构建产物（重新跑探针要用）、`engine/models/`（空目录）。清理后体积仍 197 MB——体积大头是 oracle 与构建缓存，不是日志。
 **过程问题**：清理命令里的 `cd` 一次失败（`No such file or directory`），但 Bash 工具的工作目录持久化，相对路径仍在仓库内执行——**正是"`cd` 失败后相对路径仍在旧目录执行"那条陷阱**；改为先核 `pwd` 与 `git status` 再继续，未造成误删。
