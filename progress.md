@@ -1509,4 +1509,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-PROPS-COUNT` 8 例（含 required 子集 `sub1=[]`/`sub2=[minProperties]`、混合边界 `mixed=[minProperties]`、空格排版）⇒ PASS；`SCHEMA-KEYWORDS` 40 例同时通过。
 - **活体**：`engine/schema_required_f427.log` —— 可满足 200、两例不可满足 **400 点名**；count/bounds/pattern 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.493×**、哨兵 **0**。
-- **过程问题**：后台自检命令用相对路径 grep 日志（cwd 不对）⇒ 任务标"失败"，但日志 `RUN_EXIT=0`。**判据：后台失败先看输出里失败的是哪一步，探针的退出码不是引擎的退出码。**
+- **过程问题**：后台自检命令用相对路径 grep 日志（cwd 不对）⇒ 任务标"失败"，但日志 `RUN_EXIT=0`。**判据：后台失败先看输出里失败的是哪一步，探针的退出码不是引擎的退出码。**（F428 复核后更正：真因是路径写成 `/c/git/typephp-kakasi`，漏了中间一层 `c`。）
+
+
+## ▶ 状态（F428，2026-11-08 14:18）——`format`/`patternProperties`/`contentEncoding`·`contentMediaType` 按名拒绝
+- **改前活体**：三条全 **200 违反**——`format:"email"` 发非邮箱、`patternProperties ^c→integer` 下 `city` 发字符串、`contentEncoding:"base64"` 发散文。
+- **实现**：`api_schema_structural_unsupported` 改**分形状四段匹配**（对象 / 布尔或对象 / 字符串 / 整数），新覆盖四个关键字，且**名为 `format` 的属性不会被误判**（属性值是对象）。
+- **门**：`SCHEMA-STRUCT` 扩到 15 项，含新关键字 + `format_prop=[]` 对照。
+- **活体**：三例应从 200 翻成 **400 点名**。
+- **梯（新二进制 14:17:44）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT` 15 项全对，含 `format_prop=[]` 对照）；活体三例 400 点名（改前 200 违反，`schema_required_f428pre.log`）；count/bounds/pattern 不回退；8000 **115/0**、8001 par/fairness **0**、scaling **1.530×**、哨兵 **0**。

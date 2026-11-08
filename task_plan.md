@@ -864,3 +864,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.493×**、哨兵 **0**（`engine/selftest_f427.log`、`engine/schema_required_f427.log`、`engine/api_smoke_f427.log`、`engine/throughput_f427.log`）。
 **明确留拒（排队）**：`format`、`patternProperties`、`contentEncoding`/`contentMediaType`（尚未复核口径）；number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；结构类关键字中"可能构造满足"的（如 `propertyNames` 只约束键名）逐个评估。
 **顺位**：`format`/`patternProperties` 口径复核 → 分片多卡 / FR-05（本机不可验证）。
+
+
+## F428 计划与完成（值级约束：`format` / `patternProperties` / `contentEncoding`·`contentMediaType`）
+**F427 已完成**：`minProperties`/`maxProperties` 按键数可满足则支持。
+**改前活体**：三条均 200 违反（非邮箱 / 字符串代替整数 / 散文代替 base64）；`patternProperties`/`contentEncoding`/`contentMediaType` 引用数 0，`format` 的 3 处引用属于 `response_format`。
+**F428 已完成**：结构判据改**分形状四段匹配**（对象值 / 布尔或对象 / 字符串值 / 整数值），新增四个关键字，并保留 `format_prop=[]` 对照（名为 format 的属性不误判）。
+**门**：`SCHEMA-STRUCT` 15 项。
+**活体**：三例 400 点名（改前三例 200）。
+**梯（新二进制 14:17:44）**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.530×**、哨兵 **0**（`engine/selftest_f428.log`、`engine/schema_required_f428.log`、`engine/api_smoke_f428.log`、`engine/throughput_f428.log`）。
+**明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999；`propertyNames` 等"可能构造满足"的结构关键字逐个评估。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

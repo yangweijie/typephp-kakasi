@@ -166,6 +166,19 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "maxProperties": 1},
      lambda code, txt: code == 400 and "maxProperties" in txt),
+    # F428: format / patternProperties / contentEncoding constrain VALUES (or keys that map to value
+    # constraints) which the generator does not implement - each must be refused by name instead of
+    # answered with text that violates it.
+    ("format_refuse", "Say where you are.",
+     {"type": "object", "properties": {"email": {"type": "string", "format": "email"}}},
+     lambda code, txt: code == 400 and "format" in txt),
+    ("patternprops_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}},
+      "patternProperties": {"^c": {"type": "integer"}}},
+     lambda code, txt: code == 400 and "patternProperties" in txt),
+    ("contentenc_refuse", "Say where you are.",
+     {"type": "object", "properties": {"blob": {"type": "string", "contentEncoding": "base64"}}},
+     lambda code, txt: code == 400 and "contentEncoding" in txt),
 ]
 
 bad = 0

@@ -7513,9 +7513,20 @@ function api_schema_plan_count(string $schema): int
 function api_schema_structural_unsupported(string $schema): string
 {
     $mk = [];
-    if (preg_match('/"(contains|minContains|maxContains|not|if|dependentRequired|dependentSchemas|'
-        . 'dependencies|propertyNames|unevaluatedItems|unevaluatedProperties)"\s*:\s*'
-        . '(?:\{|\[|[0-9]+|true|false)/', $schema, $mk) == 1) {
+    // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
+    // an object) is not mistaken for the format keyword (whose value is a string).
+    if (preg_match('/"(contains|patternProperties|not|if|dependentRequired|dependentSchemas|'
+        . 'dependencies|propertyNames)"\s*:\s*\{/', $schema, $mk) == 1) {
+        return $mk[1];
+    }
+    if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
+        $schema, $mk) == 1) {
+        return $mk[1];
+    }
+    if (preg_match('/"(format|contentEncoding|contentMediaType)"\s*:\s*"[^"]*"/', $schema, $mk) == 1) {
+        return $mk[1];
+    }
+    if (preg_match('/"(minContains|maxContains)"\s*:\s*[0-9]+/', $schema, $mk) == 1) {
         return $mk[1];
     }
     return "";
@@ -14689,13 +14700,24 @@ function main(): void
     $sfH = api_schema_keywords_unsupported('{"properties":{"not":{"type":"string"}}}');
     $sfI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"minContains":2}');
     $sfJ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"unevaluatedItems":true}');
+    // F428: value-level constraints the generator does not implement. The last one is the control
+    // that the shape-aware match buys: a property NAMED "format" is not the keyword.
+    $sfK = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","format":"email"}}}');
+    $sfL = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"patternProperties":{"^a":{"type":"integer"}}}');
+    $sfM = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","contentEncoding":"base64"}}}');
+    $sfN = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","contentMediaType":"image/png"}}}');
+    $sfO = api_schema_keywords_unsupported('{"properties":{"format":{"type":"string"}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
-        . "] prop_named=[" . $sfH . "] minContains=[" . $sfI . "] unevaluatedItems=[" . $sfJ . "]\n";
+        . "] prop_named=[" . $sfH . "] minContains=[" . $sfI . "] unevaluatedItems=[" . $sfJ
+        . "] format=[" . $sfK . "] patternProperties=[" . $sfL . "] contentEncoding=[" . $sfM
+        . "] contentMediaType=[" . $sfN . "] format_prop=[" . $sfO . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
-        && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems") {
+        && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
+        && $sfK == "format" && $sfL == "patternProperties" && $sfM == "contentEncoding"
+        && $sfN == "contentMediaType" && $sfO == "") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

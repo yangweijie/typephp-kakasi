@@ -3998,4 +3998,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`minproperties_ok` 200（键集合正确）、`minproperties_bad` **400 点名 minProperties**、`maxproperties_bad` **400 点名 maxProperties**（改前两例 200）；其余 required/additionalProperties 用例不回退。
 **记法**：**"数个数"的约束要先算出发射器会数出多少**——plan 与 required 子集让这个数在生成前确定；可满足就支持，不可满足就拒，两者都不是"一律拒绝"能替代的。**改前证据要在动代码之前取**，否则改了以后只剩"应当如此"的说辞。
 **梯（新二进制 14:03:32）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（181 + 新门 `SCHEMA-PROPS-COUNT`），八个判别量全打印且符合预期：`min2=[] min3=[minProperties] max1=[maxProperties] max2=[] sub1=[] sub2=[minProperties] mixed=[minProperties] wire3=[minProperties]`。活体 `engine/schema_required_f427.log`：`minproperties_ok` **200（两键齐）**、`minproperties_bad` **400 点名 minProperties**、`maxproperties_bad` **400 点名 maxProperties**（改前三例里两例是 200 违反）；count/bounds/pattern 三个 harness 不回退。8000 **115/0**、8001 par/fairness **0**、scaling **1.493×**、哨兵 **0**（`engine/selftest_f427.log`、`engine/api_smoke_f427.log`、`engine/throughput_f427.log`）。
-**过程问题**：后台自检命令把日志当相对路径 grep，而该命令的 cwd 不是仓库根 ⇒ 三条 `No such file`、任务被标记失败；**引擎本身 `RUN_EXIT=0`**。判据：后台"失败"先看**输出文件里失败的到底是哪一步**——探针找不到文件的退出码不是引擎的退出码。
+**过程问题（F428 复核后更正归因）**：后台自检命令里的日志路径写错（`/c/git/typephp-kakasi`，漏了中间一层 `c`）⇒ 三条 `No such file`、任务被标记失败；**引擎本身 `RUN_EXIT=0`**。当时记成"cwd 不对"是错的——`ls /c/git/c` 与 `cmd dir` 都能看到仓库。判据：`No such file or directory` 先核**路径拼写**与 `pwd`，再看输出里失败的是哪一步；探针的退出码不是引擎的退出码。
+
+
+## F428：`format` / `patternProperties` / `contentEncoding`·`contentMediaType`——值级约束**按名拒绝**，且匹配看值的真实形状
+**改前活体（`engine/schema_required_f428pre.log`）**：三条全是 **200 且输出违反约束**——`format:"email"` → `{"email":"youremailaddresshere.com, …"}`（不是邮箱）；`patternProperties:{"^c":{"type":"integer"}}` 下 `city` 命中 `^c` 却发**字符串**；`contentEncoding:"base64"` → 普通散文 ⇒ `VERDICT: FAIL cases=3`。`main.php` 里 `patternProperties`/`contentEncoding`/`contentMediaType` 引用数 **0**；`format` 的 3 处引用都属于 `response_format`，与 Schema 关键字无关。
+**实现**：`api_schema_structural_unsupported` 改成**分形状四段匹配**（对象值 / 布尔或对象 / 字符串值 / 整数值），既覆盖新关键字，又**避免把名为 `format` 的属性误当关键字**——属性名的值是对象，而 `format` 关键字的值是字符串。门里为此加了对照 `format_prop=[]`。
+**门**：`SCHEMA-STRUCT` 扩到 15 项：`format`/`patternProperties`/`contentEncoding`/`contentMediaType` 均点名，`format_prop=[]`（属性名不误判），原有 10 项与 `enum_value=[]`、`prop_named=[not]` 保持不变。
+**活体**：`format_refuse`/`patternprops_refuse`/`contentenc_refuse` 三例应 **400 且含各自关键字名**（改前三例 200 违反）。
+**过程问题（纠正上一轮的归因）**：F427 与 F428 各有一次后台自检"失败"，真因是**我把仓库路径写成了 `/c/git/typephp-kakasi`（少一层 `c`）**，不是"cwd 不对"，也不是文件系统故障——`ls /c/git/c | grep kakasi` 与 `cmd dir` 都证明仓库完好。**判据：`No such file or directory` 先核路径拼写与 `pwd`，再怀疑挂载；后台任务的退出码来自脚本最后一步，不等于引擎退出码。**
+**记法**：**值级约束（format/contentEncoding/…）没有"构造满足"可言——生成器的字符串是模型选的，所以只能拒绝；但"拒绝谁"要看值的形状，"名叫 format 的属性"不是 format。**
