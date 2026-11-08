@@ -1,0 +1,30 @@
+wide_0_100000        status=200 ok=True text={"n":100000}
+wide_1000_999999     status=200 ok=True text={"n":234567}
+onesided_min_5       status=200 ok=True text={"n":5}
+onesided_max_15      status=200 ok=True text={"n":12}
+narrow_1_5           status=200 ok=True text={"n":2}
+multi_leaf_refuse    status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+negative_served      status=200 ok=True text={"n":-1000}
+straddling_served    status=200 ok=True text={"n":1000}
+multipleof_served    status=200 ok=True text={"n":7}
+multipleof_negative  status=200 ok=True text={"n":-14}
+multipleof_unsatisfiable status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+multipleof_unbounded_5000 status=200 ok=True text={"n":23450000}
+multipleof_unbounded_250000 status=200 ok=True text={"n":2345000000}
+multi_leaf_multipleof status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+number_leaf_multipleof status=200 ok=False text=10
+float_refuse         status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+int_leaf_float_bounds status=200 ok=True text={"n":2}
+int_leaf_float_unsatisfiable status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+excl_wide_served     status=200 ok=True text={"n":23456}
+excl_onesided_min    status=200 ok=True text={"n":7}
+excl_onesided_max    status=200 ok=True text={"n":23}
+excl_unsatisfiable   status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+mix_strict_min       status=200 ok=True text={"n":7}
+mix_strict_max       status=200 ok=True text={"n":12}
+mix_incl_stricter    status=200 ok=True text={"n":5}
+mix_unsatisfiable    status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+bigmult_served       status=200 ok=True text={"n":5000}
+bigmult_unsatisfiable status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+VERDICT: FAIL cases=1
+CHECK_EXIT=1

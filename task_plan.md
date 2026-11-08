@@ -920,3 +920,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**（`engine/selftest_f432.log`、`engine/schema_required_f432.log`、`engine/api_smoke_f432.log`、`engine/throughput_f432.log`）。
 **明确留拒（排队）**：number 叶浮点界、无界 `multipleOf` > 999999、多叶 multipleOf 的实现；`dependentSchemas`/`dependencies` 仍未实现（条件 schema，不是键集合）。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F433 计划与完成（`number` 叶 + `multipleOf`：无路由 ⇒ 点名拒绝）
+**F432 已完成**：`dependentRequired` 按发出键集判定。
+**改前活体**：`number` 叶 + `multipleOf` → **200 正文 `10`**（散文，不是 JSON）。
+**F433 已完成**：无界分支拒绝"`multipleOf` + `type:number`"（写入器只服务整数叶）；消息补明。
+**门**：`SCHEMA-BOUND-REJECT` 加 `mult_number`。
+**活体**：`number_leaf_multipleof` 400 点名；bounds/required/count/pattern 不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.606×**、哨兵 **0**（`engine/selftest_f433.log`、`engine/schema_bounds_f433.log`、`engine/api_smoke_f433.log`、`engine/throughput_f433.log`）。
+**明确留拒（排队）**：number 叶浮点界的**实现**（需小数写入器）；无界 `multipleOf` > 999999；多叶 multipleOf 的实现；`dependentSchemas`/`dependencies`。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。

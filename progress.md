@@ -1554,3 +1554,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-STRUCT` 24 项（`dep_ok=[]`、`dep_subset/dep_undeclared/dep_mixed` 点名）。
 - **活体**：`dep_ok` **200 双键**（改前 400）、两例违反 **400 点名**；其余 harness 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**。
+
+
+## ▶ 状态（F433，2026-11-08 15:52）——`number` 叶 + `multipleOf`：没有路由，返回散文
+- **改前活体**：`{"n":{"type":"number","multipleOf":3}}` → **200 正文 `10`**（不是 JSON）。
+- **实现**：无界分支加"`multipleOf` + `type:number` ⇒ 拒绝"；消息补该支持面。
+- **门**：`SCHEMA-BOUND-REJECT` 加 `mult_number`（期望 1）。
+- **活体**：`number_leaf_multipleof` **400 点名**（改前 200 散文）；其余 harness 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.606×**、哨兵 **0**。

@@ -123,6 +123,14 @@ cases = [
      or (code == 200 and isinstance(json.loads(txt).get("a"), int)
          and isinstance(json.loads(txt).get("b"), int)
          and json.loads(txt)["a"] % 3 == 0 and json.loads(txt)["b"] % 5 == 0)),
+    # F433: a NUMBER leaf with multipleOf. The suffix writer only serves integer leaves, so either
+    # the served number is a multiple or the request is refused - an arbitrary number that happens
+    # not to be one is exactly the silent violation this surface keeps closing.
+    ("number_leaf_multipleof", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 3}}},
+     lambda code, txt: (code == 400 and "multipleOf" in txt)
+     or (code == 200 and val_of(txt, "n") is not None
+         and val_of(txt, "n") % 3 == 0)),
     ("float_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),

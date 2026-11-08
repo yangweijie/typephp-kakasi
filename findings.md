@@ -4048,3 +4048,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`dep_ok` **200 双键**（改前 400）、`dep_bad_subset`/`dep_undeclared` **400 点名**；bounds/required/count/pattern 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**（`engine/selftest_f432.log`、`engine/schema_required_f432.log`、`engine/api_smoke_f432.log`、`engine/throughput_f432.log`）。
 **记法**：**"条件约束"的判据是"条件是否真的触发"**——trigger 不在发出的键里时依赖不适用；把"会发出哪些键"算出来（plan 或 required 子集），条件约束就和普通约束一样可判。**这是"构造满足 ⇒ 不该拒绝"在条件语义上的第三次复用（F398/F402/F429 之后）。**
+
+
+## F433：`number` 叶上的 `multipleOf`——没有路由，答案竟是**散文**
+**改前活体（`engine/schema_bounds_f433pre.log`）**：`{"n":{"type":"number","multipleOf":3}}` → **200 且正文是 `10`**——不是 JSON 对象，连"非倍数"都算不上：无界倍数检测器要求 `type:integer`，这个 schema 没有任何路由接手，最终落到无约束文本。
+**实现**：`api_schema_bounds_unsupported` 的无界分支加一条——`multipleOf` 存在且 schema 含 `"type":"number"` ⇒ 拒绝（倍数写入器只服务整数叶）；400 消息补"multipleOf on a number (non-integer) leaf is not supported"。
+**门**：`SCHEMA-BOUND-REJECT` 加 `mult_number`（期望 1）。
+**活体**：`number_leaf_multipleof` **400 且消息含 multipleOf**（改前 200 散文）；bounds/required/count/pattern 不回退。
+**梯**：自检 **182/0**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.606×**、哨兵 **0**（`engine/selftest_f433.log`、`engine/schema_bounds_f433.log`、`engine/api_smoke_f433.log`、`engine/throughput_f433.log`）。
+**记法**：**"没有路由"本身就是一种回答**——它会把 schema 请求变成散文；对只服务整数叶的机制，非整数叶必须**点名拒绝**，否则调用方连"约束被忽略"都看不出来。**改前探针要断言"输出是 JSON 且取值合规"，只看状态码会把散文当成通过。**
