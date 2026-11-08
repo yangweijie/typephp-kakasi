@@ -841,3 +841,4 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **仍保留（待决定）**：216 个零引用的 run/gate/analysis 转录（约 2.3 MB）——它们是各轮梯的原始记录，删不删属于"是否裁剪提交历史"的决定，不擅自处理。
 **操作注意**：`git add -A -- 'glob'` 对**已删除**文件不展开，须 `git ls-files 'glob' | xargs git rm`；本机偶尔 `cd` 报 `No such file or directory`，但 Bash 工作目录持久化，相对路径仍在仓库内执行 ⇒ 每次删除前先核 `pwd` 与 `git status`。
 **工具（把规则变成可执行的）**：`bash scripts/check_citations.sh [--list]` 扫描三份计划文件 + `docs/` + `specs/` 里被引用的 `*.log` 名，报告"被引用但未入库"的数量。首次运行：**cited_logs=627 tracked=279 missing=348**——文档引用的日志数远超仓库实际持有的，说明"引用悬空"是长期现象而非本轮造成；该脚本只报告不判失败。
+**悬空引用的分布（首跑）**：`run` 91、`api_smoke` 71、`build` 47、`par_smoke` 33、`fairness` 33、`serve` 9、`throughput` 5 等 —— 绝大多数是**历史轮次写了日志名但那批日志从未入库**（`.gitignore` 的 `*.log` 之下、只有选择性地 `git add -f`）。**处理口径**：不改写历史文档（那会篡改当时的记录），而是①此后每轮把**被引用的**日志强制入库；②用该脚本在每次清理前报告增量，而不是事后发现。
