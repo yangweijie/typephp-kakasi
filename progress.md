@@ -1719,3 +1719,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`SCHEMA-NUM-FRAC` 的 `num_dec4` 由 `""` 改为 `n|15111|-996|0`，加文本断言 `dec4_text=[{"n":1.5111}]`。
 - **活体**：`float_dec4_served` **200 `{"n":1.5111}`**、新增 `float_dec5_refuse` **400**；1/2/3 位与负数不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.548×**、哨兵 **0**。
+
+
+## ▶ 状态（F451，2026-11-08 22:35）——`patternProperties` 的**空约束**形式从拒绝变支持；匹配/多条模式仍点名拒绝
+- **实现**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（块不约束任何属性）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
+- **门**：`pp_vacuous=[]`、`pp_match=[patternProperties]`、`pp_multi=[patternProperties]`、`pp_route=2`；旧 `$sfL` 边界不变。
+- **活体**：`patternprops_vacuous_ok` **200 双键**、`patternprops_refuse`（`^c` 命中 city）**400 点名**。
+- **本轮自伤**：拆 `(patternProperties|if)` 时捕获组消失但 `return $mk[1];` 未改 ⇒ 含 `"if"` 的 schema 触发 `null returned` 致命错误（自检 127 PASS 后退出，`selftest_f451.log`）。修为 `return "if";`，`selftest_f451b.log` 182/0。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.519×**、哨兵 **0**。

@@ -176,6 +176,12 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}},
       "patternProperties": {"^c": {"type": "integer"}}},
      lambda code, txt: code == 400 and "patternProperties" in txt),
+    # F451: the VACUOUS form is served - the pattern matches none of the keys the answer will
+    # contain, so the block constrains no property. The matching form above is its control.
+    ("patternprops_vacuous_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "patternProperties": {"^x": {"type": "integer"}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
     ("contentenc_refuse", "Say where you are.",
      {"type": "object", "properties": {"blob": {"type": "string", "contentEncoding": "base64"}}},
      lambda code, txt: code == 400 and "contentEncoding" in txt),

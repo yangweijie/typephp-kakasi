@@ -8529,10 +8529,16 @@ function api_schema_structural_unsupported(string $schema): string
     if (preg_match('/"contains"\s*:\s*\{/', $schema) == 1 && api_schema_contains_ok($schema) != 1) {
         return "contains";
     }
+    // F451: patternProperties is judged for its vacuous form (pattern matches none of the emitted
+    // keys); a matching pattern would constrain that property's value and keeps the refusal.
+    if (preg_match('/"patternProperties"\s*:\s*\{/', $schema) == 1
+        && api_schema_pattern_props_ok($schema) != 1) {
+        return "patternProperties";
+    }
     // F428: the value's real shape decides the match, so a property NAMED "format" (whose value is
     // an object) is not mistaken for the format keyword (whose value is a string).
-    if (preg_match('/"(patternProperties|if)"\s*:\s*\{/', $schema, $mk) == 1) {
-        return $mk[1];
+    if (preg_match('/"if"\s*:\s*\{/', $schema) == 1) {
+        return "if";
     }
     if (preg_match('/"(unevaluatedItems|unevaluatedProperties)"\s*:\s*(?:\{|true|false)/',
         $schema, $mk) == 1) {
@@ -8545,6 +8551,62 @@ function api_schema_structural_unsupported(string $schema): string
         return $mk[1];
     }
     return "";
+}
+
+// F451: patternProperties is honoured for its VACUOUS form only - a single pattern that matches
+// none of the keys the answer will contain. The block then constrains no property, so it holds by
+// construction. A pattern that does match an emitted key would constrain that property's VALUE,
+// which needs the value evaluated, and more than one pattern entry would need every entry checked -
+// both keep the refusal. The key set is the one the conditional keywords use, and the pattern goes
+// through the same length guard as propertyNames.
+function api_schema_pattern_props_ok(string $schema): int
+{
+    $pp = strpos($schema, "\"patternProperties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $blk = api_balance_block($schema, $bo);
+    if ($blk == "") {
+        return 0;
+    }
+    $mp = [];
+    if (preg_match('/^\{\s*"((?:[^"\\\\]|\\\\.)*)"\s*:\s*\{/', $blk, $mp) != 1) {
+        return 0;
+    }
+    if (strlen($mp[1]) == 0 || strlen($mp[1]) > 200) {
+        return 0;
+    }
+    // Exactly one entry: after the first value block the map must close immediately.
+    $vbo = strpos($blk, "{", 1);
+    if ($vbo === false) {
+        return 0;
+    }
+    $vblk = api_balance_block($blk, $vbo);
+    if ($vblk == "") {
+        return 0;
+    }
+    if (trim(substr($blk, $vbo + strlen($vblk))) != "}") {
+        return 0;
+    }
+    $emit = api_schema_emitted_set($schema);
+    if ($emit == "") {
+        return 0;
+    }
+    $re = "#" . str_replace("#", "\\#", $mp[1]) . "#";
+    foreach (explode(",", $emit) as $name) {
+        $r = preg_match($re, $name);
+        if ($r != 0 && $r != 1) {
+            return 0;       // unreadable pattern: refuse rather than read the error as "no match"
+        }
+        if ($r == 1) {
+            return 0;       // matches an emitted key: the value would have to be evaluated
+        }
+    }
+    return 1;
 }
 
 function api_schema_keywords_unsupported(string $body): string
@@ -15947,6 +16009,13 @@ function main(): void
     $sfAP = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"integer"}}');
     $sfAQ = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"pattern":"^x"}}');
     $sfAR = api_response_schema_array_string('{"json_schema":{"schema":{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"}}}}');
+    // F451: patternProperties is honoured only when its single pattern matches none of the emitted
+    // keys; a matching pattern, a second entry that matches, or an unreadable pattern keeps the
+    // refusal, and the route case pins that the value generator is not disqualified.
+    $sfAS = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^x":{"type":"integer"}}}');
+    $sfAT = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^c":{"type":"integer"}}}');
+    $sfAU = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^x":{"type":"integer"},"^c":{"type":"integer"}}}');
+    $sfAV = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^x":{"type":"integer"}}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -15964,7 +16033,9 @@ function main(): void
         . "] deps_other=[" . $sfAJ . "] not_type=[" . $sfAK . "] not_pattern=[" . $sfAL
         . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN)
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
-        . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]\n";
+        . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
+        . " pp_vacuous=[" . $sfAS . "] pp_match=[" . $sfAT . "] pp_multi=[" . $sfAU
+        . "] pp_route=" . count($sfAV) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "unevaluatedProperties" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -15983,7 +16054,9 @@ function main(): void
         && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
         && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
-        && $sfAR == "cities") {
+        && $sfAR == "cities"
+        && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
+        && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note") {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

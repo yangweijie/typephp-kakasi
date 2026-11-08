@@ -1062,6 +1062,17 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：`contains`（需先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F451 计划与完成（`patternProperties` 的空约束形式）
+**F450 已完成**：number 叶小数界到四位。
+**F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
+**过程**：拆 alternation 时捕获组消失但 `return $mk[1];` 未改 ⇒ 含 `"if"` 的 schema 触发 `null returned`，自检 127 PASS 后致命退出；修为 `return "if";`。
+**门**：`pp_vacuous=[]`、`pp_match=[patternProperties]`、`pp_multi=[patternProperties]`、`pp_route=2`；旧 `$sfL` 边界不变。
+**活体**：`patternprops_vacuous_ok` 200 双键、`patternprops_refuse` 400 点名。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.519×**、哨兵 **0**（`engine/selftest_f451b.log`、`engine/schema_required_f451.log`、`engine/schema_bounds_f451.log`、`engine/schema_count_f451.log`、`engine/schema_pattern_f451.log`、`engine/api_smoke_f451.log`、`engine/throughput_f451.log`）。
+**明确留拒（排队）**：`if`/`unevaluated*`（需子 schema 求值器）、`minContains`/`maxContains`、`contains`/`not` 的值级子 schema、`patternProperties` 的匹配/多条模式、五位及以上小数、无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`if/then/else`（先写子 schema 求值规格）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F450 计划与完成（number 叶小数界到四位）
 **F449 已完成**：`contains` 的单项类型形式。
 **F450 已完成**：三处宽度假设一次改全——`api_schema_scaled` 正则 `{1,3}`→`{1,4}` + `$digits==4`；计划构造两个字面正则同改、`$d=4` 与标记 `-996`；写入器 `-996` → `d=4, scale=10000`。沿用既有缩放编码，无新路由。
