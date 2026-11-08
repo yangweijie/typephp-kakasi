@@ -5286,7 +5286,18 @@ function api_schema_number_bounded_shape(string $schema): string
         return "";
     }
     $kv = explode(":", $leaves[0]);
-    if (count($kv) != 2 || $kv[1] != "i") {
+    // F439: a NUMBER leaf is served when the interval holds an integer - an integer is a valid
+    // `number`, so the same digit walk can emit it; the inward rounding below already yields the
+    // integer interval [ceil(lo), floor(hi)] and the empty-interval check refuses when none exists
+    // (that case would need a decimal writer). A number leaf with multipleOf is excluded because
+    // the multiple writer is integer-only, and the validator refuses that pair up front.
+    if (count($kv) != 2) {
+        return "";
+    }
+    if ($kv[1] != "i" && $kv[1] != "n") {
+        return "";
+    }
+    if ($kv[1] == "n" && strpos($schema, "\"multipleOf\"") !== false) {
         return "";
     }
     $mn = [];
@@ -8043,6 +8054,13 @@ function api_schema_bounds_unsupported(string $body): int
         && api_schema_number_bounded_shape($body) == "") {
         return 1;
     }
+    // F433/F439: the multiple writer is integer-only, so a number leaf carrying multipleOf is
+    // refused whatever else the schema contains - now that the bounded shape accepts number leaves,
+    // this guard has to sit BEFORE it or the multiplier would be dropped silently.
+    if (preg_match('/"multipleOf"\s*:\s*[0-9]+/', $body) == 1
+        && preg_match('/"type"\s*:\s*"number"/', $body) == 1) {
+        return 1;
+    }
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
         && strpos($body, "\"exclusiveMinimum\"") === false && strpos($body, "\"exclusiveMaximum\"") === false) {
         // F430: an unbounded multipleOf the suffix writer cannot reach (> 999999) is refused here.
@@ -8059,12 +8077,6 @@ function api_schema_bounds_unsupported(string $body): int
         // multi-leaf combination is still refused.
         if (strpos($body, "\"multipleOf\"") !== false && api_schema_plan_count($body) > 1
             && api_schema_multi_multiple($body) == "") {
-            return 1;
-        }
-        // F433: the multiple writer serves INTEGER leaves only. A number leaf with multipleOf had no
-        // route at all and was answered with prose, so it is refused by name.
-        if (preg_match('/"multipleOf"\s*:\s*[0-9]+/', $body) == 1
-            && preg_match('/"type"\s*:\s*"number"/', $body) == 1) {
             return 1;
         }
         return 0;
@@ -14799,11 +14811,11 @@ function main(): void
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH . "
 ";
-    if ($bdA == 0 && $bdB == 1 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
-        && $bdL == 1 && $bdJ == 1 && $bdK == 1 && $bdE == 0
+    if ($bdA == 0 && $bdB == 0 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
+        && $bdL == 1 && $bdJ == 0 && $bdK == 1 && $bdE == 0
         && $bdM == 0 && $bdN == 1 && $bdO == 0
         && $bdP == 0 && $bdQ == 1 && $bdR == 1 && $bdS == 0
-        && $bdF == 0 && $bdG == 1
+        && $bdF == 0 && $bdG == 0
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
@@ -14945,6 +14957,13 @@ function main(): void
     $nfB = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-9.5,"maximum":-1.5}}}}}');
     $nfC = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1.5,"maximum":1.9}}}}}');
     $nfD = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":2.0,"maximum":9.0}}}}}');
+    // F439: a NUMBER leaf is served when its interval holds an integer (an integer is a valid
+    // number); an interval with no integer still needs a decimal writer and stays refused, and a
+    // number leaf carrying multipleOf is refused up front because that writer is integer-only.
+    $nfE = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.9}}}}}');
+    $nfF = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9}}}}}');
+    $nfG = api_schema_bounds_unsupported('{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.9}}}');
+    $nfH = api_schema_bounds_unsupported('{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.9,"multipleOf":2}}}');
     $nfOut = api_number_bounded_value($nbIds, "n", 2, 9, 0);
     $nfP = explode(",", $nfOut);
     $nfText = "";
@@ -14955,9 +14974,12 @@ function main(): void
     $nfM = [];
     $nfV = preg_match('/"n":(-?[0-9]+)\}/', $nfText, $nfM) == 1 ? (int) $nfM[1] : -100000;
     echo "SCHEMA-NUM-FRAC pos=[" . $nfA . "] neg=[" . $nfB . "] empty=[" . $nfC
-        . "] integral=[" . $nfD . "] v=" . $nfV . "]\n";
+        . "] integral=[" . $nfD . "] v=" . $nfV
+        . "] num_float=[" . $nfE . "] num_float_empty=[" . $nfF
+        . "] num_float_ok=[" . $nfG . "] num_mult_refuse=[" . $nfH . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
-        && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1) {
+        && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
+        && $nfE == "n|2|9|0" && $nfF == "" && $nfG == 0 && $nfH == 1) {
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";

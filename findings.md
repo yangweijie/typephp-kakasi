@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **显式 400** | `SCHEMA-BOUND-REJECT` float 侧（F397/F421） |
+| 数值界：number 叶的小数界 | **支持**（区间含整数时收紧为整数界；无整数区间仍 400） | `num_float`/`num_float_empty`/`num_mult_refuse`（F439） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -4107,3 +4107,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.506×**、哨兵 **0**（`engine/selftest_f438.log`、`engine/schema_bounds_f438.log`、`engine/api_smoke_f438.log`、`engine/throughput_f438.log`）。
 **过程错误（记一笔）**：新增函数时把**被插在后面的那个函数的函数头**一并替换掉了（我的 `old_string` 只有那一行签名，`new_string` 忘了把它带回去），留下孤儿 `{`；读回插入边界时发现并补回。**插入型编辑后必须读一遍边界，而不是假定结构没变。**
 **记法**：**"多叶"不是拒绝的理由，"写入器只能发一个键"才是**——把写入器做成逐叶循环后，拒绝面自然收缩到"存在没有写入器的叶子"（混合叶）；门要同时钉住"多叶被服务"与"混合叶仍拒"。
+
+
+## F439：`number` 叶的小数界——**整数是合法 number**，区间含整数即服务
+**改前**：`{"n":{"type":"number","minimum":1.5,"maximum":100.5}}` → **400**（"浮点界一律拒绝"）。
+**思路（不写小数写入器）**：`type:number` 接受整数，所以只要区间 `[lo,hi]` 内含整数，就能**收紧到 `[ceil(lo), floor(hi)]`** 并复用现成的整数数字走位——这是"子集论证"的又一次复用；区间内没有整数（如 `[1.5,1.9]`）才真正需要小数写入器，保持 400。
+**实现**：`api_schema_number_bounded_shape` 的叶子 kind 从只认 `i` 放宽到 `i|n`；并把 **number+multipleOf 的拒绝提到校验最前**——否则新放行会让"倍数"被静默丢掉（有界情形的 F433 覆盖不到）。
+**门（三处旧期望被证伪 ⇒ 改门，不保绿）**：`$bdB`（1.5/5.5）、`$bdJ`（number 0..100）、`$bdG`（wire float）期望 **1→0**；`SCHEMA-NUM-FRAC` 加 `num_float=[n|2|9|0]`、`num_float_empty=[]`、`num_float_ok=0`、`num_mult_refuse=1`。
+**活体**：`float_served` **200 `{"n":100}`**（100∈[2,100] 且是合法 number）、`float_empty_refuse` **400**；bounds/required/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`；8000 **115/0**、8001 par/fairness **0**、scaling **1.513×**、哨兵 **0**（`engine/selftest_f439.log`、`engine/schema_bounds_f439.log`、`engine/api_smoke_f439.log`、`engine/throughput_f439.log`）。
+**记法**：**类型约束是包含关系时，子集解就够**——`integer ⊂ number`，所以"整数界里选整数"首先满足 `number` 约束；只有子集为空（区间无整数）才需要更强的发射机制。**放宽一个形状时，必须同时检查"这个形状上别的关键字会不会因此失效"**（number+multipleOf 就是被提到最前的那一处）。

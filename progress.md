@@ -1616,3 +1616,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`multi_leaf_multipleof` **200 `{"a":1000002,"b":1000000}`**（a%3=0、b%5=0）、`multi_leaf_mixed_refuse` **400**；bounds/required/count/pattern 不回退。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.506×**、哨兵 **0**。
 - **过程记一笔**：插入新函数时把单叶检测器的**函数头**吃掉了（留下孤儿 `{`），靠读回发现并补回——**插入型编辑后要读边界**。
+
+
+## ▶ 状态（F439，2026-11-08 18:30）——`number` 叶小数界：**整数即合法 number**，区间含整数就服务
+- **思路**：不引入小数写入器——整数是合法的 `number`，所以只要区间 `[lo,hi]` 内含整数，收紧到 `[ceil(lo), floor(hi)]` 即可复用整数写入器；无整数的区间（如 [1.5,1.9]）仍需小数写入器，保持 400。
+- **实现**：`api_schema_number_bounded_shape` 的叶子 kind 从只认 `i` 放宽到 `i|n`；**number+multipleOf 的拒绝提到校验最前**（否则新的放行会把倍数静默丢掉）。
+- **门（旧期望被证伪 ⇒ 改门）**：`$bdB`/`$bdJ`/`$bdG`（number 叶浮点界三例）期望 **1→0**；`SCHEMA-NUM-FRAC` 加 `num_float=[n|2|9|0]`、`num_float_empty=[]`、`num_float_ok=0`、`num_mult_refuse=1`。
+- **活体**：`float_served` **200 `{"n":100}`**、`float_empty_refuse` **400**（改前前者 400）；bounds/required/count/pattern 不回退。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.513×**、哨兵 **0**。

@@ -148,8 +148,15 @@ cases = [
     ("exclusive_bool_alone_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": True}}},
      lambda code, txt: code == 400 and "exclusive" in txt),
-    ("float_refuse", "Give the number.",
+    # F439: a NUMBER leaf is served when its interval holds an integer (an integer is a valid
+    # number), so [1.5, 100.5] now answers an integer in [2,100] where it used to be refused. The
+    # interval with no integer still needs a decimal writer and stays refused.
+    ("float_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 100.5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and 2 <= val_of(txt, "n") <= 100),
+    ("float_empty_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 1.9}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F421: an INTEGER leaf with fractional bounds. The value must be an integer inside the real
     # interval, so 1.5..9.5 means 2..9 - truncating the bound to 1 would serve a violating value.

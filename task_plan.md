@@ -981,3 +981,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.506×**、哨兵 **0**（`engine/selftest_f438.log`、`engine/schema_bounds_f438.log`、`engine/api_smoke_f438.log`、`engine/throughput_f438.log`）。
 **明确留拒（排队）**：number 叶浮点界（小数写入器 + 4 个路由点）；无界 `multipleOf` > 999999；tuple 实现；`dependentSchemas`/`dependencies`；多叶中混有非倍数叶的情形（仍 400）。
 **顺位**：number 叶浮点界 → 分片多卡 / FR-05（本机不可验证）。
+
+
+## F439 计划与完成（`number` 叶小数界：整数即合法 number）
+**F438 已完成**：多叶 multipleOf 逐叶写入。
+**思路**：不写小数写入器——整数是合法 `number`；区间含整数时收紧到 `[ceil(lo), floor(hi)]` 复用整数写入器，无整数的区间仍拒。
+**F439 已完成**：形状叶子 kind 放宽到 `i|n`；`number+multipleOf` 的拒绝提到最前；门改三处旧期望（`bdB/bdJ/bdG` 1→0）+ `SCHEMA-NUM-FRAC` 四例。
+**活体**：`float_served` 200、`float_empty_refuse` 400。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.513×**、哨兵 **0**（`engine/selftest_f439.log`、`engine/schema_bounds_f439.log`、`engine/api_smoke_f439.log`、`engine/throughput_f439.log`）。
+**明确留拒（排队）**：**无整数的** number 区间（需小数写入器）；无界 `multipleOf` > 999999；tuple 实现；`dependentSchemas`/`dependencies`；多叶混合情形。
+**顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
