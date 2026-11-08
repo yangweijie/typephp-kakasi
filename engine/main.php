@@ -854,9 +854,9 @@ function api_response_schema_array_string(string $body): string
     // F400: minItems/maxItems may sit beside `items` inside the array object, before or after it.
     // Nothing else may, so the tails name those two keywords instead of accepting any scalar key.
     if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*'
-        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+        . '(?:\s*,\s*(?:"(?:minItems|maxItems)"\s*:\s*[0-9]+|"uniqueItems"\s*:\s*false))*'
         . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}'
-        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
+        . '(?:\s*,\s*(?:"(?:minItems|maxItems)"\s*:\s*[0-9]+|"uniqueItems"\s*:\s*false))*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
     // F407: a BOUNDED array leaf beside other properties is the mixed stepper's shape - it counts
@@ -970,9 +970,9 @@ function api_response_schema_array_number(string $body): string
     }
     $pm = [];
     if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{\s*"type"\s*:\s*"array"\s*'
-        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+        . '(?:\s*,\s*(?:"(?:minItems|maxItems)"\s*:\s*[0-9]+|"uniqueItems"\s*:\s*false))*'
         . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"(integer|number)"\s*\}'
-        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}/s', $schema, $pm) != 1) {
+        . '(?:\s*,\s*(?:"(?:minItems|maxItems)"\s*:\s*[0-9]+|"uniqueItems"\s*:\s*false))*\s*\}/s', $schema, $pm) != 1) {
         return "";
     }
     // F407: a BOUNDED array leaf beside other properties is the mixed stepper's shape (it counts
@@ -7483,7 +7483,7 @@ function api_schema_flat_all_string(string $schema): int
 // decoder already satisfies.
 function api_schema_keywords_unsupported(string $body): string
 {
-    foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties") as $kw) {
+    foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties uniqueItems") as $kw) {
         if (strpos($body, "\"" . $kw . "\"") === false) {
             continue;
         }
@@ -7500,6 +7500,16 @@ function api_schema_keywords_unsupported(string $body): string
         // F402: additionalProperties holds by construction where every key is named from the plan.
         if ($kw == "additionalProperties"
             && api_schema_additional_properties_honoured($body) == 1) {
+            continue;
+        }
+        // F425: uniqueItems constrains element VALUES, which the model picks, so `true` cannot be
+        // honoured and is refused. `false` allows duplicates - which is exactly what the generator
+        // may emit - and the array detectors now tolerate that spelling, so it holds by
+        // construction and must keep being served instead of falling back to prose.
+        if ($kw == "uniqueItems"
+            && preg_match('/"uniqueItems"\s*:\s*(?:true|false)/', $body) == 1
+            && preg_match('/"uniqueItems"\s*:\s*false/', $body) == 1
+            && preg_match_all('/"uniqueItems"\s*:/', $body) == 1) {
             continue;
         }
         return $kw;
@@ -9406,7 +9416,8 @@ function api_serve(int $port): void
                     . "also together with additionalProperties:true/false; "
                     . "minLength/maxLength and a required subset on a flat all-string object; "
                     . "additionalProperties:true/false wherever every key is named from the "
-                    . "declared plan)"
+                    . "declared plan; uniqueItems:false, which allows the duplicates the "
+                    . "generator may emit)"
                     . "\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else {
@@ -14546,6 +14557,14 @@ function main(): void
     $kwAC = api_schema_keywords_unsupported('{"type":"object","properties":{"name":{"type":"string"},"nums":{"type":"array","items":{"type":"integer"}}},"required":["name"]}');
     $kwAD = api_schema_keywords_unsupported('{"type":"object","properties":{"name":{"type":"string"},"nums":{"type":"array","items":{"type":"integer"}}},"required":["name","nums"]}');
     $kwAE = api_schema_keywords_unsupported('{"type":"object","properties":{"mode":{"type":"string","enum":["Paris","London"]},"count":{"type":"integer"}},"required":["mode","count"]}');
+    // F425: uniqueItems constrains element VALUES, which the model picks, so `true` is refused.
+    // `false` allows duplicates - satisfied by construction - and the array detectors now tolerate
+    // that spelling, so the structured route must still be found; that route check is the
+    // intermediate-product assertion, because a 200 alone could still be prose.
+    $kwAV = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":true}}}');
+    $kwAW = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":false}}}');
+    $kwAX = api_schema_keywords_unsupported('{"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}}}');
+    $kwAY = api_response_schema_array_string('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":false}}}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
@@ -14559,7 +14578,8 @@ function main(): void
         . "] addprops_mixed=[" . $kwY . "] addprops_enum=[" . $kwAF . "] addprops_arr=[" . $kwZ
         . "] addprops_wire=[" . $kwAA . "] addprops_form_arr=[" . $kwAB
         . "] multi_bounds=[" . $kwAG . "] multi_bad=[" . $kwAH . "] multi_addprops=[" . $kwAI
-        . "] multi_allreq=[" . $kwAJ . "]\n";
+        . "] multi_allreq=[" . $kwAJ . "] uniq_true=[" . $kwAV . "] uniq_false=[" . $kwAW
+        . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
@@ -14572,7 +14592,9 @@ function main(): void
         && $kwW == "additionalProperties" && $kwX == "additionalProperties"
         && $kwY == "" && $kwAF == "additionalProperties" && $kwZ == "" && $kwAA == ""
         && $kwAB == "additionalProperties"
-        && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == "") {
+        && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == ""
+        && $kwAV == "uniqueItems" && $kwAW == "" && $kwAX == "uniqueItems"
+        && $kwAY == "cities") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
         echo "SCHEMA-KEYWORDS: FAIL\n";

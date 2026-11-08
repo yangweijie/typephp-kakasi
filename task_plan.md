@@ -821,3 +821,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **记法**：**"抄来的上限"要问它约束的是哪条机制——有界路径靠"折叠到最小倍数"（对任意 m 成立），无界路径靠三位 suffix（m ≤ 999）；把无界机制的上限套到有界路径上就是人为过度拒绝。拆上限时保留真正的那条（无界 suffix 封顶不动）。**
 **明确留拒（排队）**：number 叶浮点界、多叶 multipleOf、**无界** `multipleOf` > 999（三位 suffix 机制封顶，需更长 suffix）。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+
+
+## F425 计划与完成（`uniqueItems`：先修"掉出结构化路径"，再做值感知拒绝）
+**改前活体**：`uniqueItems:true` 与 `false` 两方向都返回 **200 + 散文**——陌生键打断了数组检测器的精确正则，整个请求降级为无约束文本（比"重复元素"严重）。
+**F425 已完成**：①两个数组检测器尾巴容忍 `"uniqueItems": false`（数组文法恢复、约束构造上满足）；②拒绝列表加 `uniqueItems`，例外**值感知**（布尔 `false` 且全 schema 只出现一次才放行，`true` 一律 400）；③400 消息补支持面。
+**门**：`SCHEMA-KEYWORDS` 增至 30 例（`uniq_true=[uniqueItems] uniq_false=[] uniq_wire=[uniqueItems] uniq_route=[cities]`）；**路由断言是必需的**——改前两个方向也都是 200，只看状态码会漏。
+**活体**：`engine/schema_count_f425.log` —— `unique_true_refuse` **400**、`unique_false_served` **200 真 JSON**；改前成对证据 `schema_count_f425pre.log`（两例 FAIL）。bounds/required/pattern 不回退。
+**梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.558×**、哨兵 **0**（`engine/selftest_f425b.log`、`engine/api_smoke_f425.log`、`engine/throughput_f425.log`）。
+**过程错误**：第一版只加了值感知例外、**忘了把 `uniqueItems` 加回关键字名单**（早先为避让并行会话的 F424 撤回过那行）⇒ 例外是死代码，门 `uniq_true=[]` 抓住，补回名单后 PASS。**记法：例外与名单成对改；门必须断言该拒的一侧确实被拒。**
+**明确留拒（排队）**：`contains`、`not`、`if/then/else`、`dependentRequired`、`propertyNames`、`unevaluatedItems/Properties`（同样会静默降级或违反，需逐个判断"是否构造上满足"再决定实现/拒绝）；number 叶浮点界、多叶 multipleOf、无界 `multipleOf` > 999。
+**顺位**：结构类关键字的"实现或显式拒绝"清扫 → 分片多卡 / FR-05（本机不可验证，保持排队）。

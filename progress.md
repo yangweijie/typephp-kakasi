@@ -1472,3 +1472,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.391×**、spec **1.886×/1.522×**、哨兵 **0**（`engine/selftest_f424.log`、`engine/api_smoke_f424.log`、`engine/throughput_f424.log`）。
 - **记法**："抄来的上限"要问它约束的是哪条机制——有界（折叠到最小倍数，对任意 m 成立）vs 无界（三位 suffix，m ≤ 999）；拆错的上限、保留对的上限。
 - **下一轮顺位**：分片多卡 / FR-05（本机不可验证，保持排队）；或有界 `multipleOf` 之外的"多叶 multipleOf / number 叶浮点界"。
+
+
+## ▶ 状态（F425，2026-11-08 13:05）——`uniqueItems`：未知键导致整个 schema 掉出结构化路径
+- **改前活体**：`true`/`false` 两方向都是 **200 + 散文**（`Here are some French cities:`）——不是"发重复元素"，而是数组检测器的精确正则被陌生键打断、级联落空后走无约束文本。
+- **实现**：①两个数组检测器容忍 `"uniqueItems": false`，数组文法恢复；②拒绝列表加 `uniqueItems`，例外**值感知**（仅布尔 `false` 且只出现一次）；③400 消息补支持面。
+- **第二轮真问题（门抓住）**：第一次自检 `uniq_true=[]` 而 `uniq_route=cities` 正常 ⇒ 我只加了例外、没把名字加回关键字列表（早先为避让 F424 撤回过那行）⇒ **例外是死代码**。补回名单后 PASS。**记法：例外与名单成对改；门要断言"该拒的一侧确实被拒"。**
+- **门**：`SCHEMA-KEYWORDS` 30 例（含 `uniq_true/uniq_false/uniq_wire/uniq_route`）。
+- **活体**：`engine/schema_count_f425.log` —— `unique_true_refuse` **400**、`unique_false_served` **200 真 JSON**（改前两例 FAIL，`schema_count_f425pre.log`）；bounds/required/pattern 不回退。
+- **梯**：自检 **180/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.558×**、哨兵 **0**。

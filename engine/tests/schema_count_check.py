@@ -243,6 +243,17 @@ cases = [
                                "properties": {"nums": {"type": "array",
                                                        "items": {"type": "integer"}}}}}},
      lambda code, txt: code == 400 and "minItems" in txt, ask),
+    # F425: uniqueItems constrains element VALUES, which the generator picks - duplicates are easy
+    # (the same served array repeated one element four times), so `true` is refused; `false` allows
+    # duplicates and is satisfied by construction, so it must keep being served.
+    ("unique_true_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
+                                                  "uniqueItems": True}}},
+     lambda code, txt: code == 400 and "uniqueItems" in txt, ask),
+    ("unique_false_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
+                                                  "uniqueItems": False}}},
+     lambda code, txt: code == 200 and n_items(txt, "cities") is not None, ask),
 ]
 
 bad = 0
