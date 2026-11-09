@@ -966,9 +966,12 @@ function api_response_schema_array_enum(string $body): string
     return api_schema_array_enum(api_json_object_after($body, "schema"));
 }
 
-// F460: "prop|lo|hi" for a single array property whose `items` is an integer with BOTH inclusive
-// bounds. Both are required: a one-sided bound would need the one-sided sentinel conventions, and
-// that form stays refused rather than getting a second encoding here.
+// F460/F461: "prop|lo|hi" for a single array property whose `items` is a bounded integer: both
+// inclusive bounds, or one side missing (the absent side is the -1 sentinel the bounded fill
+// already understands, so the element writer needs no second encoding). A one-sided NEGATIVE
+// maximum stays refused (the sentinel collides with it and the one-sided magnitude walk is not
+// wired), minimum:-1 is refused the same way, and a bare type is not claimed here - the plain
+// array writer serves that form.
 function api_schema_array_item_bounds(string $schema): string
 {
     if ($schema == "") {
@@ -1024,15 +1027,31 @@ function api_schema_array_item_bounds(string $schema): string
     if ($isub == "") {
         return "";
     }
+    // F461: either or both sides, natural order - the absent side rides the -1 sentinel the
+    // bounded fill already understands, so the element writer needs no second encoding. Only
+    // NON-NEGATIVE one-sided bounds are claimed: a negative one-sided walk is a different
+    // mechanism, and -1 is the "absent" sentinel (a genuine -1 bound would collide with it).
     $mm = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"integer"\s*,\s*"minimum"\s*:\s*(-?[0-9]+)\s*,'
-        . '\s*"maximum"\s*:\s*(-?[0-9]+)\s*\}$/', $isub, $mm) != 1) {
+    if (preg_match('/^\{\s*"type"\s*:\s*"integer"'
+        . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
+        . '(?:\s*,\s*"maximum"\s*:\s*(-?[0-9]+))?\s*\}$/', $isub, $mm) != 1) {
         return "";
     }
-    $lo = (int) $mm[1];
-    $hi = (int) $mm[2];
-    if ($lo > $hi) {
-        return "";
+    $loSet = isset($mm[1]) && $mm[1] !== "";
+    $hiSet = isset($mm[2]) && $mm[2] !== "";
+    if (!$loSet && !$hiSet) {
+        return "";                 // bare type - the plain array writer serves that form
+    }
+    $lo = $loSet ? (int) $mm[1] : -1;
+    $hi = $hiSet ? (int) $mm[2] : -1;
+    if (!$loSet && $hi < 0) {
+        return "";                 // one-sided negative maximum: the walk cannot honour it
+    }
+    if (!$hiSet && $lo < 0) {
+        return "";                 // one-sided negative minimum (includes the -1 collision)
+    }
+    if ($loSet && $hiSet && $lo > $hi) {
+        return "";                 // unsatisfiable
     }
     return $lkv[0] . "|" . $lo . "|" . $hi;
 }
@@ -1048,6 +1067,8 @@ function api_response_schema_array_item_bounds(string $body): string
 // F460: an array of bounded integers. Each element is the same number body the single-property
 // writer uses (forced dash for a negative interval, then the digit walk), so every element lies in
 // [lo, hi]; the element count uses the same minItems/maxItems budget as the plain array writers.
+// F461: the -1 sentinel on either side marks an absent bound - the same one-sided walks the
+// single-property writer already honours, so nothing here changes for them.
 function api_array_bounded_int_value(string $ids, string $prop, int $lo, int $hi, int $maxItems, int $useCache = 1, string $bounds = ""): string
 {
     $commaIds = api_punct_ids(",");
@@ -9521,6 +9542,14 @@ function api_schema_keywords_unsupported(string $body): string
 
 function api_schema_bounds_unsupported(string $body): int
 {
+    // F461: a bounded-integer items form (two-sided or one-sided) is honoured element by element
+    // by the item-aware writer; without this the one-sided pair walk below (a minimum with no
+    // following maximum is "one-sided, or unparseable" and refuses) would 400 every one-sided
+    // items form before routing ever reached the detector - the F459 "find every earlier
+    // claimer" lesson, one layer down.
+    if (api_schema_array_item_bounds($body) != "") {
+        return 0;
+    }
     // F436/F437: the draft-4 BOOLEAN spelling is now HONOURED where the shape can convert it (the
     // boolean tightens the inclusive literal it accompanies), so only the isolated form - a boolean
     // with no inclusive bound beside it - is refused, because it states nothing this writer can
@@ -16894,10 +16923,13 @@ function main(): void
     $sfCC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris|lyon)$"}}}}');
     $sfCD = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}');
     $sfCE = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
-    // F460: both-bounds integer items are served; a one-sided bound keeps the refusal.
+    // F461: one-sided integer items are served too - the one-sided refusal field flips, and the
+    // detector's sentinel encoding plus a one-sided writer text are pinned here.
     $sfCI = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5}}}}');
     $ibPlan = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}}}');
     $ibOne = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5}}}}}}');
+    $ibMax = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","maximum":9}}}}}}');
+    $ibNeg = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","maximum":-3}}}}}}');
     $ibIds = tok_chat("user", "Give the numbers.") . "," . tok_chat_open("assistant");
     $ibBase = count(explode(",", $ibIds));
     $ibOut = api_array_bounded_int_value($ibIds, "nums", 5, 9, 1, 0);
@@ -16909,6 +16941,19 @@ function main(): void
     $ibText = str_replace("Ġ", " ", $ibText);
     $ibShape = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $ibText, $ibM) == 1;
     $ibVal = $ibShape == 1 ? (int) $ibM[1] : -100000;
+    // F461: the one-sided-min writer - element walk from the sentinel-paired bounds, value >= lo.
+    // Fresh session setup: the established pattern is one writer call per ids line (F459/F460).
+    $ib2Ids = tok_chat("user", "Give one number.") . "," . tok_chat_open("assistant");
+    $ib2Base = count(explode(",", $ib2Ids));
+    $ibMinOut = api_array_bounded_int_value($ib2Ids, "nums", 5, -1, 1, 0);
+    $ibMinParts = explode(",", $ibMinOut);
+    $ibMinText = "";
+    for ($i = $ib2Base; $i < count($ibMinParts); $i++) {
+        $ibMinText = $ibMinText . gguf_token_str((int) $ibMinParts[$i]);
+    }
+    $ibMinText = str_replace("Ġ", " ", $ibMinText);
+    $ibMinShape = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $ibMinText, $ibMinM) == 1;
+    $ibMinVal = $ibMinShape == 1 ? (int) $ibMinM[1] : -100000;
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -16959,7 +17004,8 @@ function main(): void
         . "] items_enum=[" . $sfCA . "] items_const=[" . $sfCB . "] items_pattern=[" . $sfCC
         . "] items_min=[" . $sfCD . "] items_plain=[" . $sfCE . "]"
         . " items_one=[" . $sfCI . "] ib_plan=[" . $ibPlan . "] ib_one=[" . $ibOne
-        . "] ib_text=[" . $ibText . "]"
+        . "] ib_max=[" . $ibMax . "] ib_negmax=[" . $ibNeg
+        . "] ib_minone_text=[" . $ibMinText . "] ib_text=[" . $ibText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -16992,8 +17038,10 @@ function main(): void
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
         && $sfCA == "" && $sfCB == "items" && $sfCC == "items"
-        && $sfCD == "" && $sfCE == "" && $sfCI == "items"
-        && $ibPlan == "nums|5|9" && $ibOne == "" && $ibShape == 1
+        && $sfCD == "" && $sfCE == "" && $sfCI == ""
+        && $ibPlan == "nums|5|9" && $ibOne == "nums|5|-1" && $ibMax == "nums|-1|9"
+        && $ibNeg == "" && $ibMinShape == 1 && $ibMinVal >= 5 && api_json_ok($ibMinText) == 1
+        && $ibShape == 1
         && $ibVal >= 5 && $ibVal <= 9 && api_json_ok($ibText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {

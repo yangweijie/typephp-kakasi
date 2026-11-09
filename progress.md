@@ -1811,3 +1811,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`items_bounded_ok` **200 `{"nums":[5,6,7,8]}`**（每元素 [5,9] 整数）；`items_one_sided_refuse` **400**（单侧先被界判据成对走位点名）；四个 harness 全绿、smoke 不回退。
 - **过程**：前一会话已实现＋构建＋活体验证（01:24 `schema_required_f460b.log`）但未提交；本轮重建（07:36）全梯复验后入库。`schema_required_f460pre.log` 跑在前会话构建上，只证"旧 exe 非 F459 源码"，非改前证据。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**。
+
+
+## ▶ 状态（F461，2026-11-09 12:50）——单侧整数界 `items` 从点名 400 变**逐元素发射**（缺侧 -1 哨兵；负单侧仍拒）
+- **实现**：检测器 `api_schema_array_item_bounds` 单侧扩展（缺侧哨兵 -1，元素写入器零改动）＋`api_schema_bounds_unsupported` 顶部早退豁免（成对走位此前在路由前点名单侧）；路由零改动。
+- **门（含翻转）**：`items_one` `items`→``、`ib_one` →`nums|5|-1`；新 `ib_max=[nums|-1|9]`、`ib_negmax=[]`、`ib_minone_text` 文本断言。
+- **活体**：`items_one_sided_min_ok` 200 `[5,6,7,8]`（每元素 ≥5）、`items_one_sided_max_ok` 200 `[1,2,3,4]`（每元素 ≤9）、`items_one_sided_negmax_refuse` 400；改前证据 `schema_required_f461pre.log`（F460 二进制上两例 400）。
+- **过程（门抓缺陷）**：第一版 `array_key_exists` 判"在场"被 PHP 的空串赋值坑（非尾部未匹配组赋 `""`）⇒ `ib_max` 出 `nums|0|9`、`SCHEMA-STRUCT` FAIL（`selftest_f461.log` 留证）；改 `isset && != ""` 后绿。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.557×**、哨兵 **0**。

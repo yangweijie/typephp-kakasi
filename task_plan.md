@@ -1189,6 +1189,28 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：单侧 items 界 / `number` 型 items 界（小数项写入器）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F461 计划（单侧整数 items 界：复用同一写入器＋哨兵约定）
+**F460 已完成**：双侧整数 items 逐元素发射。
+**改前状态**：单侧 `items`（`minimum` 或 `maximum` 仅一侧）由 `api_schema_bounds_unsupported` 的成对走位在路由前点名 400（"numeric bounds are honoured on a single integer property…"，`items_one_sided_refuse` 活体钉住）；门 `items_one=[items]` 钉结构判定侧。
+**目标形状（窄）**：`items` 恰为 `{"type":"integer","minimum":X}`（单下界，**X ≥ 0**）或 `{"type":"integer","maximum":Y}`（单上界，**Y ≥ 0**）⇒ 逐元素发射，缺侧走既有哨兵 `-1`（`api_number_bounded_fill` 的约定，元素写入器**零改动**即支持）：
+- 单下界：`lo=X, hi=-1`——走位从 X 起，值必 ≥ X（构造保证；X=0 起发）。
+- 单上界：`lo=-1, hi=Y`——钳制后走位 0..Y，值必 ≤ Y（子集论证：发的是约束的一个合法解）。
+- **负的单侧值一律仍拒**（`minimum:X<0` 与 `maximum:Y<0`，含 `minimum:-1`）：单侧负界需要幅值单侧走位（新机制，排队），且 `-1` 恰为缺侧哨兵、与真值 -1 碰撞（F442 同款教训）。
+- 裸类型 `{"type":"integer"}` 与 `lo>hi` 不可满足 ⇒ 检测器不认（前者归裸数组写入器、后者仍 400）。
+**实现（三处，写码前核过的锚点）**：
+1. 检测器 `api_schema_array_item_bounds`（`engine/main.php:972`，F460 版双侧正则 `:1028`）：正则两侧改可选（自然序、`type` 在前），缺侧补哨兵 `-1`；加三条拒绝（双侧都在才比 lo≤hi、单上界负、裸类型不认）；注释同步（F460 注释写死"单侧维持拒绝"，必须改）。
+2. 界判据早退（F459 教训：先找"更早写者"）：`api_schema_bounds_unsupported`（`:9522`）函数顶加 `api_schema_array_item_bounds($body) != "" ⇒ return 0`——否则单侧形态在成对走位（`:9598` 起）就被 400，路由根本到不了；该守卫对既有 `$bd*` 门零影响（检测器要求 plan 单叶 kind `an`＋items 块，门夹具全是单整属性/multipleOf）。
+3. 路由**零改动**：四处路由调用 `api_response_schema_array_item_bounds`，检测器扩面后自动认领单侧；写入器把哨兵原样传给 `api_number_bounded_element`。
+**门（含翻转）**：`items_one`（单下界）`items`→``；`ib_one`（单下界检测器）``→`nums|5|-1`；新增 `ib_max=[nums|-1|9]`（单上界检测器）、`ib_negmax=[]`（`maximum:-3` 仍拒）、单下界写入器文本断言（`{"nums":[<digits>≥5]}`＋json_ok）。
+**活体**（`engine/tests/schema_required_check.py`）：`items_one_sided_refuse` 翻转改名 `items_one_sided_min_ok`（200、每元素 ≥5）；新增 `items_one_sided_max_ok`（200、每元素 ≤9）、`items_one_sided_negmax_refuse`（400 点名）；`items_bounded_ok`/`items_plain_ok` 对照不回退。
+**验收**：①单侧元素值在界内（门＋活体逐元素断言）②负单上界与裸类型仍拒 ③自检 182 起、单属性有界门（`SCHEMA-NUM-*`/`BOUND-REJECT`）不回退 ④四 harness＋8000 115/0＋8001 不回退。
+**F461 已完成**：检测器单侧正则（两侧可选、缺侧哨兵 `-1`）＋`api_schema_bounds_unsupported` 顶部早退豁免（成对走位此前在路由前点名单侧形态）＋门翻转（`items_one` `items`→``、`ib_one` ``→`nums|5|-1`、新 `ib_max`/`ib_negmax`/`ib_minone_text`）。活体 `items_one_sided_min_ok` 200 `[5,6,7,8]`（每元素 ≥5）、`items_one_sided_max_ok` 200 `[1,2,3,4]`（每元素 ≤9）、`items_one_sided_negmax_refuse` 400。
+**过程（门抓到的缺陷）**：第一版 `array_key_exists` 判"该侧在场"——PHP 对**非尾部未匹配组**赋 `""` 而非省略键，`maximum` 单侧时 `$mm[1]=""` 被判在场、`(int)""=0` ⇒ `ib_max` 出 `nums|0|9`（下限被悄悄钉到 0，门必红）。改 `isset && != ""` 判定。与 F445 哨兵碰撞同族。
+**梯**：自检 **182/0**（`selftest_f461b.log`；`selftest_f461.log` 留有第一版的 `SCHEMA-STRUCT FAIL` 证据）、8000 **115/0**、8001 par/fairness **0**、scaling **1.557×**、哨兵 **0**（`engine/schema_required_f461.log`、`engine/schema_bounds_f461.log`、`engine/schema_count_f461.log`、`engine/schema_pattern_f461.log`、`engine/api_smoke_f461.log`、`engine/throughput_f461.log`、改前证据 `engine/schema_required_f461pre.log`）。
+**明确留拒（排队，F461 后）**：负的单侧 items 界（幅值单侧走位）、`number` 型（小数）items 界；数组项 schema 的 const/pattern；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：`number` 型 items 界（小数项写入器，复用 F440-F456 的缩放编码）/ 负单侧 items 界 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

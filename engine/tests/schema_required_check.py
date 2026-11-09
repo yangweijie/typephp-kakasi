@@ -230,9 +230,25 @@ cases = [
      lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
      and len((obj_of(txt) or {}).get("nums", [])) >= 1
      and all(isinstance(x, int) and 5 <= x <= 9 for x in (obj_of(txt) or {}).get("nums", []))),
-    ("items_one_sided_refuse", "Give the numbers.",
+    # F461: one-sided integer items are served too - the missing side rides the -1 sentinel the
+    # bounded fill already uses, so the element walk honours ">= minimum" / "<= maximum" by
+    # construction. A NEGATIVE one-sided maximum and minimum:-1 stay refused (the sentinel
+    # collides with them, and a one-sided magnitude walk is not wired).
+    ("items_one_sided_min_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "minimum": 5}}}},
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
+     and len((obj_of(txt) or {}).get("nums", [])) >= 1
+     and all(isinstance(x, int) and x >= 5 for x in (obj_of(txt) or {}).get("nums", []))),
+    ("items_one_sided_max_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "maximum": 9}}}},
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
+     and len((obj_of(txt) or {}).get("nums", [])) >= 1
+     and all(isinstance(x, int) and x <= 9 for x in (obj_of(txt) or {}).get("nums", []))),
+    ("items_one_sided_negmax_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "maximum": -3}}}},
      lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
     ("items_plain_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}}},
