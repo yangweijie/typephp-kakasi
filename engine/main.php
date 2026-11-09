@@ -1146,14 +1146,16 @@ function api_response_schema_array_item_number(string $body): string
     return api_schema_array_item_number(api_json_object_after($body, "schema"));
 }
 
-// F465: "prop|mult|lo|hi" for a single array property whose `items` is an integer carrying
-// multipleOf. Two forms: unbounded (min/max absent -> lo/hi are the -1 sentinels; each element
-// comes from the suffix writer api_multiple_fill, so every element is a multiple of mult), and
-// bounded inclusive (the interval collapses to its smallest multiple through the SAME
-// api_schema_number_bounded_shape judgement the single-property route uses - wrapped, so both
-// routes fold a bound pair by one code - and lo==hi==that multiple, one deterministic value per
-// element, the F420 subset argument). Natural key order only; mult >= 1; an unbounded multipleOf
-// beyond the suffix writer's reach (999999999) and a number leaf stay refused.
+// F465: "prop|mult|lo|hi" for a single array property whose `items` carries multipleOf. Two
+// forms: unbounded (min/max absent -> lo/hi are the -1 sentinels; each element comes from the
+// suffix writer api_multiple_fill, so every element is a multiple of mult), and bounded inclusive
+// (the interval collapses to its smallest multiple through the SAME api_schema_number_bounded_shape
+// judgement the single-property route uses - wrapped, so both routes fold a bound pair by one code
+// - and lo==hi==that multiple, one deterministic value per element, the F420 subset argument).
+// F466: a NUMBER items leaf is claimed too - the fold lands on an integer multiple, which is a
+// legal number and a multiple of M (the subset argument); a fractional multiplier is refused by
+// the validator. Natural key order only; mult >= 1; an unbounded multipleOf beyond the suffix
+// writer's reach (999999999) stays refused.
 function api_schema_array_item_multiple(string $schema): string
 {
     if ($schema == "") {
@@ -1188,7 +1190,8 @@ function api_schema_array_item_multiple(string $schema): string
     if ($tk !== false) {
         $kind = substr($kind, 0, $tk);
     }
-    if ($kind != "an") {
+    // F466: a number items leaf joins - the fold lands on an integer multiple, a legal number.
+    if ($kind != "an" && $kind != "af") {
         return "";
     }
     $kp = strpos($block, "\"" . $lkv[0] . "\"");
@@ -1210,7 +1213,7 @@ function api_schema_array_item_multiple(string $schema): string
         return "";
     }
     $mm = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"integer"'
+    if (preg_match('/^\{\s*"type"\s*:\s*"(?:integer|number)"'
         . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
         . '(?:\s*,\s*"maximum"\s*:\s*(-?[0-9]+))?'
         . '\s*,\s*"multipleOf"\s*:\s*([0-9]+)\s*\}$/', $isub, $mm) != 1) {
@@ -1229,13 +1232,10 @@ function api_schema_array_item_multiple(string $schema): string
         }
         return $lkv[0] . "|" . $mult . "|-1|-1";
     }
-    // Bounded: fold through the shared shape judgement (which refuses an interval holding no
-    // multiple) and take its collapsed lo==hi pair; the shape's mult segment must agree.
-    $lo = (int) $mm[1];
-    $hi = (int) $mm[2];
-    if ($lo > $hi) {
-        return "";
-    }
+    // Bounded or one-sided (the missing side is the -1 sentinel): fold through the shared shape
+    // judgement and take its collapsed lo==hi pair; the shape handles the sentinel, an empty
+    // interval and an interval holding no multiple, so no local check here - F466 caught the
+    // one-sided form being refused by a local lo>hi test that read the sentinel as a real bound.
     $wrap = '{"properties":{"_item":' . $isub . '}}';
     $shape = api_schema_number_bounded_shape($wrap);
     if ($shape == "") {
@@ -6134,15 +6134,15 @@ function api_schema_number_bounded_shape(string $schema): string
     // F439: a NUMBER leaf is served when the interval holds an integer - an integer is a valid
     // `number`, so the same digit walk can emit it; the inward rounding below already yields the
     // integer interval [ceil(lo), floor(hi)] and the empty-interval check refuses when none exists
-    // (that case would need a decimal writer). A number leaf with multipleOf is excluded because
-    // the multiple writer is integer-only, and the validator refuses that pair up front.
+    // (that case would need a decimal writer). F466: a number leaf with an INTEGER multipleOf is
+    // served too - the fold below lands on an integer multiple, which is a legal number and a
+    // multiple of M (the subset argument); a FRACTIONAL multiplier is refused by the validator
+    // (integers are not necessarily its multiples), and unbounded number leaves have no multiple
+    // writer at all.
     if (count($kv) != 2) {
         return "";
     }
     if ($kv[1] != "i" && $kv[1] != "n") {
-        return "";
-    }
-    if ($kv[1] == "n" && strpos($schema, "\"multipleOf\"") !== false) {
         return "";
     }
     $mn = [];
@@ -9958,11 +9958,22 @@ function api_schema_bounds_unsupported(string $body): int
         && api_schema_number_bounded_shape($body) == "") {
         return 1;
     }
-    // F433/F439: the multiple writer is integer-only, so a number leaf carrying multipleOf is
-    // refused whatever else the schema contains - now that the bounded shape accepts number leaves,
-    // this guard has to sit BEFORE it or the multiplier would be dropped silently.
-    if (preg_match('/"multipleOf"\s*:\s*[0-9]+/', $body) == 1
-        && preg_match('/"type"\s*:\s*"number"/', $body) == 1) {
+    // F433/F439/F466: a number leaf with a FRACTIONAL multipleOf is refused - the multiple writer
+    // emits integer multiples only, and integers are not necessarily multiples of a fractional
+    // multiplier, so honouring it needs a fractional-multiple mechanism. An INTEGER multipleOf on
+    // a number leaf is served where the bounded shape folds it (the fold lands on an integer
+    // multiple - a legal number, F439/F466) and refused where nothing claims it (unbounded number
+    // leaves have no multiple writer; multi-leaf shapes the fold cannot reach). The item-multiple
+    // writer claims the items form on its own, so it is exempt here either way.
+    if (preg_match('/"type"\s*:\s*"number"/', $body) == 1
+        && preg_match('/"multipleOf"\s*:\s*[0-9]+\.[0-9]/', $body) == 1
+        && api_schema_array_item_multiple($body) == "") {
+        return 1;
+    }
+    if (preg_match('/"type"\s*:\s*"number"/', $body) == 1
+        && preg_match('/"multipleOf"\s*:\s*[0-9]/', $body) == 1
+        && api_schema_number_bounded_shape($body) == ""
+        && api_schema_array_item_multiple($body) == "") {
         return 1;
     }
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
@@ -17090,7 +17101,10 @@ function main(): void
         . "] dec5_text=[" . $nfText7 . "] neg_text=[" . $nfText4 . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
         && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
-        && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0 && $nfH == 1
+        && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0
+        // F466 flipped this expectation: a bounded number leaf with an INTEGER multipleOf folds
+        // to its smallest in-interval multiple (a legal number), so it is no longer a refusal.
+        && $nfH == 0
         && $nfI == "n|15|-999|0" && $nfJ == "n|151|-998|0" && $nfK == "n|1511|-997|0"
         && $nfL == "n|-19|-999|0" && $nfN == "n|15111|-996|0"
         && $nfO == "n|151111|-995|0" && $nfQ == ""
@@ -17549,6 +17563,36 @@ function main(): void
         $imBText = $imBText . gguf_token_str((int) $imBParts[$i]);
     }
     $imBText = str_replace("Ġ", " ", $imBText);
+    // F466: a number leaf with an INTEGER multipleOf - the bounded fold lands on an integer
+    // multiple (a legal number, the subset argument); a fractional multiplier and the unbounded
+    // form (no multiple writer claims a number leaf) stay refused. The number-items form rides
+    // the same item-multiple writer, pinned here with its own text.
+    $nmShape = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.5,"multipleOf":3}}}}}');
+    $nmIds = tok_chat("user", "Give the multiple.") . "," . tok_chat_open("assistant");
+    $nmBase = count(explode(",", $nmIds));
+    $nmOut = api_number_bounded_value($nmIds, "n", 3, 3, 0);
+    $nmParts = explode(",", $nmOut);
+    $nmText = "";
+    for ($i = $nmBase; $i < count($nmParts); $i++) {
+        $nmText = $nmText . gguf_token_str((int) $nmParts[$i]);
+    }
+    $nmText = str_replace("Ġ", " ", $nmText);
+    $nmMatch = preg_match('/^\{"n":([0-9]+)\}$/', $nmText, $nmM) == 1;
+    $nmVal = $nmMatch == 1 ? (int) $nmM[1] : -1;
+    $nmBnd = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.5,"multipleOf":3}}}}}');
+    $nmFrac = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","multipleOf":0.3}}}}}');
+    $nmUnb = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","multipleOf":3}}}}}');
+    $imNIds = tok_chat("user", "Give the multiples of three.") . "," . tok_chat_open("assistant");
+    $imNBase = count(explode(",", $imNIds));
+    $imNOut = api_array_item_multiple_value($imNIds, "nums", 3, -1, -1, 1, 0);
+    $imNParts = explode(",", $imNOut);
+    $imNText = "";
+    for ($i = $imNBase; $i < count($imNParts); $i++) {
+        $imNText = $imNText . gguf_token_str((int) $imNParts[$i]);
+    }
+    $imNText = str_replace("Ġ", " ", $imNText);
+    $imNMatch = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $imNText, $imNM) == 1;
+    $imNVal = $imNMatch == 1 ? (int) $imNM[1] : -1;
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17612,6 +17656,8 @@ function main(): void
         . " im_unb=[" . $imUnb . "] im_bnd=[" . $imBnd . "] im_unsat=[" . $imUnsat
         . "] im_big=[" . $imBig . "] im_num=[" . $imNum . "] im_kw_bnd=[" . $imKwBnd . "]"
         . " im_unb_text=[" . $imText . "] im_bnd_text=[" . $imBText . "]"
+        . " nm_shape=[" . $nmShape . "] nm_text=[" . $nmText . "] im_num_text=[" . $imNText . "]"
+        . " nm_bnd=" . $nmBnd . " nm_frac=" . $nmFrac . " nm_unb=" . $nmUnb
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17650,7 +17696,10 @@ function main(): void
         && $ibShape == 1
         && $ibVal >= 5 && $ibVal <= 9 && api_json_ok($ibText) == 1
         && $inPlan == "nums|15|-999|0" && $inInt == "nums|1|9|0" && $inOne == "nums|-1|9|0"
-        && $inMulti == "" && $inKw == "" && $inKwMulti == "items"
+        && $inMulti == "" && $inKw == ""
+        // F466 flipped in_kw_multi: a number items leaf with multipleOf is claimed by the
+        // item-multiple writer now (the fold serves an integer multiple), so no keyword refusal.
+        && $inKwMulti == ""
         && $inDecShape == 1 && $inDecVal >= 1.5 && $inDecVal <= 1.9 && api_json_ok($inText) == 1
         && $inIntShape == 1 && $inIntVal >= 1 && $inIntVal <= 9 && api_json_ok($inIntText) == 1
         && $ibNeg == "nums|-1|-3"
@@ -17661,7 +17710,11 @@ function main(): void
         && $ngShape == "n|-5|-1|0" && $ngMatch == 1 && $ngVal >= -5 && api_json_ok($ngText) == 1
         && $ngItems == "nums|-5|-1|0" && $ngiMatch == 1 && $ngiVal >= -5 && api_json_ok($ngiText) == 1
         && $imUnb == "nums|3|-1|-1" && $imBnd == "nums|5000|5000|5000"
-        && $imUnsat == "" && $imBig == "" && $imNum == "" && $imKwBnd == ""
+        && $imUnsat == "" && $imBig == "" && $imKwBnd == ""
+        && $imNum == "nums|3|-1|-1"
+        && $imNMatch == 1 && ($imNVal % 3) == 0 && api_json_ok($imNText) == 1
+        && $nmShape == "n|3|3|3" && $nmMatch == 1 && $nmVal == 3 && api_json_ok($nmText) == 1
+        && $nmBnd == 0 && $nmFrac == 1 && $nmUnb == 1
         && $imUMatch == 1 && ($imUVal % 3) == 0 && api_json_ok($imText) == 1
         && $imBText == '{"nums":[5000]}' && api_json_ok($imBText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""

@@ -1850,3 +1850,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`im_unb`/`im_bnd`/`im_unsat=[]`/`im_big=[]`/`im_num=[]`/`im_kw_bnd=[]`＋两条文本断言（无界元素 %3==0、有界 5000）。
 - **活体**：`items_mult_unb_ok` 200 `[1234002,2345001,3456000,4567002]`、`items_mult_bnd_ok` 200 `[5000,…]`、unsat/num 400。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**。
+
+
+## ▶ 状态（F466，2026-11-10 07:15）——number 叶＋整数 multipleOf 从过度拒绝变**整数倍数子集发射**
+- **改前证据**：单属性有界 number m3 → 400（过度拒绝）；number items m3 → 400；小数 M → 400（旧守卫前缀匹配碰巧拒，本轮显式化）。
+- **实现**：shape 删 number+multipleOf 排除＋F433 守卫改写（小数 M 拒；整数 M 且 shape 不认且非 items 认领 → 拒）＋F465 检测器 kind 放宽 an|af。
+- **门抓到两处波纹漏翻**：NUM-FRAC 的 `nfH`、STRUCT 的 `in_kw_multi`＋bounds 活体暴露检测器有界分支把单侧哨兵当真值 ⇒ 删手写 lo>hi、一律 wrap→shape（`selftest_f466.log`/`f466c.log` 留证）。
+- **活体**：`num_mult_served` 200 `{"n":3}`、frac/unb 400、`items_mult_num_ok`/`items_num_multi_refuse` 200（每元素 %3==0）。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.510×**、哨兵 **0**。

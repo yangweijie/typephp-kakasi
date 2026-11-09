@@ -282,10 +282,15 @@ cases = [
                                                 "items": {"type": "number", "minimum": 0.000123, "maximum": 0.000129}}}},
      lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
     # multipleOf inside items is queued (the multiple writer is property-level): stays refused.
+    # F466: the old refusal of a number leaf with multipleOf was over-refusal - an integer
+    # multiple of M is a legal number and a multiple of M, so the bounded fold serves it.
+    # (The former items_mult_num_refuse case, same schema, was flipped into items_mult_num_ok.)
     ("items_num_multi_refuse", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "number", "minimum": 1, "multipleOf": 3}}}},
-     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and x % 3 == 0 and x >= 1 for x in val_of(txt, "nums"))),
     # F463: a one-sided NEGATIVE maximum on a single property - the magnitude walks from |hi|
     # upward behind a forced dash, so every value is <= hi. (Before F463 this silently fell back
     # to unconstrained generation, ignoring the bound - the violation this case pins.)
@@ -332,11 +337,25 @@ cases = [
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "minimum": 1, "maximum": 4000, "multipleOf": 5000}}}},
      lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
-    # The multiple writer is integer-only (F433): a number leaf with multipleOf stays refused.
-    ("items_mult_num_refuse", "Give the numbers.",
+    # F466: an INTEGER multipleOf on a number leaf is served through the integer-multiple subset
+    # (an integer is a legal number and a multiple of M) - a fractional multiplier still refused.
+    ("items_mult_num_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "number", "multipleOf": 3}}}},
-     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and x % 3 == 0 for x in val_of(txt, "nums"))),
+    ("num_mult_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 9.5, "multipleOf": 3}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), (int, float)) and val_of(txt, "n") % 3 == 0
+     and 1.5 <= val_of(txt, "n") <= 9.5),
+    ("num_mult_frac_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 0.3}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("num_mult_unb_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 3}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
 ]
 
 bad = 0

@@ -1305,6 +1305,32 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：number 型 multipleOf items → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F466 计划（number 叶＋整数 multipleOf：整数倍数子集发射——单属性 F433 过度拒绝 + items F462 mult 拒一并解除）
+**F465 已完成**：integer 型 multipleOf items。
+**核心思路（F439"整数即合法 number"同手法）**：整数 M 的倍数里必有整数（M、2M、…）⇒ number 叶的 multipleOf 约束可以用**整数倍数**满足（子集论证：M 的整数倍 ⊆ M 的倍数）——不需要小数倍数机制。**小数 M（如 0.3）仍拒**（整数未必是其倍数，需真小数倍数机制）。
+**改前状态（读码判定，执行前活体取证）**：
+- 单属性有界 `{"n":{"type":"number","minimum":1.5,"maximum":9.5,"multipleOf":3}}`：F433 守卫（`engine/main.php:9961`，"multipleOf"+`"type":"number"` ⇒ 1）→ **400**——**过度拒绝**（合法解 3/6/9 存在；shape 层同款排除在 `:6145`，F439 时留下）。
+- 单属性无界 `{"n":{"type":"number","multipleOf":3}}`：F433 → 400——**保持拒绝**（无界 number 叶没有倍数写入器认领，放行即静默回落）。
+- 单属性小数 M `multipleOf:0.3`：F433 正则 `[0-9]+` 不匹配小数 ⇒ **去向未知，探针取证**（疑静默放行/拒缺口）。
+- number items `{"type":"number","multipleOf":3}`：F462 检测器 mult≠0 拒 + F465 检测器 kind an 不认 af ⇒ "items" 400——过度拒绝。
+**实现（四处）**：
+1. shape 排除删除（`:6145-6147`）：number 叶 + multipleOf 不再排除——有界时向内取整后的整数区间走既有 multipleOf 折叠（F420/F424），无界时 shape 本就返回 ""（无界不认）。
+2. F433 守卫改写（`:9961`）为两条：①number + **小数 M**（`[0-9]+\.[0-9]`）→ 拒；②number + 整数 M 且 `api_schema_number_bounded_shape == ""` 且 `api_schema_array_item_multiple == ""` → 拒（覆盖无界/unsat/多叶；items 认领的放行）。注释更新。
+3. F465 检测器 `api_schema_array_item_multiple`：kind `an` → `an` 或 `af`、正则 type 段 `"integer"` → `integer|number`（number items 的整数倍数子集）；注释更新。
+4. F462 检测器 mult≠0 拒**保持**（有界 number+multipleOf 由 F465 检测器认领——路由顺序 scArrItemN 先测 mult≠0 返 ""，scArrItemM 接住）。
+**门**：`SCHEMA-BOUND-REJECT` 的 `mult_number` 1→0（旧期望被证伪 ⇒ 翻门）、新 `mult_frac=1`（小数 M）、`mult_num_unb=1`（无界 number+整数 M）；`SCHEMA-STRUCT` 的 `im_num`（F465）`[]`→`nums|3|-1|-1` 翻转＋number items 写入器文本（元素 %3==0）；新单属性 shape+文本门（`nummult_shape=[n|3|3|3]`＋`{"n":3}`）＋路由断言（候选层不抢先——值 %3==0 的活体兼作路由证据）。
+**活体**（`schema_bounds_check.py`）：`num_mult_served`（单属性 number min1.5 max9.5 m3 → 200 值 ∈{3,6,9}）、`num_mult_frac_refuse`（m0.3 → 400）、`num_mult_unb_refuse`（无界 number m3 → 400）、`items_mult_num_ok`（翻转 `items_mult_num_refuse` → 200 每元素 %3==0）。
+**验收**：①值是 M 的倍数（门＋活体）②小数 M／无界 number／unsat 仍拒 ③自检 182 起、单属性 integer multipleOf 门不回退 ④四 harness＋8000 115/0＋8001 不回退。
+**顺位**：F466 → items 上 multipleOf 与 exclusive 组合（F465 检测器正则扩展）→ 分片多卡 / FR-05（本机不可验证）。
+**F466 已完成**：shape 删 number+multipleOf 排除（`:6145` 原文）＋F433 守卫改写（小数 M 拒；整数 M 且 shape 不认且非 items 认领 → 拒——覆盖无界 number/unsat/多叶）＋F465 检测器 kind 放宽 `an`→`an|af`＋type 段 `integer|number`（number items 整数倍数子集）。门翻转 `nfH`（NUM-FRAC 的 `num_mult_refuse` 1→0）、`im_num` `[]`→`nums|3|-1|-1`、`in_kw_multi` `[items]`→``；新 `nm_shape=[n|3|3|3]`/`nm_text=[{"n":3}]`/`im_num_text`（元素 %3==0）/`nm_bnd=0`/`nm_frac=1`/`nm_unb=1`。
+**改前证据（`engine/schema_bounds_f466pre.log`，F465 二进制）**：单属性有界 number m3 → **400**（过度拒绝，合法解 3/6/9 存在）；number items m3 → **400**；小数 M 0.3 → 400（旧 F433 正则 `[0-9]+` 前缀匹配 "0" 碰巧拒——F466 显式化）。
+**过程（门抓到两处）**：①NUM-FRAC 的 `nfH`（有界 number m2）被翻成放行后 FAIL——旧期望证伪 ⇒ 翻门（本轮计划的"翻门"清单漏列了它）；②bounds 活体两例 FAIL 暴露 F465 检测器有界分支的 `lo>hi` 手写检查把**单侧哨兵 hi=-1 当真值**（`min1 m3` 单侧形态被拒）⇒ 删手写检查、有界/单侧一律 wrap→shape（shape 兜哨兵/空区间/unsat），`items_num_multi_refuse` 单侧形态翻 200 `[3,3,3,3]`；③`in_kw_multi`（number items+multipleOf 的 keywords 门）同步翻 `[]`。
+**活体**：`num_mult_served` 200 `{"n":3}`（∈{3,6,9}）、`num_mult_frac_refuse`/`num_mult_unb_refuse` 400、`items_mult_num_ok`/`items_num_multi_refuse` 200（每元素 %3==0）；F465 的 mult 系与 frac6 例不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.510×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f466d.log`、`engine/schema_bounds_f466.log`、`engine/schema_required_f466.log`、`engine/schema_count_f466.log`、`engine/schema_pattern_f466.log`、`engine/api_smoke_f466.log`、`engine/throughput_f466.log`、改前证据 `engine/schema_bounds_f466pre.log`）。
+**明确留拒（排队，F466 后）**：小数 multipleOf（真小数倍数机制）；items 上 multipleOf 与 exclusive 组合；数组项 schema 的 const/pattern；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：items 上 multipleOf 与 exclusive 组合 / 小数 multipleOf → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
