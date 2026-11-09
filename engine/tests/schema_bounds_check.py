@@ -254,6 +254,38 @@ cases = [
     ("bigmult_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 4000, "multipleOf": 5000}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F462: bounded NUMBER items - an interval holding no integer is served deterministically on
+    # the F440-F456 decimal grid (every element equals the scaled minimum, inside the interval).
+    ("items_num_dec_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": 1.5, "maximum": 1.9}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and 1.5 <= x <= 1.9 for x in val_of(txt, "nums"))),
+    # Integer-valued number items (an integer is a valid number): each element walks the digit grid.
+    ("items_num_int_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": 1, "maximum": 9}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and 1 <= x <= 9 for x in val_of(txt, "nums"))),
+    # One-sided number items: the absent side rides the -1 sentinel, values stay <= 9.5.
+    ("items_num_oneside_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "maximum": 9.5}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and x <= 9.5 for x in val_of(txt, "nums"))),
+    # Six fraction places have no grid at the F456 width: stays refused.
+    ("items_num_frac6_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": 0.000123, "maximum": 0.000129}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+    # multipleOf inside items is queued (the multiple writer is property-level): stays refused.
+    ("items_num_multi_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": 1, "multipleOf": 3}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
 ]
 
 bad = 0

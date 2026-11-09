@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F461）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F462）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3759,13 +3759,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数组项的 schema 带值约束：**有限字符串枚举**（`items:{"type":"string","enum":[…]}`） | **支持**（逐元素从枚举候选发射；每元素必属枚举） | `ae_plan`/`ae_text`/`ae_route`/`items_enum_ok`（F459） |
 | 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`items_bounded_ok`（F460） |
 | 数组项的 schema 带值约束：**单侧整数界**（`minimum:X≥0` 或 `maximum:Y≥0`，缺侧＝哨兵 -1） | **支持**（逐元素走位；子集论证保证缺侧；负的单侧值与 `minimum:-1`（哨兵碰撞）仍 400） | `ib_one`/`ib_max`/`items_one_sided_min_ok`（F461） |
-| 数组项的 schema 带其他值约束（const/pattern/number 型 items/format 等） | **显式 400**（写入器只发上述整数 items 形态；改前 200 且连形状都错） | `items_const`/`items_pattern`/`ib_negmax`（F458/F461） |
+| 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤5 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456 确定性小数单值；multipleOf 仍拒） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`（F462） |
+| 数组项的 schema 带其他值约束（const/pattern/number 型带 multipleOf/format 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_const`/`items_pattern`/`in_multi`/`ib_negmax`（F458/F461/F462） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern/单侧负值或 number 型（小数）数值界（现为显式 400；双侧与非负单侧整数界自 F460/F461 支持）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern/负单侧值/带 multipleOf 的 number 型（现为显式 400；双侧·非负单侧整数界自 F460/F461、number 型整数值·单侧·无整数小数网格自 F462 支持）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4335,3 +4336,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`items_one_sided_min_ok` **200 `{"nums":[5,6,7,8]}`**（每元素 ≥5）；`items_one_sided_max_ok` **200 `{"nums":[1,2,3,4]}`**（每元素 ≤9，子集论证：0..9 走位）；`items_one_sided_negmax_refuse` **400**；`items_bounded_ok`/`items_plain_ok`/`items_enum_ok` 不回退；bounds/count/pattern 三 harness 全绿。
 **过程（门抓到的真缺陷）**：第一版用 `array_key_exists` 判"该侧在场"——PHP 的 `preg_match` 对**非尾部的未匹配组赋 `""` 而非省略键**，`maximum` 单侧时 `$mm[1]=""` 被判在场、`(int)""=0` ⇒ `ib_max` 出 `nums|0|9`（下限被悄悄钉到 0，自检 `SCHEMA-STRUCT` FAIL，`selftest_f461.log` 留证）。改 `isset($mm[n]) && $mm[n] !== ""` 判定后绿。**记法：正则可选捕获组判"在场"必须防 `""` 赋值——组序靠前的未匹配组不省略；与 F445 哨兵碰撞、F408 段数判断同族（按值判而不是按键存在判）。**
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f461b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.557×**；哨兵 **0**（`engine/schema_required_f461.log`、`engine/schema_bounds_f461.log`、`engine/schema_count_f461.log`、`engine/schema_pattern_f461.log`、`engine/api_smoke_f461.log`、`engine/throughput_f461.log`）。
+
+## F462：`number` 型整数/单侧/无整数小数网格 `items` 从"点名 400"变**逐元素发射**（复用 F440–F456 缩放编码）
+**改前证据（`engine/schema_bounds_f462pre.log`，F461 二进制）**：`items_num_dec_ok`/`items_num_int_ok`/`items_num_oneside_ok` 均 **400**（消息 "numeric bounds are honoured on a single integer property…"——成对走位既过不了 number 叶的类型检查、小数又被 "float bounds are not enumerated" 点名，单侧又是 "one-sided"），`items_num_frac6_refuse`/`items_num_multi_refuse` 400（对照）。
+**判定复用（核心决策）**：不重造界判定——items 块 wrap 成 `{"properties":{"_item":<isub>}}` 喂给既有 `api_schema_number_bounded_shape`（单叶 plan＋exclusive/F421 取整/F440-456 网格全现成），取输出 2–4 段，`mult≠0` ⇒ 拒（multipleOf items 留排队）。单属性与 items 两条路**共享同一份判定代码**，回归对齐免费。
+**实现**：①`api_schema_array_item_number`（kind 剥 `~` 后 `af`、items wrap→shape、mult 段须 0）→ `prop|lo|hi|mult`；②`api_number_decimal_element` 从 `api_number_bounded_value` 的 marker 分支抽出（单属性 marker 分支改调用它，`SCHEMA-NUM-FRAC`/F442–F456 门钉回归不变）；③`api_array_item_number_value`（同整数数组写入器的循环；元素体＝marker 确定性小数值或 `api_number_bounded_element` 数字走位）；④四路由接入；⑤`api_schema_structural_unsupported` 的 items 检查与 `api_schema_bounds_unsupported` 顶部 F461 早退并列豁免 number 型。
+**门（含翻转）**：`in_plan=[nums|15|-999|0]`（1.5–1.9 无整数 ⇒ 十分位网格 15）、`in_int=[nums|1|9|0]`（整数值）、`in_one=[nums|-1|9|0]`（单侧 9.5）、`in_multi=[]`（multipleOf 仍拒）、`in_kw=[]`（结构判定豁免）、`in_kw_multi=[items]`；写入器两条文本断言 `in_dec_text=[{"nums":[1.5]}]`（确定性单值）＋`in_intval_text`（走位 1–9）＋`api_json_ok`。
+**活体**：`items_num_dec_ok` **200 `{"nums":[1.5,1.5,1.5,1.5]}`**（每元素＝缩放下界 1.5，必落 [1.5,1.9]——子集论证同 F420）；`items_num_int_ok` **200 `[1,2,3,4]`**（每元素 ∈[1,9] 整数，整数是合法 number）；`items_num_oneside_ok` **200**（每元素 ≤9.5）；`items_num_frac6_refuse`/`items_num_multi_refuse` **400**；`float_dec*`/required/count/pattern 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f462.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.481×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_bounds_f462.log`、`engine/schema_required_f462.log`、`engine/schema_count_f462.log`、`engine/schema_pattern_f462.log`、`engine/api_smoke_f462.log`、`engine/throughput_f462.log`）。
+**记法**：**值约束的"判定"与"发射"分两层复用最划算**——判定（哪条子 schema 可满足）wrap 喂给既有 shape helper 免费拿到，发射（逐元素体）只抽一个无壳 helper 复用；两条路共享判定代码就不会"检测器放行、写入器违反"地漂移。

@@ -1819,3 +1819,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`items_one_sided_min_ok` 200 `[5,6,7,8]`（每元素 ≥5）、`items_one_sided_max_ok` 200 `[1,2,3,4]`（每元素 ≤9）、`items_one_sided_negmax_refuse` 400；改前证据 `schema_required_f461pre.log`（F460 二进制上两例 400）。
 - **过程（门抓缺陷）**：第一版 `array_key_exists` 判"在场"被 PHP 的空串赋值坑（非尾部未匹配组赋 `""`）⇒ `ib_max` 出 `nums|0|9`、`SCHEMA-STRUCT` FAIL（`selftest_f461.log` 留证）；改 `isset && != ""` 后绿。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.557×**、哨兵 **0**。
+
+
+## ▶ 状态（F462，2026-11-09 21:05）——`number` 型整数/单侧/无整数小数网格 `items` 从点名 400 变**逐元素发射**（复用 F440–F456 缩放编码）
+- **实现**：检测器 `api_schema_array_item_number`（items 块 wrap 成单属性 schema 喂给既有 `api_schema_number_bounded_shape`，取 2–4 段、mult≠0 拒）＋`api_number_decimal_element`（从 `api_number_bounded_value` marker 分支抽出，单属性行为由 `SCHEMA-NUM-FRAC` 等门钉回归）＋`api_array_item_number_value`（元素体＝marker 确定性小数值或数字走位）；四路由接入、结构 items 检查与界判据早退并列豁免。
+- **门**：`in_plan=[nums|15|-999|0]`、`in_int=[nums|1|9|0]`、`in_one=[nums|-1|9|0]`、`in_multi=[]`、`in_kw=[]`、`in_kw_multi=[items]`；`in_dec_text=[{"nums":[1.5]}]`＋`in_intval_text` 两条文本断言＋json_ok。
+- **活体**：`items_num_dec_ok` 200 `[1.5,1.5,1.5,1.5]`（每元素＝缩放下界，必落 [1.5,1.9]）、`items_num_int_ok` 200 `[1,2,3,4]`（每元素 ∈[1,9]）、`items_num_oneside_ok` 200、`items_num_frac6_refuse`/`items_num_multi_refuse` 400；改前证据 `schema_bounds_f462pre.log`（F461 二进制上三例 400）。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.481×**、哨兵 **0**。
