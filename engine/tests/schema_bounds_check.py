@@ -286,6 +286,20 @@ cases = [
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "number", "minimum": 1, "multipleOf": 3}}}},
      lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+    # F463: a one-sided NEGATIVE maximum on a single property - the magnitude walks from |hi|
+    # upward behind a forced dash, so every value is <= hi. (Before F463 this silently fell back
+    # to unconstrained generation, ignoring the bound - the violation this case pins.)
+    ("negmax_single_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -3}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") <= -3),
+    # F463: the same one-sided negative maximum on number items - each element <= -3.
+    ("items_num_negmax_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "maximum": -3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and x <= -3 for x in val_of(txt, "nums"))),
 ]
 
 bad = 0

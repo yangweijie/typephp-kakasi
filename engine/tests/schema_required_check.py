@@ -230,10 +230,9 @@ cases = [
      lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
      and len((obj_of(txt) or {}).get("nums", [])) >= 1
      and all(isinstance(x, int) and 5 <= x <= 9 for x in (obj_of(txt) or {}).get("nums", []))),
-    # F461: one-sided integer items are served too - the missing side rides the -1 sentinel the
-    # bounded fill already uses, so the element walk honours ">= minimum" / "<= maximum" by
-    # construction. A NEGATIVE one-sided maximum and minimum:-1 stay refused (the sentinel
-    # collides with them, and a one-sided magnitude walk is not wired).
+    # F461: one-sided integer items are served - the missing side rides the -1 sentinel the
+    # bounded fill already uses. F463: a NEGATIVE one-sided maximum is served too, via the
+    # one-sided magnitude walk (dash, then the magnitude from |hi| upward unbounded).
     ("items_one_sided_min_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "minimum": 5}}}},
@@ -246,10 +245,12 @@ cases = [
      lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
      and len((obj_of(txt) or {}).get("nums", [])) >= 1
      and all(isinstance(x, int) and x <= 9 for x in (obj_of(txt) or {}).get("nums", []))),
-    ("items_one_sided_negmax_refuse", "Give the numbers.",
+    ("items_int_negmax_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "maximum": -3}}}},
-     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
+     and len((obj_of(txt) or {}).get("nums", [])) >= 1
+     and all(isinstance(x, int) and x <= -3 for x in (obj_of(txt) or {}).get("nums", []))),
     ("items_plain_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}}},
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)),

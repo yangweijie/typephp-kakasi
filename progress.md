@@ -1826,3 +1826,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`in_plan=[nums|15|-999|0]`、`in_int=[nums|1|9|0]`、`in_one=[nums|-1|9|0]`、`in_multi=[]`、`in_kw=[]`、`in_kw_multi=[items]`；`in_dec_text=[{"nums":[1.5]}]`＋`in_intval_text` 两条文本断言＋json_ok。
 - **活体**：`items_num_dec_ok` 200 `[1.5,1.5,1.5,1.5]`（每元素＝缩放下界，必落 [1.5,1.9]）、`items_num_int_ok` 200 `[1,2,3,4]`（每元素 ∈[1,9]）、`items_num_oneside_ok` 200、`items_num_frac6_refuse`/`items_num_multi_refuse` 400；改前证据 `schema_bounds_f462pre.log`（F461 二进制上三例 400）。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.481×**、哨兵 **0**。
+
+
+## ▶ 状态（F463，2026-11-09 23:55）——单侧**负**上界 `maximum:-N` 从静默违约/点名 400 变**幅值单侧走位发射**
+- **改前证据（静默违约）**：单属性 integer `maximum:-3` → 200 但发 `10`（违约）；number items 同形 → 200 但发**散文**（F462 检测器认领但元素体 ""）；integer items → 400（F461 过度拒绝）。三者同根＝`api_number_bounded_element` 的 both-negative 分支不认单侧负上界。
+- **实现**：element 加 `if ($lo==-1 && $hi<-1) { $whi=-1; }`（幅值从 |hi| 起无上界，负号强制）＋F461 integer 检测器解除负 max 拒绝（负 min 保持拒绝）。
+- **门（含翻转）**：`ib_negmax` `[]`→`nums|-1|-3`；新 `bn_shape`/`bn_text`（单属性）、`in_negmax`/`in_negmax_text`（number items）。
+- **活体**：`negmax_single_served` 200 `{"n":-3}`、`items_num_negmax_ok` 200 `[-3,-4,-5,-6]`、`items_int_negmax_ok` 200 `[-3,-4,-5,-6]`（每元素 ≤ -3）。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.535×**、哨兵 **0**。

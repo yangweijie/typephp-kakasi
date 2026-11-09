@@ -1028,9 +1028,11 @@ function api_schema_array_item_bounds(string $schema): string
         return "";
     }
     // F461: either or both sides, natural order - the absent side rides the -1 sentinel the
-    // bounded fill already understands, so the element writer needs no second encoding. Only
-    // NON-NEGATIVE one-sided bounds are claimed: a negative one-sided walk is a different
-    // mechanism, and -1 is the "absent" sentinel (a genuine -1 bound would collide with it).
+    // bounded fill already understands, so the element writer needs no second encoding.
+    // F463: a one-sided NEGATIVE maximum is claimed too - the element writer's one-sided
+    // magnitude walk (dash, then |hi| upward unbounded) honours "value <= hi". The still-refused
+    // one-sided cases: a negative MINIMUM (the walk would need a lower-bounded magnitude side,
+    // a different mechanism) and minimum:-1 (the -1 sentinel collides with the genuine -1).
     $mm = [];
     if (preg_match('/^\{\s*"type"\s*:\s*"integer"'
         . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
@@ -1044,11 +1046,9 @@ function api_schema_array_item_bounds(string $schema): string
     }
     $lo = $loSet ? (int) $mm[1] : -1;
     $hi = $hiSet ? (int) $mm[2] : -1;
-    if (!$loSet && $hi < 0) {
-        return "";                 // one-sided negative maximum: the walk cannot honour it
-    }
     if (!$hiSet && $lo < 0) {
-        return "";                 // one-sided negative minimum (includes the -1 collision)
+        return "";                 // one-sided negative minimum: the lower-bounded magnitude
+                                    // walk is a different mechanism, stays refused
     }
     if ($loSet && $hiSet && $lo > $hi) {
         return "";                 // unsatisfiable
@@ -6309,6 +6309,11 @@ function api_number_bounded_element(int $lo, int $hi): string
     // clamps the lower bound to zero (every value in [0, hi] is >= lo when lo < 0 - the same
     // subset argument the whole bounded walk uses); a one-sided negative minimum clamps to zero
     // for the same reason.
+    // F463: a one-sided NEGATIVE maximum (lo is the absent sentinel, hi a genuine negative bound)
+    // walks the magnitude from |hi| upward with NO upper bound - fill's -1 "absent" marker - so
+    // the values -(mag) all land <= hi. The guard's hi < -1 keeps the genuine -1 bounds on the
+    // old path: a real [-1, hi<=-2] interval is empty and refused upstream, and a real
+    // maximum:-1 (hi==-1) emits -1, which is itself <= -1.
     $wlo = $lo;
     $whi = $hi;
     $neg = 0;
@@ -6316,6 +6321,9 @@ function api_number_bounded_element(int $lo, int $hi): string
         $neg = 1;
         $wlo = -$hi;
         $whi = -$lo;
+        if ($lo == -1 && $hi < -1) {
+            $whi = -1;
+        }
     } else if ($lo < 0) {
         $wlo = 0;
     }
@@ -17216,6 +17224,35 @@ function main(): void
     $inIntText = str_replace("Ġ", " ", $inIntText);
     $inIntShape = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $inIntText, $inIntM) == 1;
     $inIntVal = $inIntShape == 1 ? (int) $inIntM[1] : -100000;
+    // F463: the one-sided NEGATIVE maximum - the magnitude walks from |hi| upward unbounded behind
+    // a forced dash, so every value lands <= hi. Pinned on all three routes: the single-property
+    // integer shape (a silent violation before the fix), the integer-items detector (the F461
+    // refusal flipped), and the number-items writer (already claimed by the F462 detector, which
+    // is exactly why its empty element body was a silent violation too).
+    $bnShape = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","maximum":-3}}}}}');
+    $bnIds = tok_chat("user", "Give the negative number.") . "," . tok_chat_open("assistant");
+    $bnBase = count(explode(",", $bnIds));
+    $bnOut = api_number_bounded_value($bnIds, "n", -1, -3, 0);
+    $bnParts = explode(",", $bnOut);
+    $bnText = "";
+    for ($i = $bnBase; $i < count($bnParts); $i++) {
+        $bnText = $bnText . gguf_token_str((int) $bnParts[$i]);
+    }
+    $bnText = str_replace("Ġ", " ", $bnText);
+    $bnMatch = preg_match('/^\{"n":(-[0-9]+)\}$/', $bnText, $bnM) == 1;
+    $bnVal = $bnMatch == 1 ? (int) $bnM[1] : 100000;
+    $inNegMax = api_response_schema_array_item_number('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","maximum":-3}}}}}}');
+    $inNIds = tok_chat("user", "Give the negative numbers.") . "," . tok_chat_open("assistant");
+    $inNBase = count(explode(",", $inNIds));
+    $inNOut = api_array_item_number_value($inNIds, "nums", -1, -3, 1, 0);
+    $inNParts = explode(",", $inNOut);
+    $inNText = "";
+    for ($i = $inNBase; $i < count($inNParts); $i++) {
+        $inNText = $inNText . gguf_token_str((int) $inNParts[$i]);
+    }
+    $inNText = str_replace("Ġ", " ", $inNText);
+    $inNMatch = preg_match('/^\{"nums":\[(-[0-9]+)\]\}$/', $inNText, $inNM) == 1;
+    $inNVal = $inNMatch == 1 ? (int) $inNM[1] : 100000;
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17271,6 +17308,8 @@ function main(): void
         . " in_plan=[" . $inPlan . "] in_int=[" . $inInt . "] in_one=[" . $inOne
         . "] in_multi=[" . $inMulti . "] in_kw=[" . $inKw . "] in_kw_multi=[" . $inKwMulti . "]"
         . " in_dec_text=[" . $inText . "] in_intval_text=[" . $inIntText . "]"
+        . " bn_shape=[" . $bnShape . "] bn_text=[" . $bnText . "] in_negmax=[" . $inNegMax
+        . "] in_negmax_text=[" . $inNText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17305,13 +17344,16 @@ function main(): void
         && $sfCA == "" && $sfCB == "items" && $sfCC == "items"
         && $sfCD == "" && $sfCE == "" && $sfCI == ""
         && $ibPlan == "nums|5|9" && $ibOne == "nums|5|-1" && $ibMax == "nums|-1|9"
-        && $ibNeg == "" && $ibMinShape == 1 && $ibMinVal >= 5 && api_json_ok($ibMinText) == 1
+        && $ibMinShape == 1 && $ibMinVal >= 5 && api_json_ok($ibMinText) == 1
         && $ibShape == 1
         && $ibVal >= 5 && $ibVal <= 9 && api_json_ok($ibText) == 1
         && $inPlan == "nums|15|-999|0" && $inInt == "nums|1|9|0" && $inOne == "nums|-1|9|0"
         && $inMulti == "" && $inKw == "" && $inKwMulti == "items"
         && $inDecShape == 1 && $inDecVal >= 1.5 && $inDecVal <= 1.9 && api_json_ok($inText) == 1
         && $inIntShape == 1 && $inIntVal >= 1 && $inIntVal <= 9 && api_json_ok($inIntText) == 1
+        && $ibNeg == "nums|-1|-3"
+        && $bnShape == "n|-1|-3|0" && $bnMatch == 1 && $bnVal <= -3 && api_json_ok($bnText) == 1
+        && $inNegMax == "nums|-1|-3|0" && $inNMatch == 1 && $inNVal <= -3 && api_json_ok($inNText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

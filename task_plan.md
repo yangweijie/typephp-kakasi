@@ -1233,6 +1233,30 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：负单侧 items 界 / multipleOf items → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F463 计划（负单侧 items 界：单侧负上界 `maximum:-N` 走幅值单侧走位）
+**F462 已完成**：number 型整数值/单侧/无整数小数网格 items。
+**改前状态（关键：这是**静默违约**，不只是拒绝）**：
+- 单属性 integer/number `maximum:-N`（无上界之外无下界）：shape 判据出 `n|-1|-N|0`（非空）⇒ `api_schema_bounds_unsupported` 判"支持" ⇒ 路由调 `api_number_bounded_value` ⇒ `api_number_bounded_element(-1, hi<0)` 走 both-negative 分支得 `wlo=-hi, whi=-lo=1` ⇒ `fill(-hi, 1)` 因 `-hi>1` 返回 "" ⇒ 写入器返回 "" ⇒ **回落无约束生成，静默忽略 `maximum:-N`**。
+- number 型 items `maximum:-N`：F462 检测器经 shape 认领 `prop|-1|-N|0` ⇒ 路由调 `api_array_item_number_value` ⇒ 元素体 `api_number_bounded_element(-1,-N)` 同样 "" ⇒ **整个写入器 ""，静默违约**。
+- integer 型 items `maximum:-N`：F461 检测器 `!$loSet && $hi<0` **点名 400**（过度拒绝，可解除）。
+⇒ 三者同根：`api_number_bounded_element` 的 both-negative 分支不会处理"单侧负上界"（lo 是缺侧哨兵 -1、hi 是真实负值）。
+**目标形状（窄）**：单侧负上界 `maximum:-N`（N≥2，无上界侧）⇒ 逐元素/单属性发射 ≤ -N 的整数。机制＝**幅值单侧走位**：强制负号后，幅值从 `|hi|` 起**无上界**走位（`fill(-hi, -1)`，-1 为缺侧哨兵），值 `= -(幅值) ≤ hi`（子集论证）。
+**安全性（哨兵碰撞，必须写清）**：`element(-1, hi≤-2)` 只可能是"lo 缺侧＋hi 真实负值"——因为真实区间 `[-1, hi≤-2]` 为空（lo>hi）已被 shape 判据在上游拒绝；真实 `minimum:-1` 单独（lo=-1 真实、hi=-1 缺侧）走既有分支出 -1（≥-1 合法，子集）；`maximum:-1` 单独同理出 -1（≤-1 合法）。故新分支只在 `lo==-1 && hi<-1` 时把幅值上界放开为缺侧。
+**实现（三处）**：
+1. `api_number_bounded_element`（`engine/main.php:6305`）both-negative 分支：`if ($lo == -1 && $hi < -1) { $whi = -1; }`（幅值无上界）。
+2. F461 integer 检测器 `api_schema_array_item_bounds`：解除 `!$loSet && $hi < 0` 的拒绝（单侧负上界现在可 honor）；`!$hiSet && $lo < 0`（单侧负下界）**保持拒绝**（本轮不收，负下界走幅值是另一形态）。
+3. 门：F461 的 `ib_negmax` 期望 `[]`→`nums|-1|-3`（旧期望被新行为证伪 ⇒ 翻门）；新增单属性负上界 shape＋文本门；number 型 items 负上界文本门（检测器已认领，写入器修复后逐元素 ≤ -N）。
+**活体**（`engine/tests/schema_bounds_check.py`＋`schema_required_check.py`）：`negmax_single_served`（单属性 integer `maximum:-3` → 200 且值 ≤ -3，**改前是静默违约**）、`items_int_negmax_ok`（integer items `maximum:-3` → 200 逐元素 ≤ -3）、`items_num_negmax_ok`（number items `maximum:-3` → 200 逐元素 ≤ -3）；`items_num_frac6_refuse`/`items_num_multi_refuse`/既有 float_dec* 不回退。
+**验收**：①负上界值域正确（门＋活体逐元素断言，且**改前静默违约**有证据）②`maximum:-1`/`minimum:-1` 的 -1 边界不回退 ③自检 182 起、单属性有界门（`SCHEMA-NUM-*`/`EXCL`）不回退 ④四 harness＋8000 115/0＋8001 不回退。
+**顺位**：F463 → 负单侧**下**界 items（幅值下侧走位）/ multipleOf items → 分片多卡 / FR-05（本机不可验证）。
+**F463 已完成**：`api_number_bounded_element` both-negative 分支加单侧负上界（`$lo==-1 && $hi<-1` ⇒ 幅值无上界 `fill(-hi,-1)`，哨兵安全性：真实 `[-1,hi≤-2]` 空区间上游已拒、真实 `maximum:-1` 走旧分支出 -1 合法）＋F461 integer 检测器解除负 max 拒绝（负 min 保持拒绝）。门 `ib_negmax` 翻 `nums|-1|-3`、新 `bn_shape=[n|-1|-3|0]`/`bn_text=[{"n":-3}]`/`in_negmax=[nums|-1|-3|0]`/`in_negmax_text`。
+**改前证据（静默违约）**：单属性 integer `maximum:-3` → 200 **`10`**（违约）；number items 同形 → 200 **"Sure, here are the numbers:"**（散文，非 JSON）；integer items → 400（`engine/schema_bounds_f463pre.log`、`engine/schema_required_f463pre.log`）。
+**活体**：`negmax_single_served` 200 `{"n":-3}`、`items_num_negmax_ok` 200 `[-3,-4,-5,-6]`、`items_int_negmax_ok` 200 `[-3,-4,-5,-6]`（每元素 ≤ -3）。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.535×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f463.log`、`engine/schema_bounds_f463.log`、`engine/schema_required_f463.log`、`engine/schema_count_f463.log`、`engine/schema_pattern_f463.log`、`engine/api_smoke_f463.log`、`engine/throughput_f463.log`）。
+**明确留拒（排队，F463 后）**：负单侧**下**界 items（`minimum:-N` 无 max，需幅值下侧走位）、multipleOf items（倍数项写入器）；数组项 schema 的 const/pattern；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：负单侧下界 items / multipleOf items → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
