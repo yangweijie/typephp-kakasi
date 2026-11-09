@@ -300,6 +300,19 @@ cases = [
      lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
      and len(val_of(txt, "nums")) >= 1
      and all(isinstance(x, (int, float)) and x <= -3 for x in val_of(txt, "nums"))),
+    # F464: a one-sided NEGATIVE minimum on a single property - the magnitude walk [1, |lo|] gives
+    # values in [lo, -1], all >= lo (subset; the no-max side is free). Pinned on the number-items
+    # route too, which was already serving this shape without a gate.
+    ("negmin_single_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -5}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") is not None
+     and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") >= -5),
+    ("items_num_negmin_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": -5}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and x >= -5 for x in val_of(txt, "nums"))),
 ]
 
 bad = 0

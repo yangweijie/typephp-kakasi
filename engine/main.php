@@ -1030,9 +1030,11 @@ function api_schema_array_item_bounds(string $schema): string
     // F461: either or both sides, natural order - the absent side rides the -1 sentinel the
     // bounded fill already understands, so the element writer needs no second encoding.
     // F463: a one-sided NEGATIVE maximum is claimed too - the element writer's one-sided
-    // magnitude walk (dash, then |hi| upward unbounded) honours "value <= hi". The still-refused
-    // one-sided cases: a negative MINIMUM (the walk would need a lower-bounded magnitude side,
-    // a different mechanism) and minimum:-1 (the -1 sentinel collides with the genuine -1).
+    // magnitude walk (dash, then |hi| upward unbounded) honours "value <= hi".
+    // F464: a one-sided NEGATIVE minimum is claimed as well - the same both-negative branch
+    // walks the magnitude in [1, |lo|] behind the dash, so the values land in [lo, -1], all
+    // >= lo (the subset argument; the absent max side is free). minimum:-1 rides the same
+    // walk (magnitude [1,1] -> -1 >= -1), so the -1 sentinel collision is legal here too.
     $mm = [];
     if (preg_match('/^\{\s*"type"\s*:\s*"integer"'
         . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
@@ -1046,10 +1048,6 @@ function api_schema_array_item_bounds(string $schema): string
     }
     $lo = $loSet ? (int) $mm[1] : -1;
     $hi = $hiSet ? (int) $mm[2] : -1;
-    if (!$hiSet && $lo < 0) {
-        return "";                 // one-sided negative minimum: the lower-bounded magnitude
-                                    // walk is a different mechanism, stays refused
-    }
     if ($loSet && $hiSet && $lo > $hi) {
         return "";                 // unsatisfiable
     }
@@ -17253,6 +17251,46 @@ function main(): void
     $inNText = str_replace("Ġ", " ", $inNText);
     $inNMatch = preg_match('/^\{"nums":\[(-[0-9]+)\]\}$/', $inNText, $inNM) == 1;
     $inNVal = $inNMatch == 1 ? (int) $inNM[1] : 100000;
+    // F464: the one-sided NEGATIVE minimum - the same both-negative branch walks the magnitude
+    // [1, |lo|] behind the dash, so values land in [lo, -1], all >= lo. Pinned on all three
+    // routes: the integer-items detector (the F461 refusal lifted), the single-property shape
+    // (already serving without a gate), and the number-items writer (also already serving).
+    $ibNegMin = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":-5}}}}}}');
+    $ibmIds = tok_chat("user", "Give the negative numbers.") . "," . tok_chat_open("assistant");
+    $ibmBase = count(explode(",", $ibmIds));
+    $ibmOut = api_array_bounded_int_value($ibmIds, "nums", -5, -1, 1, 0);
+    $ibmParts = explode(",", $ibmOut);
+    $ibmText = "";
+    for ($i = $ibmBase; $i < count($ibmParts); $i++) {
+        $ibmText = $ibmText . gguf_token_str((int) $ibmParts[$i]);
+    }
+    $ibmText = str_replace("Ġ", " ", $ibmText);
+    $ibmMatch = preg_match('/^\{"nums":\[(-[0-9]+)\]\}$/', $ibmText, $ibmM) == 1;
+    $ibmVal = $ibmMatch == 1 ? (int) $ibmM[1] : 100000;
+    $ngShape = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":-5}}}}}');
+    $ngIds = tok_chat("user", "Give the negative number.") . "," . tok_chat_open("assistant");
+    $ngBase = count(explode(",", $ngIds));
+    $ngOut = api_number_bounded_value($ngIds, "n", -5, -1, 0);
+    $ngParts = explode(",", $ngOut);
+    $ngText = "";
+    for ($i = $ngBase; $i < count($ngParts); $i++) {
+        $ngText = $ngText . gguf_token_str((int) $ngParts[$i]);
+    }
+    $ngText = str_replace("Ġ", " ", $ngText);
+    $ngMatch = preg_match('/^\{"n":(-[0-9]+)\}$/', $ngText, $ngM) == 1;
+    $ngVal = $ngMatch == 1 ? (int) $ngM[1] : 100000;
+    $ngItems = api_response_schema_array_item_number('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","minimum":-5}}}}}}');
+    $ngiIds = tok_chat("user", "Give the negative values.") . "," . tok_chat_open("assistant");
+    $ngiBase = count(explode(",", $ngiIds));
+    $ngiOut = api_array_item_number_value($ngiIds, "nums", -5, -1, 1, 0);
+    $ngiParts = explode(",", $ngiOut);
+    $ngiText = "";
+    for ($i = $ngiBase; $i < count($ngiParts); $i++) {
+        $ngiText = $ngiText . gguf_token_str((int) $ngiParts[$i]);
+    }
+    $ngiText = str_replace("Ġ", " ", $ngiText);
+    $ngiMatch = preg_match('/^\{"nums":\[(-[0-9]+)\]\}$/', $ngiText, $ngiM) == 1;
+    $ngiVal = $ngiMatch == 1 ? (int) $ngiM[1] : 100000;
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17310,6 +17348,9 @@ function main(): void
         . " in_dec_text=[" . $inText . "] in_intval_text=[" . $inIntText . "]"
         . " bn_shape=[" . $bnShape . "] bn_text=[" . $bnText . "] in_negmax=[" . $inNegMax
         . "] in_negmax_text=[" . $inNText . "]"
+        . " ib_negmin=[" . $ibNegMin . "] ib_negmin_text=[" . $ibmText . "]"
+        . " ng_shape=[" . $ngShape . "] ng_text=[" . $ngText . "] ng_items=[" . $ngItems
+        . "] ng_items_text=[" . $ngiText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17354,6 +17395,10 @@ function main(): void
         && $ibNeg == "nums|-1|-3"
         && $bnShape == "n|-1|-3|0" && $bnMatch == 1 && $bnVal <= -3 && api_json_ok($bnText) == 1
         && $inNegMax == "nums|-1|-3|0" && $inNMatch == 1 && $inNVal <= -3 && api_json_ok($inNText) == 1
+        && $ibNegMin == "nums|-5|-1"
+        && $ibmMatch == 1 && $ibmVal >= -5 && api_json_ok($ibmText) == 1
+        && $ngShape == "n|-5|-1|0" && $ngMatch == 1 && $ngVal >= -5 && api_json_ok($ngText) == 1
+        && $ngItems == "nums|-5|-1|0" && $ngiMatch == 1 && $ngiVal >= -5 && api_json_ok($ngiText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

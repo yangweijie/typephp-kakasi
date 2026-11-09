@@ -251,6 +251,14 @@ cases = [
      lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
      and len((obj_of(txt) or {}).get("nums", [])) >= 1
      and all(isinstance(x, int) and x <= -3 for x in (obj_of(txt) or {}).get("nums", []))),
+    # F464: a one-sided NEGATIVE minimum is served too - the magnitude walk [1, |lo|] behind the
+    # dash gives values in [lo, -1], all >= lo (the subset argument; the no-max side is free).
+    ("items_int_negmin_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": -5}}}},
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("nums"), list)
+     and len((obj_of(txt) or {}).get("nums", [])) >= 1
+     and all(isinstance(x, int) and x >= -5 for x in (obj_of(txt) or {}).get("nums", []))),
     ("items_plain_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}}},
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)),

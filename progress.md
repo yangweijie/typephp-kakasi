@@ -1834,3 +1834,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：`ib_negmax` `[]`→`nums|-1|-3`；新 `bn_shape`/`bn_text`（单属性）、`in_negmax`/`in_negmax_text`（number items）。
 - **活体**：`negmax_single_served` 200 `{"n":-3}`、`items_num_negmax_ok` 200 `[-3,-4,-5,-6]`、`items_int_negmax_ok` 200 `[-3,-4,-5,-6]`（每元素 ≤ -3）。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.535×**、哨兵 **0**。
+
+
+## ▶ 状态（F464，2026-11-10 00:15）——单侧负下界 `minimum:-N` 解除 integer items 守卫；改前取证暴露三条路不一致
+- **改前证据**：integer items `minimum:-5` → 400（F461 守卫过度拒绝）；单属性同形 → 200 `{"n":-1}` 已服务（无门）；number items 同形 → 200 `[-1,-2,-3,-4]` 已服务（无门）。
+- **实现**：`api_schema_array_item_bounds` 删除 `!$hiSet && $lo<0` 守卫（element 零改动，幅值走位 `[1,|lo|]` 天然覆盖）。
+- **门（新）**：`ib_negmin`/`ib_negmin_text`、`ng_shape`/`ng_text`、`ng_items`/`ng_items_text`——三条路全部钉上门。
+- **活体**：`items_int_negmin_ok` 200 `[-1,-2,-3,-4]`、`negmin_single_served` 200 `{"n":-1}`、`items_num_negmin_ok` 200 `[-1,-2,-3,-4]`。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling 见 gate_live（单次测量，如实记录）、哨兵 **0**。

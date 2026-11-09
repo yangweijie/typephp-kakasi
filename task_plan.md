@@ -1257,6 +1257,28 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：负单侧下界 items / multipleOf items → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F464 计划（负单侧**下**界 `minimum:-N`：解除 integer items 检测器守卫，钉住三条路一致）
+**F463 已完成**：单侧负上界幅值走位。
+**读码判定（改前状态，执行前以活体取证）**：单侧负下界 `minimum:-N`（无 max）三条路现状**不一致**：
+- 单属性 integer/number：shape 出 `n|lo|-1|0`（非空）⇒ bounds 判据放行 ⇒ `api_number_bounded_element(lo,-1)` 走 both-negative 分支得幅值 `[1,|lo|]` ⇒ 值 `-(幅值) ∈ [lo,-1] ⊂ [lo,∞)`（子集）⇒ **已在服务**（无门钉住，属无门盲区）。
+- number 型 items：F462 检测器经 shape 认领 `nums|lo|-1|0` ⇒ 写入器整数路径同元素体 ⇒ **已在服务**（同样无门）。
+- integer 型 items：F461 检测器 `!$hiSet && $lo < 0`（`engine/main.php:1049`）**点名 400** ⇒ 唯一的过度拒绝。
+⇒ F464 ＝解除该守卫＋把三条路都钉上门与活体（一致性本身就是要钉的性质）。
+**哨兵安全性（minimum:-1 与 -2 边界，必须写清）**：`element(lo,-1)` 的 both-negative 分支对 `minimum:-1`（lo=-1 真实、hi=-1 缺侧）出幅值 `[1,1]` ⇒ 值 -1 ≥ -1 ✓；`minimum:-2` 出幅值 `[1,2]` ⇒ 值 -1,-2 ≥ -2 ✓；F463 的 `lo==-1 && hi<-1` 守卫在 hi==-1 时不触发 ⇒ 旧路径保持。真实 `[-1, hi]` 区间（hi ≥ -1 双侧）不受影响。
+**实现（一处＋门）**：
+1. `api_schema_array_item_bounds`：删除 `!$hiSet && $lo < 0` 守卫（注释改为"单侧负下界走幅值走位 [1,|lo|]，值必 ≥ lo（子集）"）。
+2. 门：新 `ib_negmin=[nums|-5|-1]`（integer items 检测器）＋integer items 写入器文本（`{"nums":[-<1..5>]}` 值 ≥ -5）；单属性 `ng_shape=[n|-5|-1|0]`＋文本门（值 ≥ -5）；number items `ng_items=[nums|-5|-1|0]`＋文本门（钉住"已服务"的事实，补上 F462 缺的门）。
+**活体**（`schema_required_check.py`＋`schema_bounds_check.py`）：`items_int_negmin_ok`（integer items `minimum:-5` → 200 逐元素 ≥ -5，**改前 400**）、`negmin_single_served`（单属性 integer → 200 值 ≥ -5）、`items_num_negmin_ok`（number items → 200 逐元素 ≥ -5）；F463 的 negmax 三例与 frac6/multi 不回退。
+**验收**：①三条路的负下界值域正确且一致（门＋活体）②`minimum:-1`/`-2` 边界合法 ③自检 182 起 ④四 harness＋8000 115/0＋8001 不回退。
+**顺位**：F464 → multipleOf items（倍数项写入器）→ 分片多卡 / FR-05（本机不可验证）。
+**F464 已完成**：`api_schema_array_item_bounds` 删除 `!$hiSet && $lo < 0` 守卫（单侧负下界现在可 honor——element 既有 both-negative 分支幅值走位 `[1,|lo|]`，值 `∈ [lo,-1] ⊂ [lo,∞)`，子集论证；`minimum:-1` 走幅值 `[1,1]` 出 -1 合法，F463 的 `hi<-1` 守卫不触发）。门新 `ib_negmin=[nums|-5|-1]`/`ib_negmin_text`、`ng_shape=[n|-5|-1|0]`/`ng_text`、`ng_items=[nums|-5|-1|0]`/`ng_items_text`。
+**改前证据（三条路不一致，`engine/schema_bounds_f464pre.log`、`engine/schema_required_f464pre.log`，F463 二进制）**：integer items `minimum:-5` → **400**（过度拒绝）；单属性同形 → **200 `{"n":-1}`**（已在服务，无门）；number items 同形 → **200 `[-1,-2,-3,-4]`**（已在服务，无门）——即 F461 守卫是唯一挡住该形状的地方，另两条路早已放行。
+**活体**：`items_int_negmin_ok` 200 `[-1,-2,-3,-4]`（每元素 ≥ -5）、`negmin_single_served` 200 `{"n":-1}`、`items_num_negmin_ok` 200 `[-1,-2,-3,-4]`；F463 negmax 三例不回退。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.533×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f464.log`、`engine/schema_bounds_f464.log`、`engine/schema_required_f464.log`、`engine/schema_count_f464.log`、`engine/schema_pattern_f464.log`、`engine/api_smoke_f464.log`、`engine/throughput_f464.log`、改前证据 `engine/schema_bounds_f464pre.log`、`engine/schema_required_f464pre.log`）。
+**明确留拒（排队，F464 后）**：multipleOf items（倍数项写入器，无界后缀机制与有界折叠各一条）；数组项 schema 的 const/pattern；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：multipleOf items → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
