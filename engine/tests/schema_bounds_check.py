@@ -313,6 +313,30 @@ cases = [
      lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
      and len(val_of(txt, "nums")) >= 1
      and all(isinstance(x, (int, float)) and x >= -5 for x in val_of(txt, "nums"))),
+    # F465: unbounded multipleOf items - the suffix writer emits a multiple of M per element.
+    ("items_mult_unb_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "multipleOf": 3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and x % 3 == 0 for x in val_of(txt, "nums"))),
+    # Bounded multipleOf items - the interval collapses to its smallest multiple, one value.
+    ("items_mult_bnd_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and x == 5000 for x in val_of(txt, "nums"))),
+    # No multiple of 5000 lies in [1, 4000]: unsatisfiable, stays refused.
+    ("items_mult_unsat_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 1, "maximum": 4000, "multipleOf": 5000}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+    # The multiple writer is integer-only (F433): a number leaf with multipleOf stays refused.
+    ("items_mult_num_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "multipleOf": 3}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
 ]
 
 bad = 0

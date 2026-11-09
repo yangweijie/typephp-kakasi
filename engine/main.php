@@ -1146,6 +1146,116 @@ function api_response_schema_array_item_number(string $body): string
     return api_schema_array_item_number(api_json_object_after($body, "schema"));
 }
 
+// F465: "prop|mult|lo|hi" for a single array property whose `items` is an integer carrying
+// multipleOf. Two forms: unbounded (min/max absent -> lo/hi are the -1 sentinels; each element
+// comes from the suffix writer api_multiple_fill, so every element is a multiple of mult), and
+// bounded inclusive (the interval collapses to its smallest multiple through the SAME
+// api_schema_number_bounded_shape judgement the single-property route uses - wrapped, so both
+// routes fold a bound pair by one code - and lo==hi==that multiple, one deterministic value per
+// element, the F420 subset argument). Natural key order only; mult >= 1; an unbounded multipleOf
+// beyond the suffix writer's reach (999999999) and a number leaf stay refused.
+function api_schema_array_item_multiple(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 2) {
+        return "";
+    }
+    $kind = $lkv[1];
+    $tk = strpos($kind, "~");
+    if ($tk !== false) {
+        $kind = substr($kind, 0, $tk);
+    }
+    if ($kind != "an") {
+        return "";
+    }
+    $kp = strpos($block, "\"" . $lkv[0] . "\"");
+    $vo = strpos($block, "{", $kp);
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return "";
+    }
+    $ipo = strpos($leaf, "\"items\"");
+    if ($ipo === false) {
+        return "";
+    }
+    $ibo = strpos($leaf, "{", $ipo);
+    if ($ibo === false) {
+        return "";
+    }
+    $isub = api_balance_block($leaf, $ibo);
+    if ($isub == "") {
+        return "";
+    }
+    $mm = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"integer"'
+        . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
+        . '(?:\s*,\s*"maximum"\s*:\s*(-?[0-9]+))?'
+        . '\s*,\s*"multipleOf"\s*:\s*([0-9]+)\s*\}$/', $isub, $mm) != 1) {
+        return "";
+    }
+    $mult = (int) $mm[3];
+    if ($mult < 1) {
+        return "";
+    }
+    $loSet = isset($mm[1]) && $mm[1] !== "";
+    $hiSet = isset($mm[2]) && $mm[2] !== "";
+    if (!$loSet && !$hiSet) {
+        // Unbounded: the suffix writer reaches multipliers up to nine digits (F430/F443).
+        if ($mult > 999999999) {
+            return "";
+        }
+        return $lkv[0] . "|" . $mult . "|-1|-1";
+    }
+    // Bounded: fold through the shared shape judgement (which refuses an interval holding no
+    // multiple) and take its collapsed lo==hi pair; the shape's mult segment must agree.
+    $lo = (int) $mm[1];
+    $hi = (int) $mm[2];
+    if ($lo > $hi) {
+        return "";
+    }
+    $wrap = '{"properties":{"_item":' . $isub . '}}';
+    $shape = api_schema_number_bounded_shape($wrap);
+    if ($shape == "") {
+        return "";
+    }
+    $seg = explode("|", $shape);
+    if (count($seg) != 4 || $seg[3] != "" . $mult) {
+        return "";
+    }
+    return $lkv[0] . "|" . $mult . "|" . $seg[1] . "|" . $seg[2];
+}
+
+function api_response_schema_array_item_multiple(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    return api_schema_array_item_multiple(api_json_object_after($body, "schema"));
+}
+
 // F460: an array of bounded integers. Each element is the same number body the single-property
 // writer uses (forced dash for a negative interval, then the digit walk), so every element lies in
 // [lo, hi]; the element count uses the same minItems/maxItems budget as the plain array writers.
@@ -1267,6 +1377,77 @@ function api_array_item_number_value(string $ids, string $prop, int $lo, int $hi
             }
             $s = $s . "," . $b;
         }
+        $offer = $endIds;
+        if ($it + 1 < $bMin) {
+            $offer = $commaIds;
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;
+        }
+        $nx = model_session_next_allowed(0, $offer);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos("," . $commaIds . ",", "," . $nx . ",") === false) {
+            $done = 1;
+            break;
+        }
+    }
+    if ($done == 0) {
+        $rb = api_constrained_continue(["]"], 4);
+        if ($rb != "") {
+            $s = $s . "," . $rb;
+        }
+    }
+    $end = api_constrained_continue(["}"], 4);
+    if ($end != "") {
+        $s = $s . "," . $end;
+    }
+    return $s;
+}
+
+// F465: an array of multipleOf items. Same loop as the other item writers; the element body has
+// two modes - unbounded (lo == -1) decodes a digit prefix and forces the zero-padded suffix
+// through api_multiple_fill, so every element is a multiple of mult, and bounded folds to the
+// interval's smallest multiple (lo == hi from the shared shape judgement) and walks that one
+// deterministic value per element. The element count rides the same minItems/maxItems budget.
+function api_array_item_multiple_value(string $ids, string $prop, int $mult, int $lo, int $hi, int $maxItems, int $useCache = 1, string $bounds = ""): string
+{
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($commaIds == "" || $bracketIds == "") {
+        return "";
+    }
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
+    }
+    $unbounded = ($lo == -1 && $hi == -1) ? 1 : 0;
+    $s = api_constrained($ids, ["{\"" . $prop . "\":["], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $endIds = $commaIds . "," . $bracketIds;
+    $done = 0;
+    for ($it = 0; $it < $maxItems; $it++) {
+        if ($unbounded == 1) {
+            $b = api_multiple_fill($mult, 4);
+        } else {
+            $b = api_number_bounded_element($lo, $hi);
+        }
+        if ($b == "") {
+            return "";
+        }
+        $s = $s . "," . $b;
         $offer = $endIds;
         if ($it + 1 < $bMin) {
             $offer = $commaIds;
@@ -7214,14 +7395,20 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         && $scArrItemB == "") {
         $scArrItemN = api_response_schema_array_item_number($body);
     }
-    $scArrEnum = "";
+    // F465: the multipleOf items form claims the same slot (integer leaves only).
+    $scArrItemM = "";
     if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
         && $scArrItemB == "" && $scArrItemN == "") {
+        $scArrItemM = api_response_schema_array_item_multiple($body);
+    }
+    $scArrEnum = "";
+    if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
+        && $scArrItemB == "" && $scArrItemN == "" && $scArrItemM == "") {
         $scArrEnum = api_response_schema_array_enum($body);
     }
     $scMix = "";
     if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
-        && $scArrEnum == "" && $scArrItemB == "" && $scArrItemN == "") {
+        && $scArrEnum == "" && $scArrItemB == "" && $scArrItemN == "" && $scArrItemM == "") {
         $scMix = api_response_schema_mixed_object($body);
     }
     $scProp = [];
@@ -7287,6 +7474,10 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $sin1 = explode("|", $scArrItemN);
         $scOut = api_array_item_number_value($ids, $sin1[0], (int) $sin1[1], (int) $sin1[2], 4, 1,
             api_response_schema_array_bounds($body));
+    } else if ($scArrItemM != "") {
+        $sim1 = explode("|", $scArrItemM);
+        $scOut = api_array_item_multiple_value($ids, $sim1[0], (int) $sim1[1], (int) $sim1[2],
+            (int) $sim1[3], 4, 1, api_response_schema_array_bounds($body));
     } else if ($scArrEnum != "") {
         $sae = explode("|", $scArrEnum);
         $scOut = api_array_enum_value($ids, $sae[0], $sae[1], 4, 1,
@@ -9182,11 +9373,13 @@ function api_schema_structural_unsupported(string $schema): string
     // F459/F460/F461: the finite string-enum items form, the both-bounds integer form and the
     // one-sided integer form now have their own writers, so they are not refused. F462: the
     // bounded-number items form (integer-valued, one-sided, and the decimal-grid marker cases) is
-    // honoured element by element the same way.
+    // honoured element by element the same way. F465: the multipleOf items form (unbounded suffix
+    // per element, bounded folded to the interval's smallest multiple) joins them.
     if (api_schema_items_constrained($schema) == 1
         && api_schema_array_enum($schema) == ""
         && api_schema_array_item_bounds($schema) == ""
-        && api_schema_array_item_number($schema) == "") {
+        && api_schema_array_item_number($schema) == ""
+        && api_schema_array_item_multiple($schema) == "") {
         return "items";
     }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
@@ -9749,9 +9942,12 @@ function api_schema_bounds_unsupported(string $body): int
     // items form before routing ever reached the detector - the F459 "find every earlier
     // claimer" lesson, one layer down. F462: the bounded-NUMBER items form joins the exemption -
     // the pair walk likewise cannot read a number leaf (it fails the integer type check, or the
-    // float-literal rule) and would refuse the served shapes.
+    // float-literal rule) and would refuse the served shapes. F465: the multipleOf items form
+    // joins too - the bounded case dies in the multipleOf guard below ("bounds plus a multipleOf
+    // the shape does not honour"), which cannot see that the item writer folds it per element.
     if (api_schema_array_item_bounds($body) != ""
-        || api_schema_array_item_number($body) != "") {
+        || api_schema_array_item_number($body) != ""
+        || api_schema_array_item_multiple($body) != "") {
         return 0;
     }
     // F436/F437: the draft-4 BOOLEAN spelling is now HONOURED where the shape can convert it (the
@@ -11111,14 +11307,20 @@ Connection: close
                                     && $scArrItemB == "") {
                                     $scArrItemN = api_response_schema_array_item_number($body);
                                 }
-                                $scArrEnum = "";
+                                // F465: the multipleOf items form claims the same slot.
+                                $scArrItemM = "";
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
                                     && $scArrItemB == "" && $scArrItemN == "") {
+                                    $scArrItemM = api_response_schema_array_item_multiple($body);
+                                }
+                                $scArrEnum = "";
+                                if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
+                                    && $scArrItemB == "" && $scArrItemN == "" && $scArrItemM == "") {
                                     $scArrEnum = api_response_schema_array_enum($body);
                                 }
                                 $scMix = "";
                                 if ($scArrObj == "" && $scNest == "" && $scArr == "" && $scArrNum == ""
-                                    && $scArrEnum == "" && $scArrItemB == "" && $scArrItemN == "") {
+                                    && $scArrEnum == "" && $scArrItemB == "" && $scArrItemN == "" && $scArrItemM == "") {
                                     $scMix = api_response_schema_mixed_object($body);
                                 }
                                 $scProp = [];
@@ -11186,6 +11388,11 @@ Connection: close
                                     $sin2 = explode("|", $scArrItemN);
                                     $scOut = api_array_item_number_value($ids, $sin2[0],
                                         (int) $sin2[1], (int) $sin2[2], 4, 1,
+                                        api_response_schema_array_bounds($body));
+                                } else if ($scArrItemM != "") {
+                                    $sim2 = explode("|", $scArrItemM);
+                                    $scOut = api_array_item_multiple_value($ids, $sim2[0],
+                                        (int) $sim2[1], (int) $sim2[2], (int) $sim2[3], 4, 1,
                                         api_response_schema_array_bounds($body));
                                 } else if ($scArrEnum != "") {
                                     $sae2 = explode("|", $scArrEnum);
@@ -12246,14 +12453,20 @@ function api_serve(int $port): void
                             && $sArrItemB == "") {
                             $sArrItemN = api_response_schema_array_item_number($body);
                         }
-                        $sArrEnum = "";
+                        // F465: the multipleOf items form claims the same slot.
+                        $sArrItemM = "";
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == ""
                             && $sArrItemB == "" && $sArrItemN == "") {
+                            $sArrItemM = api_response_schema_array_item_multiple($body);
+                        }
+                        $sArrEnum = "";
+                        if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == ""
+                            && $sArrItemB == "" && $sArrItemN == "" && $sArrItemM == "") {
                             $sArrEnum = api_response_schema_array_enum($body);
                         }
                         $sMix = "";
                         if ($sArrObj == "" && $sNest == "" && $sArr == "" && $sArrNum == ""
-                            && $sArrEnum == "" && $sArrItemB == "" && $sArrItemN == "") {
+                            && $sArrEnum == "" && $sArrItemB == "" && $sArrItemN == "" && $sArrItemM == "") {
                             $sMix = api_response_schema_mixed_object($body);
                         }
                         if ($sArrNI != "") {
@@ -12320,6 +12533,11 @@ function api_serve(int $port): void
                             $sin3 = explode("|", $sArrItemN);
                             $sJOut = api_array_item_number_value($ids, $sin3[0], (int) $sin3[1],
                                 (int) $sin3[2], 4, $prefixCache,
+                                api_response_schema_array_bounds($body));
+                        } else if ($sArrItemM != "") {
+                            $sim3 = explode("|", $sArrItemM);
+                            $sJOut = api_array_item_multiple_value($ids, $sim3[0], (int) $sim3[1],
+                                (int) $sim3[2], (int) $sim3[3], 4, $prefixCache,
                                 api_response_schema_array_bounds($body));
                         } else if ($sArrEnum != "") {
                             $sae3 = explode("|", $sArrEnum);
@@ -12639,14 +12857,20 @@ function api_serve(int $port): void
                         && $arrItemB == "") {
                         $arrItemN = api_response_schema_array_item_number($body);
                     }
-                    $arrEnum = "";
+                    // F465: the multipleOf items form claims the same slot.
+                    $arrItemM = "";
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == ""
                         && $arrItemB == "" && $arrItemN == "") {
+                        $arrItemM = api_response_schema_array_item_multiple($body);
+                    }
+                    $arrEnum = "";
+                    if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == ""
+                        && $arrItemB == "" && $arrItemN == "" && $arrItemM == "") {
                         $arrEnum = api_response_schema_array_enum($body);
                     }
                     $mixPlan = "";
                     if ($arrObj == "" && $nestProp == "" && $arrProp == "" && $arrNum == ""
-                        && $arrEnum == "" && $arrItemB == "" && $arrItemN == "") {
+                        && $arrEnum == "" && $arrItemB == "" && $arrItemN == "" && $arrItemM == "") {
                         $mixPlan = api_response_schema_mixed_object($body);
                     }
                     $strProps = [];
@@ -12730,6 +12954,12 @@ function api_serve(int $port): void
                         $ain = explode("|", $arrItemN);
                         $enumOut = api_array_item_number_value($ids, $ain[0], (int) $ain[1],
                             (int) $ain[2], 4, $prefixCache,
+                            api_response_schema_array_bounds($body));
+                        $jsonMode = 1;
+                    } else if ($arrItemM != "") {
+                        $aim = explode("|", $arrItemM);
+                        $enumOut = api_array_item_multiple_value($ids, $aim[0], (int) $aim[1],
+                            (int) $aim[2], (int) $aim[3], 4, $prefixCache,
                             api_response_schema_array_bounds($body));
                         $jsonMode = 1;
                     } else if ($arrEnum != "") {
@@ -17291,6 +17521,34 @@ function main(): void
     $ngiText = str_replace("Ġ", " ", $ngiText);
     $ngiMatch = preg_match('/^\{"nums":\[(-[0-9]+)\]\}$/', $ngiText, $ngiM) == 1;
     $ngiVal = $ngiMatch == 1 ? (int) $ngiM[1] : 100000;
+    // F465: the multipleOf items form - unbounded rides the suffix writer per element, bounded
+    // folds through the shared shape judgement to the interval's smallest multiple.
+    $imUnb = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","multipleOf":3}}}}}}');
+    $imBnd = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":1,"maximum":1000000,"multipleOf":5000}}}}}}');
+    $imUnsat = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":1,"maximum":4000,"multipleOf":5000}}}}}}');
+    $imBig = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","multipleOf":2000000000}}}}}}');
+    $imNum = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","multipleOf":3}}}}}}');
+    $imKwBnd = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":1,"maximum":1000000,"multipleOf":5000}}}}');
+    $imIds = tok_chat("user", "Give the multiples.") . "," . tok_chat_open("assistant");
+    $imBase = count(explode(",", $imIds));
+    $imOut = api_array_item_multiple_value($imIds, "nums", 3, -1, -1, 1, 0);
+    $imParts = explode(",", $imOut);
+    $imText = "";
+    for ($i = $imBase; $i < count($imParts); $i++) {
+        $imText = $imText . gguf_token_str((int) $imParts[$i]);
+    }
+    $imText = str_replace("Ġ", " ", $imText);
+    $imUMatch = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $imText, $imM) == 1;
+    $imUVal = $imUMatch == 1 ? (int) $imM[1] : -1;
+    $im2Ids = tok_chat("user", "Give the multiple.") . "," . tok_chat_open("assistant");
+    $im2Base = count(explode(",", $im2Ids));
+    $imBOut = api_array_item_multiple_value($im2Ids, "nums", 5000, 5000, 5000, 1, 0);
+    $imBParts = explode(",", $imBOut);
+    $imBText = "";
+    for ($i = $im2Base; $i < count($imBParts); $i++) {
+        $imBText = $imBText . gguf_token_str((int) $imBParts[$i]);
+    }
+    $imBText = str_replace("Ġ", " ", $imBText);
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17351,6 +17609,9 @@ function main(): void
         . " ib_negmin=[" . $ibNegMin . "] ib_negmin_text=[" . $ibmText . "]"
         . " ng_shape=[" . $ngShape . "] ng_text=[" . $ngText . "] ng_items=[" . $ngItems
         . "] ng_items_text=[" . $ngiText . "]"
+        . " im_unb=[" . $imUnb . "] im_bnd=[" . $imBnd . "] im_unsat=[" . $imUnsat
+        . "] im_big=[" . $imBig . "] im_num=[" . $imNum . "] im_kw_bnd=[" . $imKwBnd . "]"
+        . " im_unb_text=[" . $imText . "] im_bnd_text=[" . $imBText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17399,6 +17660,10 @@ function main(): void
         && $ibmMatch == 1 && $ibmVal >= -5 && api_json_ok($ibmText) == 1
         && $ngShape == "n|-5|-1|0" && $ngMatch == 1 && $ngVal >= -5 && api_json_ok($ngText) == 1
         && $ngItems == "nums|-5|-1|0" && $ngiMatch == 1 && $ngiVal >= -5 && api_json_ok($ngiText) == 1
+        && $imUnb == "nums|3|-1|-1" && $imBnd == "nums|5000|5000|5000"
+        && $imUnsat == "" && $imBig == "" && $imNum == "" && $imKwBnd == ""
+        && $imUMatch == 1 && ($imUVal % 3) == 0 && api_json_ok($imText) == 1
+        && $imBText == '{"nums":[5000]}' && api_json_ok($imBText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

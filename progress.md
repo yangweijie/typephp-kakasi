@@ -1842,3 +1842,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（新）**：`ib_negmin`/`ib_negmin_text`、`ng_shape`/`ng_text`、`ng_items`/`ng_items_text`——三条路全部钉上门。
 - **活体**：`items_int_negmin_ok` 200 `[-1,-2,-3,-4]`、`negmin_single_served` 200 `{"n":-1}`、`items_num_negmin_ok` 200 `[-1,-2,-3,-4]`。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling 见 gate_live（单次测量，如实记录）、哨兵 **0**。
+
+
+## ▶ 状态（F465，2026-11-10 00:50）——integer 型 multipleOf `items` 从点名 400 变**逐元素倍数发射**
+- **改前证据**：无界 → 400 "items"（F458 keywords 层）；有界 → 400 "numeric bounds…"（bounds 层 F420 守卫）；unsat/number 对照 400 正确。
+- **实现**：检测器（无界 `prop|mult|-1|-1`；有界 wrap→shape 折叠 `lo==hi==start`）＋写入器（无界 `api_multiple_fill` 逐元素 / 有界定值走位）＋四路由＋两处豁免。
+- **门**：`im_unb`/`im_bnd`/`im_unsat=[]`/`im_big=[]`/`im_num=[]`/`im_kw_bnd=[]`＋两条文本断言（无界元素 %3==0、有界 5000）。
+- **活体**：`items_mult_unb_ok` 200 `[1234002,2345001,3456000,4567002]`、`items_mult_bnd_ok` 200 `[5000,…]`、unsat/num 400。
+- **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**。

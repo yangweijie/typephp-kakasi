@@ -1279,6 +1279,32 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：multipleOf items → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F465 计划（multipleOf items：倍数项写入器——无界后缀逐元素 / 有界折叠确定性单值）
+**F464 已完成**：负单侧下界。
+**改前状态（读码判定，执行前活体取证）**：`items` 带 `multipleOf` 两形态均被点名 400：
+- 无界 `items:{"type":"integer","multipleOf":3}`：bounds 判据无界分支放行（F430 m≤999999999、F431 单叶）→ keywords 层 F458 `items_constrained`（multipleOf 在名单）→ **"items" 400**。
+- 有界 `items:{"type":"integer","minimum":1,"maximum":1000000,"multipleOf":5000}`：bounds 判据 shape 检查对 plan 叶 kind `an` 返回 "" → F420 守卫（multipleOf 正则命中）→ **"numeric bounds…" 400**。
+- number 型 items + multipleOf：F462 检测器 mult≠0 拒 → "items" 400（**保持拒绝**，倍数写入器是整数-only，F433 同族）。
+**目标形状（窄）**：单数组属性＋`items` 恰为 `{"type":"integer",…,"multipleOf":M}`（自然序、M≥1、纯十进制）⇒ 逐元素发射：
+- **无界**（min/max 缺）：逐元素 `api_multiple_fill($mult,4)` 后缀机制（F430/F443，M≤999999999）——每元素是 M 的倍数（构造保证）。
+- **有界**（两侧 inclusive）：wrap→shape 复用 F420/F424 折叠（区间内最小倍数、不可满足即拒）→ `lo==hi==start` ⇒ 逐元素 `api_number_bounded_element(start,start)` 确定性单值（F420 子集论证）。
+**实现（四处）**：
+1. 检测器 `api_schema_array_item_multiple($schema)` → `prop|mult|lo|hi`（4 段；lo/hi 缺侧＝-1，有界＝折叠后 start）：plan 恰一叶 kind（剥 `~`）`an`、items 正则 `type/minimum?/maximum?/multipleOf` 自然序、mult≥1、无界 m>999999999 拒、有界 wrap→shape 取折叠段（shape 返回 `mult≠0` 时取其 lo==hi）。
+2. 写入器 `api_array_item_multiple_value`：同 int 数组写入器循环；元素体＝无界 `api_multiple_fill` / 有界 `api_number_bounded_element(lo,hi)`（lo==hi 定值走位）。
+3. 四路由（与 `scArrItemB`/`scArrItemN` 并列，enum 之前）。
+4. 豁免：structural items 检查加 `item_multiple == ""` 并列；bounds 判据顶部早退加 `|| item_multiple != ""`（覆盖有界的 F420 守卫与无界的放行路径）。
+**门**：`im_unb=[nums|3|-1|-1]`、`im_bnd=[nums|5000|5000|5000]`、`im_unsat=[]`（min1 max4000 m5000 区间无倍数）、`im_big=[]`（无界 m>999999999）、`im_num=[]`（number+multipleOf 仍拒）、`im_kw_bnd=[]`（keywords 层放行）；写入器两条文本断言（无界 m3 元素 %3==0；有界 m5000 值==5000）＋json_ok。
+**活体**（`schema_bounds_check.py`）：`items_mult_unb_ok`（200 每元素 %3==0）、`items_mult_bnd_ok`（200 每元素==5000）、`items_mult_unsat_refuse`（400）、`items_mult_num_refuse`（400）；F462 的 frac6/multi 例不回退。
+**验收**：①每元素是 M 的倍数／区间内最小倍数（门＋活体）②unsat/超大 M/number 型仍拒 ③自检 182 起、单属性 multipleOf 门（`SCHEMA-BOUND-REJECT`/`NUM-BND`）不回退 ④四 harness＋8000 115/0＋8001 不回退。
+**顺位**：F465 → number 型 multipleOf items（需小数倍数机制）→ 分片多卡 / FR-05（本机不可验证）。
+**F465 已完成**：`api_schema_array_item_multiple`（无界 → `prop|mult|-1|-1`；有界 wrap→shape 复用 F420/F424 折叠取 `lo==hi==start`，mult 段须一致）＋`api_array_item_multiple_value`（元素体＝无界 `api_multiple_fill` 后缀机制逐元素 / 有界定值走位）＋四路由＋两处豁免（structural items 检查、bounds 早退——后者压住有界形态的 F420 守卫）。门 `im_unb=[nums|3|-1|-1]`、`im_bnd=[nums|5000|5000|5000]`、`im_unsat=[]`、`im_big=[]`、`im_num=[]`、`im_kw_bnd=[]`、`im_unb_text`（元素 %3==0）、`im_bnd_text=[{"nums":[5000]}]`。
+**改前证据（`engine/schema_bounds_f465pre.log`，F464 二进制）**：无界 → **400 "items"**（F458 keywords 层）、有界 → **400 "numeric bounds…"**（bounds 层 F420 守卫）、unsat/num 对照 400。
+**活体**：`items_mult_unb_ok` 200 `[1234002,2345001,3456000,4567002]`（每元素 %3==0）、`items_mult_bnd_ok` 200 `[5000,5000,5000,5000]`、`items_mult_unsat_refuse`/`items_mult_num_refuse` 400。
+**梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f465.log`、`engine/schema_bounds_f465.log`、`engine/schema_required_f465.log`、`engine/schema_count_f465.log`、`engine/schema_pattern_f465.log`、`engine/api_smoke_f465.log`、`engine/throughput_f465.log`、改前证据 `engine/schema_bounds_f465pre.log`）。
+**明确留拒（排队，F465 后）**：number 型 multipleOf items（需小数倍数机制）；items 上的 multipleOf 与 exclusive 组合（检测器正则只认 inclusive 自然序）；数组项 schema 的 const/pattern；`contains`/`not` 的值级子 schema；`patternProperties` 非枚举种类的值级约束；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；六位及以上小数；无界 `multipleOf` > 999999999；分片多卡 / FR-05（本机不可验证）。
+**顺位**：number 型 multipleOf items → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
