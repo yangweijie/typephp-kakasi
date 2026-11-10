@@ -1886,3 +1886,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：`items_const` `items`→``、`ae_const` ``→`cities|paris`；新 `ac_text=[{"cities":["paris"]}]`/`ac_route=0`；`items_pattern` 保持拒。
 - **活体**：`items_const_ok` 200 `[paris,paris]`；enum 不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.545×**、哨兵 **0**。
+
+## ▶ 状态（F471，2026-11-10 13:42 构建）——数组项 string pattern（类/计数）从点名 400 变**逐元素走位匹配发射**
+- **改前证据**：items `^[A-Z]{3}$` → 400 "items"；交替无类对照 400（`schema_required_f471pre.log`，F470 二进制）。
+- **实现**：复用枚举项检测器/写入器（4 路由零改动）——检测器加 pattern 分支返 `prop|~spec`（~ 前缀无碰撞），写入器加 pattern 模式；新 helper `api_pattern_body` 独立复刻段发射（false 区分失败/空），不触旧单属性路。
+- **门**：`items_pattern` 保持 `items`（交替对照）；新 `ap_plan`/`ap_text`（正则）/`ap_route=0`。
+- **活体**：`items_pattern_ok` 200 `[CJL,CJL]`、交替 400；enum/const/单属性 pattern 不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**、哨兵 **0**。

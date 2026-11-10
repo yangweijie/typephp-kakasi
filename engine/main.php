@@ -969,6 +969,18 @@ function api_schema_array_enum(string $schema): string
         }
         return $lkv[0] . "|" . $v;
     }
+    // F471: a string pattern whose spec the class/count stepper can honour. The spec is prefixed
+    // with "~" so the writer tells it from an enum value list (an enum encoding never starts with ~:
+    // its first value is non-empty and no value carries ~). The spec alphabet has no "|", so the
+    // route's explode("|") keeps it intact as the second field.
+    $mp = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"string"\s*,\s*"pattern"\s*:\s*"([^"]*)"\s*\}$/', $isub, $mp) == 1) {
+        $spec = api_schema_pattern_spec($mp[1]);
+        if ($spec == "") {
+            return "";
+        }
+        return $lkv[0] . "|~" . $spec;
+    }
     return "";
 }
 
@@ -1531,8 +1543,18 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
 {
     $commaIds = api_punct_ids(",");
     $bracketIds = api_punct_ids("]");
-    $vals = explode("~", $valsCsv);
-    if ($commaIds == "" || $bracketIds == "" || count($vals) < 1 || $vals[0] == "") {
+    if ($commaIds == "" || $bracketIds == "") {
+        return "";
+    }
+    // F471: a "~"-prefixed value list is a pattern spec, not an enum - each element is a walked
+    // pattern match (opening quote + body + closing quote) rather than a fixed candidate.
+    $patMode = substr($valsCsv, 0, 1) == "~" ? 1 : 0;
+    $spec = $patMode == 1 ? substr($valsCsv, 1) : "";
+    $vals = $patMode == 1 ? [] : explode("~", $valsCsv);
+    if ($patMode == 0 && (count($vals) < 1 || $vals[0] == "")) {
+        return "";
+    }
+    if ($patMode == 1 && $spec == "") {
         return "";
     }
     $bMin = 0;
@@ -1566,11 +1588,26 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             }
             $s = $s . "," . $open;
         }
-        $f = api_constrained_continue($cands, 24);
-        if ($f == "") {
-            return "";
+        if ($patMode == 1) {
+            $body = api_pattern_body($spec);
+            if ($body === false) {
+                return "";
+            }
+            if ($body != "") {
+                $s = $s . "," . $body;
+            }
+            $cq = api_constrained_continue(["\""], 4);
+            if ($cq == "") {
+                return "";
+            }
+            $s = $s . "," . $cq;
+        } else {
+            $f = api_constrained_continue($cands, 24);
+            if ($f == "") {
+                return "";
+            }
+            $s = $s . "," . $f;
         }
-        $s = $s . "," . $f;
         $offer = $endIds;
         if ($it + 1 < $bMin) {
             $offer = $commaIds;
@@ -1598,6 +1635,97 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
         $s = $s . "," . $end;
     }
     return $s;
+}
+
+// F471: emit the body of one pattern-matching string (no surrounding quotes) as token ids, from the
+// segment spec api_schema_pattern_spec produces. This mirrors the "p" branch of api_object_mixed
+// (literal runs forced, counted classes walked: a non-last segment emits its minimum, the last walks
+// min..max and stops before the closing quote so the caller closes it). It is a standalone helper so
+// the single-property path stays byte-identical; the items writer below is its only caller. Returns
+// the ids string on success (which may be "" when a `*`/`?` last segment emits nothing - a legal empty
+// match) and false on failure, so the caller can tell an empty value from a broken walk.
+function api_pattern_body(string $pSpec)
+{
+    $segs2 = explode("~", $pSpec);
+    $out = "";
+    for ($si = 0; $si < count($segs2); $si++) {
+        $seg = $segs2[$si];
+        $isLast = $si == count($segs2) - 1;
+        $tag = substr($seg, 0, 1);
+        if ($tag == "l") {
+            $lp = api_constrained_continue([substr($seg, 1)], 32);
+            if ($lp == "") {
+                return false;
+            }
+            $out = $out == "" ? $lp : $out . "," . $lp;
+        } else if ($tag == "c") {
+            $slen = strlen($seg);
+            $p2 = 1;
+            while ($p2 < $slen && $seg[$p2] >= "0" && $seg[$p2] <= "9") {
+                $p2++;
+            }
+            if ($p2 == 1) {
+                return false;
+            }
+            $dmin = (int) substr($seg, 1, $p2 - 1);
+            $dmax = $dmin;
+            if ($p2 < $slen && $seg[$p2] == "-") {
+                $p2++;
+                $ds = $p2;
+                while ($p2 < $slen && $seg[$p2] >= "0" && $seg[$p2] <= "9") {
+                    $p2++;
+                }
+                $dmax = $p2 > $ds ? (int) substr($seg, $ds, $p2 - $ds) : -1;
+            }
+            if ($p2 >= $slen || $seg[$p2] != "x") {
+                return false;
+            }
+            $cids = api_pattern_class_ids(substr($seg, $p2 + 1));
+            $qids = api_punct_ids("\"");
+            if ($cids == "" || $qids == "" || $dmin < 0 || $dmin > 16) {
+                return false;
+            }
+            if ($dmax >= 0 && $dmax < $dmin) {
+                return false;
+            }
+            if (!$isLast) {
+                for ($d = 0; $d < $dmin; $d++) {
+                    $pnx = model_session_next_allowed(0, $cids);
+                    if ($pnx < 0) {
+                        return false;
+                    }
+                    $out = $out == "" ? (string) $pnx : $out . "," . $pnx;
+                }
+            } else {
+                $budget = $dmax >= 0 ? $dmax : 16;
+                $got = 0;
+                $cdone = 0;
+                for ($d = 0; $d <= $budget && $cdone == 0; $d++) {
+                    if ($got < $dmin) {
+                        $cAllow = $cids;
+                    } else if ($dmax >= 0 && $got >= $dmax) {
+                        $cdone = 1;
+                        break;
+                    } else {
+                        $cAllow = $cids . "," . $qids;
+                    }
+                    $pnx = model_session_next_allowed(0, $cAllow);
+                    if ($pnx < 0) {
+                        return false;
+                    }
+                    if (strpos("," . $qids . ",", "," . $pnx . ",") !== false) {
+                        $cdone = 1;
+                        break;
+                    }
+                    $out = $out == "" ? (string) $pnx : $out . "," . $pnx;
+                    $got++;
+                }
+            }
+        } else {
+            return false;
+        }
+    }
+    return $out;
 }
 
 function api_array_string_value(string $ids, string $prop, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
@@ -17815,6 +17943,21 @@ function main(): void
     }
     $acText = str_replace("Ġ", " ", $acText);
     $acRoute = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}}}}}');
+    // F471: a string-pattern items form the class/count stepper honours is claimed by the enum-items
+    // detector with a "~"-prefixed spec; the writer emits a matching string per element. sfCC above
+    // keeps the alternation (no class) refusal as the control.
+    $apPlan = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"codes":{"type":"array","items":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}}');
+    $apIds = tok_chat("user", "Give the codes.") . "," . tok_chat_open("assistant");
+    $apBase = count(explode(",", $apIds));
+    $apOut = api_array_enum_value($apIds, "codes", "~c3xABCDEFGHIJKLMNOPQRSTUVWXYZ", 1, 0);
+    $apParts = explode(",", $apOut);
+    $apText = "";
+    for ($i = $apBase; $i < count($apParts); $i++) {
+        $apText = $apText . gguf_token_str((int) $apParts[$i]);
+    }
+    $apText = str_replace("Ġ", " ", $apText);
+    $apShape = preg_match('/^\{"codes":\["[A-Z]{3}"\]\}$/', $apText);
+    $apRoute = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"codes":{"type":"array","items":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -17877,7 +18020,8 @@ function main(): void
         . "] fm_noint_text=[" . $fmIText . "] fm_items_text=[" . $fmiText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH)
-        . " ac_text=[" . $acText . "] ac_route=" . count($acRoute) . "\n";
+        . " ac_text=[" . $acText . "] ac_route=" . count($acRoute)
+        . " ap_plan=[" . $apPlan . "] ap_text=[" . $apText . "] ap_route=" . count($apRoute) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -17954,7 +18098,9 @@ function main(): void
         && $fmiText == '{"nums":[1.2]}' && api_json_ok($fmiText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == "cities|paris"
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0
-        && $acText == '{"cities":["paris"]}' && api_json_ok($acText) == 1 && count($acRoute) == 0) {
+        && $acText == '{"cities":["paris"]}' && api_json_ok($acText) == 1 && count($acRoute) == 0
+        && $apPlan == "codes|~c3xABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        && $apShape == 1 && api_json_ok($apText) == 1 && count($apRoute) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

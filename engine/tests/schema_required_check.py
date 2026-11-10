@@ -225,6 +225,20 @@ cases = [
      lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("cities"), list)
      and len((obj_of(txt) or {}).get("cities", [])) >= 1
      and all(x == "paris" for x in (obj_of(txt) or {}).get("cities", []))),
+    # F471: a string PATTERN items form the class/count stepper honours - every element matches
+    # ^[A-Z]{3}$ (three uppercase letters). An alternation of literals has no class, so the spec is
+    # empty and that form keeps the named refusal.
+    ("items_pattern_ok", "Give the codes.",
+     {"type": "object", "properties": {"codes": {"type": "array",
+                                                 "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}}},
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("codes"), list)
+     and len((obj_of(txt) or {}).get("codes", [])) >= 1
+     and all(isinstance(x, str) and len(x) == 3 and x.isalpha() and x.isupper()
+             for x in (obj_of(txt) or {}).get("codes", []))),
+    ("items_pattern_alt_refuse", "Give the codes.",
+     {"type": "object", "properties": {"codes": {"type": "array",
+                                                 "items": {"type": "string", "pattern": "^(paris|lyon)$"}}}},
+     lambda code, txt: code == 400 and "items" in txt),
     # F460: both-bounds integer items are served element by element; a one-sided bound is not
     # (the writer's sentinel conventions are not reused here) and stays refused by name.
     ("items_bounded_ok", "Give the numbers.",

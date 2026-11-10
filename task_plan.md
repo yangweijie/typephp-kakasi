@@ -1400,6 +1400,23 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F470 → 数组项 pattern、contains/not 值级子 schema 等排队项 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F471 计划（数组项 string pattern：复用枚举项检测器/写入器家族，~ 前缀编码 pattern spec，4 路由零改动）
+**F470 已完成**：数组项 string const。
+**核心思路（低接线复用）**：单属性 pattern 已由 `api_schema_pattern_spec`（→段 spec `l<text>~c<n>x<chars>`）＋`api_object_mixed` 的 "p" 分支服务。items pattern 复用 **F459 枚举项检测器/写入器**（4 路由已接好 `api_response_schema_array_enum`/`api_array_enum_value`）：检测器再认 `items:{"type":"string","pattern":P}`，spec 非空 ⇒ 返回 `prop|~spec`（**~ 前缀**标记——enum 编码首值非空且不含 ~，故不可能以 ~ 开头，无碰撞；pattern 字符表 `[A-Za-z0-9 .\-_^]` 不含 `|`，路由 `explode("|")` 安全）。写入器见 valsCsv 以 ~ 开头 ⇒ pattern 模式：逐元素强制开引号＋`api_pattern_body(spec)`＋闭引号。**结构层豁免/路由零改动**（array_enum 非空自动放行）。
+**实现**：
+1. 新 helper `api_pattern_body($pSpec)`（无返回类型，成功返回 ids 串可空、失败返 `false`）——独立复刻 `api_object_mixed` "p" 分支的段发射（字面 run＋计数类，非末段发最小、末段 min..max 走位后由调用方闭引号）。**不改动 `api_object_mixed`**（单属性 pattern 门保持字节级不变，零回归）；items 侧由自己的门＋活体（逐元素正则匹配）钉住。空 body（如 `*` 末段发 0 字符）合法 ⇒ 用 `false` 区分失败与空。
+2. `api_schema_array_enum`：enum/const 分支后加 pattern 分支（`"pattern":"([^"]*)"`→`api_schema_pattern_spec`，非空 ⇒ `prop|~spec`）。
+3. `api_array_enum_value`：valsCsv 首字符 ~ ⇒ pattern 模式（spec=substr(1)），逐元素开引号＋body＋闭引号；否则既有 enum 模式。
+**门（含翻转）**：`items_pattern`（sfCC）`items`→``；新 `ap_plan`（array_enum pattern items）＝`codes|~c3xABCDEFGHIJKLMNOPQRSTUVWXYZ`、`ap_text`（writer 文本每元素匹配 `^[A-Z]{3}$`）、`ap_route=0`；不支持的 pattern（如交替 `^(a|b)$` 无类）保持 `items` 对照。
+**活体**（`schema_required_check.py`）：`items_pattern_refuse` 翻转改名 `items_pattern_ok`（items `^[A-Z]{3}$` → 200 每元素匹配正则）；新 `items_pattern_alt_refuse`（无类 pattern → 400）；enum/const 不回退。
+**验收**：①每元素匹配 pattern（门＋活体正则）②不支持 pattern 仍拒 ③单属性 pattern 门（SCHEMA-PATTERN）字节级不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F471 已完成**：新 helper `api_pattern_body`（独立复刻段发射，false 区分失败/空，不触 `api_object_mixed`）＋`api_schema_array_enum` pattern 分支（`prop|~spec`）＋`api_array_enum_value` ~ 前缀 pattern 模式；4 路由/结构豁免零改动。**计划修正**：sfCC 的 pattern 是交替 `^(paris|lyon)$`（无类⇒spec 空⇒不认领），故 `items_pattern` **保持 `items`** 作拒绝对照（非翻转）；服务门另用 class pattern `^[A-Z]{3}$`：`ap_plan=[codes|~c3xABCDEFGHIJKLMNOPQRSTUVWXYZ]`/`ap_text`（正则）/`ap_route=0`。
+**改前证据（`engine/schema_required_f471pre.log`，F470 二进制）**：items `^[A-Z]{3}$` → 400；交替对照 400。
+**活体**：`items_pattern_ok` 200 `[CJL,CJL]`、`items_pattern_alt_refuse` 400；enum/const/单属性 pattern 不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f471.log`、`engine/schema_*_f471.log`、`engine/api_smoke_f471.log`、`engine/throughput_f471.log`）。
+**顺位**：F471 → contains/not 值级子 schema、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
