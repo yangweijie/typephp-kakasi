@@ -9410,6 +9410,98 @@ function api_schema_not_ok(string $schema): int
 // array whose items is a finite enum/const emits each element from that list (>=1 element), so a
 // const/enum/pattern contains that every enumerant satisfies holds by construction (subset argument,
 // judged by F457's leaf guarantees). A free-string items or a richer subschema keeps the refusal.
+// F487: can NO possible element match the `contains` subschema? Used for minContains:0 with
+// maxContains:0 (exactly zero matches). Two provable forms: a bare type the item kind cannot
+// produce, and a finite string enum/const items value list disjoint from a string const/enum.
+function api_schema_contains_all_miss(string $schema): int
+{
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return 0;
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 2) {
+        return 0;
+    }
+    $kind = $lkv[1];
+    $tk = strpos($kind, "~");
+    if ($tk !== false) {
+        $kind = substr($kind, 0, $tk);
+    }
+    $np = strpos($schema, "\"contains\"");
+    if ($np === false) {
+        return 0;
+    }
+    if ($np < $bo + strlen($block)) {
+        return 0;
+    }
+    $cbo = strpos($schema, "{", $np);
+    if ($cbo === false) {
+        return 0;
+    }
+    $sub = api_balance_block($schema, $cbo);
+    if ($sub == "") {
+        return 0;
+    }
+    $mt = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"([a-z]+)"\s*\}$/', $sub, $mt) == 1) {
+        return api_schema_kind_is_type($kind, $mt[1]) == 1 ? 0 : 1;
+    }
+    // F487: the finite ENUM/CONST item values come from the item detector, not the plan kind (an
+    // array property's kind is a/an/af). Disjoint from the contains const/enum means no element
+    // can match; pattern items (a "~" spec) are infinite and skip.
+    $ae = api_schema_array_enum($schema);
+    if ($ae != "") {
+        $aep = explode("|", $ae);
+        if (count($aep) == 2 && substr($aep[1], 0, 1) != "~") {
+            $vals = explode("~", $aep[1]);
+            $pre = '(?:"type"\s*:\s*"string"\s*,\s*)?';
+            $mc = [];
+            if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mc) == 1
+                && strpos($mc[1], "\\") === false) {
+                for ($i = 0; $i < count($vals); $i++) {
+                    if ($vals[$i] == $mc[1]) {
+                        return 0;
+                    }
+                }
+                return 1;
+            }
+            $me = [];
+            if (preg_match('/^\{\s*' . $pre . '"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $me) == 1) {
+                $allowed = api_list($me[1]);
+                if (count($allowed) < 1) {
+                    return 0;
+                }
+                for ($i = 0; $i < count($vals); $i++) {
+                    for ($j = 0; $j < count($allowed); $j++) {
+                        if ($vals[$i] == $allowed[$j]) {
+                            return 0;
+                        }
+                    }
+                }
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 function api_schema_contains_ok(string $schema): int
 {
     // F485: an explicit minContains:0 allows ZERO matching elements, so `contains` holds whatever
@@ -9417,6 +9509,13 @@ function api_schema_contains_ok(string $schema): int
     // evaluation, so its presence keeps the refusal (see api_schema_minmax_contains_ok too).
     if (preg_match('/"minContains"\s*:\s*0(?!\d)/', $schema) == 1
         && preg_match('/"maxContains"\s*:/', $schema) != 1) {
+        return 1;
+    }
+    // F487: minContains:0 + maxContains:0 demands exactly zero matches; when no possible element
+    // can match the contains subschema the constraint holds by construction.
+    if (preg_match('/"minContains"\s*:\s*0(?!\d)/', $schema) == 1
+        && preg_match('/"maxContains"\s*:\s*0(?!\d)/', $schema) == 1
+        && api_schema_contains_all_miss($schema) == 1) {
         return 1;
     }
     $pp = strpos($schema, "\"properties\"");
@@ -9520,6 +9619,13 @@ function api_schema_minmax_contains_ok(string $schema): int
     // F485: minContains:0 with no maxContains is vacuous - it needs no element-count bounds.
     if (preg_match('/"minContains"\s*:\s*0(?!\d)/', $schema) == 1
         && preg_match('/"maxContains"\s*:/', $schema) != 1) {
+        return 1;
+    }
+    // F487: minContains:0 + maxContains:0 with a contains subschema no element can match needs no
+    // element-count bounds either.
+    if (preg_match('/"minContains"\s*:\s*0(?!\d)/', $schema) == 1
+        && preg_match('/"maxContains"\s*:\s*0(?!\d)/', $schema) == 1
+        && api_schema_contains_all_miss($schema) == 1) {
         return 1;
     }
     if (api_schema_contains_ok($schema) != 1) {
@@ -18066,6 +18172,8 @@ function main(): void
     $sfBJ = api_response_schema_array_bounds('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":2,"maxContains":3}}}');
     // F485: minContains:0 with no maxContains is vacuous - a rich contains subschema is served.
     $contMin0 = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"pattern":"^x"},"minContains":0}');
+    // F487: minContains:0 + maxContains:0 with a contains subschema no element can match.
+    $contMax0 = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}},"contains":{"const":"nice"},"minContains":0,"maxContains":0}');
     // F455: a matching pattern is honoured when the bare type is the one the matched keys' declared
     // kinds guarantee; the existing $sfL (^a over a string key, integer subschema) is its control.
     $sfBK = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^c":{"type":"string"}}}');
@@ -18504,7 +18612,7 @@ function main(): void
         . "] uneval_prop_named=[" . $sfBE . "]"
         . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
         . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
-        . " cont_min0=[" . $contMin0 . "]"
+        . " cont_min0=[" . $contMin0 . "] cont_max0=[" . $contMax0 . "]"
         . " pp_match_ok=[" . $sfBK . "]"
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
@@ -18654,6 +18762,7 @@ function main(): void
         && $sfBI == "minContains"
         && $sfBJ == "2:3"
         && $contMin0 == ""
+        && $contMax0 == ""
         && $sfBK == ""
         && $sfBM == ""
         && $sfBN == "patternProperties"

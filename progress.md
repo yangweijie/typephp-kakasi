@@ -2006,3 +2006,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：contains_ok/minmax_contains_ok 两处早退；**修复** array_string 检测器把 root contains 内 pattern 当值域（实测 200 散文）⇒ 根级 contains 块剥离。
 - **门/活体**：`cont_min0=[]`；`contains_min0_served` 200 `{"cities":[...]}`、`contains_min0_max_refuse` 400；既有 contains 不回退。
 - **梯**：自检 **182/0**、四 harness PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.552×**、哨兵 **0**；构建 BUILD_OK（11 文件）。
+
+## ▶ 状态（F487，2026-11-10 21:00 构建）——contains 的 min0+max0 且元素集合不相交 ⇒ 恰零匹配可证
+- **改前证据**：enum/类型不匹配两形态 → 400；有交集对照 400（`schema_count_f487pre.log`，F485 二进制）。
+- **实现**：`api_schema_contains_all_miss`（bare type 不可能 / 枚举值表不相交，值表取自 `api_schema_array_enum`）＋两处早退＋单门 `cont_max0`。
+- **过程**：首版 helper 误用 plan kind 判枚举（数组属性 kind 是 a/an/af）→ 门 FAIL 181/1；改用 items 检测器后 182/0。
+- **活体**：200 `[paris,paris]`、200（类型不匹配）、有交集 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.536×、哨兵 0。

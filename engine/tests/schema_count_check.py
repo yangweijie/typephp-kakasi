@@ -311,6 +311,23 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
       "contains": {"pattern": "^x"}, "minContains": 0, "maxContains": 1},
      lambda code, txt: code == 400 and ("contains" in txt or "minContains" in txt), ask),
+    # F487: minContains:0 + maxContains:0 demands EXACTLY zero matches. When no possible element
+    # can match the contains subschema - a disjoint string const over a finite enum, or a bare type
+    # the item kind cannot produce - zero matches is provable and the shape is served; an overlap
+    # keeps the refusal.
+    ("contains_max0_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "nice"}, "minContains": 0, "maxContains": 0},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and all(x in ["paris", "lyon"] for x in json.loads(txt)["cities"]), ask),
+    ("contains_max0_type_ok", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"type": "integer"}, "minContains": 0, "maxContains": 0},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list), ask),
+    ("contains_max0_overlap_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "minContains": 0, "maxContains": 0},
+     lambda code, txt: code == 400 and ("contains" in txt or "minContains" in txt), ask),
     # F448: the bare type-contradiction form is served now - every emitted value is a string, so
     # `not: {"type": "integer"}` holds by construction - while a value rule inside `not` still needs
     # the value evaluated and stays refused by name. (This case used to expect the refusal; F448

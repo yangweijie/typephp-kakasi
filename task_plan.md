@@ -1622,6 +1622,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F485 已完成（第二轮）**：两处早退（contains_ok/minmax_contains_ok）＋门 `cont_min0=[]`；**并修** `api_response_schema_array_string` 把 root `contains` 内 pattern 当值域导致的 200 散文（根级 contains 块剥离）。活体 200/400 各一；自检 **182/0**、四 harness PASS、8000 115/0、8001 par/fairness 0、scaling 1.552×、哨兵 0；构建 BUILD_OK（11 文件）。第一轮的 tpc 静默中止由 F486 切块解决。
 
 
+## F487 计划与完成（contains：minContains:0 + maxContains:0 且 contains 与元素集合不相交 ⇒ 零匹配可证）
+**核心思路**：`minContains:0 && maxContains:0` 要求**恰好 0 个匹配**。若能证明**没有任何可能元素**匹配 contains，则约束恒成立：①contains 为 bare type 且 items 种类不可能产出该 type（如 string items vs integer）；②items 为有限字符串 enum/const，contains 为无转义 string const/enum 且**与枚举值集合交集为空**。
+**改前状态**：上述形态 → 400（contains_ok 走子集判定，不相交 ⇒ 0）。
+**实现（一 helper＋两处早退＋单门）**：`api_schema_contains_all_miss($schema)` 做上述证明；`api_schema_contains_ok`/`api_schema_minmax_contains_ok` 顶部加 `min0 && max0 && all_miss ⇒ 1`（置于 F485 的 min0 分支之后）。
+**门**：`cont_max0=[]`（items enum [paris,lyon] + contains const nice，min0/max0）。
+**活体**：`contains_max0_served`（200 元素 ∈{paris,lyon}）、`contains_max0_overlap_refuse`（contains const paris → 400）、`contains_max0_type_ok`（items string + contains type integer：类型不匹配即零匹配 → 200）。
+**用法**：`scripts/build-check.sh` 全量构建；容量已由 F486 恢复，仍按单门小步。
+**F487 已完成**：`api_schema_contains_all_miss`（bare type 不可能 / 枚举值表与 contains 不相交）＋contains_ok/minmax_contains_ok 两处早退＋门 `cont_max0=[]`；**过程**：首版误用 plan kind 判枚举（数组 kind 是 a/an/af）→ 门 181/1，改用 `api_schema_array_enum` 后 182/0。活体 200/200/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.536×、哨兵 0）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

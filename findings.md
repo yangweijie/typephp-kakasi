@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F485）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F487）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3746,8 +3746,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`、**非字符串标量 const/enum**（`{"const":5}` / `{"enum":[1,2,3]}`）、**含字符集外字符的无转义字符串 const/enum**（如 `"Paris!"`、`["a!","b@"]`）、或**含字符集外字符的锚定纯字面量交替 pattern**（如 `^(paris_|lyon_)$`）（扁平全字符串） | **支持**（构造满足——发射值是字符集内字符串，永不等于非字符串常量/含外字符的串/无法匹配的外字符交替；根级 not 块不 disqualify 生成器/扁平枚举扫描） | `not_type`/`not_route`/`nt_const_num`/`nt_enum_num`/`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`/`nt_pat_bang`/`not_const_bang_served`/`not_pattern_bang_served`（F448/F474/F479/F482） |
 | not：**全字符集**字符串常量/存在可命中的枚举成员/可被匹配的 pattern/对象数组常量 / 含转义成员 / 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`/`nt_const_str`/`nt_enum_miss`/`nt_escaped`/`not_pattern_charset_refuse`（F448/F474/F479/F482） |
 | contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
-| contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern；或 items 为受支持 pattern 且 contains 的 pattern 生成**同一 spec**；或**显式 `minContains:0` 且无 `maxContains`（空判定，任何 contains 子 schema/maxItems 形态均可）**） | **支持**（每元素皆从 items 值表/spec 构造发射、数组 ≥1 元素 ⇒ contains 构造满足；minContains:0 允许 0 匹配 ⇒ 恒真；判定复用 F457 leaf_guarantees 与 spec 相等） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`cv_pat_spec`/`cont_min0`/`contains_const_served`/`contains_pattern_items_same_ok`/`contains_min0_served`（F472/F481/F485） |
-| contains：类型不匹配 / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / pattern items 与 contains 的 spec 不同 / **minContains:0 但带 maxContains（匹配数上界）** / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`/`cv_pat_spec_diff`/`contains_min0_max_refuse`（F449/F472/F481/F485） |
+| contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern；或 items 为受支持 pattern 且 contains 的 pattern 生成**同一 spec**；或**显式 `minContains:0` 且无 `maxContains`（空判定，任何 contains 子 schema/maxItems 形态均可）**；或**`minContains:0` + `maxContains:0` 且 contains 与元素集合不相交（bare type 不匹配，或有限枚举/常量无交集）**） | **支持**（每元素皆从 items 值表/spec 构造发射、数组 ≥1 元素 ⇒ contains 构造满足；minContains:0 允许 0 匹配 ⇒ 恒真；maxContains:0 + 不相交 ⇒ 恰零匹配可证） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`cv_pat_spec`/`cont_min0`/`cont_max0`/`contains_const_served`/`contains_pattern_items_same_ok`/`contains_min0_served`/`contains_max0_served`（F472/F481/F485/F487） |
+| contains：类型不匹配（未服务形态） / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / pattern items 与 contains 的 spec 不同 / **minContains:0 但带正 maxContains（上界无法证明）** / **maxContains:0 但含可命中的元素（有交集）** / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`/`cv_pat_spec_diff`/`contains_min0_max_refuse`/`contains_max0_overlap_refuse`（F449/F472/F481/F485/F487） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / **array↔任意数组种类（含对象数组 `ao:`）**） | **支持**（值由该种类写出器保证） | `pp_match_ok`/`pp_ao_type`/`patternprops_ao_type_ok`（F455/F484） |
 | patternProperties：匹配键为**有限字符串枚举**（`e:` 种类），子 schema 为 enum（包含关系）/ const（相等）/ pattern（逐枚举值匹配） | **支持**（枚举值集合已知 ⇒ 静态可证；值来自枚举） | `pp_enum`/`pp_pat`/`pp_enum_route`（F457） |
@@ -4594,3 +4594,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`contains_min0_served` **200 `{"cities":["Lyon, France, Prov"]}`**、`contains_min0_max_refuse` **400**（拒绝措辞先命中 "contains"，断言放宽为含 contains/minContains）；既有 contains 系列不回退。
 **梯**：自检 **182 PASS / 0 FAIL**（`selftest_f485c.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.552×**（单次测量，如实记录）；哨兵 **0**；构建 `build-check.sh build_f485e` **BUILD_OK**（11 文件，瘦身后容量足够）。
 **记法**：**"子 schema 关键字混入值域扫描"已四次复现**（not→string_props F474、not→扁平枚举 F479、not→候选 F482、contains→array_string F485）——凡新增"结构层放行的子 schema 关键字"，必须检查**所有**扫描 enum/const/pattern 的检测器，并在扫描前剥离该根级块；否则症状是 200 散文/空内容（自检可能全绿）。**构建容量是前置条件**：F486 的切块让本轮得以编译。
+
+## F487：`contains` 的 `minContains:0 + maxContains:0` 且 contains 与元素集合**不相交**（恰零匹配可证）
+**核心思路**：`min0 && max0` 要求恰好 0 个匹配。若能证明**没有可能元素**匹配 contains，则约束恒成立：①contains 为 bare type 且 items 种类不可能产出该 type（如 string items vs integer）；②items 为有限字符串 enum/const，contains 为无转义 string const/enum 且与元素集合**交集为空**。
+**改前证据（`engine/schema_count_f487pre.log`，F485 二进制）**：enum items + contains const nice + min0/max0 → **400**；string items + contains type integer + min0/max0 → **400**；有交集（contains const paris）对照 400 正确。
+**实现**：新 helper `api_schema_contains_all_miss($schema)`（bare type 用 `kind_is_type` 判不可能；枚举用 **`api_schema_array_enum` 取元素值表**逐值比 contains 的 const/enum）；`api_schema_contains_ok`/`api_schema_minmax_contains_ok` 在 F485 分支后加 `min0 && max0 && all_miss ⇒ 1`；单门 `cont_max0`。
+**门抓到的缺陷**：第一版 helper 用 plan kind 判枚举（`e:`）——**数组属性的 kind 是 `a/an/af`，元素枚举根本不在 plan kind 里** ⇒ 门出 `cont_max0=[contains]`、SCHEMA-STRUCT FAIL（181/1）。改用 `api_schema_array_enum` 取元素值表后转绿（182/0）。这是"leaf kind 是生成时同一事实"的又一反例：**items 的元素值集要从 items 检测器取，不能从属性 kind 推**。
+**活体**：`contains_max0_served` **200 `{"cities":["paris","paris"]}`**（元素 ∈{paris,lyon}）、`contains_max0_type_ok` **200 `{"cities":["Lyon, France, Prov"]}`**（string items 不可能产出 integer）、`contains_max0_overlap_refuse` **400**；既有 contains 系列不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f487b.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**（单次测量，如实记录）；哨兵 **0**；构建 `build-check.sh build_f487b` **BUILD_OK**（11 文件）。
+**记法**：**"可能元素集合"的证明来源必须与写入器一致**——数组元素由 items 检测器（`api_schema_array_enum`）决定，plan kind 只描述属性是数组。用错来源会让"不相交"判定永远失败（过度拒绝），而门会直接暴露（`cont_max0=[contains]`）。
