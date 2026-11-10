@@ -1982,3 +1982,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：`kind_is_type` 的 array 分支加 `ao:` 前缀；单门 `pp_ao_type`。
 - **活体**：`{"rows":[{"n":"100000"}]}` 200、pp string 400；四 harness PASS；smoke 115/0、par/fairness 0、scaling 1.544×、哨兵 0。
 - **构建**：`scripts/build-check.sh` → BUILD_OK（11 文件）。
+
+## ▶ 状态（F485，2026-11-10 22:48）——试探被容量墙挡住，回退恢复 F484 绿态；守卫改为整清缓存
+- **F485 尝试**：contains+minContains:0 空判定（2 处早退）→ tpc 静默中止（无编译/rsp），全量构建链接失败（`build_f485b.log`）。
+- **回退**：main.php/schema_count_check/task_plan 全部 checkout；整清缓存全量构建 BUILD_OK（11 文件）；自检 **182/0**（`selftest_f485.log`，exe 22:48:53）。
+- **守卫修复**：`build-check.sh` 改为 `rm -rf build/gen/cache`（部分删除会导致 rsp/obj 失配，`build_f485.log` 留证）。
+- **后续前置**：先瘦身 main.php（拆分巨型 STRUCT `&&` 断言链），再做功能增量。

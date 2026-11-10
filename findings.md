@@ -4572,3 +4572,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f484.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.544×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f484.log`、`engine/api_smoke_f484.log`、`engine/throughput_f484.log`、改前证据 `engine/schema_required_f484pre.log`）。构建走 `scripts/build-check.sh`（`BUILD_OK`、11 文件编译）。
 **记法**：**"kind 前缀表"是 leaf_guarantees/kind_is_type 的共同盲区**——新增 plan kind 编码（如 `ao:`）必须同步到这两处；F476（`en:`）、F480（`p:`）、F484（`ao:`）是同一模式的三次体现。另：**功能增量按单门小步、经构建守卫**，是 tpc 容量限制下的稳定节奏。
 **顺位**：其余自由字符串/数组值级子集（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
+
+## F485（未入库/回退）：contains+minContains:0 空判定被 tpc 转换器容量墙挡住；守卫改为整清缓存
+**计划**：`minContains:0` 且无 `maxContains` ⇒ contains 空判定（0 匹配允许），rich 子 schema 也应服务；需在 `api_schema_contains_ok` 与 `api_schema_minmax_contains_ok` 各加一个早退。
+**结果**：代码＋单门加入后 **tpc 再次静默中止**（`convert: main.php` 后无编译、无 rsp；`build_f485b.log`），全量构建链接因缺 rsp 失败。回退全部 F485 改动，恢复 F484 绿态：整清缓存全量构建 `BUILD_OK`、11 文件、自检 **182/0**（`selftest_f485.log`，exe 22:48:53）。
+**守卫修复（本轮入库）**：`scripts/build-check.sh` 原只删 `ast`＋`main.obj`，会让 tpc 增量库与 rsp 失配（链接引用已删 obj，`build_f485.log` 的 "no such file … main.obj"）⇒ 改为 **`rm -rf build/gen/cache` 整清缓存**强制全量编译，mtime 断言保持。
+**结论（对后续轮次的硬约束）**：main.php 已增长到 tpc 转换器的容量边缘——**每次功能增量（即使只加 1–2 个分支或 1 个门）都可能触发静默中止**。继续加功能前必须**先结构性瘦身 main.php**（最直接：把 SCHEMA-STRUCT 那条数百项的单一 `&&` 断言链拆成若干小段/独立函数），否则增量不可稳定构建。F485 的两处早退代码是安全、已论证的，可在瘦身后续做。
+**记法**：**工具链容量也是项目约束**——当"多加一个门"就能让编译器静默失败时，正确动作是先简化被测源，而不是继续堆门；守卫脚本必须整清缓存，部分删除会制造 rsp/obj 失配。

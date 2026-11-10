@@ -16,8 +16,7 @@ OBJ=$G/objects/generated/main.obj
 TAG=${1:-build_check}
 LOG=$R/${TAG}.log
 
-rm -rf "$G/ast"
-rm -f "$OBJ" "$OBJ.typephp-cache"
+rm -rf "$G"
 T0=$(date +%s)
 ( cd "$R" && cmd //c "scripts\\build-kakasi.bat norun" ) > "$LOG" 2>&1
 RC=$?
