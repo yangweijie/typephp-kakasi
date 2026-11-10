@@ -381,6 +381,17 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "propertyNames": {"pattern": "^x"}},
      lambda code, txt: code == 400 and "propertyNames" in txt, ask),
+    # F488: propertyNames judges KEY NAMES, so it is served on a MIXED shape too - the emitted keys
+    # are a subset of the declared plan, and every declared name satisfies the pattern; one name
+    # outside the pattern keeps the refusal (the control).
+    ("propertynames_mixed_ok", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "propertyNames": {"pattern": "^[ab]$"}},
+     lambda code, txt: code == 200 and sorted(json.loads(txt).keys()) == ["a", "b"], ask),
+    ("propertynames_mixed_bad_refuse", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "propertyNames": {"pattern": "^a$"}},
+     lambda code, txt: code == 400 and "propertyNames" in txt, ask),
 ]
 
 bad = 0

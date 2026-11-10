@@ -1632,6 +1632,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F487 已完成**：`api_schema_contains_all_miss`（bare type 不可能 / 枚举值表与 contains 不相交）＋contains_ok/minmax_contains_ok 两处早退＋门 `cont_max0=[]`；**过程**：首版误用 plan kind 判枚举（数组 kind 是 a/an/af）→ 门 181/1，改用 `api_schema_array_enum` 后 182/0。活体 200/200/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.536×、哨兵 0）。
 
 
+## F488 计划与完成（propertyNames 扩到 mixed-omittable 形状；mixed 扫描剥离 propertyNames 块）
+**核心思路**：propertyNames 判**键名**；mixed 形状的已发键 ⊆ 声明键（`api_top_leaves` 的计划），故对**全部声明键**做超集检查即可证明每个已发键满足。障碍：`api_schema_mixed_omittable` 的 `(enum|const|pattern|…)` 扫描把 **propertyNames 块内的 key-pattern** 当成值约束而拒绝（F429 在 string_props 已用剥离解决同一问题）。
+**实现**：①`api_schema_mixed_omittable` 扫描前剥离 propertyNames 块；②`api_schema_property_names_ok` 的守卫从 `flat_all_string==1` 放宽为 `flat_all_string==1 || mixed_omittable==1`。
+**门（单个）**：`pnames_mixed_ok=[]`（properties a:string,b:integer + propertyNames pattern ^[ab]$）。
+**活体**：`propertynames_mixed_ok`（200 键 a,b）、`propertynames_mixed_bad_refuse`（pattern ^a$，b 违反 → 400）。
+**用法**：`scripts/build-check.sh`；单门小步。
+**F488 已完成**：mixed_omittable 扫描前剥离 propertyNames 块；property_names_ok 守卫放宽（flat||mixed）。门翻转 `pnames_mixed` `propertyNames`→``（旧对照被证伪：键名 city/count 满足 ^[a-z]+$），新 `pnames_mix_bad=[propertyNames]`。活体 200/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.564×、哨兵 0）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

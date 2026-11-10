@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F487）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F488）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3733,8 +3733,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | required ⊂ 声明属性：其他形状（含数组叶） | **显式 400** | `req_mixed`/`req_undeclared`/`req_arr_sub`（F401/F418 边界） |
 | minProperties / maxProperties：键数可满足的扁平全字符串 | **支持**（按键数判定） | `SCHEMA-PROPS-COUNT`（F427） |
 | minProperties / maxProperties：其他形状 / 不可满足 | **显式 400** | 同上 + `mixed` 边界（F427） |
-| propertyNames（pattern/min-maxLength/enum/const/type:string，对声明键名求值） | **支持** | `pnames_*` + `pnames_route`（F429） |
-| propertyNames：不可评估的形式 / 混合形状 | **显式 400** | `pnames_enum`/`pnames_mixed`（F429） |
+| propertyNames（pattern/min-maxLength/enum/const/type:string，对声明键名求值；**扁平全字符串与 mixed-omittable 形状均可**——mixed 的已发键 ⊆ 声明键，全声明名检查即超集证明） | **支持** | `pnames_*` + `pnames_route` + `pnames_mixed`/`pnames_mix_bad`/`propertynames_mixed_ok`（F429/F488） |
+| propertyNames：不可评估的形式 / 声明键名不满足（形状本身可服务） | **显式 400** | `pnames_enum`/`pnames_mix_bad`/`propertynames_mixed_bad_refuse`（F429/F488） |
 | dependentRequired（按"会发出的键集"判定） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`（F432） |
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
 | minContains / maxContains：F449 `contains` 形态（每个元素都匹配 ⇒ 计数就是元素数） | **支持**（折算为元素上下界；活体断言个数） | `cont_min`/`cont_max`/`cont_bounds`（F454） |
@@ -4603,3 +4603,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`contains_max0_served` **200 `{"cities":["paris","paris"]}`**（元素 ∈{paris,lyon}）、`contains_max0_type_ok` **200 `{"cities":["Lyon, France, Prov"]}`**（string items 不可能产出 integer）、`contains_max0_overlap_refuse` **400**；既有 contains 系列不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f487b.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**（单次测量，如实记录）；哨兵 **0**；构建 `build-check.sh build_f487b` **BUILD_OK**（11 文件）。
 **记法**：**"可能元素集合"的证明来源必须与写入器一致**——数组元素由 items 检测器（`api_schema_array_enum`）决定，plan kind 只描述属性是数组。用错来源会让"不相交"判定永远失败（过度拒绝），而门会直接暴露（`cont_max0=[contains]`）。
+
+## F488：propertyNames 扩到 mixed-omittable 形状（键名超集证明；mixed 扫描剥离 propertyNames）
+**核心思路**：propertyNames 判**键名**；mixed 形状的已发键 ⊆ 声明键（`api_top_leaves` 的计划），故对**全部声明键**做检查即可证明每个已发键满足。障碍：`api_schema_mixed_omittable` 的 `(enum|const|pattern|…)` 扫描把 **propertyNames 块内的 key-pattern** 当成值约束而拒绝（F429 在 string_props 用剥离解决过同一问题）。
+**实现**：①`api_schema_mixed_omittable` 扫描前用 `api_balance_block` 剥离 propertyNames 块；②`api_schema_property_names_ok` 守卫放宽为 `flat_all_string==1 || mixed_omittable==1`。
+**改前证据（`engine/schema_count_f488pre.log`，F487 二进制）**：`{a:string,b:integer} + propertyNames ^[ab]$` → 400；违反名对照 400 正确。
+**门（含翻转）**：旧 `pnames_mixed`（city/count + `^[a-z]+$`）**`propertyNames`→``**——它过去只是被"mixed 不判定"守卫拒绝，而 city/count 全小写本就不匹配 `^[a-z]+$` 的反面；新 `pnames_mix_bad`（同形状 + `^[a-c]+$`，count 违反）→ `[propertyNames]`。
+**活体**：`propertynames_mixed_ok` **200 `{"a":"…","b":123456}`**（键 a,b 均满足）、`propertynames_mixed_bad_refuse` **400**（`^a$` 下 b 违反）；既有 propertyNames 系列不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f488b.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.564×**（单次测量，如实记录）；哨兵 **0**；构建 `build-check.sh build_f488b` **BUILD_OK**（11 文件）。
+**记法**：**旧"拒绝对照"可能只是被前置守卫挡住，而非真的不可证**——放宽守卫后必须重新审视每个对照的拒绝原因（sfT 的键名其实满足 pattern）；"键名类约束"（propertyNames）只需超集证明，与"值约束"（需精确/子集）不同，mixed 形状可安全扩展。另：propertyNames 的 key-pattern 必须在**所有**值域扫描前剥离（string_props F429、mixed_omittable F488）。

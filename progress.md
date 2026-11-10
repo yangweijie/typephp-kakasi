@@ -2012,3 +2012,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：`api_schema_contains_all_miss`（bare type 不可能 / 枚举值表不相交，值表取自 `api_schema_array_enum`）＋两处早退＋单门 `cont_max0`。
 - **过程**：首版 helper 误用 plan kind 判枚举（数组属性 kind 是 a/an/af）→ 门 FAIL 181/1；改用 items 检测器后 182/0。
 - **活体**：200 `[paris,paris]`、200（类型不匹配）、有交集 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.536×、哨兵 0。
+
+## ▶ 状态（F488，2026-11-10 21:15 构建）——propertyNames 扩到 mixed-omittable；mixed 扫描剥离 propertyNames
+- **改前证据**：mixed(a,b) + propertyNames ^[ab]$ → 400（`schema_count_f488pre.log`，F487 二进制）。
+- **实现**：mixed_omittable 扫描前剥离 propertyNames 块；property_names_ok 守卫放宽为 flat||mixed。
+- **门（含翻转）**：`pnames_mixed` `propertyNames`→``（旧对照键名其实满足 ^[a-z]+$）；新 `pnames_mix_bad=[propertyNames]`（^[a-c]+$ 下 count 违反）。
+- **活体**：mixed 200 键 a,b、bad 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.564×、哨兵 0；构建 BUILD_OK。

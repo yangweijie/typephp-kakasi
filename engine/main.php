@@ -8956,7 +8956,21 @@ function api_schema_required_present(string $schema): int
 // or const leaves, object leaves) stays refused until its own key-set proof exists.
 function api_schema_mixed_omittable(string $schema): int
 {
-    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+    // F488: propertyNames constrains KEY NAMES, not values - strip that block before the
+    // value-constraint scan (F429 does the same in string_props), or its key-pattern refuses the
+    // mixed generator that actually serves the shape.
+    $scan = $schema;
+    $pnp = strpos($schema, "\"propertyNames\"");
+    if ($pnp !== false) {
+        $pnbo = strpos($schema, "{", $pnp);
+        if ($pnbo !== false) {
+            $pnblk = api_balance_block($schema, $pnbo);
+            if ($pnblk != "") {
+                $scan = str_replace($pnblk, "", $schema);
+            }
+        }
+    }
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $scan) == 1) {
         return 0;
     }
     if (api_schema_is_object($schema) != 1) {
@@ -9817,7 +9831,10 @@ function api_schema_dependent_required_ok(string $schema): int
 // compiled, so a pathological request cannot turn this into a backtracking probe.
 function api_schema_property_names_ok(string $schema): int
 {
-    if (api_schema_flat_all_string($schema) != 1) {
+    // F488: propertyNames judges the KEY NAMES, and a mixed shape's emitted keys are a subset of
+    // the declared plan - checking every declared name is a superset proof, so the mixed shape is
+    // eligible too.
+    if (api_schema_flat_all_string($schema) != 1 && api_schema_mixed_omittable($schema) != 1) {
         return 0;
     }
     if (preg_match('/"(format|contentEncoding|contentMediaType|patternProperties|contains|not|if|'
@@ -18055,6 +18072,10 @@ function main(): void
     $sfR = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"maxLength":6}}');
     $sfS = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"enum":["a","b"]}}');
     $sfT = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"propertyNames":{"pattern":"^[a-z]+$"}}');
+    // F488: propertyNames on a MIXED shape - every declared key satisfies the name pattern (the
+    // old control below used all-lowercase names, which DO match ^[a-z]+$, so it flips to served);
+    // this control has a key that violates the pattern.
+    $pnamesMixBad = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"propertyNames":{"pattern":"^[a-c]+$"}}');
     // F429: the refusal layer alone is not enough - the key-name pattern must not disqualify the
     // VALUE generator either, or the request is accepted and then answered with prose.
     $sfU = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"propertyNames":{"pattern":"^[a-z]+$"}}}}');
@@ -18580,6 +18601,7 @@ function main(): void
         . "] contentMediaType=[" . $sfN . "] format_prop=[" . $sfO
         . "] pnames_ok=[" . $sfP . "] pnames_bad=[" . $sfQ . "] pnames_len_ok=[" . $sfR
         . "] pnames_enum=[" . $sfS . "] pnames_mixed=[" . $sfT
+        . "] pnames_mix_bad=[" . $pnamesMixBad . "]"
         . "] pnames_route=" . count($sfU)
         . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
         . "] dep_mixed=[" . $sfY . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
@@ -18679,7 +18701,10 @@ function main(): void
         && $sfQ == "propertyNames"
         && $sfR == ""
         && $sfS == "propertyNames"
-        && $sfT == "propertyNames"
+        // F488 flipped pnames_mixed: the mixed shape's KEY NAMES are judged now, and city/count are
+        // all lowercase so ^[a-z]+$ holds; a name outside the pattern keeps the refusal below.
+        && $sfT == ""
+        && $pnamesMixBad == "propertyNames"
         && count($sfU) == 2
         && $sfU[0] == "city"
         && $sfU[1] == "note"
