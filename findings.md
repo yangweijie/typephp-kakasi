@@ -4555,3 +4555,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f482.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.525×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f482.log`、`engine/api_smoke_f482.log`、`engine/throughput_f482.log`）。
 **记法**：**"Build successful" 不等于二进制更新**——tpc 转换器在超大 main.php 上可能静默中止（exit 0、无编译段），批处理仍会用旧对象链接。每次构建后必须核对 `main.obj`/exe 的 mtime 与"Successfully compiled"行；出现 mtime 未变即视为陈旧二进制，先缩源或全量清缓存。**门增量也受转换器容量限制**：本项功能只能带 1 个自检门，其余三个门因转换器中止而延后。
 **顺位**：其余自由字符串/数组值级子集（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
+
+## F483：构建守卫脚本 `scripts/build-check.sh`——把"Build successful 但二进制陈旧"机械化拦截
+**动机（F482 发现）**：tpc 在超大 main.php 上可能静默中止转换（exit 0、无编译段、不更新 main.obj），`build-kakasi.bat` 仍用旧对象链接并打印 "Build successful"；此时自检跑旧二进制、门假绿。人工核 mtime 易漏。
+**实现**：脚本清 `build/gen/cache/ast`、删 `objects/generated/main.obj(.typephp-cache)` 强制 main 重译，记录起始时间，调用批处理，然后断言：①构建退出 0；②main.obj 存在；③main.obj mtime ≥ 起始时间。任一不满足打印 `BUILD_STALE`/`BUILD_FAILED` 并非 0 退出；成功打印 `BUILD_OK main.obj_mtime=…`。
+**验证**：`bash scripts/build-check.sh build_f483a` → `BUILD_OK`（日志含 "Successfully compiled 11 files"）；随后对新建二进制自检 **182/0**（`engine/selftest_f483.log`，exe 22:14:48）。
+**用法**：后续增量构建一律 `bash scripts/build-check.sh <tag>`，红色即停，不得接着跑自检/活体（否则测的是旧二进制）。
+**记法**：**把新发现的构建陷阱固化成脚本，而不是依赖记忆**——"每次构建核 mtime"是易漏的人工步骤，脚本化后才成为门禁的一部分。

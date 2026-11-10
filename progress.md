@@ -1970,3 +1970,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：not_ok 加 pattern 分支（锚定纯字面量交替、每成员含字符集外字符 ⇒ 1）；门缩减为单 `nt_pat_bang`。
 - **过程（重要）**：多门时 tpc 转换器**静默中止**（exit 0、不编译、批处理用旧对象仍报 Build successful）⇒ 自检假绿；诊断靠 main.obj mtime；最终缩减门数量入库。php.ini 栈限提到 256M；半删缓存会导致 rsp 缺失，需清整个 `build/gen/cache`。
 - **活体**：bang 形态 200、全字符集/`^x` 400；四 harness PASS；smoke 115/0、par/fairness 0、scaling 1.525×、哨兵 0。
+
+## ▶ 状态（F483，2026-11-10 22:14）——构建守卫脚本（拦截 tpc 静默中止导致的陈旧二进制）
+- **动机**：F482 中 tpc 静默中止转换、批处理仍报 Build successful ⇒ 自检假绿。
+- **实现**：`scripts/build-check.sh` 强制重译 main.obj 并断言其 mtime 前进；失败/陈旧非 0 退出。
+- **验证**：build_f483a → BUILD_OK（11 文件编译）；新建二进制自检 **182/0**（`selftest_f483.log`）。
+- **用法**：后续构建统一 `bash scripts/build-check.sh <tag>`。

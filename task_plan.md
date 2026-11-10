@@ -1592,6 +1592,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：其余自由字符串/数组值级子集 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F483 计划与完成（构建守卫：拦截 tpc 静默中止导致的陈旧二进制）
+**动机**：F482 发现 tpc 可能静默中止转换（exit 0、不编译）而批处理仍报 Build successful，自检跑旧二进制。
+**实现**：`scripts/build-check.sh`——清 ast、删 main.obj 强制重译、断言 mtime 前进；失败/陈旧非 0 退出。
+**验证**：`build_f483a` → BUILD_OK（11 文件编译）；新建二进制自检 **182/0**（`engine/selftest_f483.log`）。
+**用法**：后续一律 `bash scripts/build-check.sh <tag>`。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
