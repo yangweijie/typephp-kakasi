@@ -123,12 +123,15 @@ cases = [
       "additionalProperties": False},
      lambda code, txt: (code == 200 and (n_items(txt, "cities") or 0) in (2, 3)
                         and keys_of(txt) == ["cities"])),
-    # ...while a keyword that really is unimplemented still gets named, next to a supported one.
-    ("addprops_form_with_arr_bounds", "Name some French cities.",
+    # F492: the SCHEMA form of additionalProperties also names no key of its own - the writer emits
+    # only the declared "cities" key, so the keyword judges nothing and the subschema is vacuously
+    # satisfied (this case used to expect the refusal).
+    ("addprops_schema_served", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"},
                                                   "maxItems": 3}},
       "additionalProperties": {"type": "string"}},
-     lambda code, txt: code == 400 and "additionalProperties" in txt),
+     lambda code, txt: (code == 200 and (n_items(txt, "cities") or 0) <= 3
+                        and keys_of(txt) == ["cities"])),
     # F403②: all-required on the mixed shape keeps every key, and the integer is still an integer.
     ("mixed_all_required", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "count": {"type": "integer"}},

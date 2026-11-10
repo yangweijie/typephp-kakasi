@@ -1638,6 +1638,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门（单个）**：`pnames_mixed_ok=[]`（properties a:string,b:integer + propertyNames pattern ^[ab]$）。
 **活体**：`propertynames_mixed_ok`（200 键 a,b）、`propertynames_mixed_bad_refuse`（pattern ^a$，b 违反 → 400）。
 **用法**：`scripts/build-check.sh`；单门小步。
+**F492 已完成**：additional_properties_honoured 去掉值形限制＋根级守卫；门翻转 `addprops_form`/`addprops_form_arr`，新 `addprops_schema=[]`。过程：首轮只翻 kwW → 181/1，补翻 kwAB 后 182/0。活体 schema 形式 200；全梯绿。
 **F489 已完成**：dependent_required_ok 守卫放宽（flat||mixed；mixed 生成器精确发键）。门翻转 `dep_mixed` `dependentRequired`→``，新 `dep_mix_bad=[dependentRequired]`。活体 200/400；构建 BUILD_OK；全梯绿。
 **F488 已完成**：mixed_omittable 扫描前剥离 propertyNames 块；property_names_ok 守卫放宽（flat||mixed）。门翻转 `pnames_mixed` `propertyNames`→``（旧对照被证伪：键名 city/count 满足 ^[a-z]+$），新 `pnames_mix_bad=[propertyNames]`。活体 200/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.564×、哨兵 0）。
 
@@ -1666,6 +1667,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体**：`props_mixed_min_ok`（200 双键）、`props_mixed_min_refuse`/`props_mixed_max_refuse`（400）。
 **用法**：`scripts/build-check.sh`；三门在瘦身后容量内。
 **F491 已完成**：计数分支放宽为 flat||mixed（键数精确）。门翻转 `mixed` `minProperties`→``，新 `pc_mix_min`/`pc_mix_max`；活体 200/400/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.561×、哨兵 0）。
+
+
+## F492 计划与完成（additionalProperties 的 schema 值形式：真空满足）
+**核心思路**：写入器只发声明键；additionalProperties 只判**未声明键**，因此该关键字判不到任何键——布尔值与 schema 值都成立。F402 只接受 true/false，schema 值被过度拒绝。
+**实现**：`api_schema_additional_properties_honoured` 去掉值形限制（保留"恰一次出现"与根级判定）；其余"每叶 kind 可计划命名"的证明不变。
+**门（单个）**：`addprops_schema=[]`（a:string,b:string + additionalProperties:{"type":"integer"}）。
+**活体**：`addprops_form_with_arr_bounds`（schema 形式 + maxItems）翻为 `addprops_schema_served`（200 keys=[cities]）；`addprops_enum_refuse` 保持拒绝对照。
+**用法**：`scripts/build-check.sh`；单门小步。
 
 
 ## F451 计划与完成（`patternProperties` 的空约束形式）

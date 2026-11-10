@@ -9101,8 +9101,14 @@ function api_response_schema_string_props_required(string $body): array
 // schema form of the keyword stay refused until that route has its own key-set gate.
 function api_schema_additional_properties_honoured(string $schema): int
 {
-    if (preg_match('/"additionalProperties"\s*:\s*(?:true|false)/', $schema) != 1
-        || preg_match_all('/"additionalProperties"\s*:/', $schema) != 1) {
+    // F492: the value may be a boolean OR a subschema - the writer emits only declared keys, so the
+    // keyword judges nothing and any value is vacuously satisfied. Exactly one occurrence, and it
+    // must be the ROOT keyword (a property NAMED additionalProperties is not it).
+    if (preg_match_all('/"additionalProperties"\s*:/', $schema) != 1) {
+        return 0;
+    }
+    $kp = strpos($schema, "\"additionalProperties\"");
+    if ($kp === false) {
         return 0;
     }
     $pp = strpos($schema, "\"properties\"");
@@ -9115,6 +9121,9 @@ function api_schema_additional_properties_honoured(string $schema): int
     }
     $block = api_balance_block($schema, $bo);
     if ($block == "") {
+        return 0;
+    }
+    if ($kp < $bo + strlen($block)) {
         return 0;
     }
     $plan = api_top_leaves($block, 8);
@@ -18035,9 +18044,12 @@ function main(): void
         && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
         && $kwU == "required" && $kwV == ""
         && $kwAC == "required" && $kwAD == "required" && $kwAE == "required"
-        && $kwW == "additionalProperties" && $kwX == "additionalProperties"
+        // F492 flipped addprops_form: a SCHEMA-valued additionalProperties is vacuously satisfied
+        // (only declared keys are emitted), so it is no longer a refusal; the nested-object case
+        // still refuses because its plan leaf is not plan-nameable.
+        && $kwW == "" && $kwX == "additionalProperties"
         && $kwY == "" && $kwAF == "additionalProperties" && $kwZ == "" && $kwAA == ""
-        && $kwAB == "additionalProperties"
+        && $kwAB == ""
         && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == ""
         && $kwAV == "uniqueItems" && $kwAW == "" && $kwAX == "uniqueItems"
         && $kwAY == "cities") {
@@ -18986,16 +18998,20 @@ function main(): void
     // F491: mixed shape count - unreachable bounds still refuse.
     $pcMixMin = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"minProperties":3}');
     $pcMixMax = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"maxProperties":1}');
+    // F492: the SCHEMA-valued additionalProperties is vacuously satisfied (only declared keys emit).
+    $addPropsSchema = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"additionalProperties":{"type":"integer"}}');
     $pcH = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "minProperties": 3}');
     echo "SCHEMA-PROPS-COUNT min2=[" . $pcA . "] min3=[" . $pcB . "] max1=[" . $pcC
         . "] max2=[" . $pcD . "] sub1=[" . $pcE . "] sub2=[" . $pcF
         . "] mixed=[" . $pcG . "] wire3=[" . $pcH . "]"
-        . " pc_mix_min=[" . $pcMixMin . "] pc_mix_max=[" . $pcMixMax . "]\n";
+        . " pc_mix_min=[" . $pcMixMin . "] pc_mix_max=[" . $pcMixMax . "]"
+        . " addprops_schema=[" . $addPropsSchema . "]\n";
     if ($pcA == "" && $pcB == "minProperties" && $pcC == "maxProperties" && $pcD == ""
         && $pcE == "" && $pcF == "minProperties"
         // F491 flipped mixed: the mixed key count is exact, so minProperties:1 over two keys holds;
         // unreachable bounds keep the refusal below.
         && $pcG == "" && $pcMixMin == "minProperties" && $pcMixMax == "maxProperties"
+        && $addPropsSchema == ""
         && $pcH == "minProperties") {
         echo "SCHEMA-PROPS-COUNT: PASS (key count checked; unreachable bounds and unproven shapes refused)\n";
     } else {

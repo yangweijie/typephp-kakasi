@@ -2036,3 +2036,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：计数分支条件放宽为 flat||mixed（计数来源不变）。
 - **门（含翻转）**：`mixed` `minProperties`→``；新 `pc_mix_min`/`pc_mix_max`。
 - **活体**：mixed min1 200 双键、min3/max1 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.561×、哨兵 0；构建 BUILD_OK。
+
+## ▶ 状态（F492，2026-11-10 22:44 构建）——additionalProperties 的 schema 值形式（真空满足）
+- **改前证据**：schema 值 + 数组界 → 400；bool/enum 对照正常（`schema_required_f492pre.log`，F491 二进制）。
+- **实现**：F402 判定去掉值形限制、加根级守卫；门翻转 `addprops_form`/`addprops_form_arr`，新增 `addprops_schema`。
+- **过程**：只翻 kwW 后 181/1（kwAB 同族旧期望漏翻）⇒ 补翻 182/0。
+- **活体**：schema 形式 200 `{"cities":[…]}`；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.536×、哨兵 0；构建 BUILD_OK。

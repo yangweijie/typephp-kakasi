@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F491）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F492）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3726,8 +3726,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | minItems / maxItems / minLength / maxLength：**其他形状** | **显式 400** | `SCHEMA-KEYWORDS`（F398–F400） |
 | uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
 | uniqueItems:true | **显式 400** | `uniq_true`（F425） |
-| additionalProperties:true/false（键名来自 plan，可与数组界并存） | **支持** | `addprops_*`（F402/F403） |
-| additionalProperties：schema 形式 / 嵌套 / 含非字符串叶子 | **显式 400** | `addprops_form/nested/enum`（F402） |
+| additionalProperties:true/false **及 schema 值**（键名来自 plan，可与数组界并存；schema 值只判未声明键 ⇒ 真空满足） | **支持** | `addprops_*`/`addprops_schema`/`addprops_schema_served`（F402/F403/F492） |
+| additionalProperties：嵌套对象叶子 / 含非字符串枚举叶（plan 叶不可按 kind 命名） | **显式 400** | `addprops_nested`/`addprops_enum`（F402/F492） |
 | required = 全部声明属性 | **支持**（构造上满足） | `req_all`（F398） |
 | required ⊂ 声明属性：扁平全字符串对象 | **支持**（省略可选属性） | `SCHEMA-REQ-SUBSET`（F401） |
 | required ⊂ 声明属性：其他形状（含数组叶） | **显式 400** | `req_mixed`/`req_undeclared`/`req_arr_sub`（F401/F418 边界） |
@@ -4638,3 +4638,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`props_mixed_min_ok` **200 `{"a":"…","b":123456}`**、`props_mixed_min_refuse`/`props_mixed_max_refuse` **400**；既有 SCHEMA-PROPS-COUNT 各例不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f491.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.561×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
 **记法**：**"键数/键集"类约束的 mixed 支持是同一批工作**（F488 propertyNames、F489 dependentRequired、F490 dependentSchemas/dependencies、F491 min/maxProperties）——它们共享"mixed 生成器只发计划键"的前提；每轮只放宽一个入口并配越界/未声明对照，使波纹可逐轮归因。本轮 `mixed` 旧门再次被证伪（过去仅因形状守卫拒绝）。
+
+## F492：additionalProperties 的 **schema 值**形式（真空满足）从点名 400 变支持
+**核心思路**：写入器只发声明键，而 additionalProperties 只判**未声明键** ⇒ 该关键字判不到任何键，布尔值与 schema 值都成立。F402 只接受 true/false，schema 值被过度拒绝。
+**实现（一处＋两门翻转）**：`api_schema_additional_properties_honoured` 去掉值形限制（保留"恰一次出现"＋**根级**判定：出现位置须在 properties 块之后，属性名恰为 additionalProperties 不算）；"每叶 kind 可按 plan 命名"的证明不变。
+**改前证据（`engine/schema_required_f492pre.log`，F491 二进制）**：schema 值 + 数组界 → **400**；bool 三例 200、enum 叶 400 正常。
+**门（含翻转）**：`addprops_form`（kwW，schema 值单叶）`additionalProperties`→``；`addprops_form_arr`（kwAB，schema 值+数组界）`additionalProperties`→``；新 `addprops_schema=[]`（a:string,b:string + schema 值）；`addprops_nested`/`addprops_enum` 保持 `[additionalProperties]`。
+**活体**：`addprops_form_with_arr_bounds` 翻 `addprops_schema_served` **200 `{"cities":[…]}`**；`addprops_enum_refuse`/`addprops_mixed_served`/`addprops_all_string` 不回退。
+**过程**：首轮只翻 kwW，自检 181/1 暴露 **kwAB 也是旧期望**（schema 值+数组界）——同族夹具必须一起 grep；翻后 182/0。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f492c.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
+**记法**：**"关键字只判某些键"的约束在"从不发那些键"的形状上是真空的**——与 F453 unevaluatedProperties 同一论证；放宽一个值形时，要 grep **全部**引用该关键字的门/活体（本轮 kwAB 漏翻）。
