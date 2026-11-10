@@ -1599,6 +1599,19 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **用法**：后续一律 `bash scripts/build-check.sh <tag>`。
 
 
+## F484 计划与完成（patternProperties：对象数组 kind `ao:` 的 bare `{"type":"array"}`）
+**核心思路**：plan 对对象数组属性编码 `ao:<key>`（`api_top_leaves`），但 `api_schema_kind_is_type` 的 array 分支只认 `a/an/af/ab`，`ao:` 被当成不可证 ⇒ pp bare `{"type":"array"}` 过度拒绝。对象数组就是 array，加前缀判定即可。
+**改前状态**：properties `rows:{type:array,items:{type:object,properties:{n:{type:string}}}}` + `patternProperties:{"^r":{"type":"array"}}` → **400 "patternProperties"**（执行前活体取证）。
+**实现**：`api_schema_kind_is_type` 的 array 分支加 `substr($k,0,3)=="ao:"`。
+**门（单个）**：`pp_ao_type=[]`（对象数组 + pp bare array）。
+**活体**：`patternprops_ao_type_ok`（200 rows 为对象列表）、`patternprops_ao_str_refuse`（pp `{"type":"string"}` → 400 对照）。
+**验收**：①服务形态 rows 为对象数组 ②类型不符仍拒 ③既有 pp 门不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**用法**：构建走 `scripts/build-check.sh`，单门小步以规避 tpc 转换器容量限制。
+**F484 已完成**：`api_schema_kind_is_type` 的 array 分支加 `substr($k,0,3)=="ao:"`；门 `pp_ao_type=[]`。
+**改前证据**：对象数组属性 + pp bare array → 400（`schema_required_f484pre.log`，F483 二进制）。
+**活体**：`patternprops_ao_type_ok` 200 `{"rows":[{"n":"100000"}]}`、pp string 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.544×、哨兵 0；构建 BUILD_OK（11 文件）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

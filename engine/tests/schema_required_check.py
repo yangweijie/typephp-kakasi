@@ -234,6 +234,19 @@ cases = [
      {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{3}$"}},
       "patternProperties": {"^c": {"pattern": "^[a-z]+$"}}},
      lambda code, txt: code == 400 and "patternProperties" in txt),
+    # F484: an object-array property (plan kind ao:) IS an array, so a patternProperties bare
+    # {"type":"array"} over its matching key is satisfied by construction; a mismatched bare type
+    # stays refused (the control).
+    ("patternprops_ao_type_ok", "Give the rows.",
+     {"type": "object", "properties": {"rows": {"type": "array", "items": {"type": "object", "properties": {"n": {"type": "string"}}}}},
+      "patternProperties": {"^r": {"type": "array"}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("rows"), list)
+     and len(json.loads(txt)["rows"]) >= 1
+     and all(isinstance(x, dict) for x in json.loads(txt)["rows"])),
+    ("patternprops_ao_str_refuse", "Give the rows.",
+     {"type": "object", "properties": {"rows": {"type": "array", "items": {"type": "object", "properties": {"n": {"type": "string"}}}}},
+      "patternProperties": {"^r": {"type": "string"}}},
+     lambda code, txt: code == 400 and "patternProperties" in txt),
     # F458: items carrying a value constraint is outside every array writer - the before-probe
     # answered {"items":"paris"} / {"items":5}, which is not even the requested shape. Refused by
     # name; the plain-typed items control keeps being served as an array.

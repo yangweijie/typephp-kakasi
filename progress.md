@@ -1976,3 +1976,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：`scripts/build-check.sh` 强制重译 main.obj 并断言其 mtime 前进；失败/陈旧非 0 退出。
 - **验证**：build_f483a → BUILD_OK（11 文件编译）；新建二进制自检 **182/0**（`selftest_f483.log`）。
 - **用法**：后续构建统一 `bash scripts/build-check.sh <tag>`。
+
+## ▶ 状态（2026-11-10 22:28 构建）——F484 patternProperties 对象数组 kind ao: 的 bare array
+- **改前证据**：对象数组属性 + pp `{"type":"array"}` → 400；pp string 对照 400（`schema_required_f484pre.log`，F483 二进制）。
+- **实现**：`kind_is_type` 的 array 分支加 `ao:` 前缀；单门 `pp_ao_type`。
+- **活体**：`{"rows":[{"n":"100000"}]}` 200、pp string 400；四 harness PASS；smoke 115/0、par/fairness 0、scaling 1.544×、哨兵 0。
+- **构建**：`scripts/build-check.sh` → BUILD_OK（11 文件）。

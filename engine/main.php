@@ -9937,7 +9937,10 @@ function api_schema_kind_is_type(string $kind, string $t): int
     if ($t == "boolean" && $k == "b") {
         return 1;
     }
-    if ($t == "array" && ($k == "a" || $k == "an" || $k == "af" || $k == "ab")) {
+    // F484: an object-array property carries the plan kind "ao:<key>" - it IS an array, so the
+    // bare `array` type is guaranteed too (the plain a/an/af/ab kinds are the scalar arrays).
+    if ($t == "array" && ($k == "a" || $k == "an" || $k == "af" || $k == "ab"
+        || substr($k, 0, 3) == "ao:")) {
         return 1;
     }
     return 0;
@@ -18037,6 +18040,8 @@ function main(): void
     // the same spec; a different spec stays refused.
     $ppPatSame = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}},"patternProperties":{"^c":{"pattern":"^[A-Z]{3}$"}}}');
     $ppPatDiff = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}},"patternProperties":{"^c":{"pattern":"^[a-z]+$"}}}');
+    // F484: an object-array property (kind ao:) satisfies a bare array patternProperties type.
+    $ppAoType = api_schema_keywords_unsupported('{"properties":{"rows":{"type":"array","items":{"type":"object","properties":{"n":{"type":"string"}}}}},"patternProperties":{"^r":{"type":"array"}}}');
     $sfBQ = api_schema_candidates('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"enum":["paris","lyon"]}}}');
     // F476: a NUMERIC enum/const leaf kind (en:) guarantees a bare integer/number, an enum superset
     // or a matching const; a quoted member in the subschema keeps the refusal (a number is not the
@@ -18462,6 +18467,7 @@ function main(): void
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
         . " pp_pat_same=[" . $ppPatSame . "] pp_pat_diff=[" . $ppPatDiff . "]"
+        . " pp_ao_type=[" . $ppAoType . "]"
         . " pp_num_type=[" . $ppNumType . "] pp_num_enum=[" . $ppNumEnum
         . "] pp_num_const=[" . $ppNumConst . "] pp_num_miss=[" . $ppNumMiss
         . "] pp_num_mixed=[" . $ppNumMixed . "] pp_num_str=[" . $ppNumStr . "]"
@@ -18542,7 +18548,7 @@ function main(): void
         && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
-        && $ppPatSame == "" && $ppPatDiff == "patternProperties"
+        && $ppPatSame == "" && $ppPatDiff == "patternProperties" && $ppAoType == ""
         && $ppNumType == "" && $ppNumEnum == "" && $ppNumConst == ""
         && $ppNumMiss == "patternProperties" && $ppNumMixed == "patternProperties"
         && $ppNumStr == "patternProperties"
