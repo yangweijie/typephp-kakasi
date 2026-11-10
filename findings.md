@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F490）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F491）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3731,8 +3731,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | required = 全部声明属性 | **支持**（构造上满足） | `req_all`（F398） |
 | required ⊂ 声明属性：扁平全字符串对象 | **支持**（省略可选属性） | `SCHEMA-REQ-SUBSET`（F401） |
 | required ⊂ 声明属性：其他形状（含数组叶） | **显式 400** | `req_mixed`/`req_undeclared`/`req_arr_sub`（F401/F418 边界） |
-| minProperties / maxProperties：键数可满足的扁平全字符串 | **支持**（按键数判定） | `SCHEMA-PROPS-COUNT`（F427） |
-| minProperties / maxProperties：其他形状 / 不可满足 | **显式 400** | 同上 + `mixed` 边界（F427） |
+| minProperties / maxProperties：键数可满足的**扁平全字符串与 mixed-omittable**（键数精确：全声明或 required 子集） | **支持**（按键数判定） | `SCHEMA-PROPS-COUNT`/`pc_mix_min`/`pc_mix_max`/`props_mixed_min_ok`（F427/F491） |
+| minProperties / maxProperties：其他形状 / 不可满足（mixed 的 min3/max1 等越界） | **显式 400** | 同上 + `pc_mix_min`/`pc_mix_max`（F427/F491） |
 | propertyNames（pattern/min-maxLength/enum/const/type:string，对声明键名求值；**扁平全字符串与 mixed-omittable 形状均可**——mixed 的已发键 ⊆ 声明键，全声明名检查即超集证明） | **支持** | `pnames_*` + `pnames_route` + `pnames_mixed`/`pnames_mix_bad`/`propertynames_mixed_ok`（F429/F488） |
 | propertyNames：不可评估的形式 / 声明键名不满足（形状本身可服务） | **显式 400** | `pnames_enum`/`pnames_mix_bad`/`propertynames_mixed_bad_refuse`（F429/F488） |
 | dependentRequired（按"会发出的键集"判定；**扁平全字符串与 mixed-omittable 形状均可**——mixed 生成器只发计划键、按 required_filter 精确裁剪） | **支持**；违反时 **400** | `dep_ok`/`dep_subset`/`dep_undeclared`/`dep_mixed`/`dep_mix_bad`/`dependent_required_mixed_ok`（F432/F489） |
@@ -4629,3 +4629,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`dependent_schemas_mixed_ok`/`dependencies_mixed_ok` **200 `{"a":"…","b":123456}`**、两 bad 400（未声明依赖）；既有系列不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f490.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.562×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
 **记法**：**同一证明前提的多个入口应成组放宽**（F489/F490 三个键集谓词），否则支持表会出现"dependentRequired 支持 mixed 而 dependentSchemas 不支持"的漂移；每加一个 mixed 入口都配"未声明依赖"的拒绝对照，防止守卫放宽把真违反也放行。
+
+## F491：minProperties/maxProperties 扩到 mixed-omittable（键数精确性）
+**核心思路**：键数与 dependentRequired 同源——mixed 生成器只发计划键（required 时精确裁剪），`api_schema_required_filter` 或 `api_schema_plan_count` 给出**精确**键数；越界才拒。
+**实现（一处）**：计数分支的 `flat_all_string==1` 放宽为 `flat||mixed_omittable`（计数来源不变）。
+**改前证据（`engine/schema_count_f491pre.log`，F490 二进制）**：mixed a:string/b:integer + minProperties:1 → 400；min3/max1 对照 400 正确。
+**门（含翻转）**：旧 `mixed`（minProperties:1，2 键）**`minProperties`→``**；新 `pc_mix_min=[minProperties]`（min3）、`pc_mix_max=[maxProperties]`（max1）。
+**活体**：`props_mixed_min_ok` **200 `{"a":"…","b":123456}`**、`props_mixed_min_refuse`/`props_mixed_max_refuse` **400**；既有 SCHEMA-PROPS-COUNT 各例不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f491.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.561×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
+**记法**：**"键数/键集"类约束的 mixed 支持是同一批工作**（F488 propertyNames、F489 dependentRequired、F490 dependentSchemas/dependencies、F491 min/maxProperties）——它们共享"mixed 生成器只发计划键"的前提；每轮只放宽一个入口并配越界/未声明对照，使波纹可逐轮归因。本轮 `mixed` 旧门再次被证伪（过去仅因形状守卫拒绝）。

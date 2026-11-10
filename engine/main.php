@@ -10546,11 +10546,11 @@ function api_schema_keywords_unsupported(string $body): string
         // F427: minProperties/maxProperties count keys. On the flat all-string shape the emitted key
         // set is the declared plan (or its required subset), so the count is known up front: a bound
         // that count satisfies is honoured, one it cannot satisfy is refused rather than answered
-        // with the wrong number of keys. Every other shape still refuses, because its key set is not
-        // proven.
+        // with the wrong number of keys. F491: a mixed shape's key set is exact too (the mixed
+        // generator emits the plan, required-filtered), so the same count judgement applies.
         if ($kw == "minProperties" || $kw == "maxProperties") {
             $emitN = 0;
-            if (api_schema_flat_all_string($body) == 1) {
+            if (api_schema_flat_all_string($body) == 1 || api_schema_mixed_omittable($body) == 1) {
                 $emitKeep = api_schema_required_filter($body);
                 if ($emitKeep != "") {
                     $emitN = count(explode(",", $emitKeep));
@@ -18983,12 +18983,19 @@ function main(): void
     $pcE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"minProperties":1}');
     $pcF = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"minProperties":2}');
     $pcG = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"minProperties":1}');
+    // F491: mixed shape count - unreachable bounds still refuse.
+    $pcMixMin = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"minProperties":3}');
+    $pcMixMax = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"maxProperties":1}');
     $pcH = api_schema_keywords_unsupported('{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "minProperties": 3}');
     echo "SCHEMA-PROPS-COUNT min2=[" . $pcA . "] min3=[" . $pcB . "] max1=[" . $pcC
         . "] max2=[" . $pcD . "] sub1=[" . $pcE . "] sub2=[" . $pcF
-        . "] mixed=[" . $pcG . "] wire3=[" . $pcH . "]\n";
+        . "] mixed=[" . $pcG . "] wire3=[" . $pcH . "]"
+        . " pc_mix_min=[" . $pcMixMin . "] pc_mix_max=[" . $pcMixMax . "]\n";
     if ($pcA == "" && $pcB == "minProperties" && $pcC == "maxProperties" && $pcD == ""
-        && $pcE == "" && $pcF == "minProperties" && $pcG == "minProperties"
+        && $pcE == "" && $pcF == "minProperties"
+        // F491 flipped mixed: the mixed key count is exact, so minProperties:1 over two keys holds;
+        // unreachable bounds keep the refusal below.
+        && $pcG == "" && $pcMixMin == "minProperties" && $pcMixMax == "maxProperties"
         && $pcH == "minProperties") {
         echo "SCHEMA-PROPS-COUNT: PASS (key count checked; unreachable bounds and unproven shapes refused)\n";
     } else {

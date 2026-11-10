@@ -421,6 +421,21 @@ cases = [
      {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
       "dependencies": {"a": ["z"]}},
      lambda code, txt: code == 400 and "dependencies" in txt, ask),
+    # F491: minProperties/maxProperties count the emitted keys, which are exact for a mixed shape
+    # (all declared, or the required subset); a bound the count satisfies is served, an
+    # unreachable one keeps the refusal.
+    ("props_mixed_min_ok", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "minProperties": 1},
+     lambda code, txt: code == 200 and sorted(json.loads(txt).keys()) == ["a", "b"], ask),
+    ("props_mixed_min_refuse", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "minProperties": 3},
+     lambda code, txt: code == 400 and "minProperties" in txt, ask),
+    ("props_mixed_max_refuse", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "maxProperties": 1},
+     lambda code, txt: code == 400 and "maxProperties" in txt, ask),
 ]
 
 bad = 0

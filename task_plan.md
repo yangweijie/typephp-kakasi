@@ -1659,6 +1659,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F490 已完成**：dependent_schemas_ok / dependencies_ok 守卫放宽（flat||mixed）。门 `dep_sch_mix=[]`、`dep_deps_mix=[]`；活体两形态 200 双键、两 bad 400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.562×、哨兵 0）。
 
 
+## F491 计划与完成（minProperties/maxProperties 扩到 mixed-omittable）
+**核心思路**：键数与 dependentRequired 同源的精确性——mixed 生成器只发计划键（required 时精确裁剪），`api_schema_required_filter`/`api_schema_plan_count` 已给出精确计数 ⇒ 越界才拒。
+**实现**：计数分支的 `flat_all_string==1` 条件放宽为 `flat||mixed_omittable`（计数来源不变）。
+**门（含翻转）**：旧 `mixed`（a:string,b:integer + minProperties:1）**`minProperties`→``**；新 `pc_mix_min=[minProperties]`（min3，2 键）、`pc_mix_max=[maxProperties]`（max1，2 键）。
+**活体**：`props_mixed_min_ok`（200 双键）、`props_mixed_min_refuse`/`props_mixed_max_refuse`（400）。
+**用法**：`scripts/build-check.sh`；三门在瘦身后容量内。
+**F491 已完成**：计数分支放宽为 flat||mixed（键数精确）。门翻转 `mixed` `minProperties`→``，新 `pc_mix_min`/`pc_mix_max`；活体 200/400/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.561×、哨兵 0）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

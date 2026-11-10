@@ -2030,3 +2030,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：两处守卫放宽为 flat||mixed（体内键集已精确）。
 - **门**：`dep_sch_mix=[]`、`dep_deps_mix=[]`。
 - **活体**：两形态 200 双键、两 bad 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.562×、哨兵 0；构建 BUILD_OK。
+
+## ▶ 状态（F491，2026-11-10 22:12 构建）——minProperties/maxProperties 扩到 mixed-omittable
+- **改前证据**：mixed + minProperties:1 → 400；min3/max1 对照 400（`schema_count_f491pre.log`，F490 二进制）。
+- **实现**：计数分支条件放宽为 flat||mixed（计数来源不变）。
+- **门（含翻转）**：`mixed` `minProperties`→``；新 `pc_mix_min`/`pc_mix_max`。
+- **活体**：mixed min1 200 双键、min3/max1 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.561×、哨兵 0；构建 BUILD_OK。
