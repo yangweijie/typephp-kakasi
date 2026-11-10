@@ -18509,105 +18509,273 @@ function main(): void
         . " ap_plan=[" . $apPlan . "] ap_text=[" . $apText . "] ap_route=" . count($apRoute)
         . " ap_alt=[" . $apAlt . "] ap_alt_text=[" . $apAltText . "] ap_lit=[" . $apLit
         . "] ap_bad=[" . $apBad . "] sf_itb=[" . $sfITB . "]\n";
-    if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
-        && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
-        && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
-        && $sfK == "format" && $sfL == "patternProperties" && $sfM == "contentEncoding"
-        && $sfN == "contentMediaType" && $sfO == ""
-        && $sfP == "" && $sfQ == "propertyNames" && $sfR == "" && $sfS == "propertyNames"
+    $structOk = 1;
+    if (!($sfA == "contains"
+        && $sfB == "not"
+        && $sfC == "if"
+        && $sfD == "propertyNames"
+        && $sfE == "dependentRequired"
+        && $sfF == ""
+        && $sfG == ""
+        && $sfH == "not"
+        && $sfI == "minContains"
+        && $sfJ == "unevaluatedItems"
+        && $sfK == "format"
+        && $sfL == "patternProperties"
+        && $sfM == "contentEncoding"
+        && $sfN == "contentMediaType"
+        && $sfO == ""
+        && $sfP == ""
+        && $sfQ == "propertyNames"
+        && $sfR == ""
+        && $sfS == "propertyNames"
         && $sfT == "propertyNames"
-        && count($sfU) == 2 && $sfU[0] == "city" && $sfU[1] == "note"
-        && $sfV == "" && $sfW == "dependentRequired" && $sfX == "dependentRequired"
+        && count($sfU) == 2
+        && $sfU[0] == "city"
+        && $sfU[1] == "note"
+        && $sfV == ""
+        && $sfW == "dependentRequired")) {
+        $structOk = 0;
+    }
+    if (!($sfX == "dependentRequired"
         && $sfY == "dependentRequired"
-        && $sfZ == "" && $sfAA == "prefixItems" && $sfAB == ""
-        && $sfAC == "pair|s,i" && $tupShape == 1 && api_json_ok($tupText) == 1
-        && $sfAD == "" && $sfAE == "dependentSchemas" && $sfAF == "dependentSchemas"
-        && $sfAG == "" && $sfAH == "" && $sfAI == "dependencies"
+        && $sfZ == ""
+        && $sfAA == "prefixItems"
+        && $sfAB == ""
+        && $sfAC == "pair|s,i"
+        && $tupShape == 1
+        && api_json_ok($tupText) == 1
+        && $sfAD == ""
+        && $sfAE == "dependentSchemas"
+        && $sfAF == "dependentSchemas"
+        && $sfAG == ""
+        && $sfAH == ""
+        && $sfAI == "dependencies"
         && $sfAJ == "dependencies"
-        && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
-        && $ntConstNum == "" && $ntConstStr == "not"
-        && $ntEnumNum == "" && $ntEnumMixed == "not" && count($ntRoute) == 1
-        && $ntConstBang == "" && $ntEnumBang == "" && $ntEnumScalars == ""
-        && $ntEnumMiss == "not" && $ntEscaped == "not"
+        && $sfAK == ""
+        && $sfAL == "not"
+        && $sfAM == "not"
+        && $ntConstNum == ""
+        && $ntConstStr == "not"
+        && $ntEnumNum == ""
+        && $ntEnumMixed == "not"
+        && count($ntRoute) == 1
+        && $ntConstBang == ""
+        && $ntEnumBang == "")) {
+        $structOk = 0;
+    }
+    if (!($ntEnumScalars == ""
+        && $ntEnumMiss == "not"
+        && $ntEscaped == "not"
         && $ntPatBang == ""
-        && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
-        && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
-        && $cvConst == "" && $cvEnum == "" && $cvPat == ""
-        && $cvPatSpec == "" && $cvPatSpecDiff == "contains"
-        && $cvMiss == "contains" && $cvRoute == "cities|paris"
+        && count($sfAN) == 2
+        && $sfAN[0] == "city"
+        && $sfAN[1] == "note"
+        && $sfAO == ""
+        && $sfAP == "contains"
+        && $sfAQ == "contains"
+        && $cvConst == ""
+        && $cvEnum == ""
+        && $cvPat == ""
+        && $cvPatSpec == ""
+        && $cvPatSpecDiff == "contains"
+        && $cvMiss == "contains"
+        && $cvRoute == "cities|paris"
         && $sfAR == "cities"
-        && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
-        && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note"
-        && $sfAW == "" && $sfAX == "" && $sfAY == ""
-        && $ifReqTrue == "" && $ifReqFalse == "" && $ifReqThen == ""
-        && $ifReqMiss == "if" && count($ifReqRoute) == 2
-        && count($sfAZ) == 2 && $sfAZ[0] == "city" && $sfAZ[1] == "note"
-        && $sfBA == "" && $sfBB == "" && $sfBC == ""
-        && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties"
-        && $sfBF == "" && $sfBG == "" && $sfBH == "minContains"
-        && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
-        && $sfBM == "" && $sfBN == "patternProperties"
-        && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
-        && $ppPatSame == "" && $ppPatDiff == "patternProperties" && $ppAoType == ""
-        && $ppNumType == "" && $ppNumEnum == "" && $ppNumConst == ""
-        && $ppNumMiss == "patternProperties" && $ppNumMixed == "patternProperties"
+        && $sfAS == ""
+        && $sfAT == "patternProperties"
+        && $sfAU == "patternProperties"
+        && count($sfAV) == 2
+        && $sfAV[0] == "city"
+        && $sfAV[1] == "note"
+        && $sfAW == "")) {
+        $structOk = 0;
+    }
+    if (!($sfAX == ""
+        && $sfAY == ""
+        && $ifReqTrue == ""
+        && $ifReqFalse == ""
+        && $ifReqThen == ""
+        && $ifReqMiss == "if"
+        && count($ifReqRoute) == 2
+        && count($sfAZ) == 2
+        && $sfAZ[0] == "city"
+        && $sfAZ[1] == "note"
+        && $sfBA == ""
+        && $sfBB == ""
+        && $sfBC == ""
+        && $sfBD == "unevaluatedItems"
+        && $sfBE == "unevaluatedProperties"
+        && $sfBF == ""
+        && $sfBG == ""
+        && $sfBH == "minContains"
+        && $sfBI == "minContains"
+        && $sfBJ == "2:3"
+        && $sfBK == ""
+        && $sfBM == ""
+        && $sfBN == "patternProperties"
+        && $sfBO == ""
+        && $sfBP == "patternProperties")) {
+        $structOk = 0;
+    }
+    if (!(count($sfBQ) == 2
+        && $ppPatSame == ""
+        && $ppPatDiff == "patternProperties"
+        && $ppAoType == ""
+        && $ppNumType == ""
+        && $ppNumEnum == ""
+        && $ppNumConst == ""
+        && $ppNumMiss == "patternProperties"
+        && $ppNumMixed == "patternProperties"
         && $ppNumStr == "patternProperties"
         // F470 flipped items_const: a string-const items form is a one-value enum, claimed by the
         // enum-items detector now, so no keyword refusal (pattern items keeps the refusal).
         // F477 flipped items_pattern: a fully anchored plain-literal alternation is a finite set
         // claimed by the enum-items detector now; the metacharacter pattern keeps the refusal.
-        && $sfCA == "" && $sfCB == "" && $sfCC == "" && $sfITB == "items"
-        && $sfCD == "" && $sfCE == "" && $sfCI == ""
-        && $ibPlan == "nums|5|9" && $ibOne == "nums|5|-1" && $ibMax == "nums|-1|9"
-        && $ibMinShape == 1 && $ibMinVal >= 5 && api_json_ok($ibMinText) == 1
+        && $sfCA == ""
+        && $sfCB == ""
+        && $sfCC == ""
+        && $sfITB == "items"
+        && $sfCD == ""
+        && $sfCE == ""
+        && $sfCI == ""
+        && $ibPlan == "nums|5|9"
+        && $ibOne == "nums|5|-1"
+        && $ibMax == "nums|-1|9"
+        && $ibMinShape == 1
+        && $ibMinVal >= 5
+        && api_json_ok($ibMinText) == 1
         && $ibShape == 1
-        && $ibVal >= 5 && $ibVal <= 9 && api_json_ok($ibText) == 1
-        && $inPlan == "nums|15|-999|0" && $inInt == "nums|1|9|0" && $inOne == "nums|-1|9|0"
-        && $inMulti == "" && $inKw == ""
+        && $ibVal >= 5)) {
+        $structOk = 0;
+    }
+    if (!($ibVal <= 9
+        && api_json_ok($ibText) == 1
+        && $inPlan == "nums|15|-999|0"
+        && $inInt == "nums|1|9|0"
+        && $inOne == "nums|-1|9|0"
+        && $inMulti == ""
+        && $inKw == ""
         // F466 flipped in_kw_multi: a number items leaf with multipleOf is claimed by the
         // item-multiple writer now (the fold serves an integer multiple), so no keyword refusal.
         && $inKwMulti == ""
-        && $inDecShape == 1 && $inDecVal >= 1.5 && $inDecVal <= 1.9 && api_json_ok($inText) == 1
-        && $inIntShape == 1 && $inIntVal >= 1 && $inIntVal <= 9 && api_json_ok($inIntText) == 1
+        && $inDecShape == 1
+        && $inDecVal >= 1.5
+        && $inDecVal <= 1.9
+        && api_json_ok($inText) == 1
+        && $inIntShape == 1
+        && $inIntVal >= 1
+        && $inIntVal <= 9
+        && api_json_ok($inIntText) == 1
         && $ibNeg == "nums|-1|-3"
-        && $bnShape == "n|-1|-3|0" && $bnMatch == 1 && $bnVal <= -3 && api_json_ok($bnText) == 1
-        && $inNegMax == "nums|-1|-3|0" && $inNMatch == 1 && $inNVal <= -3 && api_json_ok($inNText) == 1
-        && $ibNegMin == "nums|-5|-1"
-        && $ibmMatch == 1 && $ibmVal >= -5 && api_json_ok($ibmText) == 1
-        && $ngShape == "n|-5|-1|0" && $ngMatch == 1 && $ngVal >= -5 && api_json_ok($ngText) == 1
-        && $ngItems == "nums|-5|-1|0" && $ngiMatch == 1 && $ngiVal >= -5 && api_json_ok($ngiText) == 1
-        && $imUnb == "nums|3|-1|-1" && $imBnd == "nums|5000|5000|5000"
-        && $imUnsat == "" && $imBig == "" && $imKwBnd == ""
+        && $bnShape == "n|-1|-3|0"
+        && $bnMatch == 1
+        && $bnVal <= -3
+        && api_json_ok($bnText) == 1
+        && $inNegMax == "nums|-1|-3|0"
+        && $inNMatch == 1
+        && $inNVal <= -3
+        && api_json_ok($inNText) == 1)) {
+        $structOk = 0;
+    }
+    if (!($ibNegMin == "nums|-5|-1"
+        && $ibmMatch == 1
+        && $ibmVal >= -5
+        && api_json_ok($ibmText) == 1
+        && $ngShape == "n|-5|-1|0"
+        && $ngMatch == 1
+        && $ngVal >= -5
+        && api_json_ok($ngText) == 1
+        && $ngItems == "nums|-5|-1|0"
+        && $ngiMatch == 1
+        && $ngiVal >= -5
+        && api_json_ok($ngiText) == 1
+        && $imUnb == "nums|3|-1|-1"
+        && $imBnd == "nums|5000|5000|5000"
+        && $imUnsat == ""
+        && $imBig == ""
+        && $imKwBnd == ""
         && $imNum == "nums|3|-1|-1"
-        && $imNMatch == 1 && ($imNVal % 3) == 0 && api_json_ok($imNText) == 1
-        && $nmShape == "n|3|3|3" && $nmMatch == 1 && $nmVal == 3 && api_json_ok($nmText) == 1
-        && $nmBnd == 0 && $nmFrac == 1 && $nmUnb == 1
-        && $imUMatch == 1 && ($imUVal % 3) == 0 && api_json_ok($imText) == 1
-        && $imBText == '{"nums":[5000]}' && api_json_ok($imBText) == 1
-        && $imExcl == "nums|3|3|3" && $imExclBool == "nums|3|3|3"
+        && $imNMatch == 1
+        && ($imNVal % 3) == 0
+        && api_json_ok($imNText) == 1
+        && $nmShape == "n|3|3|3"
+        && $nmMatch == 1
+        && $nmVal == 3
+        && api_json_ok($nmText) == 1)) {
+        $structOk = 0;
+    }
+    if (!($nmBnd == 0
+        && $nmFrac == 1
+        && $nmUnb == 1
+        && $imUMatch == 1
+        && ($imUVal % 3) == 0
+        && api_json_ok($imText) == 1
+        && $imBText == '{"nums":[5000]}'
+        && api_json_ok($imBText) == 1
+        && $imExcl == "nums|3|3|3"
+        && $imExclBool == "nums|3|3|3"
         && $imExclNum == "nums|3|3|3"
-        && $imExclUnsat == "" && $imExclFrac == "" && $imExclKw == "items"
-        && $imXText == '{"nums":[3]}' && api_json_ok($imXText) == 1
-        && $ibExcl == "nums|1|9" && $ibExclBool == "nums|1|-1"
-        && $ibExclUnsat == "" && $ibExclKw == "items"
-        && $ibXMatch == 1 && $ibXVal >= 1 && $ibXVal <= 9 && api_json_ok($ibXText) == 1
-        && $fmShape == "n|12|-999|0" && $fmUnsat == "" && $fmNeg == "n|-18|-999|0"
-        && $fmD2 == "n|120|-998|0" && $fmNoInt == "n|15|-999|0"
-        && $fmItems == "nums|12|-999|0" && $fmIntLeaf == 1
-        && $fmText == '{"n":1.2}' && api_json_ok($fmText) == 1
-        && $fmNText == '{"n":-1.8}' && api_json_ok($fmNText) == 1
-        && $fmDText == '{"n":1.20}' && api_json_ok($fmDText) == 1
-        && $fmIText == '{"n":1.5}' && api_json_ok($fmIText) == 1
-        && $fmiText == '{"nums":[1.2]}' && api_json_ok($fmiText) == 1
-        && $fmMinOnly == "n|12|-999|0" && $fmMaxPos == "n|0|-999|0" && $fmMaxNeg == "n|-12|-999|0"
-        && $fmM1Text == '{"n":1.2}' && $fmM2Text == '{"n":0.0}' && $fmM3Text == '{"n":-1.2}'
-        && $sfCF == "cities|paris~lyon" && $sfCG == "cities|paris"
-        && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0
-        && $acText == '{"cities":["paris"]}' && api_json_ok($acText) == 1 && count($acRoute) == 0
+        && $imExclUnsat == ""
+        && $imExclFrac == ""
+        && $imExclKw == "items"
+        && $imXText == '{"nums":[3]}'
+        && api_json_ok($imXText) == 1
+        && $ibExcl == "nums|1|9"
+        && $ibExclBool == "nums|1|-1"
+        && $ibExclUnsat == ""
+        && $ibExclKw == "items"
+        && $ibXMatch == 1
+        && $ibXVal >= 1
+        && $ibXVal <= 9
+        && api_json_ok($ibXText) == 1
+        && $fmShape == "n|12|-999|0")) {
+        $structOk = 0;
+    }
+    if (!($fmUnsat == ""
+        && $fmNeg == "n|-18|-999|0"
+        && $fmD2 == "n|120|-998|0"
+        && $fmNoInt == "n|15|-999|0"
+        && $fmItems == "nums|12|-999|0"
+        && $fmIntLeaf == 1
+        && $fmText == '{"n":1.2}'
+        && api_json_ok($fmText) == 1
+        && $fmNText == '{"n":-1.8}'
+        && api_json_ok($fmNText) == 1
+        && $fmDText == '{"n":1.20}'
+        && api_json_ok($fmDText) == 1
+        && $fmIText == '{"n":1.5}'
+        && api_json_ok($fmIText) == 1
+        && $fmiText == '{"nums":[1.2]}'
+        && api_json_ok($fmiText) == 1
+        && $fmMinOnly == "n|12|-999|0"
+        && $fmMaxPos == "n|0|-999|0"
+        && $fmMaxNeg == "n|-12|-999|0"
+        && $fmM1Text == '{"n":1.2}'
+        && $fmM2Text == '{"n":0.0}'
+        && $fmM3Text == '{"n":-1.2}'
+        && $sfCF == "cities|paris~lyon"
+        && $sfCG == "cities|paris"
+        && $aeShape == 1)) {
+        $structOk = 0;
+    }
+    if (!(api_json_ok($aeText) == 1
+        && count($sfCH) == 0
+        && $acText == '{"cities":["paris"]}'
+        && api_json_ok($acText) == 1
+        && count($acRoute) == 0
         && $apPlan == "codes|~c3xABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        && $apAlt == "cities|paris~lyon" && $apAltShape == 1 && api_json_ok($apAltText) == 1
-        && $apLit == "cities|paris" && $apBad == ""
-        && $apShape == 1 && api_json_ok($apText) == 1 && count($apRoute) == 0) {
+        && $apAlt == "cities|paris~lyon"
+        && $apAltShape == 1
+        && api_json_ok($apAltText) == 1
+        && $apLit == "cities|paris"
+        && $apBad == ""
+        && $apShape == 1
+        && api_json_ok($apText) == 1
+        && count($apRoute) == 0)) {
+        $structOk = 0;
+    }
+    if ($structOk == 1) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

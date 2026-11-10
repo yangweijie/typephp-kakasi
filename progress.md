@@ -1988,3 +1988,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **回退**：main.php/schema_count_check/task_plan 全部 checkout；整清缓存全量构建 BUILD_OK（11 文件）；自检 **182/0**（`selftest_f485.log`，exe 22:48:53）。
 - **守卫修复**：`build-check.sh` 改为 `rm -rf build/gen/cache`（部分删除会导致 rsp/obj 失配，`build_f485.log` 留证）。
 - **后续前置**：先瘦身 main.php（拆分巨型 STRUCT `&&` 断言链），再做功能增量。
+
+## ▶ 状态（F486，2026-11-10 23:00）——SCHEMA-STRUCT 断言链切分为 10 块（恢复构建容量）
+- **动机**：F485 显示 main.php 已到 tpc 转换器容量边缘（1–2 分支即静默中止）。
+- **实现**：顶层 `&&` 切 10 块（每块 25 项）→ `$structOk` 逐块判定；顺序/注释不变；一次性脚本已删。
+- **验证**：php -l 通过；build-check **BUILD_OK**（11 文件）；自检 **182/0**、SCHEMA-STRUCT PASS；四 harness PASS；哨兵 0。
+- **意义**：为后续功能增量恢复构建容量（F485 的 minContains:0 可排在下一轮）。
