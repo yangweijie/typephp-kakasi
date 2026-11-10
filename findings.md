@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F484）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F485）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3746,8 +3746,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`、**非字符串标量 const/enum**（`{"const":5}` / `{"enum":[1,2,3]}`）、**含字符集外字符的无转义字符串 const/enum**（如 `"Paris!"`、`["a!","b@"]`）、或**含字符集外字符的锚定纯字面量交替 pattern**（如 `^(paris_|lyon_)$`）（扁平全字符串） | **支持**（构造满足——发射值是字符集内字符串，永不等于非字符串常量/含外字符的串/无法匹配的外字符交替；根级 not 块不 disqualify 生成器/扁平枚举扫描） | `not_type`/`not_route`/`nt_const_num`/`nt_enum_num`/`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`/`nt_pat_bang`/`not_const_bang_served`/`not_pattern_bang_served`（F448/F474/F479/F482） |
 | not：**全字符集**字符串常量/存在可命中的枚举成员/可被匹配的 pattern/对象数组常量 / 含转义成员 / 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`/`nt_const_str`/`nt_enum_miss`/`nt_escaped`/`not_pattern_charset_refuse`（F448/F474/F479/F482） |
 | contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
-| contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern；或 items 为受支持 pattern 且 contains 的 pattern 生成**同一 spec**） | **支持**（每元素皆从 items 值表/spec 构造发射、数组 ≥1 元素 ⇒ contains 构造满足；判定复用 F457 leaf_guarantees 与 spec 相等） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`cv_pat_spec`/`contains_const_served`/`contains_pattern_items_same_ok`（F472/F481） |
-| contains：类型不匹配 / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / pattern items 与 contains 的 spec 不同 / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`/`cv_pat_spec_diff`（F449/F472/F481） |
+| contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern；或 items 为受支持 pattern 且 contains 的 pattern 生成**同一 spec**；或**显式 `minContains:0` 且无 `maxContains`（空判定，任何 contains 子 schema/maxItems 形态均可）**） | **支持**（每元素皆从 items 值表/spec 构造发射、数组 ≥1 元素 ⇒ contains 构造满足；minContains:0 允许 0 匹配 ⇒ 恒真；判定复用 F457 leaf_guarantees 与 spec 相等） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`cv_pat_spec`/`cont_min0`/`contains_const_served`/`contains_pattern_items_same_ok`/`contains_min0_served`（F472/F481/F485） |
+| contains：类型不匹配 / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / pattern items 与 contains 的 spec 不同 / **minContains:0 但带 maxContains（匹配数上界）** / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`/`cv_pat_spec_diff`/`contains_min0_max_refuse`（F449/F472/F481/F485） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / **array↔任意数组种类（含对象数组 `ao:`）**） | **支持**（值由该种类写出器保证） | `pp_match_ok`/`pp_ao_type`/`patternprops_ao_type_ok`（F455/F484） |
 | patternProperties：匹配键为**有限字符串枚举**（`e:` 种类），子 schema 为 enum（包含关系）/ const（相等）/ pattern（逐枚举值匹配） | **支持**（枚举值集合已知 ⇒ 静态可证；值来自枚举） | `pp_enum`/`pp_pat`/`pp_enum_route`（F457） |
@@ -4585,3 +4585,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **实现**：用一次性脚本按**顶层 `&&`**（跟踪括号/引号/`//` 注释）切成 10 块（每块 25 项），改为 `$structOk` 逐块 `if (!(...)) { $structOk = 0; }`，最后 `if ($structOk == 1)` 保留原 PASS/FAIL 体；注释与项顺序原样保留（脚本已删，仅作一次性变换）。
 **验证**：`php -l` 无语法错误；`scripts/build-check.sh build_f486` → **BUILD_OK**（11 文件全量编译，证明瘦身后容量恢复）；自检 **182/0** 且 `SCHEMA-STRUCT: PASS`（项集合与顺序未变）；四 harness 全 **PASS**（bounds/required/count/pattern），哨兵 **0**（`selftest_f486.log`、`engine/schema_*_f486.log`）。
 **记法**：**"再加一项断言"这类看似线性的改动，在左结合 `&&` 链上其实是线性加深 AST**——到达编译器深度上限时表现为静默中止/栈溢出。分组化（或抽函数）是恢复容量的通用手段，且可用 `php -l`＋自检门数＋门字段逐项核对来保证行为等价。
+
+## F485（第二轮，已完成）：`contains` + 显式 `minContains:0` 且无 `maxContains` 的空判定
+**前置**：第一轮因 tpc 转换器静默中止回退（见上一条 F485 记录）；F486 把 SCHEMA-STRUCT 断言链切块后容量恢复，本轮在瘦身基线上重做成功。
+**核心思路**：数组属性模型下 `contains` 要求至少 minContains 个元素匹配；显式 `minContains:0`（无 `maxContains`）允许 0 匹配 ⇒ 恒成立，与子 schema/items 无关。带 `maxContains`（匹配数上界）仍需判定，保持拒绝。
+**实现（两处早退＋一处路由修复）**：①`api_schema_contains_ok` 顶部 `minContains:0 && 无 maxContains ⇒ 1`；②`api_schema_minmax_contains_ok` 顶部同条件 ⇒ 1（不需 array bounds）；③**路由修复**：`api_response_schema_array_string` 的 `(enum|const|pattern)` 值域扫描把 **root `contains` 块内的 pattern** 当成属性值域而放弃生成，实测 `contains:{pattern:"^x"},minContains:0` 返回 **200 散文**（F463/F474/F479/F482 同类静默违约，第四次命中"子 schema 关键字混入值域扫描"）。加根级 `contains` 块剥离（属性名恰为 contains 不剥），生成器恢复认领。
+**门（单个）**：`cont_min0=[]`。
+**活体**：`contains_min0_served` **200 `{"cities":["Lyon, France, Prov"]}`**、`contains_min0_max_refuse` **400**（拒绝措辞先命中 "contains"，断言放宽为含 contains/minContains）；既有 contains 系列不回退。
+**梯**：自检 **182 PASS / 0 FAIL**（`selftest_f485c.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.552×**（单次测量，如实记录）；哨兵 **0**；构建 `build-check.sh build_f485e` **BUILD_OK**（11 文件，瘦身后容量足够）。
+**记法**：**"子 schema 关键字混入值域扫描"已四次复现**（not→string_props F474、not→扁平枚举 F479、not→候选 F482、contains→array_string F485）——凡新增"结构层放行的子 schema 关键字"，必须检查**所有**扫描 enum/const/pattern 的检测器，并在扫描前剥离该根级块；否则症状是 200 散文/空内容（自检可能全绿）。**构建容量是前置条件**：F486 的切块让本轮得以编译。

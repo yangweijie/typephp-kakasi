@@ -300,6 +300,17 @@ cases = [
      {"type": "object", "properties": {"codes": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
       "contains": {"pattern": "^[a-z]+$"}},
      lambda code, txt: code == 400 and "contains" in txt, ask),
+    # F485: an explicit minContains:0 makes contains vacuous (zero matches allowed), so a rich
+    # contains subschema over an array property is served; a maxContains (upper bound on matches)
+    # keeps the refusal.
+    ("contains_min0_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"pattern": "^x"}, "minContains": 0},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list), ask),
+    ("contains_min0_max_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
+      "contains": {"pattern": "^x"}, "minContains": 0, "maxContains": 1},
+     lambda code, txt: code == 400 and ("contains" in txt or "minContains" in txt), ask),
     # F448: the bare type-contradiction form is served now - every emitted value is a string, so
     # `not: {"type": "integer"}` holds by construction - while a value rule inside `not` still needs
     # the value evaluated and stays refused by name. (This case used to expect the refusal; F448

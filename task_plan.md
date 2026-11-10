@@ -1612,6 +1612,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体**：`patternprops_ao_type_ok` 200 `{"rows":[{"n":"100000"}]}`、pp string 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.544×、哨兵 0；构建 BUILD_OK（11 文件）。
 
 
+## F485 计划与完成（contains + 显式 minContains:0 且无 maxContains：空判定）
+**核心思路**：数组属性模型下，`contains` 要求至少 minContains 个元素匹配；显式 `minContains:0` 允许 0 个匹配 ⇒ 约束恒成立，与子 schema 及 items 无关。存在 `maxContains`（匹配数上界）时仍需判定，保持拒绝。
+**改前状态**：`{properties:{cities:[string]},contains:{pattern:"^x"},minContains:0}` → 400（contains 值级不认 + minmax 需 array bounds）。
+**实现**：`api_schema_contains_ok` 顶部加 `minContains:0 && 无 maxContains ⇒ 1`；`api_schema_minmax_contains_ok` 顶部同条件 ⇒ 1（不需 array bounds）。
+**门（单个）**：`cont_min0=[]`。
+**活体**：`contains_min0_served`（200 数组）、`contains_min0_max_refuse`（maxContains 存在 → 400 "minContains"）；既有 contains 系列不回退。
+**用法**：`scripts/build-check.sh` 全量构建（F486 瘦身后容量已恢复）。
+**F485 已完成（第二轮）**：两处早退（contains_ok/minmax_contains_ok）＋门 `cont_min0=[]`；**并修** `api_response_schema_array_string` 把 root `contains` 内 pattern 当值域导致的 200 散文（根级 contains 块剥离）。活体 200/400 各一；自检 **182/0**、四 harness PASS、8000 115/0、8001 par/fairness 0、scaling 1.552×、哨兵 0；构建 BUILD_OK（11 文件）。第一轮的 tpc 静默中止由 F486 切块解决。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

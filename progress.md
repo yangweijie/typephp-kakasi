@@ -2000,3 +2000,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **下一步（明确交接）**：①在瘦身后的基线上重做 **F485：`contains` + `minContains:0`（无 `maxContains`）空判定**（两处早退：`api_schema_contains_ok`/`api_schema_minmax_contains_ok`；单门 `cont_min0`；活体 `contains_min0_served`/`contains_min0_max_refuse`）；②其余 `patternProperties`/`contains`/`not` 更丰富值级子集需 plan/写入器扩展；③`unevaluated*` 真判定需"写入器发未声明键"能力；④分片多卡 / FR-05 本机不可验证。
 - **工具链注意（换机/重建必读）**：tpc `php.ini` 已加 `zend.max_allowed_stack_size = 256M`（repo 外，建议保留）；构建一律 `bash scripts/build-check.sh <tag>`（整清 `build/gen/cache`，断言 `main.obj` mtime 前进）；tpc 可能静默中止转换而批处理仍报 Build successful，红线即停。
 - **状态**：本会话 F467–F486 全部提交（F485 为受阻记录、已回退）；工作树干净；项目整体仍未完成（见支持表"仍未实现"）。
+
+## ▶ 状态（F485 第二轮，2026-11-10 23:37 构建）——contains+minContains:0 空判定落地；含路由扫描修复
+- **前置**：第一轮被 tpc 容量墙挡住回退；F486 瘦身后重做成功。
+- **实现**：contains_ok/minmax_contains_ok 两处早退；**修复** array_string 检测器把 root contains 内 pattern 当值域（实测 200 散文）⇒ 根级 contains 块剥离。
+- **门/活体**：`cont_min0=[]`；`contains_min0_served` 200 `{"cities":[...]}`、`contains_min0_max_refuse` 400；既有 contains 不回退。
+- **梯**：自检 **182/0**、四 harness PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.552×**、哨兵 **0**；构建 BUILD_OK（11 文件）。

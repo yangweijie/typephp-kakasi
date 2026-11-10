@@ -1837,7 +1837,34 @@ function api_response_schema_array_string(string $body): string
     if ($schema == "") {
         return "";
     }
-    if (preg_match('/"(enum|const|pattern)"\s*:/', $schema) == 1) {
+    // F485: a ROOT-LEVEL `contains` block is a separate subschema - its pattern/enum must not
+    // disqualify the array writer as if it were the property's value domain (the contains
+    // judgement has already accepted the shape). A property NAMED contains is left alone.
+    $scan = $schema;
+    $ctp = strpos($schema, "\"contains\"");
+    if ($ctp !== false) {
+        $rootC = 1;
+        $ppk = strpos($schema, "\"properties\"");
+        if ($ppk !== false) {
+            $bok = strpos($schema, "{", $ppk);
+            if ($bok !== false) {
+                $blkk = api_balance_block($schema, $bok);
+                if ($blkk != "" && $ctp < $bok + strlen($blkk)) {
+                    $rootC = 0;
+                }
+            }
+        }
+        if ($rootC == 1) {
+            $cbo = strpos($schema, "{", $ctp);
+            if ($cbo !== false) {
+                $cblk = api_balance_block($schema, $cbo);
+                if ($cblk != "") {
+                    $scan = str_replace($cblk, "", $schema);
+                }
+            }
+        }
+    }
+    if (preg_match('/"(enum|const|pattern)"\s*:/', $scan) == 1) {
         return "";
     }
     $pm = [];
@@ -9385,6 +9412,13 @@ function api_schema_not_ok(string $schema): int
 // judged by F457's leaf guarantees). A free-string items or a richer subschema keeps the refusal.
 function api_schema_contains_ok(string $schema): int
 {
+    // F485: an explicit minContains:0 allows ZERO matching elements, so `contains` holds whatever
+    // the subschema and the items are. A maxContains is an upper bound on matches and would need
+    // evaluation, so its presence keeps the refusal (see api_schema_minmax_contains_ok too).
+    if (preg_match('/"minContains"\s*:\s*0(?!\d)/', $schema) == 1
+        && preg_match('/"maxContains"\s*:/', $schema) != 1) {
+        return 1;
+    }
     $pp = strpos($schema, "\"properties\"");
     if ($pp === false) {
         return 0;
@@ -9483,6 +9517,11 @@ function api_schema_contains_ok(string $schema): int
 // than served with a violating count.
 function api_schema_minmax_contains_ok(string $schema): int
 {
+    // F485: minContains:0 with no maxContains is vacuous - it needs no element-count bounds.
+    if (preg_match('/"minContains"\s*:\s*0(?!\d)/', $schema) == 1
+        && preg_match('/"maxContains"\s*:/', $schema) != 1) {
+        return 1;
+    }
     if (api_schema_contains_ok($schema) != 1) {
         return 0;
     }
@@ -18025,6 +18064,8 @@ function main(): void
     $sfBH = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":9}');
     $sfBI = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":3,"maxContains":2}');
     $sfBJ = api_response_schema_array_bounds('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"},"minContains":2,"maxContains":3}}}');
+    // F485: minContains:0 with no maxContains is vacuous - a rich contains subschema is served.
+    $contMin0 = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"pattern":"^x"},"minContains":0}');
     // F455: a matching pattern is honoured when the bare type is the one the matched keys' declared
     // kinds guarantee; the existing $sfL (^a over a string key, integer subschema) is its control.
     $sfBK = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"patternProperties":{"^c":{"type":"string"}}}');
@@ -18463,6 +18504,7 @@ function main(): void
         . "] uneval_prop_named=[" . $sfBE . "]"
         . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
         . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
+        . " cont_min0=[" . $contMin0 . "]"
         . " pp_match_ok=[" . $sfBK . "]"
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
@@ -18611,6 +18653,7 @@ function main(): void
         && $sfBH == "minContains"
         && $sfBI == "minContains"
         && $sfBJ == "2:3"
+        && $contMin0 == ""
         && $sfBK == ""
         && $sfBM == ""
         && $sfBN == "patternProperties"
