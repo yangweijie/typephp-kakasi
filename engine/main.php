@@ -9747,7 +9747,9 @@ function api_schema_dependent_schemas_ok(string $schema): int
 // keep the refusal.
 function api_schema_dependent_required_ok(string $schema): int
 {
-    if (api_schema_flat_all_string($schema) != 1) {
+    // F489: the mixed generator emits exactly the plan's keys (required-filtered), so the same
+    // key-set proof used for the flat all-string shape applies to mixed-omittable shapes.
+    if (api_schema_flat_all_string($schema) != 1 && api_schema_mixed_omittable($schema) != 1) {
         return 0;
     }
     $dp = strpos($schema, "\"dependentRequired\"");
@@ -18085,6 +18087,8 @@ function main(): void
     $sfW = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"required":["city"],"dependentRequired":{"city":["note"]}}');
     $sfX = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"dependentRequired":{"city":["region"]}}');
     $sfY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"dependentRequired":{"city":["count"]}}');
+    // F489: a dependency on an UNDECLARED key can never be emitted, so it keeps the refusal.
+    $depMixBad = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"dependentRequired":{"city":["z"]}}');
     // F434: tuple validation is named; the control keeps the ordinary object-form items served.
     $sfZ = api_schema_keywords_unsupported('{"properties":{"pair":{"type":"array","items":[{"type":"string"},{"type":"integer"}]}}}');
     // F444: the scalar tuple is served now - the plan names both element kinds and the emitted text
@@ -18604,7 +18608,7 @@ function main(): void
         . "] pnames_mix_bad=[" . $pnamesMixBad . "]"
         . "] pnames_route=" . count($sfU)
         . "] dep_ok=[" . $sfV . "] dep_subset=[" . $sfW . "] dep_undeclared=[" . $sfX
-        . "] dep_mixed=[" . $sfY . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
+        . "] dep_mixed=[" . $sfY . "] dep_mix_bad=[" . $depMixBad . "] tuple_items=[" . $sfZ . "] prefix_items=[" . $sfAA
         . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText
         . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF
         . "] deps_arr=[" . $sfAG . "] deps_obj=[" . $sfAH . "] deps_bad=[" . $sfAI
@@ -18713,7 +18717,10 @@ function main(): void
         $structOk = 0;
     }
     if (!($sfX == "dependentRequired"
-        && $sfY == "dependentRequired"
+        // F489 flipped dep_mixed: the mixed shape's exact key set makes the dependency hold; a
+        // dependency on an undeclared key keeps the refusal (dep_mix_bad).
+        && $sfY == ""
+        && $depMixBad == "dependentRequired"
         && $sfZ == ""
         && $sfAA == "prefixItems"
         && $sfAB == ""

@@ -392,6 +392,17 @@ cases = [
      {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
       "propertyNames": {"pattern": "^a$"}},
      lambda code, txt: code == 400 and "propertyNames" in txt, ask),
+    # F489: dependentRequired on a MIXED shape - the mixed generator emits exactly the plan's keys,
+    # so a trigger present implies its declared deps are present too; a dep that is not declared
+    # can never be emitted and keeps the refusal (the control).
+    ("dependent_required_mixed_ok", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}, "c": {"type": "string"}},
+      "dependentRequired": {"a": ["c"]}},
+     lambda code, txt: code == 200 and sorted(json.loads(txt).keys()) == ["a", "b", "c"], ask),
+    ("dependent_required_mixed_bad_refuse", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}, "c": {"type": "string"}},
+      "dependentRequired": {"a": ["z"]}},
+     lambda code, txt: code == 400 and "dependentRequired" in txt, ask),
 ]
 
 bad = 0

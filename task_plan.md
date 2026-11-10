@@ -1638,7 +1638,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门（单个）**：`pnames_mixed_ok=[]`（properties a:string,b:integer + propertyNames pattern ^[ab]$）。
 **活体**：`propertynames_mixed_ok`（200 键 a,b）、`propertynames_mixed_bad_refuse`（pattern ^a$，b 违反 → 400）。
 **用法**：`scripts/build-check.sh`；单门小步。
+**F489 已完成**：dependent_required_ok 守卫放宽（flat||mixed；mixed 生成器精确发键）。门翻转 `dep_mixed` `dependentRequired`→``，新 `dep_mix_bad=[dependentRequired]`。活体 200/400；构建 BUILD_OK；全梯绿。
 **F488 已完成**：mixed_omittable 扫描前剥离 propertyNames 块；property_names_ok 守卫放宽（flat||mixed）。门翻转 `pnames_mixed` `propertyNames`→``（旧对照被证伪：键名 city/count 满足 ^[a-z]+$），新 `pnames_mix_bad=[propertyNames]`。活体 200/400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.564×、哨兵 0）。
+
+
+## F489 计划与完成（dependentRequired 扩到 mixed-omittable：键集精确性由 mixed 生成器保证）
+**核心思路**：`api_response_schema_mixed_object` 明确"生成器只发计划里的键"，并按 `required_filter` 精确裁剪（无 required 则发全部声明键）⇒ mixed 形状的**已发键集是精确的**，dependentRequired 的"trigger 在则 dep 必在"检查与 flat 同构。F432 的 `flat_all_string` 守卫是保守遗漏。
+**实现**：`api_schema_dependent_required_ok` 守卫放宽为 `flat_all_string==1 || mixed_omittable==1`（体内 emit 计算已走 required_filter/全计划，无需改）。
+**门（单个）**：`dep_mixed=[]`（a:string,b:integer,c:string + dependentRequired a→c）。
+**活体**：`dependent_required_mixed_ok`（200 三键）、`dependent_required_mixed_bad_refuse`（a→z 未声明 → 400）。
+**用法**：`scripts/build-check.sh`；单门小步。
 
 
 ## F451 计划与完成（`patternProperties` 的空约束形式）
