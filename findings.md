@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F467）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F469）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3718,7 +3718,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf 无界：m=1 或 2..999999999 | **支持**（后缀宽度随位数 3–9；m=1 交普通整数） | `unbounded_ok`/`unbounded_2m`/`mult_one_ub`（F430/F443） |
 | multipleOf：多叶全整数且每叶各带 multipleOf | **支持**（逐叶后缀写入，各值整除各自乘数） | `mult_multi`/`multi_plan`（F438） |
 | multipleOf：number 叶**有界（整数 M）** | **支持**（折叠到区间内最小整数倍——整数是合法 number 且是 M 的倍数，子集论证） | `nm_shape`/`nm_text`/`num_mult_served`（F466） |
-| multipleOf：number 叶小数 M／无界／混合叶 / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`mult_mixed`/`unbounded_big`（F430–F443/F466） |
+| multipleOf：number 叶**有界（小数 M，双侧 inclusive ≤5 位）** | **支持**（界与 M 缩放到公共小数网格、折叠到区间内最小倍数，经 F440–F456 小数 marker 写入器发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`num_mult_frac_served`（F469） |
+| multipleOf：number 叶小数 M **无界/单侧/exclusive/整数叶**／混合叶 / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`fm_intleaf`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469） |
 | minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN`（F399） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
@@ -3761,14 +3762,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y；F468 起 exclusive 数值/布尔拼写同样支持，键序任意） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；exclusive 经与单属性同一 shape 判定转相邻整数界；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`ib_excl`/`ib_excl_bool`/`ib_excl_unsat`/`items_excl_ok`（F460/F468） |
 | 数组项的 schema 带值约束：**单侧整数界**（`minimum:X` 或 `maximum:Y`，缺侧＝哨兵 -1，含**负上界**与**负下界**） | **支持**（逐元素走位；子集论证保证缺侧；单侧负上界 F463＝幅值从 \|hi\| 起无上界；单侧负下界 F464＝幅值 `[1,\|lo\|]`，值 ∈ [lo,-1]；`minimum:-1` 走幅值 [1,1] 出 -1 合法） | `ib_one`/`ib_max`/`ib_negmax`/`ib_negmin`/`items_one_sided_min_ok`（F461/F463/F464） |
 | 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤5 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`（F462） |
-| 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔，M 为整数） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型＝整数倍数子集；unsat/无界 >999999999/小数 M/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`items_mult_excl_ok`（F465/F466/F467） |
-| 数组项的 schema 带其他值约束（const/pattern/小数 multipleOf/format 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_const`/`items_pattern`/`nm_frac`/`ib_negmax`（F458/F461/F466） |
+| 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔；M 整数，或小数 M 配 number 叶双侧 inclusive 界） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型整数 M＝整数倍数子集、小数 M＝小数网格折叠；unsat/无界 >999999999/小数 M 无界·单侧·exclusive·integer 叶/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`fm_items`/`items_mult_frac_ok`（F465/F466/F467/F469） |
+| 数组项的 schema 带其他值约束（const/pattern/format 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_const`/`items_pattern`/`ib_excl_kw`/`ib_negmax`（F458/F461/F468） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern/小数 multipleOf（现为显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合自 F460–F468 支持）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern（现为显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界自 F460–F469 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4404,3 +4405,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f468.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.561×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f468.log`、`engine/api_smoke_f468.log`、`engine/throughput_f468.log`、改前证据 `engine/schema_bounds_f468pre.log`）。
 **记法**：**"同一形状两条路各拒各的"要靠对照用例暴露**——number 叶走 F462（wrap→shape）早已服务 exclusive，integer 叶走 F460（固定正则）却 400；把两条路并排放进同一个 harness（`items_num_excl_nomult_ok` 对照）才让不一致现形。检测器表面化（F467/F468 两连）之后，整数/number 两条 items 路与单属性路由**共享同一份界判定**，exclusive/布尔/键序/哨兵/unsat 不再各自漂移。
 **顺位**：小数 multipleOf（真小数倍数机制）→ 分片多卡 / FR-05（本机不可验证）。
+
+## F469：小数 multipleOf 从"点名 400"变**缩放网格折叠发射**（复用 F440–F456 小数 marker 写入器，无新写入器）
+**核心思路（F420 子集论证 + F440 小数网格）**：M 为小数（如 0.3）时，把界与 M 一起缩放到 `d=max(界小数位,M小数位)`（≤5）的整数网格，在 `[sLo,sHi]` 取 `sM` 的最小倍数 `start=ceil(sLo/sM)*sM`（`start>sHi`⇒unsat 拒），返回 `prop|start|mark|0`（mark=-999..-995 按 d）——既有 `api_number_decimal_element`/marker 分支原样发 `start/10^d`，必是 M 的倍数且落界内。**items 路由零改动**：F462 检测器 wrap→shape 取 `seg[3]=="0"`（小数 marker 编码 mult 段为 0）自动认领，number-items 写入器逐元素发小数。
+**改前证据（`engine/schema_bounds_f469pre.log`，F468 二进制）**：number 叶 min1 max2 m0.3 → **400**、负界 → 400、无整数区间 min1.5 max1.9 m0.3 → 400、items 同形 → 400（F466 显式拒小数 M）；unsat/integer 叶/无界/exclusive 对照 400 正确。
+**实现**：①shape 把 multipleOf 解析**上移到 `lo>hi` 早退之前**（小数 M 在无整数区间也要能折叠）——完整字面量 `([0-9.eE+-]+)`＋`^[0-9]+(\.[0-9]+)?$` 校验（指数拼写显式拒，F421 教训）；含 "." ⇒ 小数分支（n 叶/双侧 inclusive/无 exclusive/≤5 位，网格折叠返回 marker 或 ""）；否则整数 M 走既有折叠。②F433 小数 M 守卫加 `shape==""` 豁免（单属性认领放行；items 由顶部早退放行）。③F462 检测器注释更新（小数 M 经 shape 认领）。
+**支持边界（明确留拒）**：integer 叶小数 M（整数未必是其倍数）、单侧/无界小数 M（无 writer）、exclusive＋小数 M（相邻整数转换丢小数精度可能误判 unsat）、M/界指数或 >5 位、`sM<1`。
+**门**：`fm_shape=[n|12|-999|0]`/`fm_text=[{"n":1.2}]`、`fm_unsat=[]`、`fm_neg=[n|-18|-999|0]`/`{"n":-1.8}`、`fm_d2=[n|120|-998|0]`/`{"n":1.20}`、`fm_noint=[n|15|-999|0]`/`{"n":1.5}`（lo>hi 路径）、`fm_items=[nums|12|-999|0]`/`{"nums":[1.2]}`、`fm_intleaf=1`。
+**活体**：`num_mult_frac_served` **200 `{"n":1.2}`**、`num_mult_frac_neg_ok` **200 `{"n":-1.8}`**、`num_mult_frac_noint_ok` **200 `{"n":1.5}`**、`items_mult_frac_ok` **200 `[1.2,1.2,1.2,1.2]`**（浮点倍数用容差判）；unsat/integer 叶 400；F466 无界小数 M 与 F467 exclusive 小数 M 对照不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f469.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.544×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f469.log`、`engine/api_smoke_f469.log`、`engine/throughput_f469.log`、改前证据 `engine/schema_bounds_f469pre.log`）。
+**记法**：**新约束先问"既有写入器能否构造满足"**——小数 multipleOf 看似需要新机制，实则 F440 的小数 marker 写入器已能发任意 ≤5 位确定小数，缺的只是"把区间折叠到 M 的最小倍数"这一步判定；把判定接进 shape、编码复用 marker，单属性与 items 两条路同时获得支持，零新写入器、零路由改动。`ceil` 用 intdiv 向零截断＋正余数进一位（负 sLo 截断即 ceiling），避免浮点。
+**顺位**：数组项 const/pattern、contains/not 值级子 schema、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数等排队项 → 分片多卡 / FR-05（本机不可验证）。

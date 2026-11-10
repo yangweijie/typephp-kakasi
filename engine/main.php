@@ -1078,8 +1078,10 @@ function api_response_schema_array_item_bounds(string $body): string
 // (the -1 sentinel), or no-integer decimal intervals on the F440-F456 grid (the marker cases). The
 // judgement is NOT re-derived here: the items block is wrapped as a one-property schema and fed to
 // the same api_schema_number_bounded_shape the single-property path uses, so both routes judge a
-// bound pair by one code. multipleOf inside items stays refused (the multiple writer is
-// property-level) - the mult segment is checked to zero.
+// bound pair by one code. An INTEGER multipleOf inside items folds to a nonzero mult segment and is
+// left to the item-multiple detector (F465); a FRACTIONAL multipleOf (F469) folds to the decimal
+// marker encoding whose mult segment is zero, so this detector claims it and the number-items
+// writer emits the decimal per element. The mult segment is checked to zero accordingly.
 function api_schema_array_item_number(string $schema): string
 {
     if ($schema == "") {
@@ -1144,7 +1146,7 @@ function api_schema_array_item_number(string $schema): string
     }
     $seg = explode("|", $shape);
     if (count($seg) != 4 || $seg[3] != "0") {
-        return "";                 // multipleOf inside items is queued, not honoured
+        return "";                 // an integer multipleOf folds nonzero - the F465 detector claims it
     }
     return $lkv[0] . "|" . $seg[1] . "|" . $seg[2] . "|" . $seg[3];
 }
@@ -6253,6 +6255,71 @@ function api_schema_number_bounded_shape(string $schema): string
             $hi = min($hi, $t);
         }
     }
+    // F469: parse multipleOf here, before the no-integer-interval early return, so a FRACTIONAL
+    // multiplier can fold on the decimal grid even when no integer lies in the interval. The full
+    // literal is captured and validated as a plain decimal (an exponent spelling is refused rather
+    // than silently truncated to its integer prefix - the F421 lesson). An integer multiplier keeps
+    // the existing collapse below; a fractional one is served only on a number leaf with both
+    // inclusive plain-decimal bounds (<=5 places), scaled to a common grid and folded to the
+    // interval's smallest multiple, emitted through the existing decimal marker writer (subset).
+    $mult = 0;
+    $mo = [];
+    if (preg_match('/"multipleOf"\s*:\s*([0-9.eE+-]+)/', $schema, $mo) == 1) {
+        if (preg_match('/^[0-9]+(\.[0-9]+)?$/', $mo[1]) != 1) {
+            return "";
+        }
+        if (strpos($mo[1], ".") !== false) {
+            if ($kv[1] != "n" || !$hasLo || !$hasHi || $hasExLo || $hasExHi
+                || preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mn[1]) != 1
+                || preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) != 1
+                || preg_match('/^[0-9]+(\.[0-9]{1,5})?$/', $mo[1]) != 1) {
+                return "";
+            }
+            $d = 1;
+            foreach ([$mn[1], $mx[1], $mo[1]] as $lit) {
+                $dot = strpos($lit, ".");
+                $places = $dot === false ? 0 : strlen(substr($lit, $dot + 1));
+                if ($places > $d) {
+                    $d = $places;
+                }
+            }
+            $sLo = api_schema_scaled($mn[1], $d);
+            $sHi = api_schema_scaled($mx[1], $d);
+            $sM = api_schema_scaled($mo[1], $d);
+            if ($sLo == -2000000000 || $sHi == -2000000000 || $sM == -2000000000
+                || $sM < 1 || $sLo > $sHi) {
+                return "";
+            }
+            // Smallest multiple of sM at or above sLo: intdiv truncates toward zero, which already
+            // is the ceiling for a negative sLo; a positive remainder needs one more step.
+            $q = intdiv($sLo, $sM);
+            if ($sLo > 0 && ($sLo % $sM) != 0) {
+                $q = $q + 1;
+            }
+            $start = $q * $sM;
+            if ($start > $sHi) {
+                return "";
+            }
+            $mark = "-999";
+            if ($d == 2) {
+                $mark = "-998";
+            }
+            if ($d == 3) {
+                $mark = "-997";
+            }
+            if ($d == 4) {
+                $mark = "-996";
+            }
+            if ($d == 5) {
+                $mark = "-995";
+            }
+            return $kv[0] . "|" . $start . "|" . $mark . "|0";
+        }
+        $mult = (int) $mo[1];
+        if ($mult < 1) {
+            return "";
+        }
+    }
     if ($loSet && $hiSet && $lo > $hi) {
         // F440: both bounds present and no integer inside - fall back to a decimal grid when both
         // literals lie on one (one to four places since F450; the grid width is the finer of the two
@@ -6309,13 +6376,7 @@ function api_schema_number_bounded_shape(string $schema): string
     // multiple for ANY m, so the old m <= 1000 guard (copied from the unbounded suffix path,
     // where m <= 999 keeps a three-digit suffix legal) is dropped here - a bounded multiple
     // only needs a multiple to EXIST inside the interval, not a small one.
-    $mult = 0;
-    $mo = [];
-    if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $schema, $mo) == 1) {
-        $mult = (int) $mo[1];
-        if ($mult < 1) {
-            return "";
-        }
+    if ($mult > 0) {
         if ($hiSet && $hi < 0) {
             // The value is negative: the magnitude is at least |hi| (and at most |lo| when lo
             // is present and negative); the smallest multiple of m in that magnitude range
@@ -9988,15 +10049,15 @@ function api_schema_bounds_unsupported(string $body): int
         && api_schema_number_bounded_shape($body) == "") {
         return 1;
     }
-    // F433/F439/F466: a number leaf with a FRACTIONAL multipleOf is refused - the multiple writer
-    // emits integer multiples only, and integers are not necessarily multiples of a fractional
-    // multiplier, so honouring it needs a fractional-multiple mechanism. An INTEGER multipleOf on
-    // a number leaf is served where the bounded shape folds it (the fold lands on an integer
-    // multiple - a legal number, F439/F466) and refused where nothing claims it (unbounded number
-    // leaves have no multiple writer; multi-leaf shapes the fold cannot reach). The item-multiple
-    // writer claims the items form on its own, so it is exempt here either way.
+    // F433/F439/F466/F469: a number leaf with a FRACTIONAL multipleOf is refused where nothing
+    // claims it. F469 added the claim: the bounded shape folds a fractional multiplier on the
+    // decimal grid (number leaf, both inclusive plain-decimal bounds), so a shape that serves it is
+    // exempt; the items form is claimed by the number-items detector (the top early-exit already
+    // returned for it). Unbounded / one-sided / exclusive / integer-leaf fractional multipliers have
+    // no writer and stay refused. An INTEGER multipleOf keeps the F439/F466 integer-multiple subset.
     if (preg_match('/"type"\s*:\s*"number"/', $body) == 1
         && preg_match('/"multipleOf"\s*:\s*[0-9]+\.[0-9]/', $body) == 1
+        && api_schema_number_bounded_shape($body) == ""
         && api_schema_array_item_multiple($body) == "") {
         return 1;
     }
@@ -17662,6 +17723,55 @@ function main(): void
     $ibXText = str_replace("Ġ", " ", $ibXText);
     $ibXMatch = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $ibXText, $ibXM) == 1;
     $ibXVal = $ibXMatch == 1 ? (int) $ibXM[1] : 100000;
+    // F469: a FRACTIONAL multipleOf folds on the decimal grid to the interval's smallest multiple
+    // and rides the existing decimal marker writer (single property and number items alike). The
+    // unsatisfiable interval and the integer leaf keep their refusals.
+    $fmShape = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1,"maximum":2,"multipleOf":0.3}}}}}');
+    $fmUnsat = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1,"maximum":1.1,"multipleOf":0.3}}}}}');
+    $fmNeg = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":-2,"maximum":-1,"multipleOf":0.3}}}}}');
+    $fmD2 = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.05,"maximum":2,"multipleOf":0.3}}}}}');
+    $fmNoInt = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9,"multipleOf":0.3}}}}}');
+    $fmItems = api_response_schema_array_item_number('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","minimum":1,"maximum":2,"multipleOf":0.3}}}}}}');
+    $fmIntLeaf = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
+    $fmIds = tok_chat("user", "Give the multiple.") . "," . tok_chat_open("assistant");
+    $fmBase = count(explode(",", $fmIds));
+    $fmOut = api_number_bounded_value($fmIds, "n", 12, -999, 0);
+    $fmParts = explode(",", $fmOut);
+    $fmText = "";
+    for ($i = $fmBase; $i < count($fmParts); $i++) {
+        $fmText = $fmText . gguf_token_str((int) $fmParts[$i]);
+    }
+    $fmText = str_replace("Ġ", " ", $fmText);
+    $fmNOut = api_number_bounded_value($fmIds, "n", -18, -999, 0);
+    $fmNParts = explode(",", $fmNOut);
+    $fmNText = "";
+    for ($i = $fmBase; $i < count($fmNParts); $i++) {
+        $fmNText = $fmNText . gguf_token_str((int) $fmNParts[$i]);
+    }
+    $fmNText = str_replace("Ġ", " ", $fmNText);
+    $fmDOut = api_number_bounded_value($fmIds, "n", 120, -998, 0);
+    $fmDParts = explode(",", $fmDOut);
+    $fmDText = "";
+    for ($i = $fmBase; $i < count($fmDParts); $i++) {
+        $fmDText = $fmDText . gguf_token_str((int) $fmDParts[$i]);
+    }
+    $fmDText = str_replace("Ġ", " ", $fmDText);
+    $fmIOut = api_number_bounded_value($fmIds, "n", 15, -999, 0);
+    $fmIParts = explode(",", $fmIOut);
+    $fmIText = "";
+    for ($i = $fmBase; $i < count($fmIParts); $i++) {
+        $fmIText = $fmIText . gguf_token_str((int) $fmIParts[$i]);
+    }
+    $fmIText = str_replace("Ġ", " ", $fmIText);
+    $fmiIds = tok_chat("user", "Give the multiples.") . "," . tok_chat_open("assistant");
+    $fmiBase = count(explode(",", $fmiIds));
+    $fmiOut = api_array_item_number_value($fmiIds, "nums", 12, -999, 1, 0);
+    $fmiParts = explode(",", $fmiOut);
+    $fmiText = "";
+    for ($i = $fmiBase; $i < count($fmiParts); $i++) {
+        $fmiText = $fmiText . gguf_token_str((int) $fmiParts[$i]);
+    }
+    $fmiText = str_replace("Ġ", " ", $fmiText);
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17734,6 +17844,11 @@ function main(): void
         . " ib_excl=[" . $ibExcl . "] ib_excl_bool=[" . $ibExclBool . "]"
         . " ib_excl_unsat=[" . $ibExclUnsat . "] ib_excl_kw=[" . $ibExclKw . "]"
         . " ib_excl_text=[" . $ibXText . "]"
+        . " fm_shape=[" . $fmShape . "] fm_unsat=[" . $fmUnsat . "] fm_neg=[" . $fmNeg
+        . "] fm_d2=[" . $fmD2 . "] fm_noint=[" . $fmNoInt . "] fm_items=[" . $fmItems
+        . "] fm_intleaf=" . $fmIntLeaf
+        . " fm_text=[" . $fmText . "] fm_neg_text=[" . $fmNText . "] fm_d2_text=[" . $fmDText
+        . "] fm_noint_text=[" . $fmIText . "] fm_items_text=[" . $fmiText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17800,6 +17915,14 @@ function main(): void
         && $ibExcl == "nums|1|9" && $ibExclBool == "nums|1|-1"
         && $ibExclUnsat == "" && $ibExclKw == "items"
         && $ibXMatch == 1 && $ibXVal >= 1 && $ibXVal <= 9 && api_json_ok($ibXText) == 1
+        && $fmShape == "n|12|-999|0" && $fmUnsat == "" && $fmNeg == "n|-18|-999|0"
+        && $fmD2 == "n|120|-998|0" && $fmNoInt == "n|15|-999|0"
+        && $fmItems == "nums|12|-999|0" && $fmIntLeaf == 1
+        && $fmText == '{"n":1.2}' && api_json_ok($fmText) == 1
+        && $fmNText == '{"n":-1.8}' && api_json_ok($fmNText) == 1
+        && $fmDText == '{"n":1.20}' && api_json_ok($fmDText) == 1
+        && $fmIText == '{"n":1.5}' && api_json_ok($fmIText) == 1
+        && $fmiText == '{"nums":[1.2]}' && api_json_ok($fmiText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

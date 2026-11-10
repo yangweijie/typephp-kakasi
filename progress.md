@@ -1872,3 +1872,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`ib_excl=[nums|1|9]`、`ib_excl_bool=[nums|1|-1]`、`ib_excl_unsat=[]`、`ib_excl_kw=[items]`、`ib_excl_text`（1..9＋json_ok）。
 - **活体**：两形态 200 `[1,2,3,4]`、unsat 400、number 对照 200；F460–F467 系不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.561×**、哨兵 **0**。
+
+## ▶ 状态（F469，2026-11-10 12:59 构建）——小数 multipleOf 从点名 400 变**缩放网格折叠发射**（复用小数 marker 写入器）
+- **改前证据**：number 叶 min1 max2 m0.3 / 负界 / 无整数区间 / items 同形 → 400；unsat/integer 叶/无界/exclusive 对照 400（`schema_bounds_f469pre.log`，F468 二进制）。
+- **实现**：shape 上移 multipleOf 解析（完整字面量＋plain 校验，指数显式拒），小数 M 在公共网格折叠到最小倍数返回 marker 编码；F433 守卫加 shape 豁免；items 经 F462 检测器自动认领（零路由改动）。
+- **门**：`fm_shape`/`fm_text`/`fm_unsat=[]`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_items`/`fm_intleaf=1`＋五条文本断言。
+- **活体**：1.2 / -1.8 / 1.5 / items [1.2,…] 200；unsat/integer 叶 400；F466/F467 小数 M 对照不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.544×**、哨兵 **0**。

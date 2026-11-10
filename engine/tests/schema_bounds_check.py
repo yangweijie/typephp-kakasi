@@ -44,6 +44,15 @@ def val_of(text, key):
     except Exception:
         return None
 
+
+def is_mult(x, m):
+    # F469: a fractional multiplier needs a tolerance test - x/m must be an integer to within
+    # float noise (0.3 is not exact in binary, so x % m would lie).
+    try:
+        return abs(x / m - round(x / m)) < 1e-6
+    except Exception:
+        return False
+
 cases = [
     ("wide_0_100000", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0, "maximum": 100000}}},
@@ -416,6 +425,36 @@ cases = [
      lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
      and len(val_of(txt, "nums")) >= 1
      and all(isinstance(x, (int, float)) and 2.5 < x <= 9.5 for x in val_of(txt, "nums"))),
+    # F469: a FRACTIONAL multipleOf on a bounded number leaf - the bounds and M scale to a decimal
+    # grid and fold to the interval's smallest multiple (1.2 here), emitted through the existing
+    # decimal writer. The value must be a multiple of 0.3 (tolerance test) and inside the bounds.
+    ("num_mult_frac_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1, "maximum": 2, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and 1 <= val_of(txt, "n") <= 2 and is_mult(val_of(txt, "n"), 0.3)),
+    ("num_mult_frac_neg_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": -2, "maximum": -1, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and -2 <= val_of(txt, "n") <= -1 and is_mult(val_of(txt, "n"), 0.3)),
+    # No integer lies in [1.5, 1.9], but 1.5 and 1.8 are multiples of 0.3 - the lo>hi grid path.
+    ("num_mult_frac_noint_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5, "maximum": 1.9, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and 1.5 <= val_of(txt, "n") <= 1.9 and is_mult(val_of(txt, "n"), 0.3)),
+    ("items_mult_frac_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": 1, "maximum": 2, "multipleOf": 0.3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and 1 <= x <= 2 and is_mult(x, 0.3) for x in val_of(txt, "nums"))),
+    # No multiple of 0.3 lies in [1, 1.1]: unsatisfiable, stays refused.
+    ("num_mult_frac_unsat_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1, "maximum": 1.1, "multipleOf": 0.3}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # An integer leaf is not necessarily a multiple of a fractional multiplier - stays refused.
+    ("num_mult_frac_intleaf_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
 ]
 
 bad = 0

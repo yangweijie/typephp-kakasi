@@ -1367,6 +1367,24 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F468 → 小数 multipleOf（真小数倍数机制）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F469 计划（小数 multipleOf：缩放网格折叠到区间内最小倍数，复用 F440–F456 小数 marker 写入器）
+**F468 已完成**：integer items 的 exclusive 界。
+**核心思路（F420 子集论证 + F440 小数网格）**：M 为小数（如 0.3）时，把界与 M 一起缩放到 `d = max(界小数位, M 小数位)`（≤5）的整数网格，在 `[sLo,sHi]` 上取 `sM` 的最小倍数 `start = ceil(sLo/sM)*sM`（`start>sHi` ⇒ unsat 拒），返回 `prop|start|mark|0`（mark=-999..-995 按 d）——既有 `api_number_decimal_element`/marker 分支原样发出 `start/10^d`，它必是 M 的倍数且落界内（子集论证）。**不需要新写入器**。
+**支持边界（明确留拒）**：仅 **number 叶 + 双侧 inclusive 普通小数界（≤5 位）+ 小数 M（≤5 位）**；integer 叶小数 M 拒（整数未必是其倍数）；单侧/无界小数 M 拒（无 writer）；exclusive＋小数 M 拒（相邻整数转换会丢小数精度，可能误判 unsat）；M/界含指数或 >5 位小数拒；`sM<1`（M=0.0）拒。
+**实现**：
+1. `api_schema_number_bounded_shape`：把 multipleOf 解析**上移**到 `lo>hi` 早退之前——完整字面量 `([0-9.eE+-]+)`＋`^[0-9]+(\.[0-9]+)?$` 校验（指数拼写显式拒，F421 教训）；含 "." ⇒ 小数分支（上述网格折叠，要求 n 叶/双侧 inclusive/无 exclusive，返回 marker 编码或 ""）；否则 `$mult=(int)` 走既有整数折叠（`lo>hi` 块对整数 M 仍返 ""，行为不变）。
+2. F433 守卫（`api_schema_bounds_unsupported` 小数 M 条）加 `&& api_schema_number_bounded_shape($body)==""` 豁免（单属性认领放行）；items 小数 M 由顶部早退（`api_schema_array_item_number != ""`）放行——F462 检测器 wrap→shape 取 `seg[3]=="0"` 自动认领，number-items 写入器 marker 分支逐元素发小数。**路由零改动**。
+3. F462 检测器注释更新（小数 M 现经 shape 认领）；F465 检测器小数 M 仍返 ""（mult<1），让位 F462。
+**门（SCHEMA-STRUCT 新字段）**：`fm_shape=[n|12|-999|0]`（min1 max2 m0.3）＋`fm_text=[{"n":1.2}]`；`fm_unsat=[]`（min1 max1.1 m0.3）；`fm_neg=[n|-18|-999|0]`＋文本 `{"n":-1.8}`；`fm_d2=[n|120|-998|0]`（min1.05 max2 m0.3）＋文本 `{"n":1.20}`；`fm_noint=[n|15|-999|0]`（min1.5 max1.9 m0.3，lo>hi 路径）＋文本；`fm_items=[nums|12|-999|0]`＋items 文本 `{"nums":[1.2]}`；`fm_intleaf=1`（integer 叶小数 M 仍拒）。
+**活体**（`schema_bounds_check.py`）：`num_mult_frac_served`（200 值 ∈[1,2] 且 %0.3≈0）、`num_mult_frac_neg_ok`、`num_mult_frac_noint_ok`、`items_mult_frac_ok`（逐元素）；`num_mult_frac_unsat_refuse`/`num_mult_frac_intleaf_refuse` 400；F466 的 `num_mult_frac_refuse`（无界）与 F467 的 `items_mult_excl_frac_refuse`（exclusive）不回退。
+**验收**：①值是 M 的倍数且在界内（门＋活体，浮点用容差判倍数）②unsat/integer 叶/单侧/无界/exclusive/指数仍拒 ③整数 M 折叠与 F440–F456 小数网格门不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F469 已完成**：shape 上移 multipleOf 解析（完整字面量＋`^[0-9]+(\.[0-9]+)?$` 校验，指数显式拒）；小数 M 在 `d=max(界位,M位)` 网格折叠 `start=ceil(sLo/sM)*sM` 返回 `prop|start|mark|0`（复用 F440 marker 写入器）；F433 守卫加 `shape==""` 豁免；items 经 F462 检测器（seg[3]==0）自动认领，零路由改动。门 `fm_shape=[n|12|-999|0]`/`fm_text`/`fm_unsat=[]`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_items`/`fm_intleaf=1`＋五文本断言。
+**改前证据（`engine/schema_bounds_f469pre.log`，F468 二进制）**：number min1max2 m0.3 / 负界 / 无整数区间 / items → 400；unsat/integer 叶/无界/exclusive 对照 400。
+**活体**：`num_mult_frac_served` 200 `{"n":1.2}`、neg 200 `{"n":-1.8}`、noint 200 `{"n":1.5}`、`items_mult_frac_ok` 200 `[1.2,…]`；unsat/integer 叶 400；F466/F467 小数 M 对照不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.544×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f469.log`、`engine/schema_*_f469.log`、`engine/api_smoke_f469.log`、`engine/throughput_f469.log`）。
+**顺位**：F469 → 数组项 const/pattern、contains/not 值级子 schema 等排队项 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
