@@ -1516,6 +1516,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：unevaluated* 真判定（需 additionalProperties/额外键能力，暂不可切片）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F478 计划（小数 multipleOf 的**单侧界**：min-only 取最小上倍数；max-only 取 0 或最大负倍数）
+**F477 已完成**：数组项锚定纯字面量交替。
+**核心思路**：F469 的小数 M 只支持**双侧 inclusive**；单侧时同一网格折叠即可——`minimum:L` 无上限 ⇒ `start=ceil(sL/sM)*sM`（无上界检查）；`maximum:H` 无下限 ⇒ 0 是任意 M 的倍数，若 `sH>=0` 取 0，否则取最大负倍数 `floor(sH/sM)*sM`（≤ sH）。均经既有小数 marker 写入器发射（子集论证）。
+**支持边界**：number 叶、小数 M（≤5 位）、界为 inclusive 普通小数（≤5 位）、至少一侧；exclusive／无界小数 M／integer 叶仍拒（同 F469 边界）。
+**改前状态（读码判定，执行前活体取证）**：`{"type":"number","minimum":1,"multipleOf":0.3}` → F469 要求双侧 ⇒ **400**（过度拒绝，合法解 1.2/1.5/…）；`maximum:0.2` / `maximum:-1` 同；无界 0.3 对照 400 正确。
+**实现（F469 分支一处泛化）**：条件由 `hasLo&&hasHi` 放宽为"至少一侧且无 exclusive"；`d` 由**在场的**界＋M 计算；min 侧算 `ceil` 最小倍数；max-only 侧若 `sH>=0` 取 0 否则 `floor` 最大负倍数；有上界时校验 `start<=sH`。
+**门（SCHEMA-STRUCT 新字段）**：`fm_minonly=[n|12|-999|0]`（min1 m0.3）、`fm_maxpos=[n|0|-999|0]`（max2 m0.3）、`fm_maxneg=[n|-12|-999|0]`（max-1 m0.3）＋三条文本 `{"n":1.2}`/`{"n":0.0}`/`{"n":-1.2}`；双侧 `fm_shape`/`fm_d2`/`fm_noint` 与 `fm_unsat`/`fm_intleaf` 不回退。
+**活体**（`schema_bounds_check.py`）：`num_mult_frac_minonly_ok`（200 v≥1 且 %0.3≈0）、`num_mult_frac_maxonly_ok`（max0.2 → 200 v≤0.2 且倍数，即 0）、`num_mult_frac_maxneg_ok`（max-1 → 200 v≤-1 且倍数）；`num_mult_frac_refuse`（无界）与 integer 叶对照不回退。
+**验收**：①单侧值在界内且是 M 的倍数（门＋活体）②无界/exclusive/integer 叶仍拒 ③F469 双侧与 F473 六位小数不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F478 已完成**：F469 分支泛化为"至少一侧 inclusive"（`d` 由在场界＋M 计算；min 取 ceil 最小倍数；max-only 取 0 或 floor 最大负倍数；上界校验保留）；门 `fm_minonly`/`fm_maxpos`/`fm_maxneg`＋三文本；双侧与 `fm_unsat`/`fm_intleaf` 不回退。
+**改前证据（`engine/schema_bounds_f478pre.log`，F477 二进制）**：min1/max0.2/max-1 + m0.3 → 400；无界/integer 叶对照 400 正确。
+**活体**：`num_mult_frac_minonly_ok` 200 `{"n":1.2}`、`num_mult_frac_maxonly_ok` 200 `{"n":0.0}`、`num_mult_frac_maxneg_ok` 200 `{"n":-1.2}`；对照不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.482×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f478.log`、`engine/schema_*_f478.log`、`engine/api_smoke_f478.log`、`engine/throughput_f478.log`）。
+**顺位**：F478 → 其余值级子集（contains/not 字符串形态、patternProperties 自由字符串）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

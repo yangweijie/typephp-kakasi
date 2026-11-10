@@ -464,6 +464,21 @@ cases = [
     ("num_mult_frac_intleaf_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F478: a ONE-SIDED inclusive bound with a fractional multiplier - min-only folds to the
+    # smallest multiple at or above it; max-only is 0 when the bound is non-negative (0 is a
+    # multiple of every M) or the largest negative multiple otherwise.
+    ("num_mult_frac_minonly_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and val_of(txt, "n") >= 1 and is_mult(val_of(txt, "n"), 0.3)),
+    ("num_mult_frac_maxonly_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "maximum": 0.2, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and val_of(txt, "n") <= 0.2 and is_mult(val_of(txt, "n"), 0.3)),
+    ("num_mult_frac_maxneg_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "maximum": -1, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and val_of(txt, "n") <= -1 and is_mult(val_of(txt, "n"), 0.3)),
 ]
 
 bad = 0

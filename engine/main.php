@@ -6413,9 +6413,10 @@ function api_schema_number_bounded_shape(string $schema): string
     // multiplier can fold on the decimal grid even when no integer lies in the interval. The full
     // literal is captured and validated as a plain decimal (an exponent spelling is refused rather
     // than silently truncated to its integer prefix - the F421 lesson). An integer multiplier keeps
-    // the existing collapse below; a fractional one is served only on a number leaf with both
-    // inclusive plain-decimal bounds (<=5 places), scaled to a common grid and folded to the
-    // interval's smallest multiple, emitted through the existing decimal marker writer (subset).
+    // the existing collapse below; a fractional one is served on a number leaf with one or both
+    // INCLUSIVE plain-decimal bounds (<=5 places; F478 added the one-sided forms), scaled to a
+    // common grid and folded to a multiple inside the interval, emitted through the existing
+    // decimal marker writer (subset).
     $mult = 0;
     $mo = [];
     if (preg_match('/"multipleOf"\s*:\s*([0-9.eE+-]+)/', $schema, $mo) == 1) {
@@ -6423,36 +6424,72 @@ function api_schema_number_bounded_shape(string $schema): string
             return "";
         }
         if (strpos($mo[1], ".") !== false) {
-            if ($kv[1] != "n" || !$hasLo || !$hasHi || $hasExLo || $hasExHi
-                || preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mn[1]) != 1
-                || preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) != 1
+            // F478: ONE-SIDED inclusive bounds are served too - a minimum-only interval folds to
+            // the smallest multiple at or above it (no upper check needed), and a maximum-only one
+            // to zero (a multiple of every M) when the bound is non-negative, else to the largest
+            // negative multiple at or below it.
+            if ($kv[1] != "n" || $hasExLo || $hasExHi || (!$hasLo && !$hasHi)
                 || preg_match('/^[0-9]+(\.[0-9]{1,5})?$/', $mo[1]) != 1) {
                 return "";
             }
+            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mn[1]) != 1)
+                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) != 1)) {
+                return "";
+            }
+            $lits = [$mo[1]];
+            if ($hasLo) {
+                $lits[] = $mn[1];
+            }
+            if ($hasHi) {
+                $lits[] = $mx[1];
+            }
             $d = 1;
-            foreach ([$mn[1], $mx[1], $mo[1]] as $lit) {
+            foreach ($lits as $lit) {
                 $dot = strpos($lit, ".");
                 $places = $dot === false ? 0 : strlen(substr($lit, $dot + 1));
                 if ($places > $d) {
                     $d = $places;
                 }
             }
-            $sLo = api_schema_scaled($mn[1], $d);
-            $sHi = api_schema_scaled($mx[1], $d);
             $sM = api_schema_scaled($mo[1], $d);
-            if ($sLo == -2000000000 || $sHi == -2000000000 || $sM == -2000000000
-                || $sM < 1 || $sLo > $sHi) {
+            if ($sM == -2000000000 || $sM < 1) {
                 return "";
             }
-            // Smallest multiple of sM at or above sLo: intdiv truncates toward zero, which already
-            // is the ceiling for a negative sLo; a positive remainder needs one more step.
-            $q = intdiv($sLo, $sM);
-            if ($sLo > 0 && ($sLo % $sM) != 0) {
-                $q = $q + 1;
+            $start = 0;
+            if ($hasLo) {
+                $sLo = api_schema_scaled($mn[1], $d);
+                if ($sLo == -2000000000) {
+                    return "";
+                }
+                // Smallest multiple of sM at or above sLo: intdiv truncates toward zero, which
+                // already is the ceiling for a negative sLo; a positive remainder needs one step.
+                $q = intdiv($sLo, $sM);
+                if ($sLo > 0 && ($sLo % $sM) != 0) {
+                    $q = $q + 1;
+                }
+                $start = $q * $sM;
             }
-            $start = $q * $sM;
-            if ($start > $sHi) {
-                return "";
+            if ($hasHi) {
+                $sHi = api_schema_scaled($mx[1], $d);
+                if ($sHi == -2000000000) {
+                    return "";
+                }
+                if (!$hasLo) {
+                    if ($sHi >= 0) {
+                        $start = 0;
+                    } else {
+                        // Largest multiple at or below sHi (negative): truncation is the ceiling,
+                        // so a remainder steps one grid unit down.
+                        $q = intdiv($sHi, $sM);
+                        if (($sHi % $sM) != 0) {
+                            $q = $q - 1;
+                        }
+                        $start = $q * $sM;
+                    }
+                }
+                if ($start > $sHi) {
+                    return "";
+                }
             }
             $mark = "-999";
             if ($d == 2) {
@@ -18099,6 +18136,33 @@ function main(): void
     $fmNoInt = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9,"multipleOf":0.3}}}}}');
     $fmItems = api_response_schema_array_item_number('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","minimum":1,"maximum":2,"multipleOf":0.3}}}}}}');
     $fmIntLeaf = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
+    // F478: one-sided inclusive bounds with a fractional multiplier.
+    $fmMinOnly = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1,"multipleOf":0.3}}}}}');
+    $fmMaxPos = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","maximum":2,"multipleOf":0.3}}}}}');
+    $fmMaxNeg = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","maximum":-1,"multipleOf":0.3}}}}}');
+    $fm2Ids = tok_chat("user", "Give the multiple.") . "," . tok_chat_open("assistant");
+    $fm2Base = count(explode(",", $fm2Ids));
+    $fmMo1 = api_number_bounded_value($fm2Ids, "n", 12, -999, 0);
+    $fmM1 = explode(",", $fmMo1);
+    $fmM1Text = "";
+    for ($i = $fm2Base; $i < count($fmM1); $i++) {
+        $fmM1Text = $fmM1Text . gguf_token_str((int) $fmM1[$i]);
+    }
+    $fmM1Text = str_replace("Ġ", " ", $fmM1Text);
+    $fmMo2 = api_number_bounded_value($fm2Ids, "n", 0, -999, 0);
+    $fmM2 = explode(",", $fmMo2);
+    $fmM2Text = "";
+    for ($i = $fm2Base; $i < count($fmM2); $i++) {
+        $fmM2Text = $fmM2Text . gguf_token_str((int) $fmM2[$i]);
+    }
+    $fmM2Text = str_replace("Ġ", " ", $fmM2Text);
+    $fmMo3 = api_number_bounded_value($fm2Ids, "n", -12, -999, 0);
+    $fmM3 = explode(",", $fmMo3);
+    $fmM3Text = "";
+    for ($i = $fm2Base; $i < count($fmM3); $i++) {
+        $fmM3Text = $fmM3Text . gguf_token_str((int) $fmM3[$i]);
+    }
+    $fmM3Text = str_replace("Ġ", " ", $fmM3Text);
     $fmIds = tok_chat("user", "Give the multiple.") . "," . tok_chat_open("assistant");
     $fmBase = count(explode(",", $fmIds));
     $fmOut = api_number_bounded_value($fmIds, "n", 12, -999, 0);
@@ -18266,6 +18330,8 @@ function main(): void
         . " fm_shape=[" . $fmShape . "] fm_unsat=[" . $fmUnsat . "] fm_neg=[" . $fmNeg
         . "] fm_d2=[" . $fmD2 . "] fm_noint=[" . $fmNoInt . "] fm_items=[" . $fmItems
         . "] fm_intleaf=" . $fmIntLeaf
+        . " fm_minonly=[" . $fmMinOnly . "] fm_maxpos=[" . $fmMaxPos . "] fm_maxneg=[" . $fmMaxNeg . "]"
+        . " fm_minonly_text=[" . $fmM1Text . "] fm_maxpos_text=[" . $fmM2Text . "] fm_maxneg_text=[" . $fmM3Text . "]"
         . " fm_text=[" . $fmText . "] fm_neg_text=[" . $fmNText . "] fm_d2_text=[" . $fmDText
         . "] fm_noint_text=[" . $fmIText . "] fm_items_text=[" . $fmiText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
@@ -18359,6 +18425,8 @@ function main(): void
         && $fmDText == '{"n":1.20}' && api_json_ok($fmDText) == 1
         && $fmIText == '{"n":1.5}' && api_json_ok($fmIText) == 1
         && $fmiText == '{"nums":[1.2]}' && api_json_ok($fmiText) == 1
+        && $fmMinOnly == "n|12|-999|0" && $fmMaxPos == "n|0|-999|0" && $fmMaxNeg == "n|-12|-999|0"
+        && $fmM1Text == '{"n":1.2}' && $fmM2Text == '{"n":0.0}' && $fmM3Text == '{"n":-1.2}'
         && $sfCF == "cities|paris~lyon" && $sfCG == "cities|paris"
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0
         && $acText == '{"cities":["paris"]}' && api_json_ok($acText) == 1 && count($acRoute) == 0

@@ -1935,3 +1935,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：`items_pattern` `items`→``；新 `sf_itb=[items]`、`ap_alt=[cities|paris~lyon]`/`ap_alt_text`、`ap_lit=[cities|paris]`、`ap_bad=[]`。
 - **活体**：交替 200 `[paris,paris]`、元字符 400、类形态不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、哨兵 **0**。
+
+## ▶ 状态（F478，2026-11-10 19:42 构建）——小数 multipleOf 单侧界（min-only / max-only）
+- **改前证据**：min1/max0.2/max-1 + m0.3 → 400；无界/integer 叶对照 400（`schema_bounds_f478pre.log`，F477 二进制）。
+- **实现**：F469 分支泛化为"至少一侧 inclusive"，min 取 ceil 最小倍数、max-only 取 0 或 floor 最大负倍数；上界校验保留。
+- **门**：`fm_minonly`/`fm_maxpos`/`fm_maxneg`＋三文本；双侧与 unsat/intleaf 不回退。
+- **活体**：1.2 / 0.0 / -1.2 200；对照不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.482×**、哨兵 **0**。
