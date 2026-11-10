@@ -1907,3 +1907,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：`num_dec6` ``→`n|1511111|-994|0`；新 `num_dec7=[]`、`dec6_text=[{"n":1.511111}]`。
 - **活体**：`float_dec6_served` 200 `{"n":1.511111}`、`float_dec7_refuse` 400；**波纹** `items_num_frac6_refuse` 翻 `items_num_frac6_ok`（200 `[0.000123,…]`，F462 wrap→shape 随网格扩宽自动服务）。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.542×**、哨兵 **0**。
+
+## ▶ 状态（F474，2026-11-10 18:32 构建）——`not` 值级非字符串常量形式＋修 not 块误伤 flat-string 生成器
+- **改前证据**：`not:{const:5}` → 400 "not"；字符串常量/pattern 对照 400（`schema_count_f474pre.log`，F473 二进制）。
+- **实现**：`api_schema_not_ok` 加非字符串标量 const／全非字符串标量 enum 分支；**修复** `api_response_schema_string_props` 剥离根级 not 块（活体首跑抓到 200 散文＝静默违约），加 `nt_route=1` 门。
+- **门**：`nt_const_num`/`nt_enum_num`=[]、`nt_const_str`/`nt_enum_mixed`=[not]、`nt_route=1`；not_pattern 保持对照。
+- **活体**：`not_const_num_served` 200 `{"cities":"…"}`、`not_const_str_refuse` 400；type/pattern 不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.544×**、哨兵 **0**。

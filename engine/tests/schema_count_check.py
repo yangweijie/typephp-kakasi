@@ -299,6 +299,17 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "not": {"pattern": "^x"}},
      lambda code, txt: code == 400 and "not" in txt, ask),
+    # F474: a NON-STRING const/enum under not can never equal an emitted string value, so it holds by
+    # the F448 type-contradiction argument; a string const could actually be emitted and stays
+    # refused (the control).
+    ("not_const_num_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"const": 5}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), str), ask),
+    ("not_const_str_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"const": "paris"}},
+     lambda code, txt: code == 400 and "not" in txt, ask),
     ("propertynames_refuse", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "propertyNames": {"pattern": "^x"}},

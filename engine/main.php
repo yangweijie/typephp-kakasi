@@ -9160,11 +9160,12 @@ function api_schema_dependencies_ok(string $schema): int
     return 1;
 }
 
-// F448: `not` is honoured for the one form that is satisfied by construction - a subschema that is
-// just a `type` contradicting the leaf type. On the flat all-string shape every emitted value is a
+// F448: `not` is honoured for the form satisfied by construction - a subschema that is just a
+// `type` contradicting the leaf type. On the flat all-string shape every emitted value is a
 // string, so `not: {"type": "integer"|"number"|"boolean"|"array"|"object"}` cannot be violated.
-// Every other subschema (pattern, enum, nested rules) would need value evaluation and keeps the
-// refusal.
+// F474: a NON-STRING scalar const/enum extends the same argument (a string value never equals 5 /
+// true / null). A string const, a string enum member or a pattern could match an emitted value and
+// keeps the refusal.
 function api_schema_not_ok(string $schema): int
 {
     if (api_schema_flat_all_string($schema) != 1) {
@@ -9199,10 +9200,24 @@ function api_schema_not_ok(string $schema): int
         return 0;
     }
     $mt = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"(integer|number|boolean|array|object)"\s*\}$/', $sub, $mt) != 1) {
-        return 0;
+    if (preg_match('/^\{\s*"type"\s*:\s*"(integer|number|boolean|array|object)"\s*\}$/', $sub, $mt) == 1) {
+        return 1;
     }
-    return 1;
+    // F474: a NON-STRING scalar const/enum under `not` can never equal an emitted string value, so
+    // it holds by the same type-contradiction argument the bare type uses. A string const or a
+    // string enum member COULD be emitted, so those keep the refusal - proving a free-string value
+    // never equals a given string (or never matches a pattern) is not something this judgement can
+    // do. Object/array constants need brackets the scalar forms below deliberately do not parse.
+    $sc = '(?:-?[0-9][0-9.eE+-]*|true|false|null)';
+    $mc = [];
+    if (preg_match('/^\{\s*"const"\s*:\s*' . $sc . '\s*\}$/', $sub, $mc) == 1) {
+        return 1;
+    }
+    $me = [];
+    if (preg_match('/^\{\s*"enum"\s*:\s*\[\s*' . $sc . '(?:\s*,\s*' . $sc . ')*\s*\]\s*\}$/', $sub, $me) == 1) {
+        return 1;
+    }
+    return 0;
 }
 
 // F449: `contains` is honoured for the one form the array writers satisfy by construction. Both
@@ -10756,6 +10771,34 @@ function api_response_schema_string_props(string $body): array
             $pnblk = api_balance_block($schema, $pnbo);
             if ($pnblk != "") {
                 $scan = str_replace($pnblk, "", $schema);
+            }
+        }
+    }
+    // F474: a ROOT-LEVEL `not` block is stripped from the scan too - a const/enum inside `not` is a
+    // negation whose satisfaction api_schema_not_ok has already judged, not a value domain. Leaving
+    // it here made this generator bail and the request fall back to prose (the F463 silent-violation
+    // class; the live probe returned free text for not:{const:5}). Only a root-level `not` counts - a
+    // property NAMED not sits inside the properties block and is left alone.
+    $ntp = strpos($schema, "\"not\"");
+    if ($ntp !== false) {
+        $rootNot = 1;
+        $ppf = strpos($schema, "\"properties\"");
+        if ($ppf !== false) {
+            $bof = strpos($schema, "{", $ppf);
+            if ($bof !== false) {
+                $blkf = api_balance_block($schema, $bof);
+                if ($blkf != "" && $ntp < $bof + strlen($blkf)) {
+                    $rootNot = 0;
+                }
+            }
+        }
+        if ($rootNot == 1) {
+            $ntbo = strpos($schema, "{", $ntp);
+            if ($ntbo !== false) {
+                $ntblk = api_balance_block($schema, $ntbo);
+                if ($ntblk != "") {
+                    $scan = str_replace($ntblk, "", $scan);
+                }
             }
         }
     }
@@ -17624,6 +17667,15 @@ function main(): void
     $sfAL = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"pattern":"^x"}}');
     $sfAM = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"count":{"type":"integer"}},"not":{"type":"integer"}}');
     $sfAN = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"not":{"type":"integer"}}}}');
+    // F474: value-level not with NON-STRING scalar const/enum holds by type contradiction; a string
+    // const or a mixed enum keeps the refusal (a free-string value could equal it).
+    $ntConstNum = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"const":5}}');
+    $ntConstStr = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"const":"paris"}}');
+    $ntEnumNum = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":[1,2,3]}}');
+    $ntEnumMixed = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":[1,"paris"]}}');
+    // F474: the route must still claim the flat all-string shape - a const inside the root-level
+    // `not` must not disqualify the free-string generator (which would fall back to prose).
+    $ntRoute = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"}},"not":{"const":5}}}}');
     // F449: `contains` is honoured when it is just the item type of the single array property (the
     // writers always emit at least one element); a different type, a value rule or a count keeps the
     // refusal, and the route case proves the array writer still claims the schema.
@@ -18023,6 +18075,9 @@ function main(): void
         . "] deps_arr=[" . $sfAG . "] deps_obj=[" . $sfAH . "] deps_bad=[" . $sfAI
         . "] deps_other=[" . $sfAJ . "] not_type=[" . $sfAK . "] not_pattern=[" . $sfAL
         . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN)
+        . " nt_const_num=[" . $ntConstNum . "] nt_const_str=[" . $ntConstStr
+        . "] nt_enum_num=[" . $ntEnumNum . "] nt_enum_mixed=[" . $ntEnumMixed . "]"
+        . " nt_route=" . count($ntRoute)
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
         . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
         . " cv_const=[" . $cvConst . "] cv_enum=[" . $cvEnum . "] cv_pat=[" . $cvPat
@@ -18089,6 +18144,8 @@ function main(): void
         && $sfAG == "" && $sfAH == "" && $sfAI == "dependencies"
         && $sfAJ == "dependencies"
         && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
+        && $ntConstNum == "" && $ntConstStr == "not"
+        && $ntEnumNum == "" && $ntEnumMixed == "not" && count($ntRoute) == 1
         && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
         && $cvConst == "" && $cvEnum == "" && $cvPat == ""

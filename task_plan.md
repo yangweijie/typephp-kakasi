@@ -1449,6 +1449,23 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F473 → not 值级、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F474 计划（`not` 值级的**非字符串常量**形式：flat all-string 的字符串值与标量常量必然矛盾）
+**F473 已完成**：小数网格 6 位。
+**核心思路（沿用 F448 的值级模型）**：F448 已确立 flat all-string 形态下 `not:{type:T}` 按"每个发射值是字符串"判定（T≠string 必不违反，含 object）。同理由：`not:{const:C}` 当 C 是**非字符串标量**（数字/true/false/null）时，发射的字符串值永不等于 C ⇒ 必不违反；`not:{enum:[…]}` 当**每个**成员都是非字符串标量时同理。字符串常量/枚举成员可能被实际发射 ⇒ 保持拒绝（自由字符串值上的成员排除不可证）；pattern 保持拒绝（`contains_pattern` 同族）。
+**支持边界**：flat all-string 形态（`api_schema_flat_all_string==1`，同 F448）；not 子 schema 恰为 `{"const":<标量非串>}` 或 `{"enum":[<标量非串>,…]}`；对象/数组常量、含字符串成员、pattern、嵌套规则、混合属性形态仍拒。
+**改前状态（读码判定，执行前活体取证）**：`not:{const:5}` / `not:{enum:[1,2,3]}` 经 F448 只认 bare type ⇒ **400 "not"**（过度拒绝，字符串值永不为 5）；`not:{const:"paris"}` 对照应保持 400。
+**实现（not_ok 一处）**：bare-type 正则命中即 1；否则 `const` 标量非串正则 `\{\s*"const"\s*:\s*(?:-?[0-9][0-9.eE+-]*|true|false|null)\s*\}` 命中 ⇒ 1；`enum` 全非串标量正则 ⇒ 1；其余 0。
+**门（SCHEMA-STRUCT 新字段）**：`nt_const_num=[]`、`nt_enum_num=[]`（服务）；`nt_const_str=[not]`、`nt_enum_mixed=[not]`（含字符串成员仍拒）；现有 `not_pattern` 保持 `not` 对照。
+**活体**（`schema_count_check.py`）：`not_const_num_served`（200 值为字符串）、`not_const_str_refuse`（400 "not"）；`not_type_served`/`not_pattern_refuse` 不回退。
+**验收**：①服务形态值必为字符串（门＋活体）②字符串常量/混合枚举/pattern 仍拒 ③F448 的 type 门与 flat 形态限制不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F474 已完成**：`api_schema_not_ok` 加非字符串标量 const／全非字符串标量 enum 分支；**并修复** `api_response_schema_string_props` 把根级 `not` 块内的 const 误当值域、导致生成器放弃并落回散文的静默违约（与 propertyNames 同手法剥离 not 块；属性名恰为 not 的不剥），加 `nt_route=1` 路由门。门 `nt_const_num`/`nt_enum_num`=[]、`nt_const_str`/`nt_enum_mixed`=[not]；`not_pattern` 保持对照。
+**改前证据（`engine/schema_count_f474pre.log`，F473 二进制）**：`not:{const:5}` → 400；字符串常量/pattern 对照 400。
+**过程**：首版只改 not_ok，自检全绿但活体抓到 200 散文（结构放行、生成器未认领）⇒ 剥离 not 块后重构建（`build_f474b.log` 留 TPC 报错：首版编辑误把 `$plan=` 并入注释行，`build_f474c.log` 修复后成功）。
+**活体**：`not_const_num_served` 200 `{"cities":"…"}`、`not_const_str_refuse` 400；type/pattern 不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.544×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f474.log`、`engine/schema_*_f474.log`、`engine/api_smoke_f474.log`、`engine/throughput_f474.log`）。
+**顺位**：F474 → patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
