@@ -9232,7 +9232,8 @@ function api_schema_emitted_set(string $schema): string
 // is exactly {"required":[...]} (dependentSchemas). Any other value keeps the refusal.
 function api_schema_dependencies_ok(string $schema): int
 {
-    if (api_schema_flat_all_string($schema) != 1) {
+    // F490: same exact-key-set premise as F489.
+    if (api_schema_flat_all_string($schema) != 1 && api_schema_mixed_omittable($schema) != 1) {
         return 0;
     }
     $dp = strpos($schema, "\"dependencies\"");
@@ -9655,7 +9656,8 @@ function api_schema_minmax_contains_ok(string $schema): int
 // only the flat all-string object, whose emitted key set is known before generation.
 function api_schema_dependent_schemas_ok(string $schema): int
 {
-    if (api_schema_flat_all_string($schema) != 1) {
+    // F490: same exact-key-set premise as F489 - the mixed generator emits exactly the plan's keys.
+    if (api_schema_flat_all_string($schema) != 1 && api_schema_mixed_omittable($schema) != 1) {
         return 0;
     }
     $dp = strpos($schema, "\"dependentSchemas\"");
@@ -18117,6 +18119,9 @@ function main(): void
     $sfAH = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":{"required":["b"]}}}');
     $sfAI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"required":["a"],"dependencies":{"a":["b"]}}');
     $sfAJ = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"string"}},"dependencies":{"a":{"properties":{"x":{"type":"string"}}}}}');
+    // F490: dependentSchemas / dependencies on a MIXED shape (exact key set).
+    $depSchMix = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"dependentSchemas":{"a":{"required":["b"]}}}');
+    $depDepsMix = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"dependencies":{"a":["b"]}}');
     // F448: `not` is honoured only for a type contradiction the flat all-string answer satisfies by
     // construction; a value rule (pattern) or a shape whose leaves are not all strings keeps the
     // refusal. The route case pins that the honoured form still reaches the value generator.
@@ -18612,7 +18617,7 @@ function main(): void
         . "] items_obj=[" . $sfAB . "] tuple_plan=[" . $sfAC . "] tuple_text=[" . $tupText
         . "] depsch_ok=[" . $sfAD . "] depsch_bad=[" . $sfAE . "] depsch_other=[" . $sfAF
         . "] deps_arr=[" . $sfAG . "] deps_obj=[" . $sfAH . "] deps_bad=[" . $sfAI
-        . "] deps_other=[" . $sfAJ . "] not_type=[" . $sfAK . "] not_pattern=[" . $sfAL
+        . "] deps_other=[" . $sfAJ . "] dep_sch_mix=[" . $depSchMix . "] dep_deps_mix=[" . $depDepsMix . "] not_type=[" . $sfAK . "] not_pattern=[" . $sfAL
         . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN)
         . " nt_const_num=[" . $ntConstNum . "] nt_const_str=[" . $ntConstStr
         . "] nt_enum_num=[" . $ntEnumNum . "] nt_enum_mixed=[" . $ntEnumMixed . "]"
@@ -18730,10 +18735,12 @@ function main(): void
         && $sfAD == ""
         && $sfAE == "dependentSchemas"
         && $sfAF == "dependentSchemas"
+        && $depSchMix == ""
         && $sfAG == ""
         && $sfAH == ""
         && $sfAI == "dependencies"
         && $sfAJ == "dependencies"
+        && $depDepsMix == ""
         && $sfAK == ""
         && $sfAL == "not"
         && $sfAM == "not"

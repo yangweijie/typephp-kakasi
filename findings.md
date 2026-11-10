@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F489）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F490）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3739,9 +3739,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | format / contentEncoding / contentMediaType | **显式 400** | `SCHEMA-STRUCT` format/content*（F428） |
 | minContains / maxContains：F449 `contains` 形态（每个元素都匹配 ⇒ 计数就是元素数） | **支持**（折算为元素上下界；活体断言个数） | `cont_min`/`cont_max`/`cont_bounds`（F454） |
 | minContains / maxContains：无 `contains` / 其他形状 / 不可服务的计数对 | **显式 400** | `cont_min_big`/`cont_min_over`（F454） |
-| dependentSchemas：子 schema 恰为 `{"required":[…]}` | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`（F446） |
+| dependentSchemas：子 schema 恰为 `{"required":[…]}`（**扁平与 mixed-omittable 形状均可**，同 F489 的精确键集前提） | **支持**（按发出键集判定，同 dependentRequired） | `depsch_ok`/`depsch_bad`/`depsch_other`/`dep_sch_mix`/`dependent_schemas_mixed_ok`（F446/F490） |
 | dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
-| dependencies：数组形式 / `{"required":[…]}` 对象形式 | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`（F447） |
+| dependencies：数组形式 / `{"required":[…]}` 对象形式（**扁平与 mixed-omittable 形状均可**） | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`/`dep_deps_mix`/`dependencies_mixed_ok`（F447/F490） |
 | dependencies：其他对象体 | **显式 400** | `deps_bad`/`deps_other`（F447） |
 | not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`、**非字符串标量 const/enum**（`{"const":5}` / `{"enum":[1,2,3]}`）、**含字符集外字符的无转义字符串 const/enum**（如 `"Paris!"`、`["a!","b@"]`）、或**含字符集外字符的锚定纯字面量交替 pattern**（如 `^(paris_|lyon_)$`）（扁平全字符串） | **支持**（构造满足——发射值是字符集内字符串，永不等于非字符串常量/含外字符的串/无法匹配的外字符交替；根级 not 块不 disqualify 生成器/扁平枚举扫描） | `not_type`/`not_route`/`nt_const_num`/`nt_enum_num`/`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`/`nt_pat_bang`/`not_const_bang_served`/`not_pattern_bang_served`（F448/F474/F479/F482） |
 | not：**全字符集**字符串常量/存在可命中的枚举成员/可被匹配的 pattern/对象数组常量 / 含转义成员 / 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`/`nt_const_str`/`nt_enum_miss`/`nt_escaped`/`not_pattern_charset_refuse`（F448/F474/F479/F482） |
@@ -4620,3 +4620,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`dependent_required_mixed_ok` **200 `{"a":"…","b":123456,"c":"…"}`**（三键齐全）、`dependent_required_mixed_bad_refuse` **400**；既有 `dep_*` 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f489.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.557×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
 **记法**：**"键集精确性"是可跨形状复用的证明前提**——flat 与 mixed 生成器都只发计划键（required 时是裁剪后的精确子集），所以 dependentRequired/dependentSchemas/dependencies 这类"键集谓词"对两者同理；F432/F446/F447 的 flat-only 守卫逐个按此放宽即可（本轮只做 dependentRequired，另两个排队）。同 F488：**旧拒绝对照可能只是守卫造成的**，放宽后必须重新核对拒绝原因。
+
+## F490：dependentSchemas 与 dependencies 一并扩到 mixed-omittable
+**核心思路**：与 F489 同一前提——mixed 生成器只发计划键（required 时精确裁剪）⇒ 键集精确；`dependentSchemas` 的 bare-required 形式与 `dependencies` 的数组/裸 required 对象形式都只做键集包含检查，可安全放宽。
+**实现（两处守卫）**：`api_schema_dependent_schemas_ok`、`api_schema_dependencies_ok` 由 `flat_all_string==1` 放宽为 `flat||mixed_omittable`（体内键集计算已走 required_filter/全计划，无需改）。
+**改前证据（`engine/schema_count_f490pre.log`，F489 二进制）**：mixed a:string/b:integer + dependentSchemas a→required[b] → 400；dependencies a→[b] → 400；两 bad 对照 400 正确。
+**门**：`dep_sch_mix=[]`、`dep_deps_mix=[]`（mixed 双键）；既有 dep/sch/deps 系列不回退。
+**活体**：`dependent_schemas_mixed_ok`/`dependencies_mixed_ok` **200 `{"a":"…","b":123456}`**、两 bad 400（未声明依赖）；既有系列不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f490.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.562×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
+**记法**：**同一证明前提的多个入口应成组放宽**（F489/F490 三个键集谓词），否则支持表会出现"dependentRequired 支持 mixed 而 dependentSchemas 不支持"的漂移；每加一个 mixed 入口都配"未声明依赖"的拒绝对照，防止守卫放宽把真违反也放行。

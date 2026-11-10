@@ -1650,6 +1650,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **用法**：`scripts/build-check.sh`；单门小步。
 
 
+## F490 计划与完成（dependentSchemas 与 dependencies 一并扩到 mixed-omittable）
+**核心思路**：与 F489 同一前提——mixed 生成器只发计划键（required 时精确裁剪）⇒ 键集精确；`dependentSchemas` 的 bare-required 形式与 `dependencies` 的数组/裸 required 对象形式都只做键集包含检查，可安全放宽。
+**实现**：`api_schema_dependent_schemas_ok`、`api_schema_dependencies_ok` 守卫由 `flat_all_string==1` 放宽为 `flat||mixed_omittable`（体内键集计算已走 required_filter/全计划）。
+**门**：`dep_sch_mix=[]`、`dep_deps_mix=[]`（mixed a:string,b:integer + 分别 dependentSchemas a→required[b] / dependencies a→[b]）。
+**活体**：`dependent_schemas_mixed_ok`/`dependencies_mixed_ok`（200 双键）、各自 bad（依赖未声明 → 400）。
+**用法**：`scripts/build-check.sh`；本轮两门仍在瘦身后容量内。
+**F490 已完成**：dependent_schemas_ok / dependencies_ok 守卫放宽（flat||mixed）。门 `dep_sch_mix=[]`、`dep_deps_mix=[]`；活体两形态 200 双键、两 bad 400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.562×、哨兵 0）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

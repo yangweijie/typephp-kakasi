@@ -403,6 +403,24 @@ cases = [
      {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}, "c": {"type": "string"}},
       "dependentRequired": {"a": ["z"]}},
      lambda code, txt: code == 400 and "dependentRequired" in txt, ask),
+    # F490: dependentSchemas (bare required) and dependencies carry the same key-set proof, so the
+    # mixed shape is served; a dependency on an undeclared key keeps the refusal.
+    ("dependent_schemas_mixed_ok", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "dependentSchemas": {"a": {"required": ["b"]}}},
+     lambda code, txt: code == 200 and sorted(json.loads(txt).keys()) == ["a", "b"], ask),
+    ("dependent_schemas_mixed_bad_refuse", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "dependentSchemas": {"a": {"required": ["z"]}}},
+     lambda code, txt: code == 400 and "dependentSchemas" in txt, ask),
+    ("dependencies_mixed_ok", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "dependencies": {"a": ["b"]}},
+     lambda code, txt: code == 200 and sorted(json.loads(txt).keys()) == ["a", "b"], ask),
+    ("dependencies_mixed_bad_refuse", "Give the record.",
+     {"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+      "dependencies": {"a": ["z"]}},
+     lambda code, txt: code == 400 and "dependencies" in txt, ask),
 ]
 
 bad = 0

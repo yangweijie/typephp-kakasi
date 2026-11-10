@@ -2024,3 +2024,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：dependent_required_ok 守卫放宽为 flat||mixed（体内 emit 已精确）。
 - **门（含翻转）**：`dep_mixed` `dependentRequired`→``（依赖已声明、精确键集恒成立）；新 `dep_mix_bad=[dependentRequired]`（依赖未声明）。
 - **活体**：mixed 200 三键、未声明依赖 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.557×、哨兵 0；构建 BUILD_OK。
+
+## ▶ 状态（F490，2026-11-10 21:58 构建）——dependentSchemas 与 dependencies 扩到 mixed-omittable
+- **改前证据**：两形态 → 400；未声明依赖对照 400（`schema_count_f490pre.log`，F489 二进制）。
+- **实现**：两处守卫放宽为 flat||mixed（体内键集已精确）。
+- **门**：`dep_sch_mix=[]`、`dep_deps_mix=[]`。
+- **活体**：两形态 200 双键、两 bad 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.562×、哨兵 0；构建 BUILD_OK。
