@@ -9349,6 +9349,28 @@ function api_schema_not_ok(string $schema): int
             return 1;
         }
     }
+    // F482: not:{pattern:P} holds when P is a fully anchored plain-literal alternation and NO
+    // emitted value can match it - every member carries an out-of-charset character.
+    $mpp = [];
+    if (preg_match('/^\{\s*(?:"type"\s*:\s*"string"\s*,\s*)?'
+        . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mpp) == 1
+        && strpos($mpp[1], "\\") === false) {
+        $malt = [];
+        if (preg_match('#^\^\(?([A-Za-z0-9 _!@%&,:;=/?-]+(?:\|[A-Za-z0-9 _!@%&,:;=/?-]+)*)\)?\$$#',
+            $mpp[1], $malt) == 1) {
+            $members = explode("|", $malt[1]);
+            $allout = 1;
+            foreach ($members as $mbr) {
+                if (api_charset_covers($mbr) == 1) {
+                    $allout = 0;
+                }
+            }
+            if ($allout == 1) {
+                return 1;
+            }
+        }
+        return 0;
+    }
     return 0;
 }
 
@@ -17944,6 +17966,8 @@ function main(): void
     $ntEnumScalars = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":[1,"a!"]}}');
     $ntEnumMiss = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":["a!","paris"]}}');
     $ntEscaped = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"const":"\u0061"}}');
+    // F482: an out-of-charset literal alternation can never be matched by an emitted value.
+    $ntPatBang = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"pattern":"^(paris_|lyon_)$"}}');
     // F449: `contains` is honoured when it is just the item type of the single array property (the
     // writers always emit at least one element); a different type, a value rule or a count keeps the
     // refusal, and the route case proves the array writer still claims the schema.
@@ -18416,6 +18440,7 @@ function main(): void
         . " nt_const_bang=[" . $ntConstBang . "] nt_enum_bang=[" . $ntEnumBang
         . "] nt_enum_scalars=[" . $ntEnumScalars . "] nt_enum_miss=[" . $ntEnumMiss
         . "] nt_escaped=[" . $ntEscaped . "]"
+        . " nt_pat_bang=[" . $ntPatBang . "]"
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
         . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
         . " cv_const=[" . $cvConst . "] cv_enum=[" . $cvEnum . "] cv_pat=[" . $cvPat
@@ -18498,6 +18523,7 @@ function main(): void
         && $ntEnumNum == "" && $ntEnumMixed == "not" && count($ntRoute) == 1
         && $ntConstBang == "" && $ntEnumBang == "" && $ntEnumScalars == ""
         && $ntEnumMiss == "not" && $ntEscaped == "not"
+        && $ntPatBang == ""
         && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
         && $cvConst == "" && $cvEnum == "" && $cvPat == ""

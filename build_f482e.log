@@ -1,0 +1,74 @@
+Initialized platform/backend: Windows + MSVC (cl)
+prepare: src\gguf.stub.php
+prepare: src\backend.stub.php
+prepare: src\ops.stub.php
+prepare: src\model.stub.php
+prepare: src\tokenizer.stub.php
+prepare: main.php
+prepare completed: 6 source files in total
+generate arginfo file: src\gguf.stub.php
+generate arginfo file: src\backend.stub.php
+generate arginfo file: src\ops.stub.php
+generate arginfo file: src\model.stub.php
+generate arginfo file: src\tokenizer.stub.php
+convert: main.php
+generate arginfo file: main.php
+Starting parallel compilation with 4 jobs for 11 files
+backend.cc
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\src\backend.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\src\backend.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\backend.cc.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[1/11] 10% src\backend.cc
+gguf.cc
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\src\gguf.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\src\gguf.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\gguf.cc.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[2/11] 19% src\gguf.cc
+extension-kakasi_engine.cc
+C:\git\c\typephp-kakasi\engine\build\gen/extension-kakasi_engine.cc(1): fatal error C1083: Cannot open include file: 'cstring': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\build\gen/extension-kakasi_engine.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\build\gen/extension-kakasi_engine.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\generated\extension-kakasi_engine.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[3/11] 28% extension-kakasi_engine.cc
+main.cc
+C:\git\c\typephp-kakasi\engine\build\gen\\main.cc(1): fatal error C1083: Cannot open include file: 'cstring': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\build\gen\\main.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\build\gen\\main.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\generated\\\main.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[4/11] 37% \main.cc
+ops.cc
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\src\ops.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\src\ops.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\ops.cc.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[5/11] 46% src\ops.cc
+tokenizer.cc
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\src\tokenizer.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\src\tokenizer.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\tokenizer.cc.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[6/11] 55% src\tokenizer.cc
+model.cc
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\c\typephp-kakasi\engine\src\model.cc (exit status 2)
+cl /c "C:\git\c\typephp-kakasi\engine\src\model.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\external\aed5da9c1306f18c\model.cc.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[7/11] 64% src\model.cc
+ps_title.c
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/ps_title.c (exit status 2)
+cl /c /TC "C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/ps_title.c" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\shared\ps_title.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4146 /MD /nologo
+[8/11] 73% php\tpc_v0.9.5_windows_x64\phpx\src\misc\ps_title.c
+typephp_runtime.cc
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/typephp_runtime.cc (exit status 2)
+cl /c "C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/typephp_runtime.cc" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\shared\typephp_runtime.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4242 /wd4146 /wd4820 /wd4464 /wd4365 /wd4127 /wd4668 /wd4626 /wd5027 /wd5219 /wd5220 /wd4100 /wd5039 /wd4101 /wd4102 /wd4800 /wd5045 /wd5264 /wd5246 /wd4388 /wd4623 /wd4611 /wd4574 /MD /EHsc /std:c++17 /nologo
+[9/11] 82% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_runtime.cc
+php_cli_process_title.c
+C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend\zend_config.w32.h(27): fatal error C1083: Cannot open include file: 'malloc.h': No such file or directory
+Compilation failed: C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/php_cli_process_title.c (exit status 2)
+cl /c /TC "C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/php_cli_process_title.c" /Fo"C:\git\c\typephp-kakasi\engine\build\gen\cache\objects\phpx-misc\shared\php_cli_process_title.obj" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\include" /I "C:\git\c\typephp-kakasi\engine\build\gen\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\phpx\src\misc" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\main" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\Zend" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\TSRM" /I "C:\git\php\tpc_v0.9.5_windows_x64\SDK\include\ext" /bigobj /utf-8 /Zc:preprocessor /DZEND_WIN32 /DPHP_WIN32 /DZEND_DEBUG=0 /DENABLE_INTSAFE_SIGNED_FUNCTIONS /DZTS /O2 /W3 /wd4244 /wd4146 /MD /nologo
+[10/11] 91% php\tpc_v0.9.5_windows_x64\phpx\src\misc\php_cli_process_title.c
+[11/11] 100% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_main.cc
+PHP Fatal error:  Uncaught Exception: Compilation failed for: C:\git\c\typephp-kakasi\engine\src\backend.cc, C:\git\c\typephp-kakasi\engine\src\gguf.cc, C:\git\c\typephp-kakasi\engine\build\gen/extension-kakasi_engine.cc, C:\git\c\typephp-kakasi\engine\build\gen\\main.cc, C:\git\c\typephp-kakasi\engine\src\ops.cc, C:\git\c\typephp-kakasi\engine\src\tokenizer.cc, C:\git\c\typephp-kakasi\engine\src\model.cc, C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/ps_title.c, C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/typephp_runtime.cc, C:\git\php\tpc_v0.9.5_windows_x64\phpx/src/misc/php_cli_process_title.c in D:\a\typephp\typephp\src\compiler.php:14
+Stack trace:
+#0 [internal function]: TypePhp\Translator->compile()
+#1 [internal function]: TypePhp\Build\ProjectBuildRunner->run()
+#2 D:\a\typephp\typephp\src\compiler.php(14): main()
+#3 {main}
+  thrown in D:\a\typephp\typephp\src\compiler.php on line 14

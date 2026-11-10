@@ -1,0 +1,32 @@
+==[1/4] SYCL objects via icx==
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2079,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 2079 |                 dW = {dStream, false};
+      |                                ^~~~~
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2624,27): warning: null character(s) preserved in char literal [-Wnull-character]
+ 2624 |         if (e && e[0] != '<U+0000>') {
+      |                           ^
+2 warnings generated.
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2079,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 2079 |                 dW = {dStream, false};
+      |                                ^~~~~
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2624,27): warning: null character(s) preserved in char literal [-Wnull-character]
+ 2624 |         if (e && e[0] != '<U+0000>') {
+      |                           ^
+2 warnings generated.
+==[2/4] tpc: PHP + bridge==
+Initialized platform/backend: Windows + MSVC (cl)
+[cached] project preprocessing
+prepare completed: 6 source files in total
+convert: main.php
+==[3/4] final link via icx (runs sycl-post-link)==
+icx: error #10005: unable to open argument file 'build\gen\cache\link\kakasi_engine.exe.rsp'
+SYCL_LINK_FAILED 

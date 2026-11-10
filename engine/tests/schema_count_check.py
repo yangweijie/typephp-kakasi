@@ -338,6 +338,17 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "not": {"enum": ["a!", "paris"]}},
      lambda code, txt: code == 400 and "not" in txt, ask),
+    # F482: a fully anchored plain-literal alternation whose EVERY member carries an out-of-charset
+    # character can never be matched by an emitted value, so not:{pattern} holds; an all-charset
+    # alternation (the writer could produce a match) keeps the refusal.
+    ("not_pattern_bang_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"pattern": "^(paris!|lyon!)$"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), str), ask),
+    ("not_pattern_charset_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"pattern": "^(paris|lyon)$"}},
+     lambda code, txt: code == 400 and "not" in txt, ask),
     ("propertynames_refuse", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "propertyNames": {"pattern": "^x"}},

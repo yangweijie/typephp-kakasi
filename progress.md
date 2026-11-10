@@ -1964,3 +1964,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`cv_pat_spec`=[]、`cv_pat_spec_diff`=[contains]；既有 cv 系列不回退。
 - **活体**：同 spec 200 `[CJL,CJL]`、不同 spec 400。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.497×**、哨兵 **0**。
+
+## ▶ 状态（2026-11-10 22:00 构建）——F482 not:{pattern} 字符集排除形式（单门）
+- **改前证据**：`not:{pattern:"^(paris_|lyon_)$"}` → 400；全字符集/元字符对照 400（探测与 `schema_count_f482pre.log`）。
+- **实现**：not_ok 加 pattern 分支（锚定纯字面量交替、每成员含字符集外字符 ⇒ 1）；门缩减为单 `nt_pat_bang`。
+- **过程（重要）**：多门时 tpc 转换器**静默中止**（exit 0、不编译、批处理用旧对象仍报 Build successful）⇒ 自检假绿；诊断靠 main.obj mtime；最终缩减门数量入库。php.ini 栈限提到 256M；半删缓存会导致 rsp 缺失，需清整个 `build/gen/cache`。
+- **活体**：bang 形态 200、全字符集/`^x` 400；四 harness PASS；smoke 115/0、par/fairness 0、scaling 1.525×、哨兵 0。

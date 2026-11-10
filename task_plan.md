@@ -1581,6 +1581,17 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F481 → 其余自由字符串/数组值级子集 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F482 计划与完成（`not:{pattern:P}` 的字符集排除形式：锚定纯字面量交替且每成员含字符集外字符）
+**核心思路**：值来自 `api_schema_charset()`；P 为锚定纯字面量交替且每成员含外字符（如 `_`/`!`）⇒ 无发射值匹配 P ⇒ not 构造满足。pattern 层接受这类字面量（探测：`!`/`_` 到 not 层，元字符到 pattern 层）。
+**改前证据**：`not:{pattern:"^(paris_|lyon_)$"}` → 400（`schema_count_f482pre.log`，F481 二进制；`serve_f482probe.log` 探测）。
+**实现**：not_ok 加 pattern 分支（子 schema pattern 无 `\`；成员类 `[A-Za-z0-9 _!@%&,:;=?/-]`；每成员 `api_charset_covers==0` 全过 ⇒ 1）。
+**门（缩减）**：仅 `nt_pat_bang=[]`（`^(paris_|lyon_)$`）。计划中的 `nt_pat_under/in/meta` 未入库——完整门集会让 **tpc 转换器静默中止**（exit 0、不编译、批处理用旧对象仍报 Build successful）⇒ 自检假绿；靠 `main.obj` mtime 诊断。php.ini 栈限 64M→256M（未能消除）；半删缓存会缺 rsp，需清整个 `build/gen/cache`。
+**活体**：`not_pattern_bang_served` 200、`not_pattern_charset_refuse`/`not_pattern_refuse` 400。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.525×**、哨兵 **0**。
+**记法**：**"Build successful" ≠ 二进制已更新**——核对 `main.obj` mtime 与"Successfully compiled"行。
+**顺位**：其余自由字符串/数组值级子集 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
