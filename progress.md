@@ -2042,3 +2042,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：F402 判定去掉值形限制、加根级守卫；门翻转 `addprops_form`/`addprops_form_arr`，新增 `addprops_schema`。
 - **过程**：只翻 kwW 后 181/1（kwAB 同族旧期望漏翻）⇒ 补翻 182/0。
 - **活体**：schema 形式 200 `{"cities":[…]}`；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.536×、哨兵 0；构建 BUILD_OK。
+
+## ▶ 状态（F493，2026-11-10 23:00 构建）——minLength/maxLength 扩到 mixed
+- **改前证据**：mixed + min/maxLength → 400；pattern 叶对照 400（`schema_required_f493pre.log`，F492 二进制）。
+- **实现**：api_object_mixed 增 bounds 并有界步进；4 处路由传参；守卫放宽为 flat||mixed。
+- **门（含翻转）**：`mixed_maxLength`→``、`mixed_refusal`→``；pattern 叶保持 400。
+- **活体**：mixed 200 `{"city":"New York","count":100000}`、pattern 叶 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.480×、哨兵 0；构建 BUILD_OK。

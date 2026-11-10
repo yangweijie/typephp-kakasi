@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F492）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F493）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3720,10 +3720,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：number 叶**有界（整数 M）** | **支持**（折叠到区间内最小整数倍——整数是合法 number 且是 M 的倍数，子集论证） | `nm_shape`/`nm_text`/`num_mult_served`（F466） |
 | multipleOf：number 叶**有界（小数 M，inclusive 界，双侧或单侧 ≤5 位）** | **支持**（界与 M 缩放到公共小数网格折叠；双侧取区间内最小倍数、min-only 取最小上倍数、max-only 取 0 或最大负倍数；经 F440–F456 小数 marker 写入器发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_minonly`/`fm_maxpos`/`fm_maxneg`/`num_mult_frac_served`/`num_mult_frac_minonly_ok`（F469/F478） |
 | multipleOf：number 叶小数 M **无界/单侧/exclusive/整数叶**／混合叶 / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`fm_intleaf`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469） |
-| minLength / maxLength：扁平全字符串对象 | **支持**（按剩余字符预算过滤候选 token） | `SCHEMA-LEN`（F399） |
+| minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 s 叶顺序消费每属性界限） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`（F399/F493） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
-| minItems / maxItems / minLength / maxLength：**其他形状** | **显式 400** | `SCHEMA-KEYWORDS`（F398–F400） |
+| minItems / maxItems / minLength / maxLength：**含 pattern 叶等不可计划命名的其他形状** | **显式 400** | `SCHEMA-KEYWORDS`/`mixed_len_pattern_refuse`（F398–F400/F493） |
 | uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
 | uniqueItems:true | **显式 400** | `uniq_true`（F425） |
 | additionalProperties:true/false **及 schema 值**（键名来自 plan，可与数组界并存；schema 值只判未声明键 ⇒ 真空满足） | **支持** | `addprops_*`/`addprops_schema`/`addprops_schema_served`（F402/F403/F492） |
@@ -4648,3 +4648,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **过程**：首轮只翻 kwW，自检 181/1 暴露 **kwAB 也是旧期望**（schema 值+数组界）——同族夹具必须一起 grep；翻后 182/0。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f492c.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.536×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
 **记法**：**"关键字只判某些键"的约束在"从不发那些键"的形状上是真空的**——与 F453 unevaluatedProperties 同一论证；放宽一个值形时，要 grep **全部**引用该关键字的门/活体（本轮 kwAB 漏翻）。
+
+## F493：minLength/maxLength 扩到 mixed 形状（mixed 写入器按字符预算逐叶实现）
+**核心思路**：flat 写入器已有长度实现（F399：按**字符数**计数、min 前不提供闭引号、max 时按剩余宽度过滤可加 token、闭引号 token 须解码为单个 `"`）。mixed 写入器的字符串叶（kind s）原样复用；`api_response_schema_string_bounds` 输出的按属性 `min:max` 列表只含字符串属性，故 mixed 中以 s 叶为序依次消费。
+**实现**：①`api_object_mixed` 增 `$bounds` 参数并实现有界 s 步进（closeIds 过滤 + 字符计数）；②**四处**路由调用都传入 `api_response_schema_string_bounds($body)`；③关键字守卫 `minLength/maxLength` 放宽为 `flat||mixed_omittable`。
+**改前证据（`engine/schema_required_f493pre.log`，F492 二进制）**：mixed city:string(min3,max8)+count:integer → 400；含 pattern 叶对照 400 正确。
+**门（含翻转）**：`mixed_maxLength`（SCHEMA-KEYWORDS）`[maxLength]`→``；`mixed_refusal`（SCHEMA-LEN）`[minLength]`→``；`mixed_len_pattern_refuse` 保持 400。
+**活体**：`mixed_len_ok` **200 `{"city":"New York","count":100000}`**（city 长 8 ∈[3,8]、count 为整数）、`mixed_len_pattern_refuse` **400**；`subset_with_length`（flat 按属性长度）不回退。
+**过程**：首版还在 mixed 中加入 escape-safe stepIds，为压缩回归面已移除（长度逻辑不需要）；`SCHEMA-LEN` 的 `mixed_refusal` 旧期望被同轮证伪并翻转。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f493b.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.480×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
+**记法**：**长度约束是"值级"的，可跨写入器复用同一字符预算逻辑**；但 bounds 列表与计划叶的**对齐规则**必须写清（这里：只有 s 叶依次消费），否则非字符串叶会错位。写入器改动要同时改**所有**路由调用点（本轮 4 处），漏一处会表现为"某条流式路径仍拒绝"。

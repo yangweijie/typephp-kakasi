@@ -5646,7 +5646,7 @@ function api_root_oneof_grammar_value(string $ids, string $branches, string $cha
 // An object whose top-level leaves mix strings and numbers (2..4 of them, no constraints). The
 // plan is "<name>:<s|i|n>,..." in schema order. Each key is forced; string leaves use the
 // charset grammar, number leaves use api_number_fill, and the closing brace is forced.
-function api_object_mixed(string $ids, string $plan, string $charset, int $maxSteps, int $useCache = 1): string
+function api_object_mixed(string $ids, string $plan, string $charset, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $items = explode(",", $plan);
     if (count($items) == 0) {
@@ -5659,6 +5659,19 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
     }
     $stepIds = $charsetIds . "," . $quoteIds;
     $q = "," . $quoteIds . ",";
+    // F493: per-property string lengths are consumed by the "s" leaves in plan order (the extractor
+    // lists only the string properties). The closing token must decode to exactly one quote (F401b).
+    $closeIds = "";
+    foreach (explode(",", $quoteIds) as $qid) {
+        if (str_replace("Ġ", " ", gguf_token_str((int) $qid)) == "\"") {
+            $closeIds = $closeIds == "" ? $qid : $closeIds . "," . $qid;
+        }
+    }
+    if ($closeIds == "") {
+        $closeIds = $quoteIds;
+    }
+    $bp = $bounds == "" ? [] : explode(",", $bounds);
+    $bi = 0;
     $first = explode(":", $items[0]);
     $fTy = "";
     if (count($first) == 2) {
@@ -5701,8 +5714,42 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
         }
         if ($ty == "s") {
             $closed = 0;
+            $len = 0;
+            $bMin = 0;
+            $bMax = 0;
+            if ($bi < count($bp)) {
+                $bv = explode(":", $bp[$bi]);
+                if (count($bv) == 2) {
+                    $bMin = (int) $bv[0];
+                    $bMax = (int) $bv[1];
+                }
+            }
+            $bi++;
             for ($d = 0; $d < $maxSteps; $d++) {
-                $nx = model_session_next_allowed(0, $stepIds);
+                $allow = $stepIds;
+                if ($bMax > 0) {
+                    // F493: same character-count logic as the flat writer (F399) - a token can carry
+                    // several characters, so the offered set is filtered by what still fits.
+                    $remain = $bMax - $len;
+                    if ($remain <= 0) {
+                        $allow = $closeIds;
+                    } else {
+                        $fit = "";
+                        foreach (explode(",", $charsetIds) as $cid) {
+                            $tl = strlen(str_replace("Ġ", " ", gguf_token_str((int) $cid)));
+                            if ($tl > 0 && $tl <= $remain) {
+                                $fit = $fit . ($fit == "" ? "" : ",") . $cid;
+                            }
+                        }
+                        if ($len >= $bMin) {
+                            $fit = $fit . ($fit == "" ? "" : ",") . $closeIds;
+                        }
+                        $allow = $fit == "" ? $closeIds : $fit;
+                    }
+                } else if ($len < $bMin) {
+                    $allow = $charsetIds;
+                }
+                $nx = model_session_next_allowed(0, $allow);
                 if ($nx < 0) {
                     break;
                 }
@@ -5711,6 +5758,7 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                     $closed = 1;
                     break;
                 }
+                $len = $len + strlen(str_replace("Ġ", " ", gguf_token_str($nx)));
             }
             if ($closed == 0) {
                 $cq = api_constrained_continue(["\""], 4);
@@ -7813,7 +7861,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $scOut = api_array_number_value($ids, $san[0], (int) $san[1],
             4, 3, 1, api_response_schema_array_bounds($body));
     } else if ($scMix != "") {
-        $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1);
+        $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
     } else if (api_response_schema_top_array_string($body) == 1) {
         $scOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4, 1,
             api_response_schema_array_bounds($body));
@@ -10529,7 +10577,8 @@ function api_schema_keywords_unsupported(string $body): string
         }
         // F399: minLength/maxLength are honoured for a flat all-string object, whose stepper can
         // restrict the closing quote; every other shape still refuses them rather than ignoring.
-        if (($kw == "minLength" || $kw == "maxLength") && api_schema_flat_all_string($body) == 1) {
+        if (($kw == "minLength" || $kw == "maxLength")
+            && (api_schema_flat_all_string($body) == 1 || api_schema_mixed_omittable($body) == 1)) {
             continue;
         }
         // F400: minItems/maxItems are honoured for a single scalar-array property, whose stepper
@@ -12193,7 +12242,7 @@ Connection: close
                                     $scOut = api_array_number_value($ids, $san[0], (int) $san[1],
                                         4, 3, 1, api_response_schema_array_bounds($body));
                                 } else if ($scMix != "") {
-                                    $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1);
+                                    $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
                                 } else if (api_response_schema_top_array_string($body) == 1) {
                                     $scOut = api_top_array_string_value($ids, api_schema_charset(),
                                         4, 4, 1, api_response_schema_array_bounds($body));
@@ -13338,7 +13387,7 @@ function api_serve(int $port): void
                                 $prefixCache, api_response_schema_array_bounds($body));
                         } else if ($sMix != "") {
                             $sJOut = api_object_mixed($ids, $sMix, api_schema_charset(), 16,
-                                $prefixCache);
+                                $prefixCache, api_response_schema_string_bounds($body));
                         } else if (api_response_schema_top_array_string($body) == 1) {
                             $sJOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4,
                                 $prefixCache, api_response_schema_array_bounds($body));
@@ -13765,7 +13814,7 @@ function api_serve(int $port): void
                         $jsonMode = 1;
                     } else if ($mixPlan != "") {
                         $enumOut = api_object_mixed($ids, $mixPlan, api_schema_charset(), 16,
-                            $prefixCache);
+                            $prefixCache, api_response_schema_string_bounds($body));
                         $jsonMode = 1;
                     } else if (api_response_schema_top_array_string($body) == 1) {
                         $enumOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4,
@@ -18035,7 +18084,7 @@ function main(): void
         . "] multi_bounds=[" . $kwAG . "] multi_bad=[" . $kwAH . "] multi_addprops=[" . $kwAI
         . "] multi_allreq=[" . $kwAJ . "] uniq_true=[" . $kwAV . "] uniq_false=[" . $kwAW
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
-    if ($kwA == "minItems" && $kwB == "" && $kwI == "maxLength" && $kwC == ""
+    if ($kwA == "minItems" && $kwB == "" && $kwI == "" && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
         && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == ""
@@ -19092,7 +19141,9 @@ function main(): void
         . " comb_note=" . strlen($lnNote3) . " comb_json=" . api_json_ok($lnText3)
         . " comb_zip=" . $lnZip3 . "]\n";
     if ($lnBounds == "3:6" && $lnLen >= 3 && $lnLen <= 6 && $lnOut != ""
-        && $lnBounds2 == "0:2" && $lnLen2 <= 2 && $lnOut2 != "" && $lnMixed == "minLength"
+        && $lnBounds2 == "0:2" && $lnLen2 <= 2 && $lnOut2 != ""
+        // F493 flipped the mixed control: the mixed writer now honours per-property lengths.
+        && $lnMixed == ""
         && $lnBounds3 == "3:8,0:5" && strlen($lnCity3) >= 3 && strlen($lnCity3) <= 8
         && strlen($lnNote3) <= 5 && api_json_ok($lnText3) == 1 && $lnZip3 == 0) {
         echo "SCHEMA-LEN: PASS (emitted lengths inside bounds; other shapes still refused)\n";

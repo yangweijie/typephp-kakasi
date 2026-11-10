@@ -96,6 +96,19 @@ cases = [
      lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
                         and 3 <= len(json.loads(txt)["city"]) <= 8
                         and len(json.loads(txt)["note"]) <= 5)),
+    # F493: per-property length bounds on a MIXED shape - the mixed writer counts characters per
+    # string leaf the same way the flat writer does; the integer leaf is unaffected.
+    ("mixed_len_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string", "minLength": 3, "maxLength": 8},
+                                       "count": {"type": "integer"}},
+      "required": ["city", "count"]},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "count"]
+                        and 3 <= len(json.loads(txt)["city"]) <= 8
+                        and isinstance(json.loads(txt)["count"], int))),
+    ("mixed_len_pattern_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string", "minLength": 3},
+                                       "code": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+     lambda code, txt: code == 400 and "minLength" in txt),
     # F402: additionalProperties names no key of its own - the generators emit the declared plan and
     # nothing else - so refusing it rejected a request that was already satisfied.
     ("addprops_all_string", "Say where you are.",

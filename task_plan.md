@@ -1677,6 +1677,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **用法**：`scripts/build-check.sh`；单门小步。
 
 
+## F493 计划与完成（minLength/maxLength 扩到 mixed：mixed 写入器按叶加长度预算）
+**核心思路**：flat 写入器已有长度实现（F399：按**字符数**计数、min 前不提供闭引号、max 时按剩余宽度过滤可加 token、闭引号 token 须解码为单个 `"`）。mixed 写入器的字符串叶（kind s）原样复用同一逻辑（根级 minLength/maxLength 对所有字符串值生效，单对界限即可）。
+**实现**：①`api_object_mixed` 增 `$bounds` 参数（"min:max"）；s 叶改为有界步进（含 closeIds 过滤）；②路由调用传入 `api_response_schema_string_bounds($body)`；③关键字守卫 `minLength/maxLength` 由 flat-only 放宽为 `flat||mixed_omittable`。
+**门（含翻转）**：`mixed_maxLength`（mixed a:string,b:integer + maxLength）`[maxLength]`→``；新增 `mixed_len_text` 不便（需会话）⇒ 以活体断言长度为准。
+**活体**：`mixed_len_ok`（minLength:3 maxLength:8 → 200，a 长度 3..8、b 为整数）、`mixed_len_pattern_refuse`（含 p: 叶的混合形状 + minLength → 400，mixed 写入器不认领）。
+**用法**：`scripts/build-check.sh`；写入器改动，跑全梯。
+**F493 已完成**：api_object_mixed 增 bounds 并有界 s 步进（按字符预算、closeIds 过滤）；4 处路由传参；守卫放宽为 flat||mixed。门翻转 `mixed_maxLength`/`mixed_refusal`→``；活体 mixed 200 长度在界、pattern 叶 400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.480×、哨兵 0）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
