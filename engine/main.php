@@ -9197,6 +9197,10 @@ function api_schema_not_ok(string $schema): int
 // an array from this shape always has at least one element; when the subschema is just the item
 // type, that element matches. minContains/maxContains can demand more than one match, and a
 // value-level subschema would need the value evaluated - both keep the refusal.
+// F472: a value-level subschema is ALSO honoured when every possible element satisfies it - a string
+// array whose items is a finite enum/const emits each element from that list (>=1 element), so a
+// const/enum/pattern contains that every enumerant satisfies holds by construction (subset argument,
+// judged by F457's leaf guarantees). A free-string items or a richer subschema keeps the refusal.
 function api_schema_contains_ok(string $schema): int
 {
     $pp = strpos($schema, "\"properties\"");
@@ -9256,10 +9260,26 @@ function api_schema_contains_ok(string $schema): int
         return 0;
     }
     $mt = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"([a-z]+)"\s*\}$/', $sub, $mt) != 1) {
-        return 0;
+    if (preg_match('/^\{\s*"type"\s*:\s*"([a-z]+)"\s*\}$/', $sub, $mt) == 1) {
+        return $mt[1] == $want ? 1 : 0;
     }
-    return $mt[1] == $want ? 1 : 0;
+    // F472: a value-level contains subschema is honoured when EVERY possible element satisfies it
+    // (the subset argument): a string array whose items is a finite enum/const emits each element
+    // from that value list and always has at least one element, so a const/enum/pattern contains
+    // that every enumerant satisfies holds by construction. The judgement is F457's leaf guarantees
+    // applied to the items value list. Pattern items are infinite (a "~" spec) and skip; a free
+    // string items exposes no values, so it keeps the refusal.
+    if ($kind == "a") {
+        $ae = api_schema_array_enum($schema);
+        if ($ae != "") {
+            $aep = explode("|", $ae);
+            if (count($aep) == 2 && substr($aep[1], 0, 1) != "~"
+                && api_schema_leaf_guarantees("e:" . $aep[1], $sub) == 1) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 // F454: minContains/maxContains on the F449 `contains` form. Every element of that shape matches
@@ -17588,6 +17608,12 @@ function main(): void
     $sfAP = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"integer"}}');
     $sfAQ = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"pattern":"^x"}}');
     $sfAR = api_response_schema_array_string('{"json_schema":{"schema":{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"}}},"contains":{"type":"string"}}}}');
+    // F472: value-level contains satisfied by every possible element (items finite enum/const).
+    $cvConst = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}},"contains":{"const":"paris"}}');
+    $cvEnum = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}},"contains":{"enum":["paris","lyon","nice"]}}');
+    $cvPat = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}},"contains":{"pattern":"^[a-z]+$"}}');
+    $cvMiss = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}},"contains":{"const":"paris"}}');
+    $cvRoute = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}},"contains":{"const":"paris"}}}}');
     // F451: patternProperties is honoured only when its single pattern matches none of the emitted
     // keys; a matching pattern, a second entry that matches, or an unreadable pattern keeps the
     // refusal, and the route case pins that the value generator is not disqualified.
@@ -17976,6 +18002,8 @@ function main(): void
         . "] not_mixed=[" . $sfAM . "] not_route=" . count($sfAN)
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
         . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
+        . " cv_const=[" . $cvConst . "] cv_enum=[" . $cvEnum . "] cv_pat=[" . $cvPat
+        . "] cv_miss=[" . $cvMiss . "] cv_route=[" . $cvRoute . "]"
         . " pp_vacuous=[" . $sfAS . "] pp_match=[" . $sfAT . "] pp_multi=[" . $sfAU
         . "] pp_route=" . count($sfAV)
         . "] if_else=[" . $sfAW . "] if_rich=[" . $sfAX . "] if_noelse=[" . $sfAY
@@ -18040,6 +18068,8 @@ function main(): void
         && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
         && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
+        && $cvConst == "" && $cvEnum == "" && $cvPat == ""
+        && $cvMiss == "contains" && $cvRoute == "cities|paris"
         && $sfAR == "cities"
         && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
         && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note"

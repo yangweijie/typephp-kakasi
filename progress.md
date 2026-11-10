@@ -1893,3 +1893,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`items_pattern` 保持 `items`（交替对照）；新 `ap_plan`/`ap_text`（正则）/`ap_route=0`。
 - **活体**：`items_pattern_ok` 200 `[CJL,CJL]`、交替 400；enum/const/单属性 pattern 不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.547×**、哨兵 **0**。
+
+## ▶ 状态（F472，2026-11-10 14:07 构建）——contains 值级子 schema 的**子集形式**从点名 400 变构造满足
+- **改前证据**：items const paris + contains const paris → 400；items enum + contains 超集 enum → 400；子集不成立对照 400（`schema_count_f472pre.log`，F471 二进制）。
+- **实现**：`api_schema_contains_ok` bare-type 失败后加值级子集分支——kind a 取 array_enum valsCsv（非 ~），`leaf_guarantees("e:".valsCsv,sub)==1 ⇒ 1`；路由/写入器零改动。
+- **门**：`cv_const`/`cv_enum`/`cv_pat`=[]、`cv_miss=[contains]`、`cv_route=[cities|paris]`；contains_pattern 保持对照。
+- **活体**：const/enum 子集 200 `[paris,paris]`、子集不成立 400；type/pattern 对照不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.463×**、哨兵 **0**。

@@ -1417,6 +1417,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F471 → contains/not 值级子 schema、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F472 计划（contains 值级子 schema 的**子集形式**：items 有限 enum/const 的每个可能元素都满足 contains）
+**F471 已完成**：数组项 string pattern。
+**核心思路（子集论证 + 复用 F457 判定）**：`contains` 要求"至少一元素匹配子 schema"。当 items 是有限字符串 enum/const 时，写入器（F459 枚举项）每元素都从该值表发射、数组恒 ≥1 元素；若**每个**可能元素都满足 contains 子 schema，则 contains 构造满足。判定复用 `api_schema_leaf_guarantees("e:".valsCsv, sub)`（F457：const 相等/enum 包含/pattern 逐值匹配，含 optional type:string 前缀）。**零新写入器/路由**。
+**支持边界**：单字符串数组属性（kind a）＋items 为有限 enum/const（`api_schema_array_enum` 非空且非 ~ 前缀；pattern items 无限 ⇒ 跳过）＋contains 为 const/enum/pattern（每 enumerant 满足）或 bare type（F449 已服务）。items 自由字符串（s）无法保证值级 contains ⇒ 仍拒（现有 sfAQ/contains_pattern_refuse 对照）；contains 子 schema 更丰富 ⇒ 拒。minContains/maxContains 由 F454 折成元素计数（每元素皆匹配）。
+**改前状态（读码判定，执行前活体取证）**：items const paris + contains const paris → `api_schema_contains_ok` 只认 bare type ⇒ 0 ⇒ 结构层 **400 "contains"**（过度拒绝，每元素恒 paris）；items enum [paris,lyon] + contains enum [paris,lyon,nice] 同；子集不成立（contains const paris 但 items 含 lyon）应保持 400。
+**实现（contains_ok 一处）**：bare-type 正则失败后，kind==a 时取 `api_schema_array_enum($schema)` 的 valsCsv（非 ~），`api_schema_leaf_guarantees("e:".valsCsv, $sub)==1 ⇒ return 1`。
+**门（SCHEMA-STRUCT 新字段）**：`cv_const=[]`（items const paris + contains const paris）、`cv_enum=[]`（items enum + contains 超集 enum）、`cv_pat=[]`（items enum + contains `^[a-z]+$`）、`cv_miss=[contains]`（items enum [paris,lyon] + contains const paris，子集不成立）、`cv_route=[cities|paris]`（写入器认领）；现有 `contains_pattern`（自由字符串 items）保持 `contains` 对照。
+**活体**（`schema_count_check.py`）：`contains_const_served`（200 每元素 ==paris）、`contains_enum_served`（200 每元素 ∈enum）、`contains_subset_miss_refuse`（400 contains）；contains_type_served/contains_pattern_refuse 不回退。
+**验收**：①服务形态每元素满足 contains（门＋活体）②子集不成立/自由字符串 items/丰富子 schema 仍拒 ③F449/F454 contains 门与 minContains 不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F472 已完成**：`api_schema_contains_ok` bare-type 失败后加值级子集分支（kind a 取 array_enum valsCsv 非 ~，`leaf_guarantees("e:".valsCsv,$sub)==1 ⇒ 1`）；路由/写入器零改动。门 `cv_const`/`cv_enum`/`cv_pat`=[]、`cv_miss=[contains]`、`cv_route=[cities|paris]`；contains_pattern 保持对照。
+**改前证据（`engine/schema_count_f472pre.log`，F471 二进制）**：items const+contains const → 400、items enum+contains 超集 → 400；子集不成立对照 400。
+**活体**：`contains_const_served`/`contains_enum_served` 200 `[paris,paris]`、`contains_subset_miss_refuse` 400；type/pattern 对照不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.463×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f472.log`、`engine/schema_*_f472.log`、`engine/api_smoke_f472.log`、`engine/throughput_f472.log`）。
+**顺位**：F472 → not 值级、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

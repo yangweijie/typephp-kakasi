@@ -267,6 +267,26 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
       "contains": {"pattern": "^x"}},
      lambda code, txt: code == 400 and "contains" in txt, ask),
+    # F472: a value-level contains is served when EVERY possible element satisfies it - the items is
+    # a finite enum/const, the writer emits each element from that list (>=1 element), so a contains
+    # const/enum/pattern that every enumerant satisfies holds by construction. A subset that does not
+    # cover every enumerant keeps the refusal.
+    ("contains_const_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "const": "paris"}}},
+      "contains": {"const": "paris"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and len(json.loads(txt)["cities"]) >= 1
+     and all(x == "paris" for x in json.loads(txt)["cities"]), ask),
+    ("contains_enum_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"enum": ["paris", "lyon", "nice"]}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and len(json.loads(txt)["cities"]) >= 1
+     and all(x in ["paris", "lyon"] for x in json.loads(txt)["cities"]), ask),
+    ("contains_subset_miss_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}},
+     lambda code, txt: code == 400 and "contains" in txt, ask),
     # F448: the bare type-contradiction form is served now - every emitted value is a string, so
     # `not: {"type": "integer"}` holds by construction - while a value rule inside `not` still needs
     # the value evaluated and stays refused by name. (This case used to expect the refusal; F448
