@@ -1,0 +1,43 @@
+==[1/4] SYCL objects via icx==
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2079,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 2079 |                 dW = {dStream, false};
+      |                                ^~~~~
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2624,27): warning: null character(s) preserved in char literal [-Wnull-character]
+ 2624 |         if (e && e[0] != '<U+0000>') {
+      |                           ^
+2 warnings generated.
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2079,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 2079 |                 dW = {dStream, false};
+      |                                ^~~~~
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(2624,27): warning: null character(s) preserved in char literal [-Wnull-character]
+ 2624 |         if (e && e[0] != '<U+0000>') {
+      |                           ^
+2 warnings generated.
+==[2/4] tpc: PHP + bridge==
+Initialized platform/backend: Windows + MSVC (cl)
+prepare: src\gguf.stub.php
+prepare: src\backend.stub.php
+prepare: src\ops.stub.php
+prepare: src\model.stub.php
+prepare: src\tokenizer.stub.php
+prepare: main.php
+prepare completed: 6 source files in total
+convert: main.php
+PHP Fatal error:  Uncaught Error: Maximum call stack size of 983040 bytes (zend.max_allowed_stack_size - zend.reserved_stack_size) reached. Infinite recursion? in D:\a\typephp\typephp\vendor\nikic\php-parser\lib\PhpParser\Node\Expr\Variable.php:27
+Stack trace:
+#0 [internal function]: PhpParser\Node\Expr\Variable->getType()
+#1 [internal function]: TypePhp\Translator->convert()
+#2 [internal function]: TypePhp\Build\ProjectBuildRunner->run()
+#3 D:\a\typephp\typephp\src\compiler.php(14): main()
+#4 {main}
+  thrown in D:\a\typephp\typephp\vendor\nikic\php-parser\lib\PhpParser\Node\Expr\Variable.php on line 27
+TPC_BUILD_FAILED 

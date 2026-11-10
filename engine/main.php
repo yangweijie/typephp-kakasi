@@ -8297,6 +8297,75 @@ function api_schema_charset(): string
     return "abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,'-";
 }
 
+function api_charset_covers(string $s): int
+{
+    $cs = api_schema_charset();
+    for ($i = 0; $i < strlen($s); $i++) {
+        if (strpos($cs, substr($s, $i, 1)) === false) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// F479: is EVERY enum member unequalled by an emitted string value? A member is unequalled when it
+// is a bare scalar (a string value never equals it) or an escape-free string carrying a character
+// outside the emission charset; a quoted member the writer could produce makes the whole enum
+// equalled. The inner is scanned by hand so the reader stays a flat loop.
+function api_enum_all_unequalled(string $inner): int
+{
+    $n = strlen($inner);
+    $i = 0;
+    $count = 0;
+    while ($i < $n) {
+        $c = substr($inner, $i, 1);
+        if ($c == " " || $c == ",") {
+            $i++;
+            continue;
+        }
+        if ($c == "\"") {
+            $j = $i + 1;
+            $s = "";
+            $esc = 0;
+            while ($j < $n) {
+                $d = substr($inner, $j, 1);
+                if ($esc == 1) {
+                    $s = $s . "\\" . $d;
+                    $esc = 0;
+                } else if ($d == "\\") {
+                    $esc = 1;
+                } else if ($d == "\"") {
+                    break;
+                } else {
+                    $s = $s . $d;
+                }
+                $j++;
+            }
+            if ($j >= $n) {
+                return 0;
+            }
+            if (strpos($s, "\\") === false && api_charset_covers($s) == 1) {
+                return 0;
+            }
+            $i = $j + 1;
+            $count++;
+        } else {
+            $j = $i;
+            while ($j < $n && substr($inner, $j, 1) != ",") {
+                $j++;
+            }
+            $tok = substr($inner, $i, $j - $i);
+            $tok = str_replace(" ", "", $tok);
+            if (preg_match('/^-?[0-9][0-9.eE+-]*$|^true$|^false$|^null$/', $tok) != 1) {
+                return 0;
+            }
+            $i = $j;
+            $count++;
+        }
+    }
+    return $count > 0 ? 1 : 0;
+}
+
 // A schema whose values are all free-form strings has no finite candidate set. Detect that shape
 // (1..3 string properties, no enum/const/pattern) so the charset grammar can fill them.
 // F396: does this request carry a string pattern the constrained decoder cannot honour? The
@@ -9263,6 +9332,22 @@ function api_schema_not_ok(string $schema): int
     $me = [];
     if (preg_match('/^\{\s*"enum"\s*:\s*\[\s*' . $sc . '(?:\s*,\s*' . $sc . ')*\s*\]\s*\}$/', $sub, $me) == 1) {
         return 1;
+    }
+    // F479: an escape-free string const carrying an out-of-charset character is never emitted.
+    $mcs = [];
+    if (preg_match('/^\{\s*"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mcs) == 1) {
+        if (strpos($mcs[1], "\\") === false) {
+            if (api_charset_covers($mcs[1]) == 0) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    $mes = [];
+    if (preg_match('/^\{\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mes) == 1) {
+        if (api_enum_all_unequalled($mes[1]) == 1) {
+            return 1;
+        }
     }
     return 0;
 }
@@ -10892,6 +10977,36 @@ function api_schema_pattern_unsupported(string $body): int
     return 0;
 }
 
+// F479: remove a ROOT-LEVEL `not` block from a schema (or request body) so scans for value-domain
+// keywords (enum/const/pattern) do not read a negation as a domain and emit a violating value. A
+// property NAMED "not" sits inside the properties block and is left untouched.
+function api_schema_strip_root_not(string $schema): string
+{
+    $ntp = strpos($schema, "\"not\"");
+    if ($ntp === false) {
+        return $schema;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp !== false) {
+        $bo = strpos($schema, "{", $pp);
+        if ($bo !== false) {
+            $blk = api_balance_block($schema, $bo);
+            if ($blk != "" && $ntp < $bo + strlen($blk)) {
+                return $schema;
+            }
+        }
+    }
+    $nbo = strpos($schema, "{", $ntp);
+    if ($nbo === false) {
+        return $schema;
+    }
+    $nblk = api_balance_block($schema, $nbo);
+    if ($nblk == "") {
+        return $schema;
+    }
+    return str_replace($nblk, "", $schema);
+}
+
 function api_response_schema_string_props(string $body): array
 {
     $out = [];
@@ -10917,34 +11032,11 @@ function api_response_schema_string_props(string $body): array
             }
         }
     }
-    // F474: a ROOT-LEVEL `not` block is stripped from the scan too - a const/enum inside `not` is a
+    // F474/F479: a ROOT-LEVEL `not` block is stripped from the scan - a const/enum inside it is a
     // negation whose satisfaction api_schema_not_ok has already judged, not a value domain. Leaving
     // it here made this generator bail and the request fall back to prose (the F463 silent-violation
-    // class; the live probe returned free text for not:{const:5}). Only a root-level `not` counts - a
-    // property NAMED not sits inside the properties block and is left alone.
-    $ntp = strpos($schema, "\"not\"");
-    if ($ntp !== false) {
-        $rootNot = 1;
-        $ppf = strpos($schema, "\"properties\"");
-        if ($ppf !== false) {
-            $bof = strpos($schema, "{", $ppf);
-            if ($bof !== false) {
-                $blkf = api_balance_block($schema, $bof);
-                if ($blkf != "" && $ntp < $bof + strlen($blkf)) {
-                    $rootNot = 0;
-                }
-            }
-        }
-        if ($rootNot == 1) {
-            $ntbo = strpos($schema, "{", $ntp);
-            if ($ntbo !== false) {
-                $ntblk = api_balance_block($schema, $ntbo);
-                if ($ntblk != "") {
-                    $scan = str_replace($ntblk, "", $scan);
-                }
-            }
-        }
-    }
+    // class; the live probe returned free text for not:{const:5}). Only a root-level `not` counts.
+    $scan = api_schema_strip_root_not($scan);
     if (preg_match('/"(enum|const|pattern)"\s*:/', $scan) == 1) {
         return $out;
     }
@@ -13243,7 +13335,7 @@ function api_serve(int $port): void
                 if (count($schemaCands) > 0) {
                     $enumOut = api_constrained($ids, $schemaCands, 128, $prefixCache);
                 } else if ($enumFlat == 1 && api_response_schema_array_enum($body) == ""
-                    && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', $body, $em)) {
+                    && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', api_schema_strip_root_not($body), $em)) {
                     $evals = api_list($em[1]);
                     if (count($evals) > 0) {
                         $enumOut = api_constrained($ids, $evals, 24, $prefixCache);
@@ -17819,6 +17911,12 @@ function main(): void
     // F474: the route must still claim the flat all-string shape - a const inside the root-level
     // `not` must not disqualify the free-string generator (which would fall back to prose).
     $ntRoute = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"}},"not":{"const":5}}}}');
+    // F479: a string const/enum member with an out-of-charset character is never emitted.
+    $ntConstBang = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"const":"Paris!"}}');
+    $ntEnumBang = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":["a!","b@"]}}');
+    $ntEnumScalars = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":[1,"a!"]}}');
+    $ntEnumMiss = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"enum":["a!","paris"]}}');
+    $ntEscaped = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"}},"not":{"const":"\u0061"}}');
     // F449: `contains` is honoured when it is just the item type of the single array property (the
     // writers always emit at least one element); a different type, a value rule or a count keeps the
     // refusal, and the route case proves the array writer still claims the schema.
@@ -18280,6 +18378,9 @@ function main(): void
         . " nt_const_num=[" . $ntConstNum . "] nt_const_str=[" . $ntConstStr
         . "] nt_enum_num=[" . $ntEnumNum . "] nt_enum_mixed=[" . $ntEnumMixed . "]"
         . " nt_route=" . count($ntRoute)
+        . " nt_const_bang=[" . $ntConstBang . "] nt_enum_bang=[" . $ntEnumBang
+        . "] nt_enum_scalars=[" . $ntEnumScalars . "] nt_enum_miss=[" . $ntEnumMiss
+        . "] nt_escaped=[" . $ntEscaped . "]"
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
         . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
         . " cv_const=[" . $cvConst . "] cv_enum=[" . $cvEnum . "] cv_pat=[" . $cvPat
@@ -18358,6 +18459,8 @@ function main(): void
         && $sfAK == "" && $sfAL == "not" && $sfAM == "not"
         && $ntConstNum == "" && $ntConstStr == "not"
         && $ntEnumNum == "" && $ntEnumMixed == "not" && count($ntRoute) == 1
+        && $ntConstBang == "" && $ntEnumBang == "" && $ntEnumScalars == ""
+        && $ntEnumMiss == "not" && $ntEscaped == "not"
         && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
         && $cvConst == "" && $cvEnum == "" && $cvPat == ""

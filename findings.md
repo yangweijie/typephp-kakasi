@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F478）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F479）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3743,8 +3743,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | dependentSchemas：其他子 schema 体 | **显式 400** | 同上 |
 | dependencies：数组形式 / `{"required":[…]}` 对象形式 | **支持**（同 dependentRequired / dependentSchemas 的判定） | `deps_arr`/`deps_obj`（F447） |
 | dependencies：其他对象体 | **显式 400** | `deps_bad`/`deps_other`（F447） |
-| not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`，或**非字符串标量 const/enum**（`{"const":5}` / `{"enum":[1,2,3]}`，扁平全字符串） | **支持**（构造满足——发射值是字符串，永不等于非字符串常量；值路由保留，根级 not 块不 disqualify 生成器） | `not_type`/`not_route`/`nt_const_num`/`nt_enum_num`/`nt_route`（F448/F474） |
-| not：字符串常量/混合枚举成员/pattern/对象数组常量 / 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`/`nt_const_str`/`nt_enum_mixed`（F448/F474） |
+| not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`、**非字符串标量 const/enum**（`{"const":5}` / `{"enum":[1,2,3]}`）、或**含字符集外字符的无转义字符串 const/enum**（如 `"Paris!"`、`["a!","b@"]`）（扁平全字符串） | **支持**（构造满足——发射值是字符集内字符串，永不等于非字符串常量或含外字符的串；根级 not 块不 disqualify 生成器/扁平枚举扫描） | `not_type`/`not_route`/`nt_const_num`/`nt_enum_num`/`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`/`not_const_bang_served`（F448/F474/F479） |
+| not：**全字符集**字符串常量/存在可命中的枚举成员/pattern/对象数组常量 / 含转义成员 / 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`/`nt_const_str`/`nt_enum_miss`/`nt_escaped`（F448/F474/F479） |
 | contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
 | contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern） | **支持**（每元素皆从 items 值表发射、数组 ≥1 元素 ⇒ contains 构造满足；判定复用 F457 leaf_guarantees） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`contains_const_served`（F472） |
 | contains：类型不匹配 / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`（F449/F472） |
@@ -3771,7 +3771,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**自由字符串/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 的无界/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的**全字符集**字符串常量/可命中枚举成员/pattern 值级形态（含外字符的无转义 const/enum 自 F479 支持，非字符串标量自 F474）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**自由字符串/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 的无界/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4512,3 +4512,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f478.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.482×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f478.log`、`engine/api_smoke_f478.log`、`engine/throughput_f478.log`、改前证据 `engine/schema_bounds_f478pre.log`）。
 **记法**：**"有界"在 fold 里应拆成"下侧约束 + 上侧约束"两个独立步骤**——min 只决定起点、max 只做上界校验；把"必须双侧"当成前提会漏掉单侧（F469 缺口）。0 是 grid 上每个 M 的倍数，是 max-only 的天然合法解（子集论证），负数侧则需要 `floor` 而非 `intdiv` 截断。
 **顺位**：其余值级子集（contains/not 字符串形态、patternProperties 自由字符串）→ 分片多卡 / FR-05（本机不可验证）。
+
+## F479：`not` 的**含字符集外字符的无转义字符串 const/enum**（构造满足）＋修扁平枚举误读 not 块
+**核心思路**：flat all-string 写入器用 `api_schema_charset()`（`a-zA-Z0-9 .,'-`）。字符串常量的**无转义**字面若含至少一个字符集外字符（如 `!`/`@`），任何发射值都不可能等于它 ⇒ `not:{const:C}` 构造满足；enum 当**每个**成员都是裸标量或含外字符的无转义串时同理。
+**改前证据（`engine/schema_count_f479pre.log`，F478 二进制）**：`not:{const:"Paris!"}` → **400**；`not:{enum:["a!","b@"]}` → **400**（F474 只认非字符串标量）；`not:{enum:["a!","paris"]}` 对照 400 正确。
+**实现（两 helper ＋两处路由修复）**：①`api_charset_covers($s)`；②`api_enum_all_unequalled($inner)`（手写字符扫描：引号串→无转义且含外字符；裸 token→必须是标量字面量）；③`api_schema_not_ok` 在 F474 分支后接入两者；④**关键修复**：扁平枚举路由（`$enumFlat` 分支）在整个 body 上扫 `"enum"`，把根级 `not` 块里的枚举当值域**直接发裸值**——活体探测到 `not:{enum:["a!","b@"]}` 返回 200 **`"a!"`**（既违反 not 又连对象形状都不对，F463/F474 静默违约同类）。抽 `api_schema_strip_root_not($schema)`（根级判定，属性名恰为 not 不剥），在 `api_response_schema_string_props`（替换 F474 内联块）与扁平枚举扫描两处统一剥离。
+**门**：`nt_const_bang=[]`/`nt_enum_bang=[]`/`nt_enum_scalars=[]`（服务）、`nt_enum_miss=[not]`/`nt_escaped=[not]`（可命中成员/含转义仍拒）；F474 的 `nt_const_num`/`nt_enum_num`/`nt_route` 不回退。
+**活体**：`not_const_bang_served`/`not_enum_bang_served` **200 `{"cities":"…"}`**、`not_enum_charset_miss_refuse` **400**；`not_const_str_refuse`/`not_type`/`not_pattern` 不回退。
+**过程（编译器栈限——重要环境前提）**：首版加入 helper+const+enum+门后 tpc 报 `Maximum call stack size ... Infinite recursion?`（php-parser 类型推断，`D:\a\typephp\...Variable.php`）。二分确认：helper 单独、helper+const 均可构建，**加上门/枚举块后**越过栈限——主文件的巨型 `&&` 断言链在 470+ 增量后已贴近默认栈。修复＝在 tpc 自带 `C:\git\php\tpc_v0.9.5_windows_x64\php.ini` 追加 `zend.max_allowed_stack_size = 64M`（备份 `php.ini.bak-f479`）；构建恢复。**这是 repo 外的环境前提，重建/换机必须保留该 ini 行**（日志 `build_f479.log`/`b`…`h` 留证；`f479_main.patch` 为临时补丁已删）。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f479.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.570×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f479.log`、`engine/api_smoke_f479.log`、`engine/throughput_f479.log`、改前证据 `engine/schema_count_f479pre.log`）。
+**记法**：**"这个值不可能被发出"要核对写入器真正使用的字符集**——F448 只说"值是字符串"，F479 才有 charset 证据；且**任何扫描值域关键字的路由都要剥离根级 not**（string_props 与扁平枚举是两条独立扫描，F474 只修了前者，enum 形态随即从另一条漏出）。**编译器的栈限也是门禁的一部分**：源文件增长到一定规模后，默认 PHP 栈会让 tpc 在转换阶段崩溃，需提高 `zend.max_allowed_stack_size`。
+**顺位**：patternProperties 自由字符串值级（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。

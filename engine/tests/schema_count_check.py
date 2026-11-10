@@ -310,6 +310,21 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "not": {"const": "paris"}},
      lambda code, txt: code == 400 and "not" in txt, ask),
+    # F479: a string const/enum member carrying a character OUTSIDE the emission charset (here "!"
+    # or "@") can never be produced by the flat string writer, so not:{const}/{enum} holds when
+    # every member is unequalled; a member the writer COULD emit ("paris") keeps the refusal.
+    ("not_const_bang_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"const": "Paris!"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), str), ask),
+    ("not_enum_bang_served", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"enum": ["a!", "b@"]}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), str), ask),
+    ("not_enum_charset_miss_refuse", "Name some French cities.",
+     {"type": "object", "properties": {"cities": {"type": "string"}},
+      "not": {"enum": ["a!", "paris"]}},
+     lambda code, txt: code == 400 and "not" in txt, ask),
     ("propertynames_refuse", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "string"}},
       "propertyNames": {"pattern": "^x"}},

@@ -1942,3 +1942,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`fm_minonly`/`fm_maxpos`/`fm_maxneg`＋三文本；双侧与 unsat/intleaf 不回退。
 - **活体**：1.2 / 0.0 / -1.2 200；对照不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.482×**、哨兵 **0**。
+
+## ▶ 状态（2026-11-10 20:25 构建）——F479 `not` 含字符集外字符的字符串 const/enum＋修扁平枚举误读 not
+- **改前证据**：`not:{const:"Paris!"}` / `not:{enum:["a!","b@"]}` → 400；可命中成员对照 400（`schema_count_f479pre.log`，F478 二进制）。
+- **实现**：`api_charset_covers`＋`api_enum_all_unequalled`（手写扫描）接进 not_ok；新增 `api_schema_strip_root_not` 并在 string_props 与**扁平枚举扫描**两处剥离（活体探测到未修前 `not:{enum}` 返回裸值 `"a!"`＝静默违约）。
+- **环境前提**：tpc 转换器在巨型断言链下越过默认 PHP 栈 ⇒ 在 `tpc_v0.9.5_windows_x64/php.ini` 追加 `zend.max_allowed_stack_size = 64M`（备份 php.ini.bak-f479），构建恢复。
+- **门**：`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`=[]、`nt_enum_miss`/`nt_escaped`=[not]。
+- **活体**：const/enum 外字符 200 `{"cities":"…"}`、可命中成员 400；对照不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.570×**、哨兵 **0**。

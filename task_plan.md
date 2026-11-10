@@ -1532,6 +1532,23 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F478 → 其余值级子集（contains/not 字符串形态、patternProperties 自由字符串）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F479 计划（`not` 的**字符串常量/枚举成员字符集排除**形式：含发射字符集外字符 ⇒ 永不被发出）
+**F478 已完成**：小数 multipleOf 单侧界。
+**核心思路**：flat all-string 写入器的字符集是 `api_schema_charset()`（`a-zA-Z0-9 .,'-`，路由 `api_string_value_multi` 确用）。若字符串常量的（无转义）字面含**至少一个字符集外字符**，任何发射值都不可能等于它 ⇒ `not:{const:C}` 构造满足；枚举同理——**每个**成员要么是非字符串标量（F474 已证不等），要么是含外字符的字符串。**只判无转义字面**（`\` 转义成员解码值可能与原文本不同，保守拒绝）。
+**支持边界**：flat all-string 形态；const 为无转义字符串且含外字符；enum 为"非字符串标量 ∪ 含外字符字符串"混合；全字符集的字符串常量/成员（如 "paris"）、空串、含转义成员、对象/数组成员、pattern 仍拒。
+**改前状态（读码判定，执行前活体取证）**：`not:{const:"Paris!"}`（`!` 不在字符集）→ F474 只认非字符串标量 ⇒ **400 "not"**（过度拒绝）；`not:{enum:["a!","b@"]}` 同；`not:{const:"paris"}` 对照 400 正确（可被发出）。
+**实现（not_ok 一处＋一 helper）**：新 `api_charset_covers($s)`（每字符 ∈ `api_schema_charset()`）；`api_schema_not_ok` 在 F474 分支后加：string const 正则（无 `\`）且 `api_charset_covers==0 ⇒ 1`；enum 安全 inner 正则（仅引号串/裸标量）逐成员判"裸标量 或 无转义且含外字符"全过 ⇒ 1；其余 0。
+**门（SCHEMA-STRUCT 新字段）**：`nt_const_bang=[]`（`Paris!`）、`nt_enum_bang=[]`（`["a!","b@"]`）、`nt_enum_scalars=[]`（`[1,"a!"]`）、`nt_const_charset=[not]`（`paris` 对照）、`nt_enum_miss=[not]`（`["a!","paris"]`）、`nt_escaped=[not]`（`\u0061` 含转义 ⇒ 拒）；F474 的 `nt_const_num`/`nt_enum_num` 不回退。
+**活体**（`schema_count_check.py`）：`not_const_bang_served`（200 字符串值）、`not_enum_bang_served`（200）、`not_enum_charset_miss_refuse`（400）；not_type/not_pattern/not_const_str 不回退。
+**验收**：①服务形态值必为字符串且必不等于常量/枚举（字符集论证）②全字符集/混合可命中/转义仍拒 ③F448/F474 not 门不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F479 已完成**：`api_charset_covers`＋`api_enum_all_unequalled`（手写字符扫描）接入 `api_schema_not_ok`；**并修**扁平枚举路由把根级 `not` 块内枚举当值域发裸值的静默违约——抽 `api_schema_strip_root_not`，在 `api_response_schema_string_props` 与扁平枚举扫描两处统一剥离。门 `nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`=[]、`nt_enum_miss`/`nt_escaped`=[not]。
+**改前证据（`engine/schema_count_f479pre.log`，F478 二进制）**：`not:{const:"Paris!"}`、`not:{enum:["a!","b@"]}` → 400；可命中成员对照 400。
+**过程（环境前提）**：加入整块后 tpc 报 PHP 栈溢出（类型推断）；二分定位到主文件巨型断言链贴近默认栈。修复＝tpc php.ini 追加 `zend.max_allowed_stack_size = 64M`（repo 外，备份 php.ini.bak-f479）——**重建/换机须保留**。
+**活体**：`not_const_bang_served`/`not_enum_bang_served` 200 `{"cities":"…"}`、`not_enum_charset_miss_refuse` 400；对照不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.570×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f479.log`、`engine/schema_*_f479.log`、`engine/api_smoke_f479.log`、`engine/throughput_f479.log`）。
+**顺位**：F479 → patternProperties 自由字符串值级（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
