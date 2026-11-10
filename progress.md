@@ -1865,3 +1865,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`im_excl`/`im_excl_bool`/`im_excl_num`＝`nums|3|3|3`、`im_excl_unsat`/`im_excl_frac`＝``、`im_excl_kw=[items]`、`im_excl_text=[{"nums":[3]}]`。
 - **活体**：三形态 200 `[3,3,3,3]`；unsat/小数 M 400；F465/F466 系不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**、哨兵 **0**。
+
+## ▶ 状态（F468，2026-11-10 08:29 构建）——integer items 的 exclusive 界（无 multipleOf）从点名 400 变**同一 shape 判定发射**
+- **改前证据**：integer items `exclusiveMinimum:0,max9` → 400、布尔形 400；number 叶同形无 mult → 200 `[3,4,5,6]`（F462 已服务，两路不一致）；unsat 对照 400（`schema_bounds_f468pre.log`，F467 二进制）。
+- **实现**：`api_schema_array_item_bounds` 改为键名白名单＋wrap→shape（同 F467 手法；mult 段必须 0，multipleOf 归 F465）；删手写 lo>hi；路由零改动。
+- **门**：`ib_excl=[nums|1|9]`、`ib_excl_bool=[nums|1|-1]`、`ib_excl_unsat=[]`、`ib_excl_kw=[items]`、`ib_excl_text`（1..9＋json_ok）。
+- **活体**：两形态 200 `[1,2,3,4]`、unsat 400、number 对照 200；F460–F467 系不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.561×**、哨兵 **0**。

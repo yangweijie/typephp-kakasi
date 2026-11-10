@@ -388,6 +388,34 @@ cases = [
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 9, "multipleOf": 0.3}}}},
      lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+    # F468: exclusive bounds on integer items WITHOUT a multipleOf - the same wrap-to-shape
+    # judgement as the single-property route, so the numeric exclusive and draft-4 boolean
+    # spellings are honoured element by element.
+    ("items_excl_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 9}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and 0 < x <= 9 for x in val_of(txt, "nums"))),
+    ("items_excl_bool_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 0, "exclusiveMinimum": True, "maximum": 9}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and 0 < x <= 9 for x in val_of(txt, "nums"))),
+    # No integer is both > 2 and <= 2: unsatisfiable, stays refused.
+    ("items_excl_unsat_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "exclusiveMinimum": 2, "maximum": 2}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+    # Control: the number leaf already took this shape through the F462 detector - pinned here so
+    # the two item routes are read together.
+    ("items_num_excl_nomult_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "exclusiveMinimum": 2.5, "maximum": 9.5}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and 2.5 < x <= 9.5 for x in val_of(txt, "nums"))),
 ]
 
 bad = 0

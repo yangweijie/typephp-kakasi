@@ -3758,7 +3758,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
 | 数组项的 schema 带值约束：**有限字符串枚举**（`items:{"type":"string","enum":[…]}`） | **支持**（逐元素从枚举候选发射；每元素必属枚举） | `ae_plan`/`ae_text`/`ae_route`/`items_enum_ok`（F459） |
-| 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`items_bounded_ok`（F460） |
+| 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y；F468 起 exclusive 数值/布尔拼写同样支持，键序任意） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；exclusive 经与单属性同一 shape 判定转相邻整数界；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`ib_excl`/`ib_excl_bool`/`ib_excl_unsat`/`items_excl_ok`（F460/F468） |
 | 数组项的 schema 带值约束：**单侧整数界**（`minimum:X` 或 `maximum:Y`，缺侧＝哨兵 -1，含**负上界**与**负下界**） | **支持**（逐元素走位；子集论证保证缺侧；单侧负上界 F463＝幅值从 \|hi\| 起无上界；单侧负下界 F464＝幅值 `[1,\|lo\|]`，值 ∈ [lo,-1]；`minimum:-1` 走幅值 [1,1] 出 -1 合法） | `ib_one`/`ib_max`/`ib_negmax`/`ib_negmin`/`items_one_sided_min_ok`（F461/F463/F464） |
 | 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤5 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`（F462） |
 | 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔，M 为整数） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型＝整数倍数子集；unsat/无界 >999999999/小数 M/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`items_mult_excl_ok`（F465/F466/F467） |
@@ -3768,7 +3768,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern/小数 multipleOf/items 上 exclusive **无 multipleOf** 的整数界形态（现为显式 400；整数·number items 的界·单侧·负上下界·整数 multipleOf 含 exclusive 组合自 F460–F467 支持）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern/小数 multipleOf（现为显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合自 F460–F468 支持）；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4395,3 +4395,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f467.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.523×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_bounds_f467.log`、`engine/schema_required_f467.log`、`engine/schema_count_f467.log`、`engine/schema_pattern_f467.log`、`engine/api_smoke_f467.log`、`engine/throughput_f467.log`、改前证据 `engine/schema_bounds_f467pre.log`）。
 **记法**：**检测器只判定"能否认领"（键集/类型/乘数），值的判定只留一份**——F465 的顺序固定正则把"键序 + 只认 inclusive"也编码进了认领条件，于是单属性路由支持的 exclusive 形态在 items 层点名 400（两条路漂移）。键名白名单比"直接把块喂 shape"更保守：shape 会忽略 `format`/`description` 等不约束值的键，而白名单保证"带其它值约束键的形状仍显式 400"（`im_excl_kw` 钉住）。
 **顺位**：items 上 exclusive **无 multipleOf** 的整数界（同根：F460 检测器只认 inclusive）→ 小数 multipleOf → 分片多卡 / FR-05（本机不可验证）。
+
+## F468：integer items 的 exclusive 界（无 multipleOf）从"点名 400"变**同一 shape 判定发射**
+**改前证据（`engine/schema_bounds_f468pre.log`，F467 二进制）**：integer items `{"type":"integer","exclusiveMinimum":0,"maximum":9}` → **400**（F460 检测器只认 inclusive 数值界；F458 关键字层同认）；布尔形（`minimum:0`＋`exclusiveMinimum:true`）→ **400**；unsat（excl2/max2）对照 400 正确；number 叶同形无 multipleOf → **200 `[3,4,5,6]`**（F462 检测器本就 wrap→shape，早已服务——两条 items 路不一致，F464 同款取证）。
+**实现（检测器一处，路由零改动）**：`api_schema_array_item_bounds` 与 F467 同手法改为"只钉表面"——键名白名单（`type/minimum/maximum/exclusiveMinimum/exclusiveMaximum`，含 `multipleOf` 或其它约束键即返 ""，multipleOf 形态归 F465 检测器）、`type` 必须 integer、四界键全不在⇒裸类型让位普通写入器；否则 wrap→`api_schema_number_bounded_shape`，要求 4 段且 mult 段为 0，取 `lo|hi`。F463/F464 的负单侧与哨兵、F422/F423/F437 的 exclusive 转换、空区间/unsat 全部由同一判定拥有，删手写 `lo>hi` 比较。
+**门**：`ib_excl=[nums|1|9]`、`ib_excl_bool=[nums|1|-1]`、`ib_excl_unsat=[]`、`ib_excl_kw=[items]`、`ib_excl_text=[{"nums":[1]}]`（值 1..9 且 json_ok）。
+**活体**：`items_excl_ok`/`items_excl_bool_ok` **200 `[1,2,3,4]`**（每元素 1..9）、`items_excl_unsat_refuse` **400**、`items_num_excl_nomult_ok` **200 `[3,4,5,6]`**（F462 对照）；F460/F461/F463/F464 与 F467 的界/multipleOf 例不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f468.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.561×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f468.log`、`engine/api_smoke_f468.log`、`engine/throughput_f468.log`、改前证据 `engine/schema_bounds_f468pre.log`）。
+**记法**：**"同一形状两条路各拒各的"要靠对照用例暴露**——number 叶走 F462（wrap→shape）早已服务 exclusive，integer 叶走 F460（固定正则）却 400；把两条路并排放进同一个 harness（`items_num_excl_nomult_ok` 对照）才让不一致现形。检测器表面化（F467/F468 两连）之后，整数/number 两条 items 路与单属性路由**共享同一份界判定**，exclusive/布尔/键序/哨兵/unsat 不再各自漂移。
+**顺位**：小数 multipleOf（真小数倍数机制）→ 分片多卡 / FR-05（本机不可验证）。

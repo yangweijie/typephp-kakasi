@@ -967,11 +967,13 @@ function api_response_schema_array_enum(string $body): string
 }
 
 // F460/F461: "prop|lo|hi" for a single array property whose `items` is a bounded integer: both
-// inclusive bounds, or one side missing (the absent side is the -1 sentinel the bounded fill
-// already understands, so the element writer needs no second encoding). A one-sided NEGATIVE
-// maximum stays refused (the sentinel collides with it and the one-sided magnitude walk is not
-// wired), minimum:-1 is refused the same way, and a bare type is not claimed here - the plain
-// array writer serves that form.
+// bounds, or one side missing (the absent side is the -1 sentinel the bounded fill already
+// understands, so the element writer needs no second encoding). F463/F464 added the one-sided
+// negative forms. F468: the bounds are judged by the SAME shape helper the single-property route
+// uses - the items block is wrapped and fed to it, so inclusive, exclusive numeric and draft-4
+// boolean spellings in any key order land on one adjacent-integer/sentinel judgement; `multipleOf`
+// and every other constraint key are not this writer's surface (the multiple form has its own
+// detector). A bare type is not claimed here - the plain array writer serves that form.
 function api_schema_array_item_bounds(string $schema): string
 {
     if ($schema == "") {
@@ -1027,31 +1029,40 @@ function api_schema_array_item_bounds(string $schema): string
     if ($isub == "") {
         return "";
     }
-    // F461: either or both sides, natural order - the absent side rides the -1 sentinel the
-    // bounded fill already understands, so the element writer needs no second encoding.
-    // F463: a one-sided NEGATIVE maximum is claimed too - the element writer's one-sided
-    // magnitude walk (dash, then |hi| upward unbounded) honours "value <= hi".
-    // F464: a one-sided NEGATIVE minimum is claimed as well - the same both-negative branch
-    // walks the magnitude in [1, |lo|] behind the dash, so the values land in [lo, -1], all
-    // >= lo (the subset argument; the absent max side is free). minimum:-1 rides the same
-    // walk (magnitude [1,1] -> -1 >= -1), so the -1 sentinel collision is legal here too.
-    $mm = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"integer"'
-        . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
-        . '(?:\s*,\s*"maximum"\s*:\s*(-?[0-9]+))?\s*\}$/', $isub, $mm) != 1) {
+    // F468: this function only pins the SURFACE - one integer items leaf carrying bounds and no
+    // other value-constraint key. Key order does not matter; the bounds are judged below by the
+    // shared shape helper, which owns the -1 sentinel, the one-sided negative walks (F463/F464),
+    // the exclusive-to-adjacent conversion (F422/F423/F437) and the unsatisfiable interval.
+    $ks = [];
+    if (preg_match_all('/"([^"]+)"\s*:/', $isub, $ks) < 1) {
         return "";
     }
-    $loSet = isset($mm[1]) && $mm[1] !== "";
-    $hiSet = isset($mm[2]) && $mm[2] !== "";
-    if (!$loSet && !$hiSet) {
+    foreach ($ks[1] as $k) {
+        if ($k != "type" && $k != "minimum" && $k != "maximum"
+            && $k != "exclusiveMinimum" && $k != "exclusiveMaximum") {
+            return "";
+        }
+    }
+    if (preg_match('/"type"\s*:\s*"integer"/', $isub) != 1) {
+        return "";
+    }
+    $bounded = strpos($isub, "\"minimum\"") !== false
+        || strpos($isub, "\"maximum\"") !== false
+        || strpos($isub, "\"exclusiveMinimum\"") !== false
+        || strpos($isub, "\"exclusiveMaximum\"") !== false;
+    if (!$bounded) {
         return "";                 // bare type - the plain array writer serves that form
     }
-    $lo = $loSet ? (int) $mm[1] : -1;
-    $hi = $hiSet ? (int) $mm[2] : -1;
-    if ($loSet && $hiSet && $lo > $hi) {
-        return "";                 // unsatisfiable
+    $wrap = '{"properties":{"_item":' . $isub . '}}';
+    $shape = api_schema_number_bounded_shape($wrap);
+    if ($shape == "") {
+        return "";
     }
-    return $lkv[0] . "|" . $lo . "|" . $hi;
+    $seg = explode("|", $shape);
+    if (count($seg) != 4 || $seg[3] != "0") {
+        return "";
+    }
+    return $lkv[0] . "|" . $seg[1] . "|" . $seg[2];
 }
 
 function api_response_schema_array_item_bounds(string $body): string
@@ -17632,6 +17643,25 @@ function main(): void
         $imXText = $imXText . gguf_token_str((int) $imXParts[$i]);
     }
     $imXText = str_replace("Ġ", " ", $imXText);
+    // F468: exclusive bounds on integer items without a multipleOf - the bounds detector wraps the
+    // items block and asks the same shape judgement the single-property route uses. The numeric
+    // exclusive and draft-4 boolean spellings are served; an unsatisfiable interval and an extra
+    // constraint key (`format`) keep their refusals.
+    $ibExcl = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9}}}}}}');
+    $ibExclBool = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":0,"exclusiveMinimum":true}}}}}}');
+    $ibExclUnsat = api_response_schema_array_item_bounds('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":2,"maximum":2}}}}}}');
+    $ibExclKw = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9,"format":"int32"}}}}');
+    $ibXIds = tok_chat("user", "Give the numbers.") . "," . tok_chat_open("assistant");
+    $ibXBase = count(explode(",", $ibXIds));
+    $ibXOut = api_array_bounded_int_value($ibXIds, "nums", 1, 9, 1, 0);
+    $ibXParts = explode(",", $ibXOut);
+    $ibXText = "";
+    for ($i = $ibXBase; $i < count($ibXParts); $i++) {
+        $ibXText = $ibXText . gguf_token_str((int) $ibXParts[$i]);
+    }
+    $ibXText = str_replace("Ġ", " ", $ibXText);
+    $ibXMatch = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $ibXText, $ibXM) == 1;
+    $ibXVal = $ibXMatch == 1 ? (int) $ibXM[1] : 100000;
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17701,6 +17731,9 @@ function main(): void
         . " im_excl_num=[" . $imExclNum . "] im_excl_unsat=[" . $imExclUnsat
         . "] im_excl_frac=[" . $imExclFrac . "] im_excl_kw=[" . $imExclKw . "]"
         . " im_excl_text=[" . $imXText . "]"
+        . " ib_excl=[" . $ibExcl . "] ib_excl_bool=[" . $ibExclBool . "]"
+        . " ib_excl_unsat=[" . $ibExclUnsat . "] ib_excl_kw=[" . $ibExclKw . "]"
+        . " ib_excl_text=[" . $ibXText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17764,6 +17797,9 @@ function main(): void
         && $imExclNum == "nums|3|3|3"
         && $imExclUnsat == "" && $imExclFrac == "" && $imExclKw == "items"
         && $imXText == '{"nums":[3]}' && api_json_ok($imXText) == 1
+        && $ibExcl == "nums|1|9" && $ibExclBool == "nums|1|-1"
+        && $ibExclUnsat == "" && $ibExclKw == "items"
+        && $ibXMatch == 1 && $ibXVal >= 1 && $ibXVal <= 9 && api_json_ok($ibXText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

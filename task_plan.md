@@ -1352,6 +1352,21 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F467 → items exclusive **无 multipleOf** 的整数形态（同根：F460 检测器只认 inclusive）→ 小数 multipleOf → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F468 计划（integer items 的 exclusive 界、无 multipleOf：F460 检测器同款 wrap→shape）
+**F467 已完成**：items 的 multipleOf＋exclusive。
+**核心思路**：F460 的 `api_schema_array_item_bounds` 也是"顺序固定、只认 inclusive 数值界"的正则，exclusive 形式落到结构层点名 400；而单属性 integer 叶的 exclusive 早已服务（F422/F423/F437）。与 F467 同根同手法：检测器改为键名白名单 + wrap→`api_schema_number_bounded_shape`，取 `lo|hi`，`mult` 段必须为 0（带 multipleOf 的形态归 F465 检测器）。
+**改前状态（读码判定，执行前活体取证）**：integer items `{"type":"integer","exclusiveMinimum":0,"maximum":9}` → F460 正则不匹配、F462 只认 number 叶、F465 要求 multipleOf ⇒ 结构层 **400 "items"**（过度拒绝，合法值 1..9）；布尔形同；unsat（excl2,max2）应保持 400。
+**实现（检测器一处，路由零改动）**：`api_schema_array_item_bounds` 解析出 `$isub` 后：①键名白名单 `type/minimum/maximum/exclusiveMinimum/exclusiveMaximum`（含 `multipleOf` 或其它值约束键 ⇒ 返 ""，让位/拒绝）；②`type` 必须 `integer`；③四个界键全不在 ⇒ 返 ""（裸类型由普通数组写入器服务）；④wrap→shape，要求 4 段且 `seg[3]=="0"`，返回 `prop|seg[1]|seg[2]`。F463/F464 的负单侧与哨兵由 shape 原样给出（`max:-3`→`-1|-3`、`min:-5`→`-5|-1`），不再手写比较。
+**门（SCHEMA-STRUCT 新字段）**：`ib_excl`＝`nums|1|9`、`ib_excl_bool`＝`nums|1|-1`（`minimum:0`＋`exclusiveMinimum:true`）、`ib_excl_unsat`＝``、`ib_excl_kw`＝`[items]`（items 带 `format`）；exclusive 写入器文本断言（值 1..9 且 json_ok）。
+**活体**（`schema_bounds_check.py`）：`items_excl_ok`（excl0/max9 → 200 每元素 1..9）、`items_excl_bool_ok`（布尔形 → 200 每元素 1..9）、`items_excl_unsat_refuse`（400）、`items_num_excl_nomult_ok`（number 叶 excl2.5/max9.5 无 multipleOf → 200，F462 已服务的对照）；F460/F461/F463/F464 与 F467 的界/multipleOf 例不回退。
+**验收**：①exclusive 元素值在界内（门＋活体逐元素）②unsat/带其它约束键仍拒 ③负单侧、单侧、双侧 inclusive 门与活体不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F468 已完成**：`api_schema_array_item_bounds` 改键名白名单（type/minimum/maximum/exclusiveMinimum/exclusiveMaximum；multipleOf 让位 F465）＋wrap→shape 取 `lo|hi`（mult 段必须 0），删手写 lo>hi；门新 `ib_excl=[nums|1|9]`/`ib_excl_bool=[nums|1|-1]`/`ib_excl_unsat=[]`/`ib_excl_kw=[items]`/`ib_excl_text`（1..9）。
+**改前证据（`engine/schema_bounds_f468pre.log`，F467 二进制）**：integer items excl0/max9 → 400、布尔形 400；number 叶同形无 mult → 200 `[3,4,5,6]`（F462 已服务，两路不一致）；unsat 对照 400 正确。
+**活体**：`items_excl_ok`/`items_excl_bool_ok` 200 `[1,2,3,4]`、unsat 400、number 对照 200；F460–F467 系不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.561×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f468.log`、`engine/schema_*_f468.log`、`engine/api_smoke_f468.log`、`engine/throughput_f468.log`）。
+**顺位**：F468 → 小数 multipleOf（真小数倍数机制）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
