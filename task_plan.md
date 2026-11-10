@@ -1483,6 +1483,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F475 → patternProperties 非枚举种类、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F476 计划（patternProperties 的**数值 enum/const kind（`en:`）**：bare type / enum 超集 / const 相等）
+**F475 已完成**：if bare-required。
+**核心思路（F457 的数值版）**：plan 对数值 enum/const 属性编码为 `en:v1~v2`（见 `api_top_leaves`），但 `api_schema_kind_is_type`/`api_schema_leaf_guarantees` 只认 `e:`（字符串枚举）、`s/i/n/b`，于是匹配键为数值枚举属性时：bare `{"type":"integer"}`、`{"enum":[超集]}`、`{"const":X}` 全部**过度拒绝**。F476 给 `en:` 加判定：①type number 恒真；type integer 当且仅当每成员都是整数字面量；②const：每成员数值等于该常量；③enum：每成员数值 ∈ 允许集。**数值比较用 (float)，成员必须是未加引号的数字字面量**（带引号的 "1" 在 JSON 里不等于数字 1，遇引号一律不判）。
+**支持边界**：单 patternProperties 条目（既有约束）；匹配键的 kind 为 `en:`；子 schema 为 bare integer/number、数值 const、全数值 enum。pattern（字符串）对数值实例按 JSON Schema 是 vacuous，但本判定保守起见仍拒（记录在案）；properties/嵌套等更丰富形态仍拒。
+**改前状态（读码判定，执行前活体取证）**：properties `{count:{"type":"integer","enum":[1,2,3]}}` + `patternProperties:{"^c":{"type":"integer"}}` → kind_is_type("en:1~2~3","integer")=0 ⇒ **400 "patternProperties"**；`{"enum":[1,2,3,4]}`/`{"const":1}`（单值）同；对照 `{"enum":[5,6]}` 应保持 400。
+**实现（两 helpers）**：①`api_schema_kind_is_type` 顶部加 `en:` 分支（number 恒 1；integer 需每成员 `^-?[0-9]+$`）；②`api_schema_leaf_guarantees` 加 `en:` 分支（裸数值 const／全裸数值 enum；带引号成员返 0）。patternProperties 判定本身零改动。
+**门（SCHEMA-STRUCT 新字段）**：`pp_num_type=[]`、`pp_num_enum=[]`、`pp_num_const=[]`（单值）、`pp_num_miss=[patternProperties]`、`pp_num_mixed=[patternProperties]`（const 1 但枚举含 2）；既有 `pp_enum`/`pp_pat` 字符串门不回退。
+**活体**（`schema_required_check.py`）：`patternprops_num_type_ok`（200 count∈{1,2,3}）、`patternprops_num_enum_ok`（超集枚举，200）、`patternprops_num_miss_refuse`（400）；既有 patternprops 系列不回退。
+**验收**：①服务形态的数值必属枚举/等于常量（门＋活体逐值）②超集不成立/混合枚举仍拒 ③F455/F457 字符串枚举门不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F476 已完成**：`api_schema_kind_is_type` 加 `en:`（number 恒真；integer 需每成员整数字面量；置于 "~" 剥离前），`api_schema_leaf_guarantees` 加 `en:`（裸数值 const 相等、全裸数值 enum 包含；带引号成员不判）；patternProperties 判定本体零改动。门 `pp_num_type`/`pp_num_enum`/`pp_num_const`=[]、`pp_num_miss`/`pp_num_mixed`/`pp_num_str`=[patternProperties]。
+**改前证据（`engine/schema_required_f476pre.log`，F475 二进制）**：数值枚举属性 + pp bare integer／enum 超集 → 400；不覆盖对照 400 正确。
+**活体**：`patternprops_num_type_ok`/`patternprops_num_enum_ok` 200 `{"count":1}`、`patternprops_num_miss_refuse` 400；字符串 patternprops 系列不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.483×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f476.log`、`engine/schema_*_f476.log`、`engine/api_smoke_f476.log`、`engine/throughput_f476.log`）。
+**顺位**：F476 → unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

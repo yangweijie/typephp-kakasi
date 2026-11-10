@@ -207,6 +207,20 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string", "enum": ["paris", "lyon"]}},
       "patternProperties": {"^c": {"enum": ["paris"]}}},
      lambda code, txt: code == 400 and "patternProperties" in txt),
+    # F476: a NUMERIC enum/const leaf kind exposes its values too - a bare integer/number, an enum
+    # superset and a matching const are provable; a superset that misses an enumerant keeps refused.
+    ("patternprops_num_type_ok", "Say the count.",
+     {"type": "object", "properties": {"count": {"type": "integer", "enum": [1, 2, 3]}},
+      "patternProperties": {"^c": {"type": "integer"}}},
+     lambda code, txt: code == 200 and json.loads(txt).get("count") in [1, 2, 3]),
+    ("patternprops_num_enum_ok", "Say the count.",
+     {"type": "object", "properties": {"count": {"type": "integer", "enum": [1, 2, 3]}},
+      "patternProperties": {"^c": {"enum": [1, 2, 3, 4]}}},
+     lambda code, txt: code == 200 and json.loads(txt).get("count") in [1, 2, 3]),
+    ("patternprops_num_miss_refuse", "Say the count.",
+     {"type": "object", "properties": {"count": {"type": "integer", "enum": [1, 2, 3]}},
+      "patternProperties": {"^c": {"enum": [5, 6]}}},
+     lambda code, txt: code == 400 and "patternProperties" in txt),
     # F458: items carrying a value constraint is outside every array writer - the before-probe
     # answered {"items":"paris"} / {"items":5}, which is not even the requested shape. Refused by
     # name; the plain-typed items control keeps being served as an array.

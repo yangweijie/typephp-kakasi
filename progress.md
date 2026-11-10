@@ -1921,3 +1921,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：`if_req_true/false/then=[]`、`if_req_miss=[if]`、`if_req_route=2`、`if_rich` `if`→``。
 - **活体**：if_req_true_ok/if_req_then_ok 200 双键、miss 400、`if_rich_refuse` 翻 `if_rich_served` 200；true/false 不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**。
+
+## ▶ 状态（F476，2026-11-10 19:05 构建）——patternProperties 的数值 enum/const kind（`en:`）从点名 400 变静态可证
+- **改前证据**：数值枚举属性 + pp bare integer/enum 超集 → 400；enum 不覆盖对照 400（`schema_required_f476pre.log`，F475 二进制）。
+- **实现**：`api_schema_kind_is_type` 加 `en:`（number 恒真、integer 需全整数字面量，置于 "~" 剥离前）；`leaf_guarantees` 加 `en:`（裸数值 const 相等／全裸数值 enum 包含；带引号成员不判）；判定本体零改动。
+- **门**：`pp_num_type`/`pp_num_enum`/`pp_num_const`=[]、`pp_num_miss`/`pp_num_mixed`/`pp_num_str`=[patternProperties]。
+- **活体**：两形态 200 `{"count":1}`、miss 400；字符串 patternprops 不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.483×**、哨兵 **0**。

@@ -9736,6 +9736,24 @@ function api_schema_structural_unsupported(string $schema): string
 // four array kinds (with or without element bounds in the kind).
 function api_schema_kind_is_type(string $kind, string $t): int
 {
+    // F476: a NUMERIC enum/const kind "en:v1~v2" exposes its values like e: does - every emitted
+    // value is one of them, so it is always a number and is an integer only when every member is an
+    // integer literal. (The generic "~" suffix strip below is for array bounds and would truncate
+    // this value list, so this branch looks at the raw kind.)
+    if (substr($kind, 0, 3) == "en:") {
+        if ($t == "number") {
+            return 1;
+        }
+        if ($t == "integer") {
+            foreach (explode("~", substr($kind, 3)) as $v) {
+                if (preg_match('/^-?[0-9]+$/', $v) != 1) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+        return 0;
+    }
     $k = $kind;
     $tk = strpos($k, "~");
     if ($tk !== false) {
@@ -9768,6 +9786,49 @@ function api_schema_kind_is_type(string $kind, string $t): int
 // not a guarantee this judgement can make.
 function api_schema_leaf_guarantees(string $kind, string $sub): int
 {
+    // F476: a NUMERIC enum/const kind guarantees a numeric const/enum by set inclusion, exactly like
+    // the string e: kind. Members must be BARE numeric literals - a quoted "1" is a string in JSON
+    // and a number instance does not equal it, so any quote in the subschema keeps the refusal.
+    if (substr($kind, 0, 3) == "en:") {
+        $vals = explode("~", substr($kind, 3));
+        $sc = '(?:-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)';
+        $pre = '(?:"type"\s*:\s*"(?:integer|number)"\s*,\s*)?';
+        $mc = [];
+        if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*(' . $sc . ')\s*\}$/', $sub, $mc) == 1) {
+            for ($i = 0; $i < count($vals); $i++) {
+                if ((float) $vals[$i] != (float) $mc[1]) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+        $me = [];
+        if (preg_match('/^\{\s*' . $pre . '"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $me) == 1
+            && strpos($me[1], "\"") === false) {
+            $allowed = api_list($me[1]);
+            if (count($allowed) < 1) {
+                return 0;
+            }
+            for ($j = 0; $j < count($allowed); $j++) {
+                if (preg_match('/^' . $sc . '$/', $allowed[$j]) != 1) {
+                    return 0;
+                }
+            }
+            for ($i = 0; $i < count($vals); $i++) {
+                $hit = 0;
+                for ($j = 0; $j < count($allowed); $j++) {
+                    if ((float) $vals[$i] == (float) $allowed[$j]) {
+                        $hit = 1;
+                    }
+                }
+                if ($hit != 1) {
+                    return 0;
+                }
+            }
+            return 1;
+        }
+        return 0;
+    }
     if (substr($kind, 0, 2) != "e:") {
         return 0;
     }
@@ -17773,6 +17834,15 @@ function main(): void
     $sfBO = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","prague"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
     $sfBP = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
     $sfBQ = api_schema_candidates('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"enum":["paris","lyon"]}}}');
+    // F476: a NUMERIC enum/const leaf kind (en:) guarantees a bare integer/number, an enum superset
+    // or a matching const; a quoted member in the subschema keeps the refusal (a number is not the
+    // string "1").
+    $ppNumType = api_schema_keywords_unsupported('{"properties":{"count":{"type":"integer","enum":[1,2,3]}},"patternProperties":{"^c":{"type":"integer"}}}');
+    $ppNumEnum = api_schema_keywords_unsupported('{"properties":{"count":{"type":"integer","enum":[1,2,3]}},"patternProperties":{"^c":{"enum":[1,2,3,4]}}}');
+    $ppNumConst = api_schema_keywords_unsupported('{"properties":{"count":{"type":"integer","enum":[1]}},"patternProperties":{"^c":{"const":1}}}');
+    $ppNumMiss = api_schema_keywords_unsupported('{"properties":{"count":{"type":"integer","enum":[1,2,3]}},"patternProperties":{"^c":{"enum":[5,6]}}}');
+    $ppNumMixed = api_schema_keywords_unsupported('{"properties":{"count":{"type":"integer","enum":[1,2]}},"patternProperties":{"^c":{"const":1}}}');
+    $ppNumStr = api_schema_keywords_unsupported('{"properties":{"count":{"type":"integer","enum":[1]}},"patternProperties":{"^c":{"const":"1"}}}');
     // F458: items carrying a value constraint is outside every array writer; the plain-type case is
     // the control that the ordinary array shape keeps being served.
     $sfCA = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}');
@@ -18138,6 +18208,9 @@ function main(): void
         . " pp_match_ok=[" . $sfBK . "]"
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
+        . " pp_num_type=[" . $ppNumType . "] pp_num_enum=[" . $ppNumEnum
+        . "] pp_num_const=[" . $ppNumConst . "] pp_num_miss=[" . $ppNumMiss
+        . "] pp_num_mixed=[" . $ppNumMixed . "] pp_num_str=[" . $ppNumStr . "]"
         . "] items_enum=[" . $sfCA . "] items_const=[" . $sfCB . "] items_pattern=[" . $sfCC
         . "] items_min=[" . $sfCD . "] items_plain=[" . $sfCE . "]"
         . " items_one=[" . $sfCI . "] ib_plan=[" . $ibPlan . "] ib_one=[" . $ibOne
@@ -18207,6 +18280,9 @@ function main(): void
         && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
+        && $ppNumType == "" && $ppNumEnum == "" && $ppNumConst == ""
+        && $ppNumMiss == "patternProperties" && $ppNumMixed == "patternProperties"
+        && $ppNumStr == "patternProperties"
         // F470 flipped items_const: a string-const items form is a one-value enum, claimed by the
         // enum-items detector now, so no keyword refusal (pattern items keeps the refusal).
         && $sfCA == "" && $sfCB == "" && $sfCC == "items"

@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F475）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F476）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3751,7 +3751,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / array↔数组种类） | **支持**（值由该种类写出器保证） | `pp_match_ok`（F455） |
 | patternProperties：匹配键为**有限字符串枚举**（`e:` 种类），子 schema 为 enum（包含关系）/ const（相等）/ pattern（逐枚举值匹配） | **支持**（枚举值集合已知 ⇒ 静态可证；值来自枚举） | `pp_enum`/`pp_pat`/`pp_enum_route`（F457） |
-| patternProperties：类型不匹配 / 枚举子集不成立 / pattern 未覆盖全部枚举值 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`/`pp_enum_sub`/`pp_pat_miss`（F451–F457） |
+| patternProperties：匹配键为**有限数值 enum/const**（`en:` 种类），子 schema 为裸 integer/number、数值 const（相等）或数值 enum（包含关系） | **支持**（数值集合已知 ⇒ 静态可证；带引号成员不判，数值实例 ≠ 字符串） | `pp_num_type`/`pp_num_enum`/`pp_num_const`/`patternprops_num_type_ok`（F476） |
+| patternProperties：类型不匹配 / 枚举子集不成立 / pattern 未覆盖全部枚举值 / 数值超集不成立·混合枚举·引号成员 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`/`pp_enum_sub`/`pp_pat_miss`/`pp_num_miss`/`pp_num_mixed`/`pp_num_str`（F451–F476） |
 | if/then/else：`if` 恰为单 `type`，或 **bare `required`**（按已证键集判真假）；生效分支缺省、恰为 `{"type":"object"}`，或 **bare `required` 且其键都在已证发出集**（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`/`if_req_true`/`if_req_false`/`if_req_then`/`if_req_route`（F452/F475） |
 | if/then/else：生效分支要求未发出键 / 条件或分支含 properties·嵌套·数值等更丰富形态 | **显式 400** | `if_req_miss`（F475）/ 旧 `if_rich` 已翻服务 |
 | unevaluatedProperties：键集可证明且全部键由根级 `properties` 求值 | **支持**（该关键字无可判对象，任意值/子 schema 均满足） | `uneval_props`/`uneval_props_schema`（F453） |
@@ -3770,7 +3771,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**自由字符串/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4480,3 +4481,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f475.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.532×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f475.log`、`engine/api_smoke_f475.log`、`engine/throughput_f475.log`、改前证据 `engine/schema_required_f475pre.log`）。
 **记法**：**条件约束的真值可以来自"已证键集"而非求值**——只要写入器保证实例恰有某键集，required/propertyNames/dependentRequired 这类键集谓词的条件与分支都能静态判定；这与 F472 的 subset、F474 的类型矛盾同属"构造满足"家族。
 **顺位**：patternProperties 非枚举种类、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+## F476：patternProperties 的**数值 enum/const kind（`en:`）**从点名 400 变静态可证
+**核心思路（F457 的数值版）**：plan 对数值 enum/const 属性编码为 `en:v1~v2`（`api_top_leaves`），但 `api_schema_kind_is_type`/`api_schema_leaf_guarantees` 只认 `e:` 与 `s/i/n/b`，匹配键为数值枚举属性时 bare type/enum 超集/const 全被过度拒绝。
+**改前证据（`engine/schema_required_f476pre.log`，F475 二进制）**：`{count:{"type":"integer","enum":[1,2,3]}}` + `patternProperties:{"^c":{"type":"integer"}}` → **400 "patternProperties"**；`{"enum":[1,2,3,4]}` 同；`{"enum":[5,6]}` 对照 400 正确。
+**实现（两 helpers，判定本体零改动）**：①`api_schema_kind_is_type` 顶部加 `en:` 分支（number 恒 1；integer 需每成员 `^-?[0-9]+$`；在通用 "~" 后缀剥离**之前**处理，否则值表被截断）；②`api_schema_leaf_guarantees` 加 `en:` 分支（裸数值 const 逐值相等；全裸数值 enum 逐值 ∈ 允许集；带引号成员返 0——数字实例 ≠ 字符串 "1"）。
+**门**：`pp_num_type=[]`/`pp_num_enum=[]`/`pp_num_const=[]`、`pp_num_miss=[patternProperties]`、`pp_num_mixed=[patternProperties]`（const 1 但枚举含 2）、`pp_num_str=[patternProperties]`（引号成员）；字符串 `pp_enum`/`pp_pat` 不回退。
+**活体**：`patternprops_num_type_ok`/`patternprops_num_enum_ok` **200 `{"count":1}`**、`patternprops_num_miss_refuse` **400**；patternprops 字符串系列不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f476.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.483×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f476.log`、`engine/api_smoke_f476.log`、`engine/throughput_f476.log`、改前证据 `engine/schema_required_f476pre.log`）。
+**记法**：**plan kind 前缀决定可证性**——`e:`/`en:` 暴露有限值集，可做集合包含/相等；`s/i/n/b` 只暴露类型；`p:` 只暴露段构造；新增一种值域编码（这里 `en:`）时，`kind_is_type` 与 `leaf_guarantees` **两处**都要跟上，否则同一 kind 在 bare-type 与值级判定下答案不一致（F455/F457 的字符串版正是这两处）。
+**顺位**：unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
