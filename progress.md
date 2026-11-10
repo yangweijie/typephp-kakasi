@@ -1994,3 +1994,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：顶层 `&&` 切 10 块（每块 25 项）→ `$structOk` 逐块判定；顺序/注释不变；一次性脚本已删。
 - **验证**：php -l 通过；build-check **BUILD_OK**（11 文件）；自检 **182/0**、SCHEMA-STRUCT PASS；四 harness PASS；哨兵 0。
 - **意义**：为后续功能增量恢复构建容量（F485 的 minContains:0 可排在下一轮）。
+
+## ▶ 收尾（2026-11-10 23:13，HEAD 83c12a0）——HEAD 全梯复核通过，交接下一步
+- **HEAD 认证**：F486 瘦身后 binary（经 `build-check.sh` 全量构建，BUILD_OK/11 文件）→ 自检 **182/0**、四 schema harness **PASS**、标准 live 门禁（`gate_live.sh f486b`）**smoke 115/0、par/fairness 0、scaling 1.459×、哨兵 0**；`check_gates.sh` **94/0**；`check_citations.sh` 仅报告未跟踪日志（正常）。
+- **下一步（明确交接）**：①在瘦身后的基线上重做 **F485：`contains` + `minContains:0`（无 `maxContains`）空判定**（两处早退：`api_schema_contains_ok`/`api_schema_minmax_contains_ok`；单门 `cont_min0`；活体 `contains_min0_served`/`contains_min0_max_refuse`）；②其余 `patternProperties`/`contains`/`not` 更丰富值级子集需 plan/写入器扩展；③`unevaluated*` 真判定需"写入器发未声明键"能力；④分片多卡 / FR-05 本机不可验证。
+- **工具链注意（换机/重建必读）**：tpc `php.ini` 已加 `zend.max_allowed_stack_size = 256M`（repo 外，建议保留）；构建一律 `bash scripts/build-check.sh <tag>`（整清 `build/gen/cache`，断言 `main.obj` mtime 前进）；tpc 可能静默中止转换而批处理仍报 Build successful，红线即停。
+- **状态**：本会话 F467–F486 全部提交（F485 为受阻记录、已回退）；工作树干净；项目整体仍未完成（见支持表"仍未实现"）。
