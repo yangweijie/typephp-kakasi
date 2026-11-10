@@ -972,14 +972,24 @@ function api_schema_array_enum(string $schema): string
     // F471: a string pattern whose spec the class/count stepper can honour. The spec is prefixed
     // with "~" so the writer tells it from an enum value list (an enum encoding never starts with ~:
     // its first value is non-empty and no value carries ~). The spec alphabet has no "|", so the
-    // route's explode("|") keeps it intact as the second field.
+    // route's explode("|") keeps it intact as the second field. F477: a no-class pattern that is a
+    // fully anchored plain-literal alternation is a finite set and is served as an enum instead.
     $mp = [];
     if (preg_match('/^\{\s*"type"\s*:\s*"string"\s*,\s*"pattern"\s*:\s*"([^"]*)"\s*\}$/', $isub, $mp) == 1) {
         $spec = api_schema_pattern_spec($mp[1]);
-        if ($spec == "") {
-            return "";
+        if ($spec != "") {
+            return $lkv[0] . "|~" . $spec;
         }
-        return $lkv[0] . "|~" . $spec;
+        // F477: a fully anchored plain-literal alternation is a FINITE set - every match is one of
+        // the literal members, so the enum-items writer serves it (plain enum encoding, no ~ prefix).
+        // Members are restricted to an alphabet with no regex metacharacter (a "." or "*" would make
+        // the literal text not its own match) and no spec separator; one outer paren pair is allowed
+        // for the common spelling. A single member is a pure-literal pattern (one-value enum).
+        $ma = [];
+        if (preg_match('/^\^\(?([A-Za-z0-9 _\-]+(?:\|[A-Za-z0-9 _\-]+)*)\)?\$$/', $mp[1], $ma) == 1) {
+            return $lkv[0] . "|" . str_replace("|", "~", $ma[1]);
+        }
+        return "";
     }
     return "";
 }
@@ -17848,6 +17858,8 @@ function main(): void
     $sfCA = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}');
     $sfCB = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}}}');
     $sfCC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris|lyon)$"}}}}');
+    // F477: the metacharacter pattern is not its own literal match and keeps the items refusal.
+    $sfITB = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^a.c$"}}}}');
     $sfCD = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":5,"maximum":9}}}}');
     $sfCE = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}}}');
     // F461: one-sided integer items are served too - the one-sided refusal field flips, and the
@@ -18170,6 +18182,21 @@ function main(): void
     $apText = str_replace("Ġ", " ", $apText);
     $apShape = preg_match('/^\{"codes":\["[A-Z]{3}"\]\}$/', $apText);
     $apRoute = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"codes":{"type":"array","items":{"type":"string","pattern":"^[A-Z]{3}$"}}}}}}');
+    // F477: a fully anchored plain-literal alternation is a finite set served by the enum-items
+    // writer; a pure-literal single member is a one-value enum; a metacharacter pattern stays refused.
+    $apAlt = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris|lyon)$"}}}}}}');
+    $apAltIds = tok_chat("user", "Name some French cities.") . "," . tok_chat_open("assistant");
+    $apAltBase = count(explode(",", $apAltIds));
+    $apAltOut = api_array_enum_value($apAltIds, "cities", "paris~lyon", 1, 0);
+    $apAltParts = explode(",", $apAltOut);
+    $apAltText = "";
+    for ($i = $apAltBase; $i < count($apAltParts); $i++) {
+        $apAltText = $apAltText . gguf_token_str((int) $apAltParts[$i]);
+    }
+    $apAltText = str_replace("Ġ", " ", $apAltText);
+    $apAltShape = preg_match('/^\{"cities":\["(paris|lyon)"\]\}$/', $apAltText);
+    $apLit = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^(paris)$"}}}}}}');
+    $apBad = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^a.c$"}}}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -18244,7 +18271,9 @@ function main(): void
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH)
         . " ac_text=[" . $acText . "] ac_route=" . count($acRoute)
-        . " ap_plan=[" . $apPlan . "] ap_text=[" . $apText . "] ap_route=" . count($apRoute) . "\n";
+        . " ap_plan=[" . $apPlan . "] ap_text=[" . $apText . "] ap_route=" . count($apRoute)
+        . " ap_alt=[" . $apAlt . "] ap_alt_text=[" . $apAltText . "] ap_lit=[" . $apLit
+        . "] ap_bad=[" . $apBad . "] sf_itb=[" . $sfITB . "]\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -18285,7 +18314,9 @@ function main(): void
         && $ppNumStr == "patternProperties"
         // F470 flipped items_const: a string-const items form is a one-value enum, claimed by the
         // enum-items detector now, so no keyword refusal (pattern items keeps the refusal).
-        && $sfCA == "" && $sfCB == "" && $sfCC == "items"
+        // F477 flipped items_pattern: a fully anchored plain-literal alternation is a finite set
+        // claimed by the enum-items detector now; the metacharacter pattern keeps the refusal.
+        && $sfCA == "" && $sfCB == "" && $sfCC == "" && $sfITB == "items"
         && $sfCD == "" && $sfCE == "" && $sfCI == ""
         && $ibPlan == "nums|5|9" && $ibOne == "nums|5|-1" && $ibMax == "nums|-1|9"
         && $ibMinShape == 1 && $ibMinVal >= 5 && api_json_ok($ibMinText) == 1
@@ -18332,6 +18363,8 @@ function main(): void
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0
         && $acText == '{"cities":["paris"]}' && api_json_ok($acText) == 1 && count($acRoute) == 0
         && $apPlan == "codes|~c3xABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        && $apAlt == "cities|paris~lyon" && $apAltShape == 1 && api_json_ok($apAltText) == 1
+        && $apLit == "cities|paris" && $apBad == ""
         && $apShape == 1 && api_json_ok($apText) == 1 && count($apRoute) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {

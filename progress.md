@@ -1928,3 +1928,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`pp_num_type`/`pp_num_enum`/`pp_num_const`=[]、`pp_num_miss`/`pp_num_mixed`/`pp_num_str`=[patternProperties]。
 - **活体**：两形态 200 `{"count":1}`、miss 400；字符串 patternprops 不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.483×**、哨兵 **0**。
+
+## ▶ 状态（F477，2026-11-10 19:23 构建）——数组项 pattern 的锚定纯字面量交替/纯字面量从点名 400 变有限集发射
+- **改前证据**：items `^(paris|lyon)$` → 400；`^a.c$` 元字符对照 400（pattern 层措辞）；类形态 200（`schema_required_f477pre.log`，F476 二进制）。
+- **实现**：`api_schema_array_enum` pattern 分支加锚定纯字面量交替（`[A-Za-z0-9 _-]`、可选外层括号、`|`→`~`）→ 枚举编码；单成员＝单值枚举；元字符/未锚定仍拒。写入器/路由零改动。
+- **门（含翻转）**：`items_pattern` `items`→``；新 `sf_itb=[items]`、`ap_alt=[cities|paris~lyon]`/`ap_alt_text`、`ap_lit=[cities|paris]`、`ap_bad=[]`。
+- **活体**：交替 200 `[paris,paris]`、元字符 400、类形态不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**、哨兵 **0**。

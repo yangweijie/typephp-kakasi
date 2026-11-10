@@ -1499,6 +1499,23 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F476 → unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F477 计划（数组项 pattern 的**无类交替/纯字面量**：有限集，复用 F459 枚举项写入器）
+**F476 已完成**：patternProperties 数值 enum kind。
+**核心思路**：`^(A|B|…)$`（完全锚定、成员为纯字面量）的匹配集就是有限枚举 ⇒ 每元素必属该集合，F459 枚举项写入器原样服务。F471 的 spec 分支对无类 pattern 返回 ""，故交替/纯字面量被名片 400（**过度拒绝**）。
+**支持边界**：items 为 `{"type":"string","pattern":P}`；P 完全锚定 `^…$`（允许一对外层括号）；成员限 `[A-Za-z0-9 _-]+`（**不含正则元字符**——`.`/`*` 等会让字面文本不匹配自身；不含 `~,|,",\`）；单成员纯字面量 `^(X)$` 亦服务（单值枚举）。未锚定交替、含元字符、空成员、`^[A-Z]{3}$` 等类形态（F471 已服务）保持各自路径。
+**改前状态（读码判定，执行前活体取证）**：items `^(paris|lyon)$` → array_enum ""（spec 空）⇒ **400 "items"**（过度拒绝）；`^a.c$` 元字符对照 400 正确。
+**实现（检测器一处）**：`api_schema_array_enum` 的 pattern 分支：spec 非空走 F471；否则 `^\^\(?([A-Za-z0-9 _\-]+(?:\|[A-Za-z0-9 _\-]+)*)\)?\$$` 命中 ⇒ `prop|<members joined by ~>`（enum 编码，无 ~ 前缀）；其余返 ""。写入器/路由零改动。
+**门（含翻转）**：**旧 `items_pattern`（sfCC，`^(paris|lyon)$`）`items`→``**；新 `items_pattern_bad=[items]`（`^a.c$` 元字符对照）、`ap_alt=[codes|paris~lyon]`、`ap_alt_text`（每元素 ∈ 集合）、`ap_lit=[codes|paris]`（纯字面量单值）、`ap_bad=[]`（array_enum 对元字符返空）；F471 的 `ap_plan` 类形态不回退。
+**活体**（`schema_required_check.py`）：`items_pattern_alt_refuse` 翻 `items_pattern_alt_ok`（200 每元素 ∈{paris,lyon}）；新 `items_pattern_metachar_refuse`（`^a.c$` → 400）；`items_pattern_ok`（类形态）不回退。
+**验收**：①每元素必属有限集（门＋活体逐元素）②元字符/未锚定仍拒 ③F471 类形态与 F459 enum/const 不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F477 已完成**：`api_schema_array_enum` pattern 分支加锚定纯字面量交替（成员 `[A-Za-z0-9 _-]`、可选外层括号、`|`→`~`）→ enum 编码；单成员＝单值枚举；元字符/未锚定仍拒。门翻转 `items_pattern`（sfCC）`items`→``，新 `sf_itb=[items]`/`ap_alt=[cities|paris~lyon]`/`ap_alt_text`/`ap_lit=[cities|paris]`/`ap_bad=[]`。
+**改前证据（`engine/schema_required_f477pre.log`，F476 二进制）**：items `^(paris|lyon)$` → 400；`^a.c$` 元字符对照 400（pattern 层措辞）；类形态 200 不回退。
+**过程**：元字符对照断言首版写 `"items" in txt`，实际拒绝措辞为 pattern 层 "metacharacters"（仍 400）⇒ 放宽断言，重跑得干净改前证据。
+**活体**：`items_pattern_alt_ok` 200 `[paris,paris]`、`items_pattern_metachar_refuse` 400、类形态不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.565×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f477.log`、`engine/schema_*_f477.log`、`engine/api_smoke_f477.log`、`engine/throughput_f477.log`）。
+**顺位**：unevaluated* 真判定（需 additionalProperties/额外键能力，暂不可切片）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

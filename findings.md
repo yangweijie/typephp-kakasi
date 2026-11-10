@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F476）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F477）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3760,18 +3760,18 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | unevaluated*：会真正判定的形状（如非数组上的 `unevaluatedItems`）/ 属性名冒充 | **显式 400** | `uneval_items_wrong`/`uneval_prop_named`（F453） |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
-| 数组项的 schema 带值约束：**有限字符串枚举／string const／string pattern（类/计数形态）**（`items:{"type":"string","enum":[…]}`、`"const":"X"` 或 `"pattern":P`） | **支持**（逐元素从枚举候选发射；const＝单值枚举；pattern 经 `api_schema_pattern_spec` 段编码、逐元素走位匹配，每元素必匹配 P） | `ae_plan`/`ae_text`/`ae_route`/`ae_const`/`ac_text`/`ac_route`/`ap_plan`/`ap_text`/`ap_route`/`items_enum_ok`/`items_const_ok`/`items_pattern_ok`（F459/F470/F471） |
+| 数组项的 schema 带值约束：**有限字符串枚举／string const／string pattern（类/计数形态与锚定纯字面量交替）**（`items:{"type":"string","enum":[…]}`、`"const":"X"` 或 `"pattern":P`） | **支持**（逐元素从枚举候选发射；const＝单值枚举；类计数 pattern 经 `api_schema_pattern_spec` 段编码走位；`^(A|B)$` 纯字面量交替＝有限集，按枚举发射） | `ae_plan`/`ae_text`/`ae_route`/`ae_const`/`ac_text`/`ac_route`/`ap_plan`/`ap_text`/`ap_route`/`ap_alt`/`ap_alt_text`/`ap_lit`/`items_enum_ok`/`items_const_ok`/`items_pattern_ok`/`items_pattern_alt_ok`（F459/F470/F471/F477） |
 | 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y；F468 起 exclusive 数值/布尔拼写同样支持，键序任意） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；exclusive 经与单属性同一 shape 判定转相邻整数界；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`ib_excl`/`ib_excl_bool`/`ib_excl_unsat`/`items_excl_ok`（F460/F468） |
 | 数组项的 schema 带值约束：**单侧整数界**（`minimum:X` 或 `maximum:Y`，缺侧＝哨兵 -1，含**负上界**与**负下界**） | **支持**（逐元素走位；子集论证保证缺侧；单侧负上界 F463＝幅值从 \|hi\| 起无上界；单侧负下界 F464＝幅值 `[1,\|lo\|]`，值 ∈ [lo,-1]；`minimum:-1` 走幅值 [1,1] 出 -1 合法） | `ib_one`/`ib_max`/`ib_negmax`/`ib_negmin`/`items_one_sided_min_ok`（F461/F463/F464） |
 | 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤6 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456/F473 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`/`items_num_frac6_ok`（F462/F473） |
 | 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔；M 整数，或小数 M 配 number 叶双侧 inclusive 界） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型整数 M＝整数倍数子集、小数 M＝小数网格折叠；unsat/无界 >999999999/小数 M 无界·单侧·exclusive·integer 叶/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`fm_items`/`items_mult_frac_ok`（F465/F466/F467/F469） |
-| 数组项的 schema 带其他值约束（format、无类 pattern 如交替/纯字面量等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_pattern`（交替对照）/`ib_excl_kw`/`ib_negmax`（F458/F461/F468/F471） |
+| 数组项的 schema 带其他值约束（format、含元字符/未锚定的 pattern 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `sf_itb`/`ap_bad`/`items_pattern_metachar_refuse`/`ib_excl_kw`/`ib_negmax`（F458/F461/F468/F477） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**自由字符串/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**自由字符串/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4491,3 +4491,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f476.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.483×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f476.log`、`engine/api_smoke_f476.log`、`engine/throughput_f476.log`、改前证据 `engine/schema_required_f476pre.log`）。
 **记法**：**plan kind 前缀决定可证性**——`e:`/`en:` 暴露有限值集，可做集合包含/相等；`s/i/n/b` 只暴露类型；`p:` 只暴露段构造；新增一种值域编码（这里 `en:`）时，`kind_is_type` 与 `leaf_guarantees` **两处**都要跟上，否则同一 kind 在 bare-type 与值级判定下答案不一致（F455/F457 的字符串版正是这两处）。
 **顺位**：unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+## F477：数组项 pattern 的**锚定纯字面量交替/纯字面量**从点名 400 变有限集发射
+**核心思路**：`^(A|B|…)$`（完全锚定、成员为纯字面量）的匹配集就是有限枚举 ⇒ 每元素必属该集合，F459 枚举项写入器原样服务。F471 的 spec 分支对无类 pattern 返回 ""，故交替/纯字面量被过度拒绝。
+**改前证据（`engine/schema_required_f477pre.log`，F476 二进制）**：items `^(paris|lyon)$` → **400 "items"**；`^a.c$` 元字符对照 400（由 pattern 层以 "metacharacters" 措辞拒绝，非 items 层）；类形态 `^[A-Z]{3}$` 200 不回退。
+**实现（检测器一处）**：`api_schema_array_enum` 的 pattern 分支：spec 非空走 F471；否则 `^\^\(?([A-Za-z0-9 _\-]+(?:\|[A-Za-z0-9 _\-]+)*)\)?\$$` 命中 ⇒ `prop|<members ~ 连接>`（enum 编码，无 ~ 前缀）；成员限 `[A-Za-z0-9 _-]`（**不含正则元字符**——`.`/`*` 会让字面文本不匹配自身；不含 `~,|,",\`），允许一对外层括号；单成员纯字面量 `^(X)$` ⇒ 单值枚举。写入器/路由零改动。
+**门（含翻转）**：**旧 `items_pattern`（sfCC，`^(paris|lyon)$`）`items`→``**；新 `sf_itb=[items]`（`^a.c$` 对照）、`ap_alt=[cities|paris~lyon]`、`ap_alt_text`（每元素 ∈ 集合）、`ap_lit=[cities|paris]`、`ap_bad=[]`；F471 的 `ap_plan` 类形态不回退。
+**活体**：`items_pattern_alt_refuse` 翻 `items_pattern_alt_ok` **200 `[paris,paris]`**；新 `items_pattern_metachar_refuse` **400**；`items_pattern_ok` 类形态不回退。
+**过程**：元字符对照首版断言写 `"items" in txt` 而实际拒绝措辞是 pattern 层的 "metacharacters"（仍 400）⇒ 放宽断言为 400 且任一相关措辞，重跑得干净改前证据。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f477.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.565×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f477.log`、`engine/api_smoke_f477.log`、`engine/throughput_f477.log`、改前证据 `engine/schema_required_f477pre.log`）。
+**记法**：**"无类 pattern"不等于"不可证"**——完全锚定的纯字面量交替是有限集，可退化成枚举；关键是先证"字面文本是自身的匹配"（排除元字符）再复用枚举写入器。判据是**锚定 + 成员无元字符 + 编码安全**三件同时成立。
+**顺位**：unevaluated* 真判定（需 additionalProperties/额外键能力，暂不可切片）→ 分片多卡 / FR-05（本机不可验证）。
