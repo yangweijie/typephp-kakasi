@@ -221,6 +221,19 @@ cases = [
      {"type": "object", "properties": {"count": {"type": "integer", "enum": [1, 2, 3]}},
       "patternProperties": {"^c": {"enum": [5, 6]}}},
      lambda code, txt: code == 400 and "patternProperties" in txt),
+    # F480: a property that is itself pattern-constrained (kind p:spec) emits a value built from
+    # that spec, so a patternProperties pattern with the SAME spec is satisfied by the same
+    # construction; a different spec stays refused (the control).
+    ("patternprops_pattern_same_ok", "Give the code.",
+     {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{3}$"}},
+      "patternProperties": {"^c": {"pattern": "^[A-Z]{3}$"}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("code"), str)
+     and len(json.loads(txt)["code"]) == 3 and json.loads(txt)["code"].isalpha()
+     and json.loads(txt)["code"].isupper()),
+    ("patternprops_pattern_diff_refuse", "Give the code.",
+     {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{3}$"}},
+      "patternProperties": {"^c": {"pattern": "^[a-z]+$"}}},
+     lambda code, txt: code == 400 and "patternProperties" in txt),
     # F458: items carrying a value constraint is outside every array writer - the before-probe
     # answered {"items":"paris"} / {"items":5}, which is not even the requested shape. Refused by
     # name; the plain-typed items control keeps being served as an array.

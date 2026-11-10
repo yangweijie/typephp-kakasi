@@ -9918,6 +9918,21 @@ function api_schema_kind_is_type(string $kind, string $t): int
 // not a guarantee this judgement can make.
 function api_schema_leaf_guarantees(string $kind, string $sub): int
 {
+    // F480: a pattern-constrained string leaf (kind p:<spec>) emits a value built from that spec.
+    // When the subschema is the SAME pattern - its spec equals the leaf's - the one construction
+    // satisfies both, so the guarantee holds. A different spec, or any other subschema, is opaque.
+    if (substr($kind, 0, 2) == "p:") {
+        $specK = substr($kind, 2);
+        $mp = [];
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"string"\s*,\s*)?'
+            . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mp) == 1) {
+            $specS = api_schema_pattern_spec(api_unesc($mp[1]));
+            if ($specS != "" && $specS == $specK) {
+                return 1;
+            }
+        }
+        return 0;
+    }
     // F476: a NUMERIC enum/const kind guarantees a numeric const/enum by set inclusion, exactly like
     // the string e: kind. Members must be BARE numeric literals - a quoted "1" is a string in JSON
     // and a number instance does not equal it, so any quote in the subschema keeps the refusal.
@@ -17978,6 +17993,10 @@ function main(): void
     $sfBN = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]},"note":{"type":"string"}},"patternProperties":{"^c":{"enum":["paris"]}}}');
     $sfBO = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","prague"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
     $sfBP = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"pattern":"^p"}}}');
+    // F480: a pattern-constrained property (kind p:spec) satisfies a patternProperties pattern with
+    // the same spec; a different spec stays refused.
+    $ppPatSame = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}},"patternProperties":{"^c":{"pattern":"^[A-Z]{3}$"}}}');
+    $ppPatDiff = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$"}},"patternProperties":{"^c":{"pattern":"^[a-z]+$"}}}');
     $sfBQ = api_schema_candidates('{"properties":{"city":{"type":"string","enum":["paris","lyon"]}},"patternProperties":{"^c":{"enum":["paris","lyon"]}}}');
     // F476: a NUMERIC enum/const leaf kind (en:) guarantees a bare integer/number, an enum superset
     // or a matching const; a quoted member in the subschema keeps the refusal (a number is not the
@@ -18400,6 +18419,7 @@ function main(): void
         . " pp_match_ok=[" . $sfBK . "]"
         . " pp_enum=[" . $sfBM . "] pp_enum_sub=[" . $sfBN . "] pp_pat=[" . $sfBO
         . "] pp_pat_miss=[" . $sfBP . "] pp_enum_route=" . count($sfBQ)
+        . " pp_pat_same=[" . $ppPatSame . "] pp_pat_diff=[" . $ppPatDiff . "]"
         . " pp_num_type=[" . $ppNumType . "] pp_num_enum=[" . $ppNumEnum
         . "] pp_num_const=[" . $ppNumConst . "] pp_num_miss=[" . $ppNumMiss
         . "] pp_num_mixed=[" . $ppNumMixed . "] pp_num_str=[" . $ppNumStr . "]"
@@ -18478,6 +18498,7 @@ function main(): void
         && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
+        && $ppPatSame == "" && $ppPatDiff == "patternProperties"
         && $ppNumType == "" && $ppNumEnum == "" && $ppNumConst == ""
         && $ppNumMiss == "patternProperties" && $ppNumMixed == "patternProperties"
         && $ppNumStr == "patternProperties"

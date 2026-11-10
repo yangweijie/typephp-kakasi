@@ -1,0 +1,11 @@
+PAR SMOKE port=8001
+  PASS health
+  PASS oai-stream
+  PASS oai-stop
+  PASS oai-json-object-keeps-stream
+  PASS anth-stream
+  PASS json-schema
+  PASS tools-rejected
+  PASS third-rejected
+PAR SMOKE: PASS
+PAR_EXIT=0

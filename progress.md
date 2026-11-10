@@ -1950,3 +1950,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`=[]、`nt_enum_miss`/`nt_escaped`=[not]。
 - **活体**：const/enum 外字符 200 `{"cities":"…"}`、可命中成员 400；对照不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.570×**、哨兵 **0**。
+
+## ▶ 状态（2026-11-10 20:40 构建）——F480 patternProperties 的 p: 同 spec 构造满足
+- **改前证据**：pattern 属性 `^[A-Z]{3}$` + pp 同 pattern → 400；不同 spec 对照 400（`schema_required_f480pre.log`，F479 二进制）。
+- **实现**：`api_schema_leaf_guarantees` 顶部加 `p:` 分支（pp 子 schema 的 pattern spec 与属性 spec 相等 ⇒ 1）；判定本体零改动。
+- **门**：`pp_pat_same`=[]、`pp_pat_diff`=[patternProperties]；既有 pp 系列不回退。
+- **活体**：同 spec 200 `{"code":"EYX"}`、不同 spec 400。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**。

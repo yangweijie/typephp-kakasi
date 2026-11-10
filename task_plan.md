@@ -1549,6 +1549,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F479 → patternProperties 自由字符串值级（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F480 计划（patternProperties 对 **pattern-constrained 字符串属性（kind `p:spec`）**：pp 的 pattern 生成同一 spec ⇒ 同时匹配）
+**F479 已完成**：not 字符集排除形式。
+**核心思路**：属性带受支持 pattern 时 plan kind 为 `p:spec`（`api_top_leaves`），写入器按 spec 构造发射、每值匹配该 pattern。若 patternProperties 匹配键的子 schema 为 `{"pattern":Q}` 且 `api_schema_pattern_spec(Q)` **等于**该 spec，则同一构造同时满足 Q ⇒ pp 构造满足。**判定复用 F457 的 leaf_guarantees 入口**，只需加 `p:` 分支。
+**支持边界**：单 pp 条目（既有）；匹配键 kind 为 `p:spec`；子 schema 为 `{"pattern":Q}`（可带 `"type":"string"` 前缀）且 spec(Q)==spec(P)；更丰富子 schema / 不同 spec / 自由字符串 kind `s` / 数值 kind 仍拒。
+**改前状态（读码判定，执行前活体取证）**：properties `{code:{"type":"string","pattern":"^[A-Z]{3}$"}}` + `patternProperties:{"^c":{"pattern":"^[A-Z]{3}$"}}` → `leaf_guarantees("p:c3xABC…", sub)` 返 0 ⇒ **400 "patternProperties"**（过度拒绝）；pp pattern 不同（`^[a-z]+$`）对照 400 正确。
+**实现（leaf_guarantees 一处）**：顶部加 `p:` 分支——kind 为 `p:<specK>`；子 schema 正则取 pattern（`api_unesc` 解码），`api_schema_pattern_spec` 得 specS；`specS != "" && specS == specK ⇒ 1`，否则 0。patternProperties 判定本体零改动。
+**门（SCHEMA-STRUCT 新字段）**：`pp_pat_same=[]`（同 spec）、`pp_pat_diff=[patternProperties]`（不同 spec 对照）；既有 `pp_pat`/`pp_pat_miss`（枚举 kind 的 pattern）与 `pp_enum`/`pp_num_*` 不回退。
+**活体**（`schema_required_check.py`）：`patternprops_pattern_same_ok`（200 code 为 3 大写字母）、`patternprops_pattern_diff_refuse`（400 "patternProperties"）；既有 patternprops 系列不回退。
+**验收**：①服务形态值必匹配两个 pattern（门＋活体正则）②不同 spec/自由字符串/更丰富子 schema 仍拒 ③F455/F457/F476 pp 门不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F480 已完成**：`api_schema_leaf_guarantees` 顶部加 `p:` 分支（pp 子 schema 的 pattern spec 与属性 kind 的 spec 相等 ⇒ 1）；patternProperties 判定本体零改动。门 `pp_pat_same=[]`、`pp_pat_diff=[patternProperties]`。
+**改前证据（`engine/schema_required_f480pre.log`，F479 二进制）**：pattern 属性 `^[A-Z]{3}$` + pp 同 pattern → 400；不同 spec 对照 400 正确。
+**活体**：`patternprops_pattern_same_ok` 200 `{"code":"EYX"}`、`patternprops_pattern_diff_refuse` 400；既有 pp 系列不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f480.log`、`engine/schema_*_f480.log`、`engine/api_smoke_f480.log`、`engine/throughput_f480.log`）。
+**顺位**：F480 → 其余自由字符串/数组值级子集（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
