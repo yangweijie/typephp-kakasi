@@ -211,17 +211,20 @@ cases = [
     # answered {"items":"paris"} / {"items":5}, which is not even the requested shape. Refused by
     # name; the plain-typed items control keeps being served as an array.
     # F459: the finite string-ENUM items form now has its own writer, so it is served with every
-    # element drawn from the enum; const/pattern and numeric item constraints stay refused.
+    # element drawn from the enum; pattern and numeric item constraints stay refused.
+    # F470: a string CONST items form is a one-value enum - every element equals the constant.
     ("items_enum_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array",
                                                   "items": {"type": "string", "enum": ["paris", "lyon"]}}}},
      lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("cities"), list)
      and len((obj_of(txt) or {}).get("cities", [])) >= 1
      and all(x in ["paris", "lyon"] for x in (obj_of(txt) or {}).get("cities", []))),
-    ("items_const_refuse", "Name some French cities.",
+    ("items_const_ok", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array",
                                                   "items": {"type": "string", "const": "paris"}}}},
-     lambda code, txt: code == 400 and "items" in txt),
+     lambda code, txt: code == 200 and isinstance((obj_of(txt) or {}).get("cities"), list)
+     and len((obj_of(txt) or {}).get("cities", [])) >= 1
+     and all(x == "paris" for x in (obj_of(txt) or {}).get("cities", []))),
     # F460: both-bounds integer items are served element by element; a one-sided bound is not
     # (the writer's sentinel conventions are not reused here) and stays refused by name.
     ("items_bounded_ok", "Give the numbers.",

@@ -882,7 +882,8 @@ function api_response_schema_tuple(string $body): string
 
 // F459: "prop|v1~v2" for a single array property whose `items` is a finite STRING enum and carries
 // no other item constraint. The values have to survive the same encoding the plan uses for enums
-// (no ~, comma, quote or backslash), or the shape is not claimed and the refusal stays.
+// (no ~, comma, quote or backslash), or the shape is not claimed and the refusal stays. F470: a
+// string `const` is claimed too as a one-value enum (every element equals it), same encoding rules.
 function api_schema_array_enum(string $schema): string
 {
     if ($schema == "") {
@@ -939,23 +940,36 @@ function api_schema_array_enum(string $schema): string
         return "";
     }
     $me = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"string"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $isub, $me) != 1) {
-        return "";
-    }
-    $vals = api_list($me[1]);
-    if (count($vals) < 1) {
-        return "";
-    }
-    $enc = "";
-    for ($i = 0; $i < count($vals); $i++) {
-        if ($vals[$i] == "" || strpos($vals[$i], "~") !== false
-            || strpos($vals[$i], ",") !== false || strpos($vals[$i], "\"") !== false
-            || strpos($vals[$i], "\\") !== false) {
+    if (preg_match('/^\{\s*"type"\s*:\s*"string"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $isub, $me) == 1) {
+        $vals = api_list($me[1]);
+        if (count($vals) < 1) {
             return "";
         }
-        $enc = $enc == "" ? $vals[$i] : $enc . "~" . $vals[$i];
+        $enc = "";
+        for ($i = 0; $i < count($vals); $i++) {
+            if ($vals[$i] == "" || strpos($vals[$i], "~") !== false
+                || strpos($vals[$i], ",") !== false || strpos($vals[$i], "\"") !== false
+                || strpos($vals[$i], "\\") !== false) {
+                return "";
+            }
+            $enc = $enc == "" ? $vals[$i] : $enc . "~" . $vals[$i];
+        }
+        return $lkv[0] . "|" . $enc;
     }
-    return $lkv[0] . "|" . $enc;
+    // F470: a string const is a one-value enum - every element equals it, so the same item writer
+    // serves it from a single-entry value list. The value rides the same encoding constraints (no
+    // ~, comma, quote or backslash); an escaped const does not match the plain-string regex and is
+    // refused, exactly like an enum value the encoding cannot carry.
+    $mc = [];
+    if (preg_match('/^\{\s*"type"\s*:\s*"string"\s*,\s*"const"\s*:\s*"([^"]*)"\s*\}$/', $isub, $mc) == 1) {
+        $v = $mc[1];
+        if ($v == "" || strpos($v, "~") !== false || strpos($v, ",") !== false
+            || strpos($v, "\"") !== false || strpos($v, "\\") !== false) {
+            return "";
+        }
+        return $lkv[0] . "|" . $v;
+    }
+    return "";
 }
 
 function api_response_schema_array_enum(string $body): string
@@ -17789,6 +17803,18 @@ function main(): void
     }
     $aeText = str_replace("Ġ", " ", $aeText);
     $aeShape = preg_match('/^\{"cities":\["(paris|lyon)"\]\}$/', $aeText);
+    // F470: the string-const items form is a one-value enum - the detector claims it (sfCG above),
+    // the writer emits the constant per element, and the candidate scan must not grab it first.
+    $acIds = tok_chat("user", "Name the city.") . "," . tok_chat_open("assistant");
+    $acBase = count(explode(",", $acIds));
+    $acOut = api_array_enum_value($acIds, "cities", "paris", 1, 0);
+    $acParts = explode(",", $acOut);
+    $acText = "";
+    for ($i = $acBase; $i < count($acParts); $i++) {
+        $acText = $acText . gguf_token_str((int) $acParts[$i]);
+    }
+    $acText = str_replace("Ġ", " ", $acText);
+    $acRoute = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}}}}}');
     echo "SCHEMA-STRUCT contains=[" . $sfA . "] not=[" . $sfB . "] if=[" . $sfC
         . "] propertyNames=[" . $sfD . "] dependentRequired=[" . $sfE
         . "] unevaluatedProperties=[" . $sfF . "] enum_value=[" . $sfG
@@ -17850,7 +17876,8 @@ function main(): void
         . " fm_text=[" . $fmText . "] fm_neg_text=[" . $fmNText . "] fm_d2_text=[" . $fmDText
         . "] fm_noint_text=[" . $fmIText . "] fm_items_text=[" . $fmiText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
-        . "] ae_route=" . count($sfCH) . "\n";
+        . "] ae_route=" . count($sfCH)
+        . " ac_text=[" . $acText . "] ac_route=" . count($acRoute) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
         && $sfE == "dependentRequired" && $sfF == "" && $sfG == ""
         && $sfH == "not" && $sfI == "minContains" && $sfJ == "unevaluatedItems"
@@ -17880,7 +17907,9 @@ function main(): void
         && $sfBI == "minContains" && $sfBJ == "2:3" && $sfBK == ""
         && $sfBM == "" && $sfBN == "patternProperties"
         && $sfBO == "" && $sfBP == "patternProperties" && count($sfBQ) == 2
-        && $sfCA == "" && $sfCB == "items" && $sfCC == "items"
+        // F470 flipped items_const: a string-const items form is a one-value enum, claimed by the
+        // enum-items detector now, so no keyword refusal (pattern items keeps the refusal).
+        && $sfCA == "" && $sfCB == "" && $sfCC == "items"
         && $sfCD == "" && $sfCE == "" && $sfCI == ""
         && $ibPlan == "nums|5|9" && $ibOne == "nums|5|-1" && $ibMax == "nums|-1|9"
         && $ibMinShape == 1 && $ibMinVal >= 5 && api_json_ok($ibMinText) == 1
@@ -17923,8 +17952,9 @@ function main(): void
         && $fmDText == '{"n":1.20}' && api_json_ok($fmDText) == 1
         && $fmIText == '{"n":1.5}' && api_json_ok($fmIText) == 1
         && $fmiText == '{"nums":[1.2]}' && api_json_ok($fmiText) == 1
-        && $sfCF == "cities|paris~lyon" && $sfCG == ""
-        && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
+        && $sfCF == "cities|paris~lyon" && $sfCG == "cities|paris"
+        && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0
+        && $acText == '{"cities":["paris"]}' && api_json_ok($acText) == 1 && count($acRoute) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";
     } else {
         echo "SCHEMA-STRUCT: FAIL\n";

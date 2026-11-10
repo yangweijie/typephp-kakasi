@@ -1385,6 +1385,21 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F469 → 数组项 const/pattern、contains/not 值级子 schema 等排队项 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F470 计划（数组项 string const：单值枚举，复用 F459 枚举项写入器）
+**F469 已完成**：小数 multipleOf。
+**核心思路**：`items:{"type":"string","const":"X"}` 等价于单值枚举 `enum:[X]`——每元素必等于 X。F459 的 `api_array_enum_value` 已能逐元素从值表发射，只需检测器 `api_schema_array_enum` 在 enum 正则之外再认 const 形式，返回 `prop|X`（单值表）。**写入器/路由零改动**。
+**改前状态（读码判定，执行前活体取证）**：const items → `api_schema_array_enum` 只认 enum ⇒ ""；`api_schema_items_constrained` 命中 const ⇒ 结构层 **400 "items"**（过度拒绝，合法解每元素 "X"）。
+**实现（检测器一处）**：`api_schema_array_enum` 的 enum 正则失败后试 `^\{\s*"type"\s*:\s*"string"\s*,\s*"const"\s*:\s*"([^"]*)"\s*\}$`；值非空且不含 `~,/"\`（同 enum 编码约束，含转义的 const 正则不匹配自然拒）⇒ 返回 `prop|值`。结构层豁免按"array_enum 非空"自动放行。
+**门（含翻转）**：`SCHEMA-STRUCT` 的 `items_const`（sfCB）`items`→``；新 `ac_plan=[cities|paris]`、`ac_text=[{"cities":["paris"]}]`、`ac_route=0`（候选层不抢先）；`items_pattern` 保持 `items` 作对照。
+**活体**（`schema_required_check.py`）：`items_const_refuse` 翻转改名 `items_const_ok`（200 每元素 == "paris"）；`items_enum_ok`/`items_pattern_refuse` 不回退。
+**验收**：①每元素等于 const（门＋活体）②pattern/含转义 const 仍拒 ③自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F470 已完成**：`api_schema_array_enum` 在 enum 正则外再认 string const（同编码约束，含转义自然拒）返回 `prop|X`；结构层豁免自动放行，写入器/路由零改动。门翻转 `items_const` `items`→``、`ae_const` ``→`cities|paris`；新 `ac_text=[{"cities":["paris"]}]`/`ac_route=0`。
+**改前证据（`engine/schema_required_f470pre.log`，F469 二进制）**：const items → 400 "items"；enum 对照 200。
+**活体**：`items_const_ok` 200 `[paris,paris]`；enum/pattern 对照不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.545×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f470.log`、`engine/schema_*_f470.log`、`engine/api_smoke_f470.log`、`engine/throughput_f470.log`）。
+**顺位**：F470 → 数组项 pattern、contains/not 值级子 schema 等排队项 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

@@ -1879,3 +1879,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`fm_shape`/`fm_text`/`fm_unsat=[]`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_items`/`fm_intleaf=1`＋五条文本断言。
 - **活体**：1.2 / -1.8 / 1.5 / items [1.2,…] 200；unsat/integer 叶 400；F466/F467 小数 M 对照不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.544×**、哨兵 **0**。
+
+## ▶ 状态（F470，2026-11-10 13:18 构建）——数组项 string const 从点名 400 变**单值枚举逐元素发射**
+- **改前证据**：const items → 400 "items"；enum 对照 200 `[paris,paris]`（`schema_required_f470pre.log`，F469 二进制）。
+- **实现**：`api_schema_array_enum` 在 enum 正则外再认 string const（同编码约束）返回 `prop|X`；结构层豁免自动放行；写入器/路由零改动。
+- **门（含翻转）**：`items_const` `items`→``、`ae_const` ``→`cities|paris`；新 `ac_text=[{"cities":["paris"]}]`/`ac_route=0`；`items_pattern` 保持拒。
+- **活体**：`items_const_ok` 200 `[paris,paris]`；enum 不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.545×**、哨兵 **0**。

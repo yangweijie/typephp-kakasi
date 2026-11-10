@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F469）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F470）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3758,18 +3758,18 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | unevaluated*：会真正判定的形状（如非数组上的 `unevaluatedItems`）/ 属性名冒充 | **显式 400** | `uneval_items_wrong`/`uneval_prop_named`（F453） |
 | tuple 校验：2–3 元素标量元组（`items` 数组形式，string/integer） | **支持**（逐位置发射，类型按位置） | `tuple_items=[]`/`tuple_plan`/`tuple_text`（F444） |
 | tuple 校验：`prefixItems`、对象元素、4 个以上 | **显式 400** | `prefix_items`（F434/F444） |
-| 数组项的 schema 带值约束：**有限字符串枚举**（`items:{"type":"string","enum":[…]}`） | **支持**（逐元素从枚举候选发射；每元素必属枚举） | `ae_plan`/`ae_text`/`ae_route`/`items_enum_ok`（F459） |
+| 数组项的 schema 带值约束：**有限字符串枚举／string const**（`items:{"type":"string","enum":[…]}` 或 `"const":"X"`） | **支持**（逐元素从枚举候选发射；每元素必属枚举；const＝单值枚举，每元素必等于 X） | `ae_plan`/`ae_text`/`ae_route`/`ae_const`/`ac_text`/`ac_route`/`items_enum_ok`/`items_const_ok`（F459/F470） |
 | 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y；F468 起 exclusive 数值/布尔拼写同样支持，键序任意） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；exclusive 经与单属性同一 shape 判定转相邻整数界；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`ib_excl`/`ib_excl_bool`/`ib_excl_unsat`/`items_excl_ok`（F460/F468） |
 | 数组项的 schema 带值约束：**单侧整数界**（`minimum:X` 或 `maximum:Y`，缺侧＝哨兵 -1，含**负上界**与**负下界**） | **支持**（逐元素走位；子集论证保证缺侧；单侧负上界 F463＝幅值从 \|hi\| 起无上界；单侧负下界 F464＝幅值 `[1,\|lo\|]`，值 ∈ [lo,-1]；`minimum:-1` 走幅值 [1,1] 出 -1 合法） | `ib_one`/`ib_max`/`ib_negmax`/`ib_negmin`/`items_one_sided_min_ok`（F461/F463/F464） |
 | 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤5 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`（F462） |
 | 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔；M 整数，或小数 M 配 number 叶双侧 inclusive 界） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型整数 M＝整数倍数子集、小数 M＝小数网格折叠；unsat/无界 >999999999/小数 M 无界·单侧·exclusive·integer 叶/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`fm_items`/`items_mult_frac_ok`（F465/F466/F467/F469） |
-| 数组项的 schema 带其他值约束（const/pattern/format 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_const`/`items_pattern`/`ib_excl_kw`/`ib_negmax`（F458/F461/F468） |
+| 数组项的 schema 带其他值约束（pattern/format 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_pattern`/`ib_excl_kw`/`ib_negmax`（F458/F461/F468） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 const/pattern（现为显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界自 F460–F469 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`contains`/`not` 的值级子 schema；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 schema 的 pattern（现为显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const 自 F460–F470 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4416,3 +4416,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f469.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.544×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f469.log`、`engine/api_smoke_f469.log`、`engine/throughput_f469.log`、改前证据 `engine/schema_bounds_f469pre.log`）。
 **记法**：**新约束先问"既有写入器能否构造满足"**——小数 multipleOf 看似需要新机制，实则 F440 的小数 marker 写入器已能发任意 ≤5 位确定小数，缺的只是"把区间折叠到 M 的最小倍数"这一步判定；把判定接进 shape、编码复用 marker，单属性与 items 两条路同时获得支持，零新写入器、零路由改动。`ceil` 用 intdiv 向零截断＋正余数进一位（负 sLo 截断即 ceiling），避免浮点。
 **顺位**：数组项 const/pattern、contains/not 值级子 schema、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数等排队项 → 分片多卡 / FR-05（本机不可验证）。
+
+## F470：数组项 string const 从"点名 400"变**单值枚举逐元素发射**（复用 F459 枚举项写入器，零写入器/路由改动）
+**核心思路**：`items:{"type":"string","const":"X"}` 等价于单值枚举 `enum:[X]`——每元素必等于 X。F459 的 `api_array_enum_value` 已能逐元素从值表发射，检测器 `api_schema_array_enum` 在 enum 正则之外再认 const 形式、返回 `prop|X` 即可。
+**改前证据（`engine/schema_required_f470pre.log`，F469 二进制）**：const items → **400 "items"**（`api_schema_items_constrained` 命中 const、array_enum 只认 enum ⇒ 结构层点名）；enum items 对照 200 `[paris,paris]`。
+**实现（检测器一处）**：enum 正则失败后试 `^\{\s*"type"\s*:\s*"string"\s*,\s*"const"\s*:\s*"([^"]*)"\s*\}$`，值非空且不含 `~,/"\`（同 enum 编码约束；含转义的 const 正则不匹配自然拒）⇒ `prop|值`。结构层豁免按 array_enum 非空自动放行；候选层不抢先（`ac_route=0`）。
+**门（含翻转）**：`items_const`（sfCB）`items`→``、`ae_const`（sfCG）``→`cities|paris`；新 `ac_text=[{"cities":["paris"]}]`、`ac_route=0`；`items_pattern` 保持 `items` 对照。
+**活体**：`items_const_refuse` 翻转改名 `items_const_ok` **200 `[paris,paris]`**（每元素 == paris）；`items_enum_ok` 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f470.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.545×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f470.log`、`engine/api_smoke_f470.log`、`engine/throughput_f470.log`、改前证据 `engine/schema_required_f470pre.log`）。
+**记法**：**const 是 enum 的退化情形，先问"既有写入器能否原样服务"**——单值枚举无需新机制，检测器多认一种拼写即可；编码约束（不含 `~,/"\`）与 enum 完全一致，含转义的 const 自然落拒，不必另立规则。
+**顺位**：数组项 pattern、contains/not 值级子 schema、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数等排队项 → 分片多卡 / FR-05（本机不可验证）。
