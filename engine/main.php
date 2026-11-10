@@ -10569,6 +10569,73 @@ function api_schema_unevaluated_items_ok(string $schema): int
     return 1;
 }
 
+// F494: does a SINGLE pattern leaf have a FIXED emitted length that its own minLength/maxLength
+// contain? Every spec segment must be exact (a literal run or "c<n>x..." with no range) - the p:
+// writer emits exactly that spec, so the length is the sum and the bounds hold by construction.
+function api_schema_pattern_length_ok(string $schema): int
+{
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return 0;
+    }
+    $lkv = explode(":", $leaves[0]);
+    if (count($lkv) != 3 || $lkv[1] != "p") {
+        return 0;
+    }
+    $len = 0;
+    foreach (explode("~", $lkv[2]) as $seg) {
+        $tag = substr($seg, 0, 1);
+        if ($tag == "l") {
+            $len = $len + strlen(substr($seg, 1));
+            continue;
+        }
+        if ($tag != "c" || preg_match('/^c([0-9]+)x/', $seg, $mc) != 1) {
+            return 0;               // ranged / unbounded segment: no fixed length
+        }
+        $len = $len + (int) $mc[1];
+    }
+    $kp = strpos($block, "\"" . $lkv[0] . "\"");
+    if ($kp === false) {
+        return 0;
+    }
+    $vo = strpos($block, "{", $kp);
+    if ($vo === false) {
+        return 0;
+    }
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return 0;
+    }
+    $mn = api_schema_bound_value($leaf, "\"minLength\"", 0);
+    $mx = api_schema_bound_value($leaf, "\"maxLength\"", 0);
+    if ($mn == "" && $mx == "") {
+        return 0;
+    }
+    if ($mn != "" && $len < (int) $mn) {
+        return 0;
+    }
+    if ($mx != "" && $len > (int) $mx) {
+        return 0;
+    }
+    return 1;
+}
+
 function api_schema_keywords_unsupported(string $body): string
 {
     foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties uniqueItems minProperties maxProperties") as $kw) {
@@ -10579,6 +10646,10 @@ function api_schema_keywords_unsupported(string $body): string
         // restrict the closing quote; every other shape still refuses them rather than ignoring.
         if (($kw == "minLength" || $kw == "maxLength")
             && (api_schema_flat_all_string($body) == 1 || api_schema_mixed_omittable($body) == 1)) {
+            continue;
+        }
+        // F494: a fixed-length pattern leaf satisfies a length bound that contains its length.
+        if (($kw == "minLength" || $kw == "maxLength") && api_schema_pattern_length_ok($body) == 1) {
             continue;
         }
         // F400: minItems/maxItems are honoured for a single scalar-array property, whose stepper
@@ -17993,6 +18064,11 @@ function main(): void
     // the same keyword on a mixed shape still is, because that stepper cannot enforce it.
     $kwB = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5}}}');
     $kwI = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string","maxLength":5},"b":{"type":"integer"}}}');
+    // F494: a fixed-length pattern leaf satisfies a containing length bound; excluding it or a
+    // ranged pattern keeps the refusal.
+    $pLenOk = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":3,"maxLength":8}}}');
+    $pLenBad = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":4}}}');
+    $pLenRange = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{2,4}$","minLength":3}}}');
     $kwC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":false}');
     // F402: additionalProperties is satisfied by construction where every key is named from the
     // plan, so the all-string case moved from "additionalProperties" to "". The counterparts that
@@ -18070,7 +18146,8 @@ function main(): void
     $kwAX = api_schema_keywords_unsupported('{"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}}}');
     $kwAY = api_response_schema_array_string('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":false}}}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
-        . "] mixed_maxLength=[" . $kwI . "] addProps=[" . $kwC
+        . "] mixed_maxLength=[" . $kwI . "] p_len_ok=[" . $pLenOk . "] p_len_bad=[" . $pLenBad
+        . "] p_len_range=[" . $pLenRange . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
@@ -18084,7 +18161,9 @@ function main(): void
         . "] multi_bounds=[" . $kwAG . "] multi_bad=[" . $kwAH . "] multi_addprops=[" . $kwAI
         . "] multi_allreq=[" . $kwAJ . "] uniq_true=[" . $kwAV . "] uniq_false=[" . $kwAW
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
-    if ($kwA == "minItems" && $kwB == "" && $kwI == "" && $kwC == ""
+    if ($kwA == "minItems" && $kwB == "" && $kwI == ""
+        && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
+        && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""
         && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == ""

@@ -2048,3 +2048,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：api_object_mixed 增 bounds 并有界步进；4 处路由传参；守卫放宽为 flat||mixed。
 - **门（含翻转）**：`mixed_maxLength`→``、`mixed_refusal`→``；pattern 叶保持 400。
 - **活体**：mixed 200 `{"city":"New York","count":100000}`、pattern 叶 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.480×、哨兵 0；构建 BUILD_OK。
+
+## ▶ 状态（F494，2026-11-10 23:15 构建）——minLength/maxLength 与定长 pattern 叶兼容
+- **改前证据**：定长 pattern + min/maxLength → 400；越界/范围 pattern 对照 400（`schema_required_f494pre.log`，F493 二进制）。
+- **实现**：`api_schema_pattern_length_ok`（逐段求定长＋界限包含）＋关键字分支；无写入器改动。
+- **门**：`p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]。
+- **活体**：`{"code":"CJL"}` 200、越界/范围 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.479×、哨兵 0；构建 BUILD_OK。

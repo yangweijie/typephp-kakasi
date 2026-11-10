@@ -109,6 +109,22 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string", "minLength": 3},
                                        "code": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
      lambda code, txt: code == 400 and "minLength" in txt),
+    # F494: a FIXED-length pattern leaf - exact spec segments make the emitted length known, so
+    # minLength/maxLength that contain it hold by construction; a bound excluding it, or a ranged
+    # pattern (no fixed length), keeps the refusal.
+    ("pattern_len_ok", "Say the code.",
+     {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{3}$",
+                                                "minLength": 3, "maxLength": 8}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("code"), str)
+     and len(json.loads(txt)["code"]) == 3),
+    ("pattern_len_bad_refuse", "Say the code.",
+     {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{3}$",
+                                                "minLength": 4}}},
+     lambda code, txt: code == 400 and "minLength" in txt),
+    ("pattern_len_range_refuse", "Say the code.",
+     {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{2,4}$",
+                                                "minLength": 3}}},
+     lambda code, txt: code == 400 and "minLength" in txt),
     # F402: additionalProperties names no key of its own - the generators emit the declared plan and
     # nothing else - so refusing it rejected a request that was already satisfied.
     ("addprops_all_string", "Say where you are.",

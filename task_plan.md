@@ -1686,6 +1686,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F493 已完成**：api_object_mixed 增 bounds 并有界 s 步进（按字符预算、closeIds 过滤）；4 处路由传参；守卫放宽为 flat||mixed。门翻转 `mixed_maxLength`/`mixed_refusal`→``；活体 mixed 200 长度在界、pattern 叶 400；构建 BUILD_OK；全梯绿（8000 115/0、8001 par/fairness 0、scaling 1.480×、哨兵 0）。
 
 
+## F494 计划与完成（minLength/maxLength 与定长 pattern 叶：界限包含固定长度即成立）
+**核心思路**：pattern 叶（plan kind `p:spec`）由 spec 构造发射；若**每个段都精确**（字面量或 `c<n>x…` 无范围），发射长度 L 固定。该属性的 minLength/maxLength 只需**包含** L，写入器天然满足——零写入器改动，只放宽关键字守卫。
+**实现**：新 helper `api_schema_pattern_length_ok`（单叶 p:、逐段求定长、取该属性 schema 内的 min/maxLength 并核对包含）；`api_schema_keywords_unsupported` 的 minLength/maxLength 分支在 flat||mixed 之外再加该判定。
+**门**：`p_len_ok=[]`（`^[A-Z]{3}$` + min3/max8）、`p_len_bad=[minLength]`（minLength:4 > 3）、`p_len_range=[minLength]`（`^[A-Z]{2,4}$` 非定长）。
+**活体**：`pattern_len_ok`（200 三字母）、`pattern_len_bad_refuse`/`pattern_len_range_refuse`（400）。
+**用法**：`scripts/build-check.sh`；无写入器改动。
+**F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
