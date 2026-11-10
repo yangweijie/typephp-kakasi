@@ -1900,3 +1900,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`cv_const`/`cv_enum`/`cv_pat`=[]、`cv_miss=[contains]`、`cv_route=[cities|paris]`；contains_pattern 保持对照。
 - **活体**：const/enum 子集 200 `[paris,paris]`、子集不成立 400；type/pattern 对照不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.463×**、哨兵 **0**。
+
+## ▶ 状态（F473，2026-11-10 18:05 构建）——小数网格 5→6 位（marker -994，七位仍拒）
+- **改前证据**：六位 `[1.511111,1.511119]` → 400；七位对照 400；1–5 位/负数不变（`schema_bounds_f473pre.log`，F472 二进制）。
+- **实现**：`api_schema_scaled` {1,6}＋digits==6；shape 网格 {1,6}＋d=6＋mark -994；decimal_element/bounded_value/item_number_value 三处 marker 判定加 -994；F469 小数 M 保持 ≤5。
+- **门（含翻转）**：`num_dec6` ``→`n|1511111|-994|0`；新 `num_dec7=[]`、`dec6_text=[{"n":1.511111}]`。
+- **活体**：`float_dec6_served` 200 `{"n":1.511111}`、`float_dec7_refuse` 400；**波纹** `items_num_frac6_refuse` 翻 `items_num_frac6_ok`（200 `[0.000123,…]`，F462 wrap→shape 随网格扩宽自动服务）。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.542×**、哨兵 **0**。

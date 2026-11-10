@@ -196,8 +196,13 @@ cases = [
     ("float_dec5_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51111, "maximum": 1.51119}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.51111}'),
-    ("float_dec6_refuse", "Give the number.",
+    # F473: six fraction digits ride the millionths grid (marker -994) - the deterministic scaled
+    # minimum is emitted; seven digits have no grid and keep the refusal.
+    ("float_dec6_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511111, "maximum": 1.511119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.511111}'),
+    ("float_dec7_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5111111, "maximum": 1.5111119}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
     ("float_dec_neg", "Give the number.",
@@ -285,11 +290,15 @@ cases = [
      lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
      and len(val_of(txt, "nums")) >= 1
      and all(isinstance(x, (int, float)) and x <= 9.5 for x in val_of(txt, "nums"))),
-    # Six fraction places have no grid at the F456 width: stays refused.
-    ("items_num_frac6_refuse", "Give the numbers.",
+    # F473: six fraction places now ride the millionths grid, so the number-ITEMS route serves the
+    # same interval through the wrapped shape judgement (0.000123 is the scaled minimum). Seven
+    # places still have no grid and stay refused (see float_dec7_refuse).
+    ("items_num_frac6_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "number", "minimum": 0.000123, "maximum": 0.000129}}}},
-     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and abs(x - 0.000123) < 1e-12 for x in val_of(txt, "nums"))),
     # multipleOf inside items is queued (the multiple writer is property-level): stays refused.
     # F466: the old refusal of a number leaf with multipleOf was over-refusal - an integer
     # multiple of M is a legal number and a multiple of M, so the bounded fold serves it.

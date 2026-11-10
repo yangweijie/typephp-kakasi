@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F472）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F473）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至五位小数，可负**；六位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec5`/`dec*_text`/`float_dec6_refuse`（F439–F456） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至六位小数，可负**；七位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec5`/`num_dec6`/`dec*_text`/`float_dec6_served`/`float_dec7_refuse`（F439–F456/F473） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -3762,7 +3762,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数组项的 schema 带值约束：**有限字符串枚举／string const／string pattern（类/计数形态）**（`items:{"type":"string","enum":[…]}`、`"const":"X"` 或 `"pattern":P`） | **支持**（逐元素从枚举候选发射；const＝单值枚举；pattern 经 `api_schema_pattern_spec` 段编码、逐元素走位匹配，每元素必匹配 P） | `ae_plan`/`ae_text`/`ae_route`/`ae_const`/`ac_text`/`ac_route`/`ap_plan`/`ap_text`/`ap_route`/`items_enum_ok`/`items_const_ok`/`items_pattern_ok`（F459/F470/F471） |
 | 数组项的 schema 带值约束：**双侧整数界**（`items:{"type":"integer","minimum":X,"maximum":Y}`，X≤Y；F468 起 exclusive 数值/布尔拼写同样支持，键序任意） | **支持**（逐元素有界整数发射，每元素必落 [X,Y]；exclusive 经与单属性同一 shape 判定转相邻整数界；元素数走 `minItems`/`maxItems` 预算） | `ib_plan`/`ib_text`/`ib_excl`/`ib_excl_bool`/`ib_excl_unsat`/`items_excl_ok`（F460/F468） |
 | 数组项的 schema 带值约束：**单侧整数界**（`minimum:X` 或 `maximum:Y`，缺侧＝哨兵 -1，含**负上界**与**负下界**） | **支持**（逐元素走位；子集论证保证缺侧；单侧负上界 F463＝幅值从 \|hi\| 起无上界；单侧负下界 F464＝幅值 `[1,\|lo\|]`，值 ∈ [lo,-1]；`minimum:-1` 走幅值 [1,1] 出 -1 合法） | `ib_one`/`ib_max`/`ib_negmax`/`ib_negmin`/`items_one_sided_min_ok`（F461/F463/F464） |
-| 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤5 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`（F462） |
+| 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤6 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456/F473 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`/`items_num_frac6_ok`（F462/F473） |
 | 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔；M 整数，或小数 M 配 number 叶双侧 inclusive 界） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型整数 M＝整数倍数子集、小数 M＝小数网格折叠；unsat/无界 >999999999/小数 M 无界·单侧·exclusive·integer 叶/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`fm_items`/`items_mult_frac_ok`（F465/F466/F467/F469） |
 | 数组项的 schema 带其他值约束（format、无类 pattern 如交替/纯字面量等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `items_pattern`（交替对照）/`ib_excl_kw`/`ib_negmax`（F458/F461/F468/F471） |
 | tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
@@ -3770,7 +3770,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的值级子 schema、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；六位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的值级子 schema、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4447,3 +4447,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f472.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.463×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f472.log`、`engine/api_smoke_f472.log`、`engine/throughput_f472.log`、改前证据 `engine/schema_count_f472pre.log`）。
 **记法**：**值级约束的支持先找"构造满足的子集"**——contains 的一般值级判定需要求值任意元素，但当 items 把元素限定在有限值表、且该表整体 ⊆ contains 允许集时，"至少一匹配"升级为"每元素皆匹配"，无需新写入器或运行时求值；F457 的 leaf_guarantees 正是这个子集判定，跨约束复用（patternProperties→contains）。
 **顺位**：not 值级、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数 → 分片多卡 / FR-05（本机不可验证）。
+
+## F473：小数网格 5→6 位（marker -994；F456 同款扩宽，七位仍拒）
+**核心思路**：F440–F456 的 marker 编码覆盖 d=1..5（-999..-995）；扩到 **d=6**（marker **-994**、scale 10^6）后同一条小数写入链可发六位小数（`[1.511111,1.511119]` → `1.511111`），七位仍拒。
+**改前证据（`engine/schema_bounds_f473pre.log`，F472 二进制）**：`minimum:1.511111,maximum:1.511119`（六位）→ **400**（网格正则 {1,5} 不匹配）；七位对照 400 正确；1–5 位与负数不回退。
+**实现（五处代码＋门）**：①`api_schema_scaled` 正则 `{1,5}`→`{1,6}`＋`$digits==6`（×1000000）；②shape 网格分支界正则 `{1,5}`→`{1,6}`、加 `\.[0-9]{6}` 得 d=6、mark -994；③`api_number_decimal_element` 加 -994（d=6,scale=10^6）；④`api_number_bounded_value` marker 判定加 -994；⑤`api_array_item_number_value` 元素 marker 判定加 -994。F469 小数 M 保持 ≤5（另行排队）。
+**门（含翻转）**：`num_dec6`（nfQ）`""`→`n|1511111|-994|0`；新 `num_dec7=[]`、`dec6_text=[{"n":1.511111}]`；1–5 位门不回退。
+**活体**：`float_dec6_refuse` 翻转改名 `float_dec6_served` **200 `{"n":1.511111}`**；新 `float_dec7_refuse` **400**；`float_dec5_served`/负数不回退。
+**波纹（F466 教训再现）**：bounds 首跑 FAIL——`items_num_frac6_refuse`（six-decimal number items 的旧拒绝例）现经 F462 的 wrap→shape **200 `[0.000123,…]`**（缩放下界，在界内，合法）⇒ 按"旧期望被证伪就翻门"翻为 `items_num_frac6_ok` 并断言每元素 ==0.000123；改前证据显示六位单属性本来就是 400，items 同形随网格扩宽一并服务。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f473.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.542×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f473.log`、`engine/api_smoke_f473.log`、`engine/throughput_f473.log`、改前证据 `engine/schema_bounds_f473pre.log`）。
+**记法**：**宽度类扩宽要 grep 所有"旧宽度拒绝"夹具**——网格 5→6 不只影响单属性，F462 的 number-items 检测器 wrap→同一 shape，six-decimal items 自动跟着服务，旧的 `items_num_frac6_refuse` 期望随即被证伪；改前证据必须同时覆盖单属性与 items 两条路，才能预判这处波纹。
+**顺位**：not 值级、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。

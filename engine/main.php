@@ -1381,7 +1381,7 @@ function api_array_bounded_int_value(string $ids, string $prop, int $lo, int $hi
 }
 
 // F462: an array of bounded NUMBER items. Same loop as the bounded-integer array writer; the
-// element body has two modes - the marker case (hi in -999..-995) forces the deterministic decimal
+// element body has two modes - the marker case (hi in -999..-994) forces the deterministic decimal
 // from api_number_decimal_element (every element equals the scaled minimum, a legal number inside
 // the interval - the subset argument), and the integer-valued case walks digits per element, so an
 // integer (a valid number) lands in the integer sub-interval. The element count rides the same
@@ -1408,7 +1408,7 @@ function api_array_item_number_value(string $ids, string $prop, int $lo, int $hi
     }
     $dec = "";
     $decMode = 0;
-    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995) {
+    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994) {
         $dec = api_number_decimal_element($lo, $hi);
         if ($dec == "") {
             return "";
@@ -6177,7 +6177,7 @@ function api_response_schema_number_prop(string $body): string
 function api_schema_scaled(string $lit, int $digits): int
 {
     $m = [];
-    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,5}))?$/', $lit, $m) != 1) {
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,6}))?$/', $lit, $m) != 1) {
         return -2000000000;
     }
     $ip = (int) $m[2];
@@ -6202,6 +6202,8 @@ function api_schema_scaled(string $lit, int $digits): int
         $v = $ip * 10000 + (int) $fp;
     } else if ($digits == 5) {
         $v = $ip * 100000 + (int) $fp;
+    } else if ($digits == 6) {
+        $v = $ip * 1000000 + (int) $fp;
     }
     if ($m[1] == "-") {
         $v = -$v;
@@ -6469,12 +6471,13 @@ function api_schema_number_bounded_shape(string $schema): string
         // -997/-996, so the existing writer emits the decimal without a new route.
         // Only a NUMBER leaf can take the decimal; an integer leaf with no integer in the interval
         // stays refused. Five or more fraction places and any multipleOf keep the refusal.
-        // F450/F456: four fraction digits ride a ten-thousandths grid (marker -996) and five a
-        // hundred-thousandths one (-995); six and finer have no grid at this width and stay refused.
+        // F450/F456/F473: four fraction digits ride a ten-thousandths grid (marker -996), five a
+        // hundred-thousandths one (-995) and six a millionths one (-994); seven and finer have no
+        // grid at this width and stay refused.
         $k = 0;
         if ($kv[1] == "n" && $hasLo && $hasHi && strpos($schema, "\"multipleOf\"") === false
-            && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mn[1]) == 1
-            && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) == 1) {
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mn[1]) == 1
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mx[1]) == 1) {
             $d = 1;
             if (preg_match('/\.[0-9]{2}/', $mn[1]) == 1 || preg_match('/\.[0-9]{2}/', $mx[1]) == 1) {
                 $d = 2;
@@ -6487,6 +6490,9 @@ function api_schema_number_bounded_shape(string $schema): string
             }
             if (preg_match('/\.[0-9]{5}/', $mn[1]) == 1 || preg_match('/\.[0-9]{5}/', $mx[1]) == 1) {
                 $d = 5;
+            }
+            if (preg_match('/\.[0-9]{6}/', $mn[1]) == 1 || preg_match('/\.[0-9]{6}/', $mx[1]) == 1) {
+                $d = 6;
             }
             $tLo = api_schema_scaled($mn[1], $d);
             $tHi = api_schema_scaled($mx[1], $d);
@@ -6503,6 +6509,9 @@ function api_schema_number_bounded_shape(string $schema): string
                 }
                 if ($d == 5) {
                     $mark = "-995";
+                }
+                if ($d == 6) {
+                    $mark = "-994";
                 }
                 return $kv[0] . "|" . $tLo . "|" . $mark . "|0";
             }
@@ -6631,8 +6640,8 @@ function api_number_bounded_fill(int $lo, int $hi): string
 
 // F462: the deterministic decimal value the marker case emits ("int.frac", zero-padded to d
 // places). lo carries the value in units of 10^-d and hi is the grid marker (-999 one place,
-// -998 two, -997 three, -996 four, -995 five). No object wrapper, so the array writer can emit it
-// element by element - the single-property marker branch below now shares this body.
+// -998 two, -997 three, -996 four, -995 five, -994 six). No object wrapper, so the array writer
+// can emit it element by element - the single-property marker branch below now shares this body.
 function api_number_decimal_element(int $lo, int $hi): string
 {
     $d = 0;
@@ -6652,6 +6661,9 @@ function api_number_decimal_element(int $lo, int $hi): string
     } elseif ($hi == -995) {
         $d = 5;
         $scale = 100000;
+    } elseif ($hi == -994) {
+        $d = 6;
+        $scale = 1000000;
     } else {
         return "";
     }
@@ -6672,10 +6684,11 @@ function api_number_decimal_element(int $lo, int $hi): string
 // The bounded-integer object: {"prop":<in-range digits>} with the forced closing brace.
 function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, int $useCache = 1): string
 {
-    // F440/F441: hi <= -995 is the decimal marker - lo carries the value in units of 10^-d (-999
-    // means one place, -998 two, -997 three, -996 four, -995 five), and the writer forces "int.frac"
-    // (zero-padded to d digits) as one continuation, which is a legal `number` inside the interval.
-    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995) {
+    // F440/F441: hi <= -994 is the decimal marker - lo carries the value in units of 10^-d (-999
+    // means one place, -998 two, -997 three, -996 four, -995 five, -994 six), and the writer forces
+    // "int.frac" (zero-padded to d digits) as one continuation, which is a legal `number` inside the
+    // interval.
+    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994) {
         $dec = api_number_decimal_element($lo, $hi);
         if ($dec == "") {
             return "";
@@ -17292,9 +17305,18 @@ function main(): void
         $nfText6 = $nfText6 . gguf_token_str((int) $nfP6[$i]);
     }
     $nfText6 = str_replace("Ġ", " ", $nfText6);
-    // F456: five fraction digits ride the hundred-thousandths grid (-995); six have no grid.
+    // F456: five fraction digits ride the hundred-thousandths grid (-995).
+    // F473: six ride the millionths grid (-994); seven have no grid at this width.
     $nfO = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.51111,"maximum":1.51119}}}}}');
     $nfQ = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.511111,"maximum":1.511119}}}}}');
+    $nfR = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5111111,"maximum":1.5111119}}}}}');
+    $nfOut8 = api_number_bounded_value($nbIds, "n", 1511111, -994, 0);
+    $nfP8 = explode(",", $nfOut8);
+    $nfText8 = "";
+    for ($i = $nbBase; $i < count($nfP8); $i++) {
+        $nfText8 = $nfText8 . gguf_token_str((int) $nfP8[$i]);
+    }
+    $nfText8 = str_replace("Ġ", " ", $nfText8);
     $nfOut7 = api_number_bounded_value($nbIds, "n", 151111, -995, 0);
     $nfP7 = explode(",", $nfOut7);
     $nfText7 = "";
@@ -17348,10 +17370,10 @@ function main(): void
         . "] num_float_ok=[" . $nfG . "] num_mult_refuse=[" . $nfH
         . "] num_dec=[" . $nfI . "] num_dec_fine=[" . $nfJ . "] num_dec3=[" . $nfK
         . "] num_dec_neg=[" . $nfL . "] num_dec4=[" . $nfN
-        . "] num_dec5=[" . $nfO . "] num_dec6=[" . $nfQ
+        . "] num_dec5=[" . $nfO . "] num_dec6=[" . $nfQ . "] num_dec7=[" . $nfR
         . "] dec_text=[" . $nfText2 . "] dec2_text=[" . $nfText3
         . "] dec3_text=[" . $nfText5 . "] dec4_text=[" . $nfText6
-        . "] dec5_text=[" . $nfText7 . "] neg_text=[" . $nfText4 . "]\n";
+        . "] dec5_text=[" . $nfText7 . "] dec6_text=[" . $nfText8 . "] neg_text=[" . $nfText4 . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
         && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
         && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0
@@ -17360,10 +17382,11 @@ function main(): void
         && $nfH == 0
         && $nfI == "n|15|-999|0" && $nfJ == "n|151|-998|0" && $nfK == "n|1511|-997|0"
         && $nfL == "n|-19|-999|0" && $nfN == "n|15111|-996|0"
-        && $nfO == "n|151111|-995|0" && $nfQ == ""
+        && $nfO == "n|151111|-995|0" && $nfQ == "n|1511111|-994|0" && $nfR == ""
         && $nfText2 == "{\"n\":1.5}" && $nfText3 == "{\"n\":1.51}"
         && $nfText5 == "{\"n\":1.511}" && $nfText6 == "{\"n\":1.5111}"
-        && $nfText7 == "{\"n\":1.51111}" && $nfText4 == "{\"n\":-1.9}") {
+        && $nfText7 == "{\"n\":1.51111}" && $nfText8 == "{\"n\":1.511111}"
+        && $nfText4 == "{\"n\":-1.9}") {
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";

@@ -1433,6 +1433,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F472 → not 值级、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定、六位以上小数 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F473 计划（小数网格 5→6 位：F456 同款扩宽，新增 marker -994）
+**F472 已完成**：contains 值级子集形式。
+**核心思路**：F440–F456 的 marker 编码已覆盖 d=1..5（-999..-995）；把网格宽度扩到 **d=6**（marker **-994**、scale 10^6）——同一条小数写入链即可发六位小数，语义无歧义（`[1.511111,1.511119]` → `1.511111`）。七位仍拒。
+**实现（六处）**：①`api_schema_scaled` 正则 `{1,5}`→`{1,6}` ＋ `$digits==6` 分支（×1000000）；②shape 小数网格分支：界正则 `{1,5}`→`{1,6}`、加 `\.[0-9]{6}` 探测得 d=6、mark -994；③`api_number_decimal_element` 加 -994 分支（d=6,scale=1000000）；④`api_number_bounded_value` marker 判定加 -994；⑤`api_array_item_number_value` 元素 marker 判定加 -994；⑥F469 小数 M 分支**保持 ≤5 位**（另行排队，不在本增量）。
+**改前状态（读码判定，执行前活体取证）**：`minimum:1.511111,maximum:1.511119`（六位）→ 网格正则 {1,5} 不匹配 ⇒ shape "" ⇒ **400**（过度拒绝，确定解 1.511111 存在）；五位数对照已服务。
+**门（SCHEMA-NUM-FRAC 含翻转）**：`num_dec6`（nfQ）`""`→`n|1511111|-994|0`；新 `num_dec7=[]`（七位仍拒）、`dec6_text=[{"n":1.511111}]`；`num_dec5`/`dec5_text` 与 1–4 位不回退。
+**活体**（`schema_bounds_check.py`）：`float_dec6_refuse` 翻转改名 `float_dec6_served`（200 `{"n":1.511111}`）；新 `float_dec7_refuse`（400）；`float_dec5_served` 不回退。
+**验收**：①六位小数确定值发出（门＋活体）②七位仍拒 ③1–5 位与负数不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F473 已完成**：`api_schema_scaled` `{1,6}`＋digits==6；shape 网格 `{1,6}`＋d=6＋mark -994；`api_number_decimal_element`/`api_number_bounded_value`/`api_array_item_number_value` 三处 marker 判定加 -994；F469 小数 M 保持 ≤5。门翻转 `num_dec6` ``→`n|1511111|-994|0`，新 `num_dec7=[]`、`dec6_text=[{"n":1.511111}]`。
+**改前证据（`engine/schema_bounds_f473pre.log`，F472 二进制）**：六位单属性 → 400；七位对照 400；1–5 位/负数不变。
+**波纹（已处理）**：`items_num_frac6_refuse`（six-decimal number items 旧拒绝例）经 F462 wrap→shape 随网格扩宽自动服务（200 `[0.000123,…]`，界内合法）⇒ 翻为 `items_num_frac6_ok` 并逐元素断言 0.000123。
+**活体**：`float_dec6_served` 200 `{"n":1.511111}`、`float_dec7_refuse` 400；1–5 位/负数不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.542×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f473.log`、`engine/schema_*_f473.log`、`engine/api_smoke_f473.log`、`engine/throughput_f473.log`）。
+**顺位**：F473 → not 值级、patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。
