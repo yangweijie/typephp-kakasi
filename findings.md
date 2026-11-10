@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F480）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F481）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3746,8 +3746,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | not：子 schema 恰为与叶类型矛盾的 `{"type":"integer"|"number"|"boolean"|"array"|"object"}`、**非字符串标量 const/enum**（`{"const":5}` / `{"enum":[1,2,3]}`）、或**含字符集外字符的无转义字符串 const/enum**（如 `"Paris!"`、`["a!","b@"]`）（扁平全字符串） | **支持**（构造满足——发射值是字符集内字符串，永不等于非字符串常量或含外字符的串；根级 not 块不 disqualify 生成器/扁平枚举扫描） | `not_type`/`not_route`/`nt_const_num`/`nt_enum_num`/`nt_const_bang`/`nt_enum_bang`/`nt_enum_scalars`/`not_const_bang_served`（F448/F474/F479） |
 | not：**全字符集**字符串常量/存在可命中的枚举成员/pattern/对象数组常量 / 含转义成员 / 非扁平全字符串形状 | **显式 400** | `not_pattern`/`not_mixed`/`nt_const_str`/`nt_enum_miss`/`nt_escaped`（F448/F474/F479） |
 | contains：子 schema 恰为单项类型（单数组属性；string↔string / integer↔integer / number↔number） | **支持**（写出器必先发首元素，构造满足；数组路由保留） | `contains_type`/`contains_route`（F449） |
-| contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern） | **支持**（每元素皆从 items 值表发射、数组 ≥1 元素 ⇒ contains 构造满足；判定复用 F457 leaf_guarantees） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`contains_const_served`（F472） |
-| contains：类型不匹配 / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`（F449/F472） |
+| contains：值级子 schema 的**子集形式**（items 为有限 string enum/const，且每个可能元素都满足 contains 的 const/enum/pattern；或 items 为受支持 pattern 且 contains 的 pattern 生成**同一 spec**） | **支持**（每元素皆从 items 值表/spec 构造发射、数组 ≥1 元素 ⇒ contains 构造满足；判定复用 F457 leaf_guarantees 与 spec 相等） | `cv_const`/`cv_enum`/`cv_pat`/`cv_route`/`cv_pat_spec`/`contains_const_served`/`contains_pattern_items_same_ok`（F472/F481） |
+| contains：类型不匹配 / 自由字符串 items 的值级规则 / 子集不覆盖每元素 / pattern items 与 contains 的 spec 不同 / 更丰富子 schema | **显式 400** | `contains_mismatch`/`contains_pattern`/`cv_miss`/`cv_pat_spec_diff`（F449/F472/F481） |
 | patternProperties：单条模式**不匹配**任何将发出的键（空约束） | **支持**（构造满足；值路由保留） | `pp_vacuous`/`pp_route`（F451） |
 | patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / array↔数组种类） | **支持**（值由该种类写出器保证） | `pp_match_ok`（F455） |
 | patternProperties：匹配键为**有限字符串枚举**（`e:` 种类），子 schema 为 enum（包含关系）/ const（相等）/ pattern（逐枚举值匹配） | **支持**（枚举值集合已知 ⇒ 静态可证；值来自枚举） | `pp_enum`/`pp_pat`/`pp_enum_route`（F457） |
@@ -3772,7 +3772,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的**全字符集**字符串常量/可命中枚举成员/pattern 值级形态（含外字符的无转义 const/enum 自 F479 支持，非字符串标量自 F474）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**自由字符串 `s`/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476、受支持 pattern `p:` 同 spec F480 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 的无界/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的**全字符集**字符串常量/可命中枚举成员/pattern 值级形态（含外字符的无转义 const/enum 自 F479 支持，非字符串标量自 F474）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式与 pattern 同 spec 自 F472/F481 支持）；`patternProperties` 对**自由字符串 `s`/数值非枚举/数组**种类的值级约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476、受支持 pattern `p:` 同 spec F480 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 的无界/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4533,4 +4533,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`patternprops_pattern_same_ok` **200 `{"code":"EYX"}`**（3 大写，同 spec）、`patternprops_pattern_diff_refuse` **400**；既有 patternprops 系列不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f480.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f480.log`、`engine/api_smoke_f480.log`、`engine/throughput_f480.log`、改前证据 `engine/schema_required_f480pre.log`）。
 **记法**：**"构造"也可作为保证来源**——p: 种类不暴露值集，但暴露其**构造 spec**；两个 pattern 的 spec 相等 ⇒ 同一构造同时满足二者。这补齐了 leaf_guarantees 的第三类证据（值集包含 en:/e:、类型 kind_is_type、构造相等 p:），三类都可静态判定、无需运行时求值。
+**顺位**：其余自由字符串/数组值级子集（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
+
+## F481：`contains` 对 **pattern-items 的同 spec** 形式从点名 400 变构造满足
+**核心思路**：items 为受支持 pattern 时 `api_schema_array_enum` 返回 `prop|~spec`（F471），写入器按 spec 逐元素构造、数组恒 ≥1 元素；contains 子 schema 为 `{"pattern":Q}` 且 `api_schema_pattern_spec(Q)` 等于该 spec ⇒ **每元素**匹配 Q ⇒ contains 构造满足。F472 原对 `~` 前缀直接跳过。
+**改前证据（`engine/schema_count_f481pre.log`，F480 二进制）**：items `^[A-Z]{3}$` + `contains:{"pattern":"^[A-Z]{3}$"}` → **400 "contains"**；不同 spec（`^[a-z]+$`）对照 400 正确。
+**实现（contains_ok 的 F472 分支一处）**：`$aep[1]` 以 `~` 开头取 specK，子 schema pattern 经 `api_unesc` 解码后 `api_schema_pattern_spec` 得 specS，`specS != "" && specS == specK ⇒ 1`；否则枚举分支 `leaf_guarantees("e:"+vals)`。判定本体零改动。
+**门**：`cv_pat_spec=[]`、`cv_pat_spec_diff=[contains]`；`cv_const`/`cv_enum`/`cv_pat`（枚举 items）不回退。
+**活体**：`contains_pattern_items_same_ok` **200 `[CJL,CJL]`**（3 大写）、`contains_pattern_items_diff_refuse` **400**；既有 contains 系列不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f481.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.497×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f481.log`、`engine/api_smoke_f481.log`、`engine/throughput_f481.log`、改前证据 `engine/schema_count_f481pre.log`）。
+**记法**：**F480 的"构造相等"证据同样适用于 contains**——items 的 spec 与 contains 的 spec 相等时，"至少一元素匹配"升级为"每元素匹配"，无需运行时求值；同一 spec 相等判定在 patternProperties（F480）与 contains（F481）两处复用，说明"构造 spec 相等"是一个可跨约束复用的子集证据。
 **顺位**：其余自由字符串/数组值级子集（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。

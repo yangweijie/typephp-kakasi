@@ -1565,6 +1565,22 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F480 → 其余自由字符串/数组值级子集（需 plan/写入器扩展）→ 分片多卡 / FR-05（本机不可验证）。
 
 
+## F481 计划（`contains` 对 **pattern-items 的同 spec** 形式：每元素由同一构造生成 ⇒ 全匹配）
+**F480 已完成**：patternProperties 的 p: 同 spec。
+**核心思路**：items 为受支持 pattern 时 `api_schema_array_enum` 返回 `prop|~spec`（F471），写入器按 spec 逐元素构造、数组恒 ≥1 元素；若 contains 子 schema 为 `{"pattern":Q}` 且 `api_schema_pattern_spec(Q)` 等于该 spec，则**每元素**都匹配 Q ⇒ contains（至少一匹配）构造满足。F472 当前对 `~` 前缀直接跳过。
+**支持边界**：单字符串数组属性（kind a）、items 为受支持 pattern；contains 为同 spec 的 pattern（可带 `"type":"string"` 前缀）；不同 spec / 更丰富子 schema / 自由字符串 items 仍拒。
+**改前状态（读码判定，执行前活体取证）**：items `^[A-Z]{3}$` + `contains:{"pattern":"^[A-Z]{3}$"}` → F472 见 `~` 前缀跳过 ⇒ **400 "contains"**（过度拒绝）；不同 spec（`^[a-z]+$`）对照 400 正确。
+**实现（contains_ok 的 F472 分支一处）**：`$aep[1]` 以 `~` 开头时取 specK，子 schema pattern 用 `api_unesc` 解码后 `api_schema_pattern_spec` 得 specS，`specS != "" && specS == specK ⇒ 1`；否则维持枚举分支（leaf_guarantees("e:"+vals)）。判定本体零改动。
+**门（SCHEMA-STRUCT 新字段）**：`cv_pat_spec=[]`（items 与 contains 同 spec）、`cv_pat_spec_diff=[contains]`（不同 spec 对照）；既有 `cv_const`/`cv_enum`/`cv_pat`（枚举 items）不回退。
+**活体**（`schema_count_check.py`）：`contains_pattern_items_same_ok`（200 每元素 3 大写）、`contains_pattern_items_diff_refuse`（400）；既有 contains 系列不回退。
+**验收**：①服务形态每元素匹配 contains（门＋活体逐元素）②不同 spec/自由字符串仍拒 ③F449/F454/F472 contains 门不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F481 已完成**：contains_ok 的 F472 分支加 `~` spec 路径（子 schema pattern spec 与 items spec 相等 ⇒ 1）；枚举分支保持。门 `cv_pat_spec=[]`、`cv_pat_spec_diff=[contains]`。
+**改前证据（`engine/schema_count_f481pre.log`，F480 二进制）**：items `^[A-Z]{3}$` + contains 同 pattern → 400；不同 spec 对照 400 正确。
+**活体**：`contains_pattern_items_same_ok` 200 `[CJL,CJL]`、`contains_pattern_items_diff_refuse` 400；既有 contains 系列不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.497×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f481.log`、`engine/schema_*_f481.log`、`engine/api_smoke_f481.log`、`engine/throughput_f481.log`）。
+**顺位**：F481 → 其余自由字符串/数组值级子集 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

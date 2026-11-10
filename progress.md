@@ -1957,3 +1957,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`pp_pat_same`=[]、`pp_pat_diff`=[patternProperties]；既有 pp 系列不回退。
 - **活体**：同 spec 200 `{"code":"EYX"}`、不同 spec 400。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.528×**、哨兵 **0**。
+
+## ▶ 状态（2026-11-10 20:54 构建）——F481 contains 对 pattern-items 同 spec 构造满足
+- **改前证据**：items `^[A-Z]{3}$` + contains 同 pattern → 400；不同 spec 对照 400（`schema_count_f481pre.log`，F480 二进制）。
+- **实现**：contains_ok F472 分支加 `~` spec 路径（spec 相等 ⇒ 1）；枚举分支保持。
+- **门**：`cv_pat_spec`=[]、`cv_pat_spec_diff`=[contains]；既有 cv 系列不回退。
+- **活体**：同 spec 200 `[CJL,CJL]`、不同 spec 400。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.497×**、哨兵 **0**。

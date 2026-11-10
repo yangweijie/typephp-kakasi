@@ -287,6 +287,19 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon"]}}},
       "contains": {"const": "paris"}},
      lambda code, txt: code == 400 and "contains" in txt, ask),
+    # F481: pattern items build every element from one spec, so a contains pattern with the SAME
+    # spec is matched by every element (>=1), i.e. contains holds; a different spec stays refused.
+    ("contains_pattern_items_same_ok", "Give the codes.",
+     {"type": "object", "properties": {"codes": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[A-Z]{3}$"}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("codes"), list)
+     and len(json.loads(txt)["codes"]) >= 1
+     and all(isinstance(x, str) and len(x) == 3 and x.isalpha() and x.isupper()
+             for x in json.loads(txt)["codes"]), ask),
+    ("contains_pattern_items_diff_refuse", "Give the codes.",
+     {"type": "object", "properties": {"codes": {"type": "array", "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[a-z]+$"}},
+     lambda code, txt: code == 400 and "contains" in txt, ask),
     # F448: the bare type-contradiction form is served now - every emitted value is a string, so
     # `not: {"type": "integer"}` holds by construction - while a value rule inside `not` still needs
     # the value evaluated and stays refused by name. (This case used to expect the refusal; F448

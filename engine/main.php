@@ -9427,15 +9427,27 @@ function api_schema_contains_ok(string $schema): int
     // (the subset argument): a string array whose items is a finite enum/const emits each element
     // from that value list and always has at least one element, so a const/enum/pattern contains
     // that every enumerant satisfies holds by construction. The judgement is F457's leaf guarantees
-    // applied to the items value list. Pattern items are infinite (a "~" spec) and skip; a free
-    // string items exposes no values, so it keeps the refusal.
+    // applied to the items value list. F481: pattern items carry a construction spec - a contains
+    // pattern with the SAME spec is satisfied by every element the spec builds. A free-string items
+    // exposes no values, so it keeps the refusal.
     if ($kind == "a") {
         $ae = api_schema_array_enum($schema);
         if ($ae != "") {
             $aep = explode("|", $ae);
-            if (count($aep) == 2 && substr($aep[1], 0, 1) != "~"
-                && api_schema_leaf_guarantees("e:" . $aep[1], $sub) == 1) {
-                return 1;
+            if (count($aep) == 2) {
+                if (substr($aep[1], 0, 1) == "~") {
+                    $specK = substr($aep[1], 1);
+                    $mpc = [];
+                    if (preg_match('/^\{\s*(?:"type"\s*:\s*"string"\s*,\s*)?'
+                        . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mpc) == 1) {
+                        $specS = api_schema_pattern_spec(api_unesc($mpc[1]));
+                        if ($specS != "" && $specS == $specK) {
+                            return 1;
+                        }
+                    }
+                } else if (api_schema_leaf_guarantees("e:" . $aep[1], $sub) == 1) {
+                    return 1;
+                }
             }
         }
     }
@@ -17945,6 +17957,10 @@ function main(): void
     $cvPat = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}},"contains":{"pattern":"^[a-z]+$"}}');
     $cvMiss = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}},"contains":{"const":"paris"}}');
     $cvRoute = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","const":"paris"}}},"contains":{"const":"paris"}}}}');
+    // F481: pattern items + contains pattern with the SAME spec (every element matches); a
+    // different spec keeps the refusal.
+    $cvPatSpec = api_schema_keywords_unsupported('{"properties":{"codes":{"type":"array","items":{"type":"string","pattern":"^[A-Z]{3}$"}}},"contains":{"pattern":"^[A-Z]{3}$"}}');
+    $cvPatSpecDiff = api_schema_keywords_unsupported('{"properties":{"codes":{"type":"array","items":{"type":"string","pattern":"^[A-Z]{3}$"}}},"contains":{"pattern":"^[a-z]+$"}}');
     // F451: patternProperties is honoured only when its single pattern matches none of the emitted
     // keys; a matching pattern, a second entry that matches, or an unreadable pattern keeps the
     // refusal, and the route case pins that the value generator is not disqualified.
@@ -18403,6 +18419,7 @@ function main(): void
         . "] contains_type=[" . $sfAO . "] contains_mismatch=[" . $sfAP
         . "] contains_pattern=[" . $sfAQ . "] contains_route=[" . $sfAR . "]"
         . " cv_const=[" . $cvConst . "] cv_enum=[" . $cvEnum . "] cv_pat=[" . $cvPat
+        . "] cv_pat_spec=[" . $cvPatSpec . "] cv_pat_spec_diff=[" . $cvPatSpecDiff . "]"
         . "] cv_miss=[" . $cvMiss . "] cv_route=[" . $cvRoute . "]"
         . " pp_vacuous=[" . $sfAS . "] pp_match=[" . $sfAT . "] pp_multi=[" . $sfAU
         . "] pp_route=" . count($sfAV)
@@ -18484,6 +18501,7 @@ function main(): void
         && count($sfAN) == 2 && $sfAN[0] == "city" && $sfAN[1] == "note"
         && $sfAO == "" && $sfAP == "contains" && $sfAQ == "contains"
         && $cvConst == "" && $cvEnum == "" && $cvPat == ""
+        && $cvPatSpec == "" && $cvPatSpecDiff == "contains"
         && $cvMiss == "contains" && $cvRoute == "cities|paris"
         && $sfAR == "cities"
         && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
