@@ -1331,6 +1331,27 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：items 上 multipleOf 与 exclusive 组合 / 小数 multipleOf → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F467 计划（items 上的 multipleOf + exclusive 组合：检测器改走 wrap→shape，同一判定覆盖任意键序）
+**F466 已完成**：number 叶＋整数 multipleOf。
+**核心思路（F462/F464 的"同一判定"手法）**：F465 检测器用一条**顺序固定、只认 inclusive** 的正则解析 items 块，exclusive 形式（数值或 draft-4 布尔）不在其中 ⇒ 检测器返 ""，路由落到 F458 结构层点名 400；而**单属性**同形早已由 `api_schema_number_bounded_shape` 服务（exclusive 转相邻整数再折 multipleOf）。⇒ F467 把 items 检测器也接到**同一个 shape 判定**：items 块有界时一律 wrap→shape，exclusive/inclusive/布尔/单侧/空区间/unsat 全由一处决定，检测器只负责"确认这是单个 array 属性 + items 是 integer|number + 带整数 multipleOf + 没有其它值约束键"。
+**改前状态（读码判定，执行前活体取证）**：
+- integer items `{"type":"integer","exclusiveMinimum":0,"maximum":9,"multipleOf":3}`：F465 正则不匹配 ⇒ 检测器 ""；`api_schema_items_constrained` 命中 exclusive/multipleOf ⇒ F458 结构层 **400 "items"**——过度拒绝（合法解 3/6/9）。
+- number items 同形：F462 检测器要求 `seg[3]=="0"`（mult 必须为 0）⇒ 拒；F465 正则不匹配 ⇒ 同样 400。
+- exclusive 布尔形式（inclusive 字面量旁 `"exclusiveMinimum":true`）同样被 F465 正则排除。
+- 对照：单属性同形 **应已服务**（shape 的 exclusive 转换 + multipleOf 折叠），活体一并钉住；小数 M 仍应拒；无倍数区间仍应拒。
+**实现（检测器一处改写，路由零改动）**：
+1. `api_schema_array_item_multiple`（`engine/main.php:1159`）解析出 `$isub` 后：①要求 `"type"` 为 `integer|number`；②用 `preg_match_all('/"([^"]+)"\s*:/')` 收集键名，除 `type/minimum/maximum/exclusiveMinimum/exclusiveMaximum/multipleOf` 外**任何键**（enum/const/pattern/format/…）一律返 ""——保持"只认纯值约束形态"的边界；③取整数 `multipleOf`（小数 M 的 `[0-9]+` 前缀会得 0 ⇒ 拒）；④四个界键全不在 ⇒ 无界路径（`mult<=999999999`）返回 `prop|mult|-1|-1`；⑤否则 wrap 成单属性 schema 喂 `api_schema_number_bounded_shape`，要求 4 段且 `seg[3]==mult`，返回 `prop|mult|seg[1]|seg[2]`。形状判定（哨兵/空区间/unsat/布尔/小数界）全部由 shape 拥有，检测器不再手写上下界比较（F466 哨兵教训）。
+2. 路由与两处豁免**零改动**：检测器认领即可，`api_schema_bounds_unsupported` 顶部早退与结构层 items 检查都按"检测器非空"放行。
+**门（SCHEMA-STRUCT 新字段）**：`im_excl`＝integer items `exclusiveMinimum:0,maximum:9,m3` → `nums|3|3|3`；`im_excl_bool`＝`minimum:0,exclusiveMinimum:true,m3` → `nums|3|3|3`；`im_excl_num`＝number items `exclusiveMinimum:2.5,maximum:9.5,m3` → `nums|3|3|3`；`im_excl_unsat`＝`exclusiveMinimum:0,maximum:2,m3` → `[]`；`im_excl_frac`＝`exclusiveMinimum:0,maximum:9,multipleOf:0.3` → `[]`；`im_excl_kw`＝items 带 `format` 的 multipleOf 形态仍 `[items]`；exclusive 写入器文本断言（每元素 == 3）。
+**活体**（`schema_bounds_check.py`）：`items_mult_excl_ok`（integer exclusive 上下界 m3 → 200 每元素 %3==0 且 >0 且 ≤9）、`items_mult_excl_bool_ok`（布尔形式 → 200，同断言）、`items_mult_num_excl_ok`（number exclusive 2.5/9.5 m3 → 200 每元素 ∈{3,6,9}）、`items_mult_excl_unsat_refuse` / `items_mult_excl_frac_refuse` → 400 点名；对照：F465/F466 的 mult 系、exclusive 单属性用例不回退。
+**验收**：①exclusive 组合的元素值是 M 的倍数且在界内（门＋活体逐元素）②空区间/小数 M 仍拒、带其它约束键仍拒 ③单属性 exclusive 形态不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F467 已完成**：`api_schema_array_item_multiple` 改为"只钉表面"——键名白名单（type/minimum/maximum/exclusiveMinimum/exclusiveMaximum/multipleOf）＋type integer|number＋整数 multipleOf；四界键全不在⇒无界后缀路径，否则 wrap→`api_schema_number_bounded_shape` 取折叠 `lo|hi`。门新 `im_excl=[nums|3|3|3]`/`im_excl_bool`/`im_excl_num`/`im_excl_unsat=[]`/`im_excl_frac=[]`/`im_excl_kw=[items]`/`im_excl_text=[{"nums":[3]}]`。
+**改前证据（`engine/schema_bounds_f467pre.log`，F466 二进制）**：integer items excl0/max9/m3 → 400 "numeric bounds…"、布尔形 → 400、number items excl2.5/max9.5/m3 → 400；unsat/frac 对照 400 正确。
+**活体**：`items_mult_excl_ok`/`items_mult_excl_bool_ok`/`items_mult_num_excl_ok` 200 `[3,3,3,3]`、unsat/frac 400；F465/F466 系不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f467.log`、`engine/schema_*_f467.log`、`engine/api_smoke_f467.log`、`engine/throughput_f467.log`）。
+**顺位**：F467 → items exclusive **无 multipleOf** 的整数形态（同根：F460 检测器只认 inclusive）→ 小数 multipleOf → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

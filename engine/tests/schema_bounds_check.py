@@ -356,6 +356,38 @@ cases = [
     ("num_mult_unb_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 3}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F467: multipleOf plus EXCLUSIVE bounds on items. The detector now wraps the items block and
+    # asks the same shape judgement the single-property route uses, so the numeric exclusive form,
+    # the draft-4 boolean form and the number leaf all fold to the interval's smallest multiple
+    # (3 here) element by element.
+    ("items_mult_excl_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 9, "multipleOf": 3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and x % 3 == 0 and 0 < x <= 9 for x in val_of(txt, "nums"))),
+    ("items_mult_excl_bool_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 0, "exclusiveMinimum": True, "multipleOf": 3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and x % 3 == 0 and x > 0 for x in val_of(txt, "nums"))),
+    ("items_mult_num_excl_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "exclusiveMinimum": 2.5, "maximum": 9.5, "multipleOf": 3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and x % 3 == 0 and 2.5 < x <= 9.5 for x in val_of(txt, "nums"))),
+    # No multiple of 3 lies strictly above 0 and at most 2: unsatisfiable, stays refused.
+    ("items_mult_excl_unsat_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 2, "multipleOf": 3}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+    # A fractional multiplier is not honoured by the integer-multiple writer.
+    ("items_mult_excl_frac_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 9, "multipleOf": 0.3}}}},
+     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
 ]
 
 bad = 0

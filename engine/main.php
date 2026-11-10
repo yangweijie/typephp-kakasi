@@ -1154,8 +1154,11 @@ function api_response_schema_array_item_number(string $body): string
 // - and lo==hi==that multiple, one deterministic value per element, the F420 subset argument).
 // F466: a NUMBER items leaf is claimed too - the fold lands on an integer multiple, which is a
 // legal number and a multiple of M (the subset argument); a fractional multiplier is refused by
-// the validator. Natural key order only; mult >= 1; an unbounded multipleOf beyond the suffix
-// writer's reach (999999999) stays refused.
+// the validator. F467: the bounds are judged by the SAME shape helper the single-property route
+// uses - the items block is wrapped and fed to it, so an inclusive, an exclusive numeric and a
+// draft-4 boolean spelling all land on one adjacent-integer/sentinel judgement instead of a local
+// regex that only knew the inclusive keys and one key order. mult >= 1; an unbounded multipleOf
+// beyond the suffix writer's reach (999999999) stays refused.
 function api_schema_array_item_multiple(string $schema): string
 {
     if ($schema == "") {
@@ -1212,30 +1215,46 @@ function api_schema_array_item_multiple(string $schema): string
     if ($isub == "") {
         return "";
     }
-    $mm = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"(?:integer|number)"'
-        . '(?:\s*,\s*"minimum"\s*:\s*(-?[0-9]+))?'
-        . '(?:\s*,\s*"maximum"\s*:\s*(-?[0-9]+))?'
-        . '\s*,\s*"multipleOf"\s*:\s*([0-9]+)\s*\}$/', $isub, $mm) != 1) {
+    // F467: this function only pins the SURFACE - one integer/number items leaf carrying an
+    // integer multipleOf and no other value-constraint key. Key order does not matter; the bounds
+    // themselves are never judged here.
+    $ks = [];
+    if (preg_match_all('/"([^"]+)"\s*:/', $isub, $ks) < 1) {
         return "";
     }
-    $mult = (int) $mm[3];
+    foreach ($ks[1] as $k) {
+        if ($k != "type" && $k != "minimum" && $k != "maximum"
+            && $k != "exclusiveMinimum" && $k != "exclusiveMaximum"
+            && $k != "multipleOf") {
+            return "";
+        }
+    }
+    if (preg_match('/"type"\s*:\s*"(?:integer|number)"/', $isub) != 1) {
+        return "";
+    }
+    $mo = [];
+    if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $isub, $mo) != 1) {
+        return "";
+    }
+    $mult = (int) $mo[1];
     if ($mult < 1) {
-        return "";
+        return "";                 // fractional multiplier - the integer-multiple writer cannot
     }
-    $loSet = isset($mm[1]) && $mm[1] !== "";
-    $hiSet = isset($mm[2]) && $mm[2] !== "";
-    if (!$loSet && !$hiSet) {
+    $bounded = strpos($isub, "\"minimum\"") !== false
+        || strpos($isub, "\"maximum\"") !== false
+        || strpos($isub, "\"exclusiveMinimum\"") !== false
+        || strpos($isub, "\"exclusiveMaximum\"") !== false;
+    if (!$bounded) {
         // Unbounded: the suffix writer reaches multipliers up to nine digits (F430/F443).
         if ($mult > 999999999) {
             return "";
         }
         return $lkv[0] . "|" . $mult . "|-1|-1";
     }
-    // Bounded or one-sided (the missing side is the -1 sentinel): fold through the shared shape
-    // judgement and take its collapsed lo==hi pair; the shape handles the sentinel, an empty
-    // interval and an interval holding no multiple, so no local check here - F466 caught the
-    // one-sided form being refused by a local lo>hi test that read the sentinel as a real bound.
+    // Bounded or one-sided: fold through the shared shape judgement and take its collapsed
+    // lo==hi pair. The shape owns the sentinel, the empty interval, the unsatisfiable interval,
+    // the exclusive-to-adjacent conversion and the draft-4 boolean tightening, so neither form
+    // needs a (second, divergent) check here - F466 caught the sentinel read as a real bound.
     $wrap = '{"properties":{"_item":' . $isub . '}}';
     $shape = api_schema_number_bounded_shape($wrap);
     if ($shape == "") {
@@ -17593,6 +17612,26 @@ function main(): void
     $imNText = str_replace("Ġ", " ", $imNText);
     $imNMatch = preg_match('/^\{"nums":\[([0-9]+)\]\}$/', $imNText, $imNM) == 1;
     $imNVal = $imNMatch == 1 ? (int) $imNM[1] : -1;
+    // F467: multipleOf plus exclusive bounds on items - the detector wraps the items block and
+    // asks the same shape judgement the single-property route uses, so the numeric exclusive
+    // spelling, the draft-4 boolean spelling and the number leaf all fold to the interval's
+    // smallest multiple. An interval holding no multiple and a fractional multiplier stay refused,
+    // and an extra constraint key (here `format`) keeps the structural refusal.
+    $imExcl = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9,"multipleOf":3}}}}}}');
+    $imExclBool = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","minimum":0,"exclusiveMinimum":true,"multipleOf":3}}}}}}');
+    $imExclNum = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","exclusiveMinimum":2.5,"maximum":9.5,"multipleOf":3}}}}}}');
+    $imExclUnsat = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":2,"multipleOf":3}}}}}}');
+    $imExclFrac = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9,"multipleOf":0.3}}}}}}');
+    $imExclKw = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9,"format":"int32","multipleOf":3}}}}');
+    $imXIds = tok_chat("user", "Give the multiples.") . "," . tok_chat_open("assistant");
+    $imXBase = count(explode(",", $imXIds));
+    $imXOut = api_array_item_multiple_value($imXIds, "nums", 3, 3, 3, 1, 0);
+    $imXParts = explode(",", $imXOut);
+    $imXText = "";
+    for ($i = $imXBase; $i < count($imXParts); $i++) {
+        $imXText = $imXText . gguf_token_str((int) $imXParts[$i]);
+    }
+    $imXText = str_replace("Ġ", " ", $imXText);
     // F459: the finite string-enum items form is served now - the detector claims exactly that form
     // (const/pattern keep the refusal), and the writer's text must be an array of enumerants.
     $sfCF = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon"]}}}}}}');
@@ -17658,6 +17697,10 @@ function main(): void
         . " im_unb_text=[" . $imText . "] im_bnd_text=[" . $imBText . "]"
         . " nm_shape=[" . $nmShape . "] nm_text=[" . $nmText . "] im_num_text=[" . $imNText . "]"
         . " nm_bnd=" . $nmBnd . " nm_frac=" . $nmFrac . " nm_unb=" . $nmUnb
+        . " im_excl=[" . $imExcl . "] im_excl_bool=[" . $imExclBool . "]"
+        . " im_excl_num=[" . $imExclNum . "] im_excl_unsat=[" . $imExclUnsat
+        . "] im_excl_frac=[" . $imExclFrac . "] im_excl_kw=[" . $imExclKw . "]"
+        . " im_excl_text=[" . $imXText . "]"
         . " ae_plan=[" . $sfCF . "] ae_const=[" . $sfCG . "] ae_text=[" . $aeText
         . "] ae_route=" . count($sfCH) . "\n";
     if ($sfA == "contains" && $sfB == "not" && $sfC == "if" && $sfD == "propertyNames"
@@ -17717,6 +17760,10 @@ function main(): void
         && $nmBnd == 0 && $nmFrac == 1 && $nmUnb == 1
         && $imUMatch == 1 && ($imUVal % 3) == 0 && api_json_ok($imText) == 1
         && $imBText == '{"nums":[5000]}' && api_json_ok($imBText) == 1
+        && $imExcl == "nums|3|3|3" && $imExclBool == "nums|3|3|3"
+        && $imExclNum == "nums|3|3|3"
+        && $imExclUnsat == "" && $imExclFrac == "" && $imExclKw == "items"
+        && $imXText == '{"nums":[3]}' && api_json_ok($imXText) == 1
         && $sfCF == "cities|paris~lyon" && $sfCG == ""
         && $aeShape == 1 && api_json_ok($aeText) == 1 && count($sfCH) == 0) {
         echo "SCHEMA-STRUCT: PASS (structural keywords named; a value is not mistaken for one)\n";

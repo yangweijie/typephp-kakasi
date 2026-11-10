@@ -1858,3 +1858,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门抓到两处波纹漏翻**：NUM-FRAC 的 `nfH`、STRUCT 的 `in_kw_multi`＋bounds 活体暴露检测器有界分支把单侧哨兵当真值 ⇒ 删手写 lo>hi、一律 wrap→shape（`selftest_f466.log`/`f466c.log` 留证）。
 - **活体**：`num_mult_served` 200 `{"n":3}`、frac/unb 400、`items_mult_num_ok`/`items_num_multi_refuse` 200（每元素 %3==0）。
 - **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.510×**、哨兵 **0**。
+
+## ▶ 状态（F467，2026-11-10 08:11）——items 上 multipleOf＋exclusive 组合从点名 400 变**同一 shape 判定折叠发射**
+- **改前证据**：integer items `exclusiveMinimum:0,max9,m3` → 400 "numeric bounds…"（bounds 层 F420；F458 关键字层同认）；布尔形 400；number items `excl2.5,max9.5,m3` → 400；unsat/frac 对照 400 正确（`schema_bounds_f467pre.log`，F466 二进制）。
+- **实现**：`api_schema_array_item_multiple` 只钉表面（单属性、items type integer|number、整数 multipleOf、键名白名单），界一律 wrap→`api_schema_number_bounded_shape`（与单属性同一判定）；无界后缀路径不变；路由与两处豁免零改动。
+- **门**：`im_excl`/`im_excl_bool`/`im_excl_num`＝`nums|3|3|3`、`im_excl_unsat`/`im_excl_frac`＝``、`im_excl_kw=[items]`、`im_excl_text=[{"nums":[3]}]`。
+- **活体**：三形态 200 `[3,3,3,3]`；unsat/小数 M 400；F465/F466 系不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**、哨兵 **0**。
