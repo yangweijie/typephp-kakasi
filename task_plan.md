@@ -1466,6 +1466,23 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **顺位**：F474 → patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
 
 
+## F475 计划（if/then/else 的 bare-`required` 条件与选中分支：用已证键集构造判定）
+**F474 已完成**：not 值级非字符串常量。
+**核心思路（复用 F453 的 emitted_set 证明）**：JSON Schema 的条件按实例求值；本引擎的 flat all-string 形状**键集已被证明**（`api_schema_emitted_set`：required 子集或全部声明键）。因此：①`if:{"required":[X]}` 的条件真值＝X ⊆ emitted（可判，无需求值）；②选中分支（then/else）若是 bare `{"required":[Y]}`，只要 Y ⊆ emitted 即恒满足（实例必有这些键）。F452 现只认 bare-type 条件与平凡 `{"type":"object"}` 分支，F475 把这两处扩到 bare-required。
+**支持边界**：条件仍限于 bare type 或 bare required；选中分支限于缺省/`{"type":"object"}`/bare required ⊆ emitted；更丰富条件或分支（properties/嵌套/数值）仍拒。未选中分支按 JSON Schema 语义忽略。
+**改前状态（读码判定，执行前活体取证）**：`if:{"required":["city"]},then:{"type":"object"}`（city 必发）→ **400 "if"**（条件非 bare type）；`if:{"type":"string"},else:{"required":["city"]}`（F452 的 if_rich 夹具，city 必发）→ **400**（选中分支非平凡 object）——两者都是过度拒绝。
+**实现（if_ok 两处）**：①条件解析：bare type 命中走旧逻辑；否则 bare required 正则命中 ⇒ 用 emitted_set 判 X ⊆ emitted 选 then/else；②选中分支：缺省/`type:object` 命中即 1；否则 bare required 命中且 Y ⊆ emitted ⇒ 1；否则 0。
+**门（含翻转）**：`if_req_true=[]`（条件真、then 平凡）、`if_req_false=[]`（条件假、else 平凡）、`if_req_then=[]`（条件真、then required 子集）、`if_req_then_miss=[if]`（then 要求未发键 ⇒ 不可满足）、`if_req_route=2`（生成器仍认领）；**旧 `if_rich`（sfAX）`if`→``**（else required city 恒满足）。
+**活体**（`schema_required_check.py`）：新 `if_req_true_ok`/`if_req_then_ok`（200 双键）、`if_req_then_miss_refuse`（400 "if"）；**旧 `if_rich_refuse` 翻 `if_rich_served`**（200 双键）；if_true_ok/if_false_ok 不回退。
+**验收**：①条件真值/分支满足按已证键集判定（门＋活体）②未发键的 then/required 仍拒 ③F452 的 bare-type 三例不回退 ④自检 182 起、四 harness＋8000 115/0＋8001 不回退。
+**F475 已完成**：`api_schema_if_ok` 条件加 bare required（`api_schema_emitted_set` 判 X⊆emitted 选 then/else），选中分支加 bare required（Y⊆emitted ⇒ 1）；门新 `if_req_true`/`if_req_false`/`if_req_then`/`if_req_miss`/`if_req_route`，**旧 `if_rich`（sfAX）`if`→``**。
+**改前证据（`engine/schema_required_f475pre.log`，F474 二进制）**：if required 条件/then、F452 if_rich 三例 → 400（皆过度拒绝，city/note 必发）。
+**过程**：首版误把 count harness 的 `ask` 第五元素带进 required harness（后者只解 4 元组）⇒ `ValueError: too many values to unpack`，修正后重跑得干净改前证据。
+**活体**：`if_req_true_ok`/`if_req_then_ok` 200 双键、`if_req_then_miss_refuse` 400、**`if_rich_refuse`→`if_rich_served` 200**；if_true/if_false 不回退。
+**梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**（单次测量，如实记录）、哨兵 **0**（`engine/selftest_f475.log`、`engine/schema_*_f475.log`、`engine/api_smoke_f475.log`、`engine/throughput_f475.log`）。
+**顺位**：F475 → patternProperties 非枚举种类、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F474）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F475）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3752,8 +3752,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | patternProperties：单条模式匹配到键，且子 schema 恰为该键**声明种类的裸 type**（string↔string / integer↔integer / number↔integer|number / boolean↔boolean / array↔数组种类） | **支持**（值由该种类写出器保证） | `pp_match_ok`（F455） |
 | patternProperties：匹配键为**有限字符串枚举**（`e:` 种类），子 schema 为 enum（包含关系）/ const（相等）/ pattern（逐枚举值匹配） | **支持**（枚举值集合已知 ⇒ 静态可证；值来自枚举） | `pp_enum`/`pp_pat`/`pp_enum_route`（F457） |
 | patternProperties：类型不匹配 / 枚举子集不成立 / pattern 未覆盖全部枚举值 / 多条模式 / 不可读模式 | **显式 400** | `pp_match`/`pp_multi`/`pp_enum_sub`/`pp_pat_miss`（F451–F457） |
-| if/then/else：`if` 恰为单 `type`，按类型选中 `then`/`else`，生效分支缺省或恰为 `{"type":"object"}`（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`（F452） |
-| if/then/else：生效分支更丰富（required/bounds/嵌套）/ 其他形状 | **显式 400** | `if_rich`（F452） |
+| if/then/else：`if` 恰为单 `type`，或 **bare `required`**（按已证键集判真假）；生效分支缺省、恰为 `{"type":"object"}`，或 **bare `required` 且其键都在已证发出集**（键集可证明对象） | **支持**（生效分支构造满足；不生效分支按语义忽略） | `if_else`/`if_noelse`/`if_route`/`if_req_true`/`if_req_false`/`if_req_then`/`if_req_route`（F452/F475） |
+| if/then/else：生效分支要求未发出键 / 条件或分支含 properties·嵌套·数值等更丰富形态 | **显式 400** | `if_req_miss`（F475）/ 旧 `if_rich` 已翻服务 |
 | unevaluatedProperties：键集可证明且全部键由根级 `properties` 求值 | **支持**（该关键字无可判对象，任意值/子 schema 均满足） | `uneval_props`/`uneval_props_schema`（F453） |
 | unevaluatedItems：单标量数组形状（元素全由 `items` 求值） | **支持**（同上） | `uneval_items`（F453） |
 | unevaluated*：会真正判定的形状（如非数组上的 `unevaluatedItems`）/ 属性名冒充 | **显式 400** | `uneval_items_wrong`/`uneval_prop_named`（F453） |
@@ -3770,7 +3770,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的丰富生效分支；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的字符串常量/混合枚举/pattern 值级形态（非字符串标量 const/enum 自 F474 支持）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式自 F472 支持）；`patternProperties` 对**非枚举种类**（自由字符串/数值/数组）的枚举/pattern 约束与嵌套子 schema；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的无类形态（交替/纯字面量，现显式 400；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern 自 F460–F471 支持）；小数 multipleOf 的无界/单侧/exclusive/整数叶形态；七位及以上小数；无界 `multipleOf` > 999999999；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4469,3 +4469,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f474.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.544×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f474.log`、`engine/api_smoke_f474.log`、`engine/throughput_f474.log`、改前证据 `engine/schema_count_f474pre.log`；构建 `build_f474b/c.log` 含首版 `$plan` 换行被并入注释的 TPC 报错与修复）。
 **记法**：**结构判定放行 ≠ 生成器认领**——凡新增"结构层返回 0"的形态，必须用活体确认响应是**合法 JSON 且形状正确**，而不只是状态码 200；扫描类 disqualifier（enum/const/pattern）必须像 propertyNames 一样按关键字语义剥离，否则 not 块里的常量会把整条生成链拖回散文。
 **顺位**：patternProperties 非枚举种类、if 丰富分支、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。
+
+## F475：if/then/else 的 bare-`required` 条件与选中分支（用已证键集构造判定）
+**核心思路（复用 F453 的 emitted_set 证明）**：条件按实例求值，而 flat all-string 形状的**键集已被证明**（`api_schema_emitted_set`：required 子集或全部声明键）。于是 `if:{"required":[X]}` 的真值＝X ⊆ emitted（可判、无需求值）；选中分支若为 bare `{"required":[Y]}`，Y ⊆ emitted ⇒ 恒满足。F452 原先只认 bare-type 条件与平凡 `{"type":"object"}` 分支。
+**改前证据（`engine/schema_required_f475pre.log`，F474 二进制）**：`if:{required:["city"]},then:{type:object}` → **400 "if"**；`if:{required:["city"]},then:{required:["note"]}` → 400；F452 的 `if_rich`（`if:{type:string},else:{required:["city"]}`）→ 400——三者皆过度拒绝（city/note 必发）。
+**实现（if_ok 两处）**：①条件：bare type 走旧逻辑；否则 bare required ⇒ 用 emitted_set 判 X ⊆ emitted 选 then/else；②选中分支：缺省/`type:object` 即 1；否则 bare required 且 Y ⊆ emitted ⇒ 1；否则 0。
+**门（含翻转）**：`if_req_true=[]`/`if_req_false=[]`/`if_req_then=[]`、`if_req_miss=[if]`、`if_req_route=2`；**旧 `if_rich`（sfAX）`if`→``**（else required city 恒满足）。
+**活体**：新 `if_req_true_ok`/`if_req_then_ok` **200 双键**、`if_req_then_miss_refuse` **400**；**`if_rich_refuse` 翻 `if_rich_served` 200 双键**；if_true_ok/if_false_ok 不回退。
+**过程（harness 口径差异）**：首版把 count harness 风格的第五元素 `ask` 写进 required harness（其循环只解 4 元组）⇒ `ValueError: too many values to unpack`（`schema_required_f475pre.log` 首跑留证），修正后重跑得干净改前证据。**同一仓库不同 harness 的 cases 元组宽度不同**，跨 harness 复制用例时必须先核 unpack 口径。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`engine/selftest_f475.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.532×**（单次测量，如实记录）；哨兵 **0**（`engine/schema_*_f475.log`、`engine/api_smoke_f475.log`、`engine/throughput_f475.log`、改前证据 `engine/schema_required_f475pre.log`）。
+**记法**：**条件约束的真值可以来自"已证键集"而非求值**——只要写入器保证实例恰有某键集，required/propertyNames/dependentRequired 这类键集谓词的条件与分支都能静态判定；这与 F472 的 subset、F474 的类型矛盾同属"构造满足"家族。
+**顺位**：patternProperties 非枚举种类、unevaluated* 真判定 → 分片多卡 / FR-05（本机不可验证）。

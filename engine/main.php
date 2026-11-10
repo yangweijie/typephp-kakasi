@@ -9925,6 +9925,8 @@ function api_schema_pattern_props_ok(string $schema): int
 // richer selected body needs evaluation and keeps the refusal. The unselected branch is ignored by
 // JSON Schema semantics, so its content is not inspected - which is why api_schema_required_scan
 // strips then/else as well, or a nested required there would be read as a root requirement.
+// F475: the condition AND a selected branch may also be a bare `required`, decided against the same
+// proven key set (the instance is guaranteed to carry exactly those keys).
 function api_schema_if_ok(string $schema): int
 {
     if (api_schema_emitted_set($schema) == "") {
@@ -9959,13 +9961,29 @@ function api_schema_if_ok(string $schema): int
         return 0;
     }
     $mt = [];
+    $branch = "";
     if (preg_match('/^\{\s*"type"\s*:\s*"(object|string|integer|number|boolean|array)"\s*\}$/',
-        $iblk, $mt) != 1) {
+        $iblk, $mt) == 1) {
+        $branch = $mt[1] == "object" ? "then" : "else";
+    } else if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $iblk, $mr) == 1) {
+        // F475: a bare `required` condition is decided by the PROVEN emitted key set - it is true
+        // exactly when every named key is emitted, so the selected branch is known without
+        // evaluating any value.
+        $emit = api_schema_emitted_set($schema);
+        if ($emit == "") {
+            return 0;
+        }
+        $condTrue = 1;
+        foreach (explode(",", $mr[1]) as $rq) {
+            $rq = str_replace("\"", "", $rq);
+            $rq = str_replace(" ", "", $rq);
+            if ($rq != "" && strpos("," . $emit . ",", "," . $rq . ",") === false) {
+                $condTrue = 0;
+            }
+        }
+        $branch = $condTrue == 1 ? "then" : "else";
+    } else {
         return 0;
-    }
-    $branch = "else";
-    if ($mt[1] == "object") {
-        $branch = "then";
     }
     $bp = strpos($schema, "\"" . $branch . "\"");
     if ($bp === false) {
@@ -9982,10 +10000,27 @@ function api_schema_if_ok(string $schema): int
     if ($bblk == "") {
         return 0;
     }
-    if (preg_match('/^\{\s*"type"\s*:\s*"object"\s*\}$/', $bblk) != 1) {
-        return 0;
+    if (preg_match('/^\{\s*"type"\s*:\s*"object"\s*\}$/', $bblk) == 1) {
+        return 1;
     }
-    return 1;
+    // F475: a selected branch that is a bare `required` is satisfied when every named key is part
+    // of the proven emitted set (the instance is guaranteed to carry it).
+    $mr2 = [];
+    if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $bblk, $mr2) == 1) {
+        $emit2 = api_schema_emitted_set($schema);
+        if ($emit2 == "") {
+            return 0;
+        }
+        foreach (explode(",", $mr2[1]) as $rq) {
+            $rq = str_replace("\"", "", $rq);
+            $rq = str_replace(" ", "", $rq);
+            if ($rq != "" && strpos("," . $emit2 . ",", "," . $rq . ",") === false) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
 }
 
 // F453: unevaluatedProperties is honoured when the answer cannot contain an unevaluated property:
@@ -17704,6 +17739,12 @@ function main(): void
     $sfAX = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"string"},"else":{"required":["city"]}}');
     $sfAY = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"string"}}');
     $sfAZ = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"type":"object"},"then":{"type":"object"},"else":{"required":["z"]}}}}');
+    // F475: bare-required conditions and selected branches, decided against the proven emitted set.
+    $ifReqTrue = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"required":["city"]},"then":{"type":"object"}}');
+    $ifReqFalse = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"required":["z"]},"else":{"type":"object"}}');
+    $ifReqThen = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"required":["city"]},"then":{"required":["note"]}}');
+    $ifReqMiss = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"required":["city"]},"then":{"required":["z"]}}');
+    $ifReqRoute = api_response_schema_string_props('{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"},"note":{"type":"string"}},"if":{"required":["city"]},"then":{"type":"object"}}}}');
     // F453: unevaluated* is honoured only when it judges nothing - every emitted key is declared and
     // evaluated by root `properties`, or the single array shape's elements are all evaluated by
     // `items`. The property-name case is the control that a name is not the keyword.
@@ -18086,6 +18127,9 @@ function main(): void
         . "] pp_route=" . count($sfAV)
         . "] if_else=[" . $sfAW . "] if_rich=[" . $sfAX . "] if_noelse=[" . $sfAY
         . "] if_route=" . count($sfAZ)
+        . " if_req_true=[" . $ifReqTrue . "] if_req_false=[" . $ifReqFalse
+        . "] if_req_then=[" . $ifReqThen . "] if_req_miss=[" . $ifReqMiss
+        . "] if_req_route=" . count($ifReqRoute)
         . "] uneval_props=[" . $sfBA . "] uneval_props_schema=[" . $sfBB
         . "] uneval_items=[" . $sfBC . "] uneval_items_wrong=[" . $sfBD
         . "] uneval_prop_named=[" . $sfBE . "]"
@@ -18153,7 +18197,9 @@ function main(): void
         && $sfAR == "cities"
         && $sfAS == "" && $sfAT == "patternProperties" && $sfAU == "patternProperties"
         && count($sfAV) == 2 && $sfAV[0] == "city" && $sfAV[1] == "note"
-        && $sfAW == "" && $sfAX == "if" && $sfAY == ""
+        && $sfAW == "" && $sfAX == "" && $sfAY == ""
+        && $ifReqTrue == "" && $ifReqFalse == "" && $ifReqThen == ""
+        && $ifReqMiss == "if" && count($ifReqRoute) == 2
         && count($sfAZ) == 2 && $sfAZ[0] == "city" && $sfAZ[1] == "note"
         && $sfBA == "" && $sfBB == "" && $sfBC == ""
         && $sfBD == "unevaluatedItems" && $sfBE == "unevaluatedProperties"

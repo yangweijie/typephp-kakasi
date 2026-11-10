@@ -1914,3 +1914,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`nt_const_num`/`nt_enum_num`=[]、`nt_const_str`/`nt_enum_mixed`=[not]、`nt_route=1`；not_pattern 保持对照。
 - **活体**：`not_const_num_served` 200 `{"cities":"…"}`、`not_const_str_refuse` 400；type/pattern 不回退。
 - **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.544×**、哨兵 **0**。
+
+## ▶ 状态（F475，2026-11-10 18:48 构建）——if/then/else 的 bare-required 条件与选中分支（已证键集判定）
+- **改前证据**：if required 条件/then 分支、F452 if_rich 三例 → 400（`schema_required_f475pre.log`，F474 二进制）。
+- **实现**：`api_schema_if_ok` 条件加 bare required（emitted_set 判 X⊆emitted 选分支），选中分支加 bare required（Y⊆emitted ⇒ 1）；旧 if_rich 翻服务。
+- **门（含翻转）**：`if_req_true/false/then=[]`、`if_req_miss=[if]`、`if_req_route=2`、`if_rich` `if`→``。
+- **活体**：if_req_true_ok/if_req_then_ok 200 双键、miss 400、`if_rich_refuse` 翻 `if_rich_served` 200；true/false 不回退。
+- **梯**：自检 **182/0**、bounds/required/count/pattern PASS、8000 **115/0**、8001 par/fairness **0**、scaling **1.532×**、哨兵 **0**。

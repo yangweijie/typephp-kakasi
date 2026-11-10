@@ -291,9 +291,26 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "if": {"type": "string"}, "else": {"type": "object"}},
      lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
-    ("if_rich_refuse", "Say where you are.",
+    # F475: the selected branch is now judged against the proven emitted key set, so a bare-required
+    # else whose keys are emitted is satisfied (this case used to expect the refusal).
+    ("if_rich_served", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "if": {"type": "string"}, "else": {"required": ["city"]}},
+     lambda code, txt: code == 200 and "city" in keys_of(txt)),
+    # F475: a bare-required condition is decided by the emitted key set (city is always emitted), and
+    # a bare-required selected branch whose keys are emitted is satisfied; a branch demanding an
+    # unemitted key is unsatisfiable and stays refused.
+    ("if_req_true_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"required": ["city"]}, "then": {"type": "object"}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("if_req_then_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"required": ["city"]}, "then": {"required": ["note"]}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("if_req_then_miss_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"required": ["city"]}, "then": {"required": ["z"]}},
      lambda code, txt: code == 400 and "if" in txt),
     # F453: unevaluated* judges only what root `properties`/`items` did NOT evaluate. Every emitted
     # key is declared and every array element is item-typed, so the keyword judges nothing and any
