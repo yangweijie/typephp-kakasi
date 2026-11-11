@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F498 计划与完成（无界整数项的 fractional multipleOf：p 的倍数即 p/q 的倍数）
+## F499 计划与完成（无界整数叶的 fractional multipleOf：p≥2 折叠服务，p=1 显式 400）
+**改前证据**：活体探针（F498 二进制）对 `{"n":{"type":"integer","multipleOf":0.3}}` 返回 **200 `10`** —— 静默违反；检测器的 `[0-9]+` 前缀把 0.3 读成 0 后拒绝，普通整数回落路径输出了裸数字。
+**实现**：`api_response_schema_multiple_unbounded` 改为 plan 定位（kind i）+ 完整字面解析；整数叶取最简分子 p，p≥2 交给无界后缀写入器（发出的 p 的倍数必为 p/q 的倍数）；p=1（0.25 等）虽恒满足，但本处无包装写入器（旧回落输出裸数字），在 `api_schema_bounds_unsupported` 的无界分支**显式 400**，避免 200 畸形答案。
+**门**：`unb_int_frac=[n|3]`、`unb_int_quarter=[]`、`unb_int_five=[n|5]`。
+**活体**：`num_mult_frac_unb_int_ok` 200 `{"n":2345001}`（被 3 整除）、`num_mult_frac_unb_quarter_refuse` 400 `numeric bounds`；`mult_one_ub` 等既有形不变。
+**梯**：自检 **182/0**（`selftest_f499b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**；哨兵 **0**；BUILD_OK（`build_f499b`）。
+
+
 **核心思路**：无界时既有 item writer 只需发出“所给乘数的倍数”（实测形状值 1234002 = 3×411334 等）；把乘数取成最简分子 p 后，发出的每个值都是 p 的倍数，而 p/(p/q)=q 为整数 ⇒ 必为 p/q 的倍数，构造满足。
 **实现**：删除 `api_schema_array_item_multiple` 无界分支里对 fractional 的拒绝；九位上限沿用。无写入器改动。
 **门**：`im_frac_unb` `[]`→`[nums|3|-1|-1]`；`im_frac_num`（number 型 items）保持 `[]` 对照。

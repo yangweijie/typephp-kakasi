@@ -492,6 +492,18 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 1.5}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
      and 1 <= val_of(txt, "n") <= 9 and val_of(txt, "n") % 3 == 0),
+    # F499: UNBOUNDED integer leaf with a fractional multiplier - the suffix writer receives the
+    # reduced numerator p (multiples of p are multiples of p/q); 0.25 reduces to p=1, which is
+    # satisfied by every integer and falls through to the plain integer generator.
+    ("num_mult_frac_unb_int_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and val_of(txt, "n") % 3 == 0),
+    # F499: p == 1 (0.25) is satisfied by every integer, but the unbounded suffix writer only takes
+    # p >= 2 and the plain fallback emitted a bare number - refused explicitly instead.
+    ("num_mult_frac_unb_quarter_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 0.25}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     # No integer multiple of 0.3 (=3) lies in [1,2]: still unsatisfiable, stays refused.
     ("num_mult_frac_intleaf_unsat_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 2, "multipleOf": 0.3}}},

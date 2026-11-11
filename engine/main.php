@@ -7172,19 +7172,55 @@ function api_response_schema_multiple_unbounded(string $body): string
     }
     $mm = [];
     $mp = [];
-    if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"type"\s*:\s*"integer"[^{}]*?"multipleOf"\s*:\s*([0-9]+)[^{}]*?\}/s', $schema, $mm) == 1) {
-        $mp = $mm;
-    } else if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"multipleOf"\s*:\s*([0-9]+)[^{}]*?"type"\s*:\s*"integer"[^{}]*?\}/s', $schema, $mm) == 1) {
-        $mp = $mm;
-    } else {
+    // F499: the leaf comes from the plan (kind i) and the literal is read IN FULL - the old
+    // [0-9]+ prefix matched "0.3" as 0, declined, and a generic integer writer then answered 10
+    // (not a multiple of 0.3). For an integer leaf the multiples of p/q are exactly the multiples
+    // of p (the F496 lemma), so the suffix writer is handed p; p == 1 means every integer is a
+    // multiple, which falls through to the plain generator (a satisfied request, not a refusal).
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
         return "";
     }
-    // F430: multipleOf 1 is satisfied by every integer, so it falls through to the plain integer
-    // generator rather than being refused here (refusing it would reject a satisfied request).
-    if ((int) $mp[2] < 2) {
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
         return "";
     }
-    return $mp[1] . "|" . $mp[2];
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $leaves = explode(",", $plan);
+    if (count($leaves) != 1) {
+        return "";
+    }
+    $kv = explode(":", $leaves[0]);
+    if (count($kv) != 2 || $kv[1] != "i") {
+        return "";
+    }
+    $kp = strpos($block, "\"" . $kv[0] . "\"");
+    if ($kp === false) {
+        return "";
+    }
+    $vo = strpos($block, "{", $kp);
+    if ($vo === false) {
+        return "";
+    }
+    $leaf = api_balance_block($block, $vo);
+    if ($leaf == "") {
+        return "";
+    }
+    if (preg_match('/"multipleOf"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*[,}]/', $leaf, $mm) != 1) {
+        return "";
+    }
+    $mult = api_schema_multiplier_numerator($mm[1]);
+    if ($mult < 2 || $mult > 999999999) {
+        return "";
+    }
+    return $kv[0] . "|" . $mult;
 }
 
 // Tool-call plumbing (FR-08.2 / FR-09.1). Two paths, both honest about their guarantee:
@@ -11029,6 +11065,15 @@ function api_schema_bounds_unsupported(string $body): int
         $mo = [];
         if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $body, $mo) == 1
             && (int) $mo[1] > 999999999) {
+            return 1;
+        }
+        // F499: an integer leaf whose unbounded fractional multiplier reduces to p == 1 (0.25, 0.5,
+        // ...) is satisfied by every integer, but no writer here wraps the property for it - the
+        // plain fallback emitted a bare number ("10"). Refuse explicitly instead of emitting a
+        // malformed answer; p >= 2 is served by the suffix writer through the reduced numerator.
+        if (preg_match('/"type"\s*:\s*"integer"/', $body) == 1
+            && preg_match('/"multipleOf"\s*:\s*([0-9]+\.[0-9]+)/', $body, $mof) == 1
+            && api_schema_multiplier_numerator($mof[1]) < 2) {
             return 1;
         }
         // F431/F438: the single-leaf writer emits ONE property, so with several leaves it silently
@@ -17895,6 +17940,11 @@ function main(): void
     $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000000}}}');
     $bdAC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":5000}}}');
     $bdAD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":1}}}');
+    // F499: an unbounded integer leaf with a fractional multiplier - the reduced numerator is what
+    // the suffix writer receives; p == 1 (e.g. 0.25) falls through to the plain integer generator.
+    $bdIntFrac = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":0.3}}}}}');
+    $bdIntQuarter = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":0.25}}}}}');
+    $bdIntFive = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":5}}}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -17947,6 +17997,8 @@ function main(): void
         . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
+        . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
+        . "] unb_int_five=[" . $bdIntFive . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -17960,6 +18012,7 @@ function main(): void
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 1 && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
+        && $bdIntFrac == "n|3" && $bdIntQuarter == "" && $bdIntFive == "n|5"
         && $bdBA == 0 && $bdBB == 1 && $bdBC == 1
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0

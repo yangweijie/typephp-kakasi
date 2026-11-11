@@ -2082,3 +2082,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`im_frac_unb` `[]`→`[nums|3|-1|-1]`；`im_frac_num` 保持 `[]`。
 - **活体**：`items_mult_frac_unb_ok` 200 `{"nums":[1234002,2345001,3456000,4567002]}` 全部为 3 的倍数；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f498.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.504×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F499，已完成）——无界整数叶的 fractional multipleOf
+- **改前证据**：活体 `{"n":{"type":"integer","multipleOf":0.3}}` → 200 `10`（静默违反，F498 二进制）。
+- **实现**：无界检测器改 plan 定位 + 完整字面，p≥2 交后缀写入器；p=1 无包装写入器 ⇒ 无界分支显式 400。
+- **门**：`unb_int_frac=[n|3]`、`unb_int_quarter=[]`、`unb_int_five=[n|5]`。
+- **活体**：`{"n":2345001}`（3 的倍数）、0.25 → 400 `numeric bounds`；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f499b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**；哨兵 **0**；BUILD_OK。

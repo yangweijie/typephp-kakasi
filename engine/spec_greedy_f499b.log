@@ -1,0 +1,9 @@
+SPEC-GREEDY port=8000 max_tokens=192 prompt_words=40 temp=0 mode=greedy
+  plain      median= 47.79 tok/s best= 47.85 tok/s lens=[192, 192, 192] 
+  k=8        median= 82.85 tok/s best= 83.69 tok/s lens=[192, 192, 192] drafts=204 accepted=188 verifies=33 alt_branch=0 max_branches=0 drafting=on
+  k=12       median= 82.63 tok/s best= 82.89 tok/s lens=[192, 192, 192] drafts=216 accepted=188 verifies=33 alt_branch=0 max_branches=0 drafting=on
+  k=16       median= 81.41 tok/s best= 82.10 tok/s lens=[192, 192, 192] drafts=220 accepted=188 verifies=33 alt_branch=0 max_branches=0 drafting=on
+  speedup k=8        vs plain: 1.734x
+  speedup k=12       vs plain: 1.729x
+  speedup k=16       vs plain: 1.703x
+SPEC-GREEDY: PASS measured
