@@ -2109,3 +2109,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`fm_d6=[n|1000001|-994|0]`、`fm_d6_unsat=[]`。
 - **活体**：`{"n":0.000246}`（0.000123×2）、unsat 400；**测试坑**：`json.dumps(0.000001)` 是 `1e-06`（指数形式按设计拒绝），用例改用 0.000123。
 - **梯**：自检 **182/0**（`selftest_f502.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.489×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F503，已完成）——无界 number 叶的 multipleOf
+- **思路**：后缀写入器发整数；整数是合法 number，且 p 的倍数同时是 p/q 的倍数。
+- **实现**：探测器接受 body/裸 schema，kind 放宽到 i|n；两条 number 守卫在探测器有值时放行。
+- **门（含翻转）**：`nm_frac`/`nm_unb`/`mult_number` 1→0；新 `nm_frac_ub`/`nm_int_ub=[n|3]`（首轮漏翻 mult_number，1 FAIL 后补齐）。
+- **活体**：`{"n":2345001}`（0.3 与 3 两例）；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f503b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.524×**；哨兵 **0**；BUILD_OK。

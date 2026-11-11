@@ -368,12 +368,16 @@ cases = [
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and isinstance(val_of(txt, "n"), (int, float)) and val_of(txt, "n") % 3 == 0
      and 1.5 <= val_of(txt, "n") <= 9.5),
-    ("num_mult_frac_refuse", "Give the number.",
+    # F503: an UNBOUNDED number leaf is served by the suffix writer - the emitted integer is a
+    # legal number and a multiple of the same reduced numerator p.
+    ("num_mult_frac_unb_num_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 0.3}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
-    ("num_mult_unb_refuse", "Give the number.",
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and val_of(txt, "n") % 3 == 0),
+    ("num_mult_unb_num_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 3}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and val_of(txt, "n") % 3 == 0),
     # F467: multipleOf plus EXCLUSIVE bounds on items. The detector now wraps the items block and
     # asks the same shape judgement the single-property route uses, so the numeric exclusive form,
     # the draft-4 boolean form and the number leaf all fold to the interval's smallest multiple

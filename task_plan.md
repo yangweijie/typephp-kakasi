@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F502 计划与完成（小数乘数/界扩到 6 位：-994 marker 路径）
+## F503 计划与完成（无界 number 叶的 multipleOf：整数也是合法 number）
+**核心思路**：无界后缀写入器发出的值是一个整数；整数是合法 `number`，且同一最简分子 p 的倍数同时是 p/q 的倍数。故无界 number 叶（整数 M 与小 M 皆可）与整数叶同构，可由同一写入器服务。
+**实现**：`api_response_schema_multiple_unbounded` 接受完整 body **或**裸 schema（数值守卫复用同一判定），plan 叶 kind 放宽到 `i|n`；`api_schema_bounds_unsupported` 的两条 number+fractional/integer 守卫追加“该探测器为空才拒绝”。
+**门（含翻转）**：`nm_frac` 1→0、`nm_unb` 1→0、裸 schema 同族 `mult_number`（`$bdBC`）1→0（首轮漏翻，自检 1 FAIL 暴露）；新 `nm_frac_ub=[n|3]`、`nm_int_ub=[n|3]`。
+**活体**：`num_mult_frac_unb_num_ok`/`num_mult_unb_num_ok` 均 200 `{"n":2345001}`（被 3 整除）；有界与 items 路线不回退。
+**梯**：自检 **182/0**（`selftest_f503b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.524×**；哨兵 **0**；BUILD_OK（`build_f503b`）。
+
+
 **核心思路**：F473 已让无乘数的小数界写到 6 位（-994 marker）；本轮把 `multipleOf` 路线也开到 6 位——乘数最简分子解析、字面位数校验、网格位数上限、marker 映射四处一致放宽（F450 的“宽度假设一次改全”）。
 **实现**：`api_schema_multiplier_numerator` 小数位上限 5→6；number 小数分支的 5 个字面正则 `{1,5}`→`{1,6}`；折叠 marker 表补 `d==6 → -994`。
 **门**：`fm_d6=[n|1000001|-994|0]`（min=1.000001, M=0.000001）、`fm_d6_unsat=[]`（min=max=1.000001, M=0.000003）。

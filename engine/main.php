@@ -7219,12 +7219,14 @@ function api_response_schema_multi_multiple(string $body): string
 
 function api_response_schema_multiple_unbounded(string $body): string
 {
-    if (preg_match('/"json_schema"/', $body) != 1) {
-        return "";
-    }
-    $schema = api_json_object_after($body, "schema");
-    if ($schema == "") {
-        return "";
+    // F503: accepts a full request body (the dispatch call sites) or a bare schema (the numeric
+    // guard), so the guard can ask the same detector whether this shape is served.
+    $schema = $body;
+    if (preg_match('/"json_schema"/', $body) == 1) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return "";
+        }
     }
     if (preg_match('/"(enum|const|pattern|minimum|maximum|exclusiveMinimum|exclusiveMaximum)"\s*:/', $schema) == 1) {
         return "";
@@ -7257,7 +7259,9 @@ function api_response_schema_multiple_unbounded(string $body): string
         return "";
     }
     $kv = explode(":", $leaves[0]);
-    if (count($kv) != 2 || $kv[1] != "i") {
+    // F503: a NUMBER leaf qualifies too - the suffix writer emits an integer, which is a legal
+    // number and a multiple of the same p.
+    if (count($kv) != 2 || ($kv[1] != "i" && $kv[1] != "n")) {
         return "";
     }
     $kp = strpos($block, "\"" . $kv[0] . "\"");
@@ -11107,13 +11111,15 @@ function api_schema_bounds_unsupported(string $body): int
     if (preg_match('/"type"\s*:\s*"number"/', $body) == 1
         && preg_match('/"multipleOf"\s*:\s*[0-9]+\.[0-9]/', $body) == 1
         && api_schema_number_bounded_shape($body) == ""
-        && api_schema_array_item_multiple($body) == "") {
+        && api_schema_array_item_multiple($body) == ""
+        && api_response_schema_multiple_unbounded($body) == "") {
         return 1;
     }
     if (preg_match('/"type"\s*:\s*"number"/', $body) == 1
         && preg_match('/"multipleOf"\s*:\s*[0-9]/', $body) == 1
         && api_schema_number_bounded_shape($body) == ""
-        && api_schema_array_item_multiple($body) == "") {
+        && api_schema_array_item_multiple($body) == ""
+        && api_response_schema_multiple_unbounded($body) == "") {
         return 1;
     }
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
@@ -18066,7 +18072,7 @@ function main(): void
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 1 && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
-        && $bdBA == 0 && $bdBB == 1 && $bdBC == 1
+        && $bdBA == 0 && $bdBB == 1 && $bdBC == 0
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {
@@ -18866,6 +18872,10 @@ function main(): void
     $nmBnd = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":9.5,"multipleOf":3}}}}}');
     $nmFrac = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","multipleOf":0.3}}}}}');
     $nmUnb = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"number","multipleOf":3}}}}}');
+    // F503: unbounded NUMBER leaves are served by the suffix writer (an integer is a legal number
+    // and a multiple of the same p); both integer and fractional multipliers qualify.
+    $nmFracUnb = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","multipleOf":0.3}}}}}');
+    $nmIntUnb = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","multipleOf":3}}}}}');
     $imNIds = tok_chat("user", "Give the multiples of three.") . "," . tok_chat_open("assistant");
     $imNBase = count(explode(",", $imNIds));
     $imNOut = api_array_item_multiple_value($imNIds, "nums", 3, -1, -1, 1, 0);
@@ -19143,6 +19153,7 @@ function main(): void
         . " im_unb_text=[" . $imText . "] im_bnd_text=[" . $imBText . "]"
         . " nm_shape=[" . $nmShape . "] nm_text=[" . $nmText . "] im_num_text=[" . $imNText . "]"
         . " nm_bnd=" . $nmBnd . " nm_frac=" . $nmFrac . " nm_unb=" . $nmUnb
+        . " nm_frac_ub=[" . $nmFracUnb . "] nm_int_ub=[" . $nmIntUnb . "]"
         . " im_excl=[" . $imExcl . "] im_excl_bool=[" . $imExclBool . "]"
         . " im_excl_num=[" . $imExclNum . "] im_excl_unsat=[" . $imExclUnsat
         . "] im_excl_frac=[" . $imExclFrac . "] im_excl_kw=[" . $imExclKw . "]"
@@ -19375,8 +19386,9 @@ function main(): void
         $structOk = 0;
     }
     if (!($nmBnd == 0
-        && $nmFrac == 1
-        && $nmUnb == 1
+        && $nmFrac == 0
+        && $nmUnb == 0
+        && $nmFracUnb == "n|3" && $nmIntUnb == "n|3"
         && $imUMatch == 1
         && ($imUVal % 3) == 0
         && api_json_ok($imText) == 1
