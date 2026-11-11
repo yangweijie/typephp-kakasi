@@ -2089,3 +2089,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`unb_int_frac=[n|3]`、`unb_int_quarter=[]`、`unb_int_five=[n|5]`。
 - **活体**：`{"n":2345001}`（3 的倍数）、0.25 → 400 `numeric bounds`；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f499b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F500，已完成）——无界整数叶 p=1：400 升级为构造满足
+- **思路**：`api_multiple_fill` 对乘数 1 的残差为 0，值=prefix·10^k，恒为 1 的倍数 ⇒ 恒满足 0.25 等。
+- **实现**：写入器守卫 `<2`→`<1`；检测器接受 p=1；删除 F499 的无界 p<2 拒绝。
+- **门**：`unb_int_quarter` `[]`→`[n|1]`；frac/five 不回退。
+- **活体**：`{"n":2345000}`（/0.25 为整数）、0.3 例不变；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f500.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.576×**；哨兵 **0**；BUILD_OK。

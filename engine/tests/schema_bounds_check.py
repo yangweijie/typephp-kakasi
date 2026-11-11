@@ -499,11 +499,11 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 0.3}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
      and val_of(txt, "n") % 3 == 0),
-    # F499: p == 1 (0.25) is satisfied by every integer, but the unbounded suffix writer only takes
-    # p >= 2 and the plain fallback emitted a bare number - refused explicitly instead.
-    ("num_mult_frac_unb_quarter_refuse", "Give the number.",
+    # F500: 0.25 reduces to p=1, satisfied by every integer; the suffix writer now accepts 1, so
+    # the shape is served with a wrapped integer instead of F499's explicit refusal.
+    ("num_mult_frac_unb_quarter_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 0.25}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)),
     # No integer multiple of 0.3 (=3) lies in [1,2]: still unsatisfiable, stays refused.
     ("num_mult_frac_intleaf_unsat_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 2, "multipleOf": 0.3}}},

@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F499 计划与完成（无界整数叶的 fractional multipleOf：p≥2 折叠服务，p=1 显式 400）
+## F500 计划与完成（无界整数叶 p=1：后缀写入器接受乘数 1，F499 的 400 升级为支持）
+**核心思路**：F499 拒绝 p=1 只因 `api_multiple_fill` 的 `$mult < 2` 守卫；算法对 1 天然成立——残差 `x=(1 - p·10^k % 1) % 1 = 0`，最终值 `prefix·10^k`，是 1 的倍数，也必是任何 p/q（p=1）的倍数。
+**实现**：`api_multiple_fill` 守卫 `< 2` → `< 1`；`api_response_schema_multiple_unbounded` 接受 p=1；删除 F499 加的无界 p<2 拒绝规则。
+**门**：`unb_int_quarter` `[]`→`[n|1]`；`unb_int_frac`/`unb_int_five` 不回退。
+**活体**：`num_mult_frac_unb_quarter_ok` 200 `{"n":2345000}`（2345000/0.25=9380000 整数）、0.3 例仍 `{"n":2345001}`。
+**梯**：自检 **182/0**（`selftest_f500.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.576×**；哨兵 **0**；BUILD_OK（`build_f500`）。
+
+
 **改前证据**：活体探针（F498 二进制）对 `{"n":{"type":"integer","multipleOf":0.3}}` 返回 **200 `10`** —— 静默违反；检测器的 `[0-9]+` 前缀把 0.3 读成 0 后拒绝，普通整数回落路径输出了裸数字。
 **实现**：`api_response_schema_multiple_unbounded` 改为 plan 定位（kind i）+ 完整字面解析；整数叶取最简分子 p，p≥2 交给无界后缀写入器（发出的 p 的倍数必为 p/q 的倍数）；p=1（0.25 等）虽恒满足，但本处无包装写入器（旧回落输出裸数字），在 `api_schema_bounds_unsupported` 的无界分支**显式 400**，避免 200 畸形答案。
 **门**：`unb_int_frac=[n|3]`、`unb_int_quarter=[]`、`unb_int_five=[n|5]`。

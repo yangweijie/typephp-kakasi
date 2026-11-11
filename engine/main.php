@@ -6951,7 +6951,7 @@ function api_multiple_fill(int $mult, int $maxSteps): string
     // so its width follows the multiplier: three digits up to 999, four to 9999, five to 99999, six
     // to 999999, and on to nine digits at 999999999. Beyond that this mechanism cannot honour the
     // constraint at all and the request is refused upstream instead of emitting a partial number.
-    if ($single == "" || $mult < 2 || $mult > 999999999) {
+    if ($single == "" || $mult < 1 || $mult > 999999999) {
         return "";
     }
     $k = 3;
@@ -7217,7 +7217,7 @@ function api_response_schema_multiple_unbounded(string $body): string
         return "";
     }
     $mult = api_schema_multiplier_numerator($mm[1]);
-    if ($mult < 2 || $mult > 999999999) {
+    if ($mult < 1 || $mult > 999999999) {
         return "";
     }
     return $kv[0] . "|" . $mult;
@@ -11067,15 +11067,9 @@ function api_schema_bounds_unsupported(string $body): int
             && (int) $mo[1] > 999999999) {
             return 1;
         }
-        // F499: an integer leaf whose unbounded fractional multiplier reduces to p == 1 (0.25, 0.5,
-        // ...) is satisfied by every integer, but no writer here wraps the property for it - the
-        // plain fallback emitted a bare number ("10"). Refuse explicitly instead of emitting a
-        // malformed answer; p >= 2 is served by the suffix writer through the reduced numerator.
-        if (preg_match('/"type"\s*:\s*"integer"/', $body) == 1
-            && preg_match('/"multipleOf"\s*:\s*([0-9]+\.[0-9]+)/', $body, $mof) == 1
-            && api_schema_multiplier_numerator($mof[1]) < 2) {
-            return 1;
-        }
+        // F500: p == 1 (0.25, 0.5, ...) is satisfied by every integer; the suffix writer accepts
+        // the reduced numerator 1 too (its residue is 0 and the value is prefix*10^k), so this
+        // shape is served rather than refused (F499 refused it while the writer rejected 1).
         // F431/F438: the single-leaf writer emits ONE property, so with several leaves it silently
         // dropped the rest. F438 added a multi-leaf writer for the shape where every leaf is an
         // integer carrying its own multipleOf, so that shape is now served and every other
@@ -17940,8 +17934,8 @@ function main(): void
     $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000000}}}');
     $bdAC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":5000}}}');
     $bdAD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":1}}}');
-    // F499: an unbounded integer leaf with a fractional multiplier - the reduced numerator is what
-    // the suffix writer receives; p == 1 (e.g. 0.25) falls through to the plain integer generator.
+    // F499/F500: an unbounded integer leaf with a fractional multiplier - the reduced numerator is
+    // what the suffix writer receives; p == 1 (e.g. 0.25) is accepted by the writer as well.
     $bdIntFrac = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":0.3}}}}}');
     $bdIntQuarter = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":0.25}}}}}');
     $bdIntFive = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":5}}}}}');
@@ -18012,7 +18006,7 @@ function main(): void
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 1 && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
-        && $bdIntFrac == "n|3" && $bdIntQuarter == "" && $bdIntFive == "n|5"
+        && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdBA == 0 && $bdBB == 1 && $bdBC == 1
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
