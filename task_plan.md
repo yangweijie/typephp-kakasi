@@ -1695,11 +1695,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F496 计划（**尝试后回退**：整数叶的小数 multipleOf 被更早的枚举层接手）
+## F496 计划（**尝试后回退**：整数叶的小数 multipleOf——形状判对了，认领者未定位）
 **核心思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（x=(p/q)k 为整数 ⇒ q|k ⇒ x=p·(k/q)，p、q 互素）。因此整数叶遇到小数乘数时，取**最简分子** p 作为整数乘数，复用既有整数折叠（exclusive 界此前已转为相邻整数）；区间内无 p 的倍数 ⇒ 不可满足、保持 400。
 **已做的验证**：helper `api_schema_multiplier_numerator`（1–5 位小数、gcd 约分）＋小数分支按 kind 分流后，自检 `fm_intleaf=0`、`fm_int03=[n|3|3|3]`、`fm_int15=[n|3|3|3]`、`fm_int_unsat=[]` 全绿（`selftest_f496.log`）。
-**证伪与回退原因**：活体 `num_mult_frac_intleaf_ok` 返回 **200 `{"n":2}`** —— 2 不是 0.3 的倍数。形状判定与折叠本身正确（自检断言 `n|3|3|3`），但请求先被**候选枚举层**（`api_schema_candidates`，小跨度整数 [1,9] 的枚举写入器）接手，该层不评估 `multipleOf`；放宽关键字守卫后它从“被 400 挡住”变成“静默产出违反值”。按“宁可显式 400，不可静默违反”的约束面原则回退（`git checkout` 恢复 F495 源码），重建 `build_f495r` 并复跑 bounds harness **CHECK_EXIT=0**。
-**下一步（重新排队）**：先做整数枚举/走位层的路由与取值规格——要么让候选枚举按 `multipleOf` 过滤元素，要么在小数乘数存在时把该形状**优先**路由到折叠写入器；两者都要先证明“谁先认领”，再放宽守卫。数组项路线（`items_mult_excl_frac_refuse`）与 F496 无关，保持原状。
+**证伪与回退原因**：活体 `num_mult_frac_intleaf_ok` 返回 **200 `{"n":2}`** —— 2 不是 0.3 的倍数。**矛盾点**：形状判定给出 `n|3|3|3`（lo=hi=3，写入器应强制发 3），而非线性链里该形状的 `$scNumB` 分支正是这条写入器；`api_schema_candidates` 只处理 enum/const，也解释不了 2。因此**实际认领者尚未定位**（可能在更早的探测分支、流式/JSON 模式链，或 `$scNumB` 写出失败后的回退路径）。按“宁可显式 400，不可静默违反”回退（`git checkout` 恢复 F495 源码），重建 `build_f495r` 并复跑 bounds harness **CHECK_EXIT=0**。
+**下一步（重新排队）**：先做**分支归属探针**——在服务链上打印命中的探测器/形状（临时 echo 或门），确认 [1,9]+fractional multipleOf 究竟由谁产出 `{"n":2}`；然后二选一：让认领层按 `multipleOf` 过滤取值，或在小数乘数存在时把该形状优先路由到折叠写入器。两条都要先有“谁先认领”的证据，再放宽守卫。数组项路线（`items_mult_excl_frac_refuse`）与 F496 无关，保持原状。
 **用法**：`scripts/build-check.sh`；无写入器改动（本轮全部回退）。
 
 
