@@ -2128,3 +2128,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：整数/number 叶 M=2000000000 均 `{"n":0}`；items 上限不变；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f505.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.518×**；哨兵 **0**。
 - **注**：构建日志末行 `SKIPPED_RUN` 是 norun 模式的正常输出（实为链接成功，exe 11:15 新于源码 11:12）。
+
+## ▶ 状态（F506，已完成）——无界 items 的 multipleOf 超过后缀宽度：逐元素发 0
+- **实现**：items 无界分支超宽发 `0`；探测器删除两处九位上限拒绝。
+- **门**：`im_big` `[]`→`[nums|2000000000|-1|-1]`。
+- **活体**：`{"nums":[0,0,0,0]}`；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f506.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.508×**；哨兵 **0**；BUILD_OK。

@@ -1301,14 +1301,8 @@ function api_schema_array_item_multiple(string $schema): string
     if (!$bounded) {
         // F498: an unbounded FRACTIONAL multiplier is served too - every multiple of the reduced
         // numerator p is a multiple of p/q (p/q * q*k = p*k), and the suffix writer emits exactly
-        // a multiple of the value it is given. The nine-digit cap still applies.
-        if ($mult > 999999999) {
-            return "";
-        }
-        // Unbounded: the suffix writer reaches multipliers up to nine digits (F430/F443).
-        if ($mult > 999999999) {
-            return "";
-        }
+        // a multiple of the value it is given. F506: the nine-digit cap no longer refuses - zero
+        // is a multiple of every M and the writer emits it when the suffix cannot reach mult.
         return $lkv[0] . "|" . $mult . "|-1|-1";
     }
     // Bounded or one-sided: fold through the shared shape judgement and take its collapsed
@@ -1519,7 +1513,12 @@ function api_array_item_multiple_value(string $ids, string $prop, int $mult, int
     $done = 0;
     for ($it = 0; $it < $maxItems; $it++) {
         if ($unbounded == 1) {
-            $b = api_multiple_fill($mult, 4);
+            // F506: beyond the suffix width, zero is a multiple of every M - emit the constant.
+            if ($mult > 999999999) {
+                $b = api_constrained_continue(["0"], 4);
+            } else {
+                $b = api_multiple_fill($mult, 4);
+            }
         } else {
             $b = api_number_bounded_element($lo, $hi);
         }
@@ -19377,7 +19376,7 @@ function main(): void
         && $imUnb == "nums|3|-1|-1"
         && $imBnd == "nums|5000|5000|5000"
         && $imUnsat == ""
-        && $imBig == ""
+        && $imBig == "nums|2000000000|-1|-1"
         && $imKwBnd == ""
         && $imNum == "nums|3|-1|-1"
         && $imNMatch == 1

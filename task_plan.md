@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F505 计划与完成（无界 multipleOf 超过后缀宽度：发常量 0）
+## F506 计划与完成（无界 items 的 multipleOf 超过后缀宽度：逐元素发 0）
+**核心思路**：与 F505 同一论证——0 是任何 M 的倍数；无界 items 的每个元素由后缀写入器产生，超出九位乘数时改为每个元素发常量 `0`。
+**实现**：`api_array_item_multiple_value` 的无界分支在 `mult > 999999999` 时用 `api_constrained_continue(["0"])`；`api_schema_array_item_multiple` 的无界分支删除两处九位上限拒绝。
+**门**：`im_big` `[]`→`[nums|2000000000|-1|-1]`；`im_unb`/`im_bnd`/有界小数例不回退。
+**活体**：`items_mult_unb_huge_ok` 200 `{"nums":[0,0,0,0]}`。
+**梯**：自检 **182/0**（`selftest_f506.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.508×**；哨兵 **0**；BUILD_OK（`build_f506`）。
+
+
 **核心思路**：0 是任何 M 的倍数（含小数 M 与任意大的 M），而强制后缀写入器只能表达 999999999 以内的残差。超过宽度时不再拒绝可满足的形状，直接发常量 `0`（整数与 number 叶都合法）。
 **实现**：`api_multiple_value` 在 `mult > 999999999` 时用 `api_constrained_continue(["0"])` 代替 `api_multiple_fill`；`api_response_schema_multiple_unbounded` 去掉上限（只留 `p ≥ 1`）；`api_schema_bounds_unsupported` 无界分支删除“>999999999 拒绝”规则。
 **门**：`unbounded_big` 1→0、新 `unb_big_shape=[n|2000000000]`；`unbounded_ok`/`mult_one_ub` 不回退。

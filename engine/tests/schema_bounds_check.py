@@ -266,6 +266,14 @@ cases = [
     ("num_mult_unb_huge_num_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 2000000000}}},
      lambda code, txt: code == 200 and val_of(txt, "n") == 0),
+    # F506: an unbounded items multiplier beyond the suffix width is served by 0 per element
+    # (0 is a multiple of every M).
+    ("items_mult_unb_huge_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "multipleOf": 2000000000}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(x == 0 for x in val_of(txt, "nums"))),
     # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",
