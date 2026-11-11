@@ -2146,3 +2146,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：新 `multi_frac_plan=[a|3,b|1]`；首轮条件未加上，补齐后重建复验（门字段打印≠已断言）。
 - **活体**：`{"a":1000002,"b":1000000}`（a 被 3 整除、b 为 0.5 倍数）；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f508b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.566×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F509，已完成）——混合对象的 per-leaf multipleOf（无界叶发 0）
+- **实现**：plan 新 kind `z`（发字面 0）；mixed 检测器接受裸 schema 并逐叶改写无界 i/n+multipleOf；三处守卫豁免，all-required 豁免带 kind 白名单。
+- **过程**：首轮豁免过宽 ⇒ `req_arr_all` 误放行（普通数组叶），加白名单后 182/0；旧对照 `multi_leaf_mixed_refuse` 被证伪并翻转。
+- **门**：`mult_mixed` 1→0；新 `mix_z_plan=[city:s,count:z]`、`mix_z_bad=[]`。
+- **活体**：`{"city":"…","count":0}`（含 all-required）、`{"a":0,"b":100000}`；有界叶与 required 子集仍 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f509b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.520×**；哨兵 **0**；BUILD_OK。

@@ -5985,6 +5985,14 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                     $s = $s . "," . $acl;
                 }
             }
+        } else if ($ty == "z") {
+            // F509: an unbounded integer/number leaf carrying multipleOf - zero is a multiple of
+            // every M, so the leaf is the constant 0 (no bounds to honour, no suffix needed).
+            $z = api_constrained_continue(["0"], 4);
+            if ($z == "") {
+                return "";
+            }
+            $s = $s . "," . $z;
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 6);
             if ($body != "") {
@@ -6003,16 +6011,25 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
 // using api_string_value_multi. Returns the plan string or "".
 function api_response_schema_mixed_object(string $body): string
 {
-    if (preg_match('/"json_schema"/', $body) != 1) {
-        return "";
-    }
-    $schema = api_json_object_after($body, "schema");
-    if ($schema == "") {
-        return "";
+    // F509: accepts a full request body (the dispatch call sites) or a bare schema (the numeric
+    // and required guards), so every guard can ask the same detector whether it claims the shape.
+    $schema = $body;
+    if (preg_match('/"json_schema"/', $body) == 1) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return "";
+        }
     }
     // F404: `pattern` left the exclusion - the anchored class/count forms become p: plan kinds
     // the mixed stepper emits; enum/const leaves and numeric bounds still disqualify.
-    if (preg_match('/"(enum|const|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+    // F509: `multipleOf` left the blanket exclusion too - an UNBOUNDED integer/number leaf that
+    // carries it becomes the constant-zero kind z below (0 is a multiple of every M).
+    if (preg_match('/"(enum|const|minimum|maximum)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    // F438/F507/F508 own the plan where EVERY leaf is an integer with its own multipleOf; leave
+    // that shape to its dedicated writer instead of rewriting it to z here.
+    if (api_schema_multi_multiple($schema) != "") {
         return "";
     }
     // Scan only the top-level properties block: a nested object's leaves must not be pulled up.
@@ -6045,6 +6062,20 @@ function api_response_schema_mixed_object(string $body): string
     $pCount = 0;
     for ($i = 0; $i < count($items); $i++) {
         $kv = explode(":", $items[$i]);
+        // F509: rewrite an unbounded integer/number leaf that carries multipleOf to the z kind;
+        // the writer emits the constant 0 for it. Bounds are excluded above, so nothing else of
+        // the leaf needs honouring.
+        if (count($kv) == 2 && ($kv[1] == "i" || $kv[1] == "n")) {
+            $kp = strpos($block, "\"" . $kv[0] . "\"");
+            if ($kp !== false) {
+                $vo = strpos($block, "{", $kp);
+                $lb = $vo === false ? "" : api_balance_block($block, $vo);
+                if ($lb != "" && strpos($lb, "\"multipleOf\"") !== false) {
+                    $kv[1] = "z";
+                    $items[$i] = $kv[0] . ":z";
+                }
+            }
+        }
         if (count($kv) == 2 && $kv[1] != "s") {
             $hasNum = 1;
         }
@@ -6053,6 +6084,7 @@ function api_response_schema_mixed_object(string $body): string
             $pCount = 1;
         }
     }
+    $plan = implode(",", $items);
     // F404: a single-leaf plan is accepted only for the pattern kind - that one key is exactly
     // what the stepper emits; every other single-leaf shape keeps its own generator.
     if (count($items) < 2 && $pCount == 0) {
@@ -11055,6 +11087,43 @@ function api_schema_keywords_unsupported(string $body): string
             return "required";
         }
     }
+    // F509: the mixed writer emits every declared key of its plan (the z kind included), so an
+    // all-required mixed schema is satisfied by construction - but only for leaf kinds that writer
+    // actually emits (s/i/n/b/z, p specs, counted arrays). A plain array leaf (an/af/...) is not
+    // one of them, so `req_arr_all` keeps its refusal.
+    if ($declN > 0 && count(explode(",", $req)) == $declN) {
+        $mixPlan = api_response_schema_mixed_object($body);
+        if ($mixPlan != "") {
+            $mixOk = 1;
+            foreach (explode(",", $mixPlan) as $ml) {
+                $mk = explode(":", $ml);
+                if (count($mk) == 3) {
+                    if ($mk[1] != "p") {
+                        $mixOk = 0;
+                        break;
+                    }
+                } else if (count($mk) == 2) {
+                    $k2 = $mk[1];
+                    if (strpos($k2, "~") !== false) {
+                        $pfx = substr($k2, 0, strpos($k2, "~"));
+                        if ($pfx != "a" && $pfx != "an" && $pfx != "af" && $pfx != "ab") {
+                            $mixOk = 0;
+                            break;
+                        }
+                    } else if ($k2 != "s" && $k2 != "i" && $k2 != "n" && $k2 != "b" && $k2 != "z") {
+                        $mixOk = 0;
+                        break;
+                    }
+                } else {
+                    $mixOk = 0;
+                    break;
+                }
+            }
+            if ($mixOk == 1) {
+                return "";
+            }
+        }
+    }
     if ($declN > 0 && count(explode(",", $req)) < $declN) {
         // F401: the subset is honoured where the generator can leave an optional property out, and
         // only when every required name is declared; other shapes still get refused.
@@ -11135,14 +11204,16 @@ function api_schema_bounds_unsupported(string $body): int
         && preg_match('/"multipleOf"\s*:\s*[0-9]+\.[0-9]/', $body) == 1
         && api_schema_number_bounded_shape($body) == ""
         && api_schema_array_item_multiple($body) == ""
-        && api_response_schema_multiple_unbounded($body) == "") {
+        && api_response_schema_multiple_unbounded($body) == ""
+        && api_response_schema_mixed_object($body) == "") {
         return 1;
     }
     if (preg_match('/"type"\s*:\s*"number"/', $body) == 1
         && preg_match('/"multipleOf"\s*:\s*[0-9]/', $body) == 1
         && api_schema_number_bounded_shape($body) == ""
         && api_schema_array_item_multiple($body) == ""
-        && api_response_schema_multiple_unbounded($body) == "") {
+        && api_response_schema_multiple_unbounded($body) == ""
+        && api_response_schema_mixed_object($body) == "") {
         return 1;
     }
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
@@ -11157,7 +11228,8 @@ function api_schema_bounds_unsupported(string $body): int
         // integer carrying its own multipleOf, so that shape is now served and every other
         // multi-leaf combination is still refused.
         if (strpos($body, "\"multipleOf\"") !== false && api_schema_plan_count($body) > 1
-            && api_schema_multi_multiple($body) == "") {
+            && api_schema_multi_multiple($body) == ""
+            && api_response_schema_mixed_object($body) == "") {
             return 1;
         }
         return 0;
@@ -18036,6 +18108,10 @@ function main(): void
     // numerator (0.3 -> 3, 0.5 -> 1).
     $bdMultiFrac = api_schema_multi_multiple('{"properties":{"a":{"type":"integer","multipleOf":0.3},"b":{"type":"integer","multipleOf":0.5}}}');
     $bdBB = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer"}}}');
+    // F509: the mixed plan rewrites an unbounded multipleOf leaf to z (constant 0); a bounded leaf
+    // keeps the refusal.
+    $bdMixZ = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","multipleOf":0.3}}}');
+    $bdMixZBad = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","minimum":1,"multipleOf":0.3}}}');
     // F438: the all-integer-multipleOf shape is served now; this asserts the writer receives BOTH
     // leaves with their own multipliers (the refusal above must not swallow them).
     $bdBH = api_response_schema_multi_multiple('{"json_schema":{"schema":{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}}}');
@@ -18083,6 +18159,7 @@ function main(): void
         . "] unb_big_shape=[" . $bdBig . "]"
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
         . "] multi_big_plan=[" . $bdMultiBig . "] multi_frac_plan=[" . $bdMultiFrac . "]"
+        . " mix_z_plan=[" . $bdMixZ . "] mix_z_bad=[" . $bdMixZBad . "]"
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
@@ -18099,8 +18176,8 @@ function main(): void
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
-        && $bdBA == 0 && $bdBB == 1 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
-        && $bdMultiFrac == "a|3,b|1"
+        && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
+        && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z" && $bdMixZBad == ""
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {

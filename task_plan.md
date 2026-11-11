@@ -1696,15 +1696,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F509 计划（未实现，规格）：混合对象的 per-leaf multipleOf
-**可构造的子集**：mixed 对象里**无界**整数/number 叶带 `multipleOf`——发常量 `0` 即满足（0 是任何 M 的倍数），其余叶走既有分支。有界叶仍拒绝（需要逐叶折叠进 mixed 计划，另做）。
-**实现路径（按顺序）**：
-1. **plan 编码**：给这类叶新增 2 段 kind `z`（"发字面 0"）；`api_object_mixed` 增 `$ty == "z"` 分支（键与冒号后 `api_constrained_continue(["0"])`）。2 段 kind 与 required 过滤/键计数兼容，但**动手前先 grep** `api_schema_mixed_omittable` / `api_schema_required_filter` / `api_schema_plan_count` 对 kind 的假设，确认 `z` 被当作标量。
-2. **检测器**：`api_response_schema_mixed_object` 目前见 `multipleOf` 即退出；改为**逐叶**扫描——仅当 multipleOf 所在叶是无界 i/n 时把该叶改写为 `name:z`，enum/const/有界数值仍排除。
-3. **守卫**：`api_schema_bounds_unsupported` 无界块的多叶规则（`plan_count > 1 && multi_multiple == ""` → 拒绝）需在“mixed z-plan 非空”时豁免。
-4. **同族夹具（先 grep 全翻）**：`mult_mixed`（SCHEMA-BOUND-REJECT）、任何 `mixed_*refus*` 控制、harness `mixed_*`；保留“有界叶 + multipleOf”与“混合叶含 enum/const”的拒绝对照。
-**活体**：`{"city":"<charset>","count":0}`（count 无界 + `multipleOf:0.3`）200 且 count==0；count 带 `minimum:1` 的对照仍 400。
-**风险**：mixed 写入器被四条路由共享；plan 编码改动需同时验证流式两条与 JSON 模式两条（F493 的教训：漏一条表现为某路由仍拒绝）。
+## F509 计划与完成（混合对象的 per-leaf multipleOf：无界叶发常量 0）
+**可构造的子集**：mixed 对象里**无界**整数/number 叶带 `multipleOf`——发常量 `0` 即满足（0 是任何 M 的倍数），其余叶走既有分支。有界叶仍拒绝（需逐叶折叠进 mixed 计划，另做）。
+**实现**：①plan 新增 2 段 kind `z`，`api_object_mixed` 增 `$ty == "z"` 分支（键与冒号后发字面 `0`）；②`api_response_schema_mixed_object` 接受 body 或裸 schema、`multipleOf` 退出全局排除，逐叶把无界 i/n 且带 multipleOf 的叶改写为 `name:z`；若**每叶**都是带乘数的整数则让位给 F438 专用写入器（`api_schema_multi_multiple != ""` 时返回空）；③三处守卫豁免：bounds 无界多叶规则、两条 number+multipleOf 规则、keywords 的 all-required 分支——后者**必须校验计划叶 kind 都是写入器真能发出的**（s/i/n/b/z、p、计数数组），否则普通数组叶（`an`）会被误放行。
+**门（含翻转）**：`mult_mixed` 1→0；新 `mix_z_plan=[city:s,count:z]`、`mix_z_bad=[]`（有界对照）。
+**过程**：首轮 required 豁免过宽，自检抓出 `req_arr_all` 由 `[required]` 变 `[]`（普通数组叶被误放行）⇒ 加 kind 白名单后 182/0；活体又抓出旧对照 `multi_leaf_mixed_refuse` 被证伪（`{"a":0,"b":100000}` 已构造满足）⇒ 翻转为 `multi_leaf_mixed_ok`。
+**活体**：`mixed_mult_zero_ok`/`mixed_mult_allreq_ok` 200 `{"city":"…","count":0}`；`mixed_mult_bounded_refuse`（count 带 minimum）400；`mixed_mult_subset_refuse`（required 子集）400 点名 required；`multi_leaf_mixed_ok` 200 `{"a":0,"b":100000}`。
+**梯**：自检 **182/0**（`selftest_f509b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.520×**；哨兵 **0**；BUILD_OK（`build_f509b`）。
+**记法**：放宽“全 required”豁免时，**必须按写入器真实能力校验 plan 的每个 kind**——检测器能命名不等于写入器能发出（普通数组叶就是反例）。
 
 
 **核心思路**：与 F496 同一论证应用到多叶计划——每叶的整数元素是 p/q 的倍数 ⇔ 是 p 的倍数；检测器逐叶读完整字面并折成最简分子，写入器（F507 已支持任意大小与 0）按计划逐叶发出。

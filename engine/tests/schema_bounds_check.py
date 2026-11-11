@@ -156,10 +156,15 @@ cases = [
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("a"), int)
      and isinstance(json.loads(txt).get("b"), int)
      and json.loads(txt)["a"] % 3 == 0 and json.loads(txt)["b"] % 5 == 0),
-    ("multi_leaf_mixed_refuse", "Give the numbers.",
+    # F509: one integer leaf with multipleOf beside a plain integer leaf - the mixed plan rewrites
+    # the constrained leaf to z (constant 0, a multiple of 3) and emits the other normally. This
+    # used to be refused because no writer covered the combination.
+    ("multi_leaf_mixed_ok", "Give the numbers.",
      {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 3},
                                        "b": {"type": "integer"}}},
-     lambda code, txt: code == 400 and "multipleOf" in txt),
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("a"), int)
+     and isinstance(json.loads(txt).get("b"), int)
+     and json.loads(txt)["a"] % 3 == 0),
     # F433: a NUMBER leaf with multipleOf. The suffix writer only serves integer leaves, so either
     # the served number is a multiple or the request is refused - an arbitrary number that happens
     # not to be one is exactly the silent violation this surface keeps closing.
@@ -589,6 +594,28 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "number", "maximum": -1, "multipleOf": 0.3}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
      and val_of(txt, "n") <= -1 and is_mult(val_of(txt, "n"), 0.3)),
+    # F509: a mixed object whose UNBOUNDED integer leaf carries multipleOf - that leaf is the
+    # constant 0 (a multiple of every M); a bounded leaf and a strict required subset keep refusing.
+    ("mixed_mult_zero_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "integer", "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("city"), str)
+     and json.loads(txt).get("count") == 0),
+    ("mixed_mult_allreq_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "integer", "multipleOf": 0.3}},
+      "required": ["city", "count"]},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("city"), str)
+     and json.loads(txt).get("count") == 0),
+    ("mixed_mult_bounded_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "integer", "minimum": 1, "multipleOf": 0.3}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("mixed_mult_subset_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "integer", "multipleOf": 0.3}},
+      "required": ["city"]},
+     lambda code, txt: code == 400 and "required" in txt),
 ]
 
 bad = 0
