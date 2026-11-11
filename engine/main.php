@@ -1281,19 +1281,28 @@ function api_schema_array_item_multiple(string $schema): string
     if (preg_match('/"type"\s*:\s*"(?:integer|number)"/', $isub) != 1) {
         return "";
     }
+    // F497: read the FULL literal. For an INTEGER item the multiples of p/q (lowest terms) are
+    // exactly the multiples of p, so the integer-multiple writer serves a fractional multiplier
+    // through the reduced numerator (the F496 lemma). A fractional multiplier WITHOUT bounds
+    // keeps the refusal (no suffix writer), and a NUMBER item falls through to the decimal shape
+    // whose fourth segment cannot match the numerator, so it keeps its refusal too.
     $mo = [];
-    if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $isub, $mo) != 1) {
+    if (preg_match('/"multipleOf"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*[,}]/', $isub, $mo) != 1) {
         return "";
     }
-    $mult = (int) $mo[1];
+    $mult = api_schema_multiplier_numerator($mo[1]);
     if ($mult < 1) {
-        return "";                 // fractional multiplier - the integer-multiple writer cannot
+        return "";                 // zero / malformed / more than five fraction places
     }
+    $frac = strpos($mo[1], ".") !== false ? 1 : 0;
     $bounded = strpos($isub, "\"minimum\"") !== false
         || strpos($isub, "\"maximum\"") !== false
         || strpos($isub, "\"exclusiveMinimum\"") !== false
         || strpos($isub, "\"exclusiveMaximum\"") !== false;
     if (!$bounded) {
+        if ($frac == 1) {
+            return "";             // unbounded fractional: no writer reaches it
+        }
         // Unbounded: the suffix writer reaches multipliers up to nine digits (F430/F443).
         if ($mult > 999999999) {
             return "";
@@ -18770,6 +18779,10 @@ function main(): void
     $imExclNum = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","exclusiveMinimum":2.5,"maximum":9.5,"multipleOf":3}}}}}}');
     $imExclUnsat = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":2,"multipleOf":3}}}}}}');
     $imExclFrac = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9,"multipleOf":0.3}}}}}}');
+    // F497: fractional integer items fold the reduced numerator; unbounded fractional and
+    // number-typed fractional items keep their refusals.
+    $imFracUnb = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","multipleOf":0.3}}}}}}');
+    $imFracNum = api_response_schema_array_item_multiple('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","minimum":1,"maximum":9,"multipleOf":0.3}}}}}}');
     $imExclKw = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","exclusiveMinimum":0,"maximum":9,"format":"int32","multipleOf":3}}}}');
     $imXIds = tok_chat("user", "Give the multiples.") . "," . tok_chat_open("assistant");
     $imXBase = count(explode(",", $imXIds));
@@ -19016,6 +19029,7 @@ function main(): void
         . " im_excl=[" . $imExcl . "] im_excl_bool=[" . $imExclBool . "]"
         . " im_excl_num=[" . $imExclNum . "] im_excl_unsat=[" . $imExclUnsat
         . "] im_excl_frac=[" . $imExclFrac . "] im_excl_kw=[" . $imExclKw . "]"
+        . " im_frac_unb=[" . $imFracUnb . "] im_frac_num=[" . $imFracNum . "]"
         . " im_excl_text=[" . $imXText . "]"
         . " ib_excl=[" . $ibExcl . "] ib_excl_bool=[" . $ibExclBool . "]"
         . " ib_excl_unsat=[" . $ibExclUnsat . "] ib_excl_kw=[" . $ibExclKw . "]"
@@ -19253,7 +19267,7 @@ function main(): void
         && $imExclBool == "nums|3|3|3"
         && $imExclNum == "nums|3|3|3"
         && $imExclUnsat == ""
-        && $imExclFrac == ""
+        && $imExclFrac == "nums|3|3|3" && $imFracUnb == "" && $imFracNum == ""
         && $imExclKw == "items"
         && $imXText == '{"nums":[3]}'
         && api_json_ok($imXText) == 1

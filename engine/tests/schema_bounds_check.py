@@ -401,11 +401,24 @@ cases = [
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 2, "multipleOf": 3}}}},
      lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
-    # A fractional multiplier is not honoured by the integer-multiple writer.
-    ("items_mult_excl_frac_refuse", "Give the numbers.",
+    # F497: an INTEGER item folds a fractional multiplier through its reduced numerator - integer
+    # multiples of 0.3 (=3) are 3/6/9. Unbounded fractional and number-typed fractional items keep
+    # their refusals (controls below).
+    ("items_mult_excl_frac_ok", "Give the numbers.",
      {"type": "object", "properties": {"nums": {"type": "array",
                                                 "items": {"type": "integer", "exclusiveMinimum": 0, "maximum": 9, "multipleOf": 0.3}}}},
-     lambda code, txt: code == 400 and ("items" in txt or "numeric bounds" in txt)),
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and x % 3 == 0 and 0 < x <= 9 for x in val_of(txt, "nums"))),
+    # A NUMBER item is already served by the number-items writer (F462/F469) on the decimal grid -
+    # its values are multiples of 0.3 as decimals, not integers. Control for the integer route.
+    ("items_mult_frac_num_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and 1 <= x <= 9 and is_mult(x, 0.3)
+             for x in val_of(txt, "nums"))),
     # F468: exclusive bounds on integer items WITHOUT a multipleOf - the same wrap-to-shape
     # judgement as the single-property route, so the numeric exclusive and draft-4 boolean
     # spellings are honoured element by element.

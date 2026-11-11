@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F496）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F497）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3720,7 +3720,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：number 叶**有界（整数 M）** | **支持**（折叠到区间内最小整数倍——整数是合法 number 且是 M 的倍数，子集论证） | `nm_shape`/`nm_text`/`num_mult_served`（F466） |
 | multipleOf：number 叶**有界（小数 M，inclusive 界，双侧或单侧 ≤5 位）** | **支持**（界与 M 缩放到公共小数网格折叠；双侧取区间内最小倍数、min-only 取最小上倍数、max-only 取 0 或最大负倍数；经 F440–F456 小数 marker 写入器发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_minonly`/`fm_maxpos`/`fm_maxneg`/`num_mult_frac_served`/`num_mult_frac_minonly_ok`（F469/F478） |
 | multipleOf：**整数叶的小数 M（双界，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠：整数倍数 ⇔ p 的倍数；候选枚举层按同一字面过滤） | `fm_int03`/`fm_int15`/`fm_int_cand`/`num_mult_frac_intleaf_ok`/`num_mult_frac_intleaf_15_ok`（F496） |
-| multipleOf：number 叶小数 M **无界/单侧/exclusive**／混合叶 / 数组项整数叶小数 M / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`items_mult_excl_frac_refuse`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469/F496） |
+| multipleOf：**整数数组项的小数 M（有界/单侧，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠后交给 item writer，元素为 p 的倍数） | `im_excl_frac`/`items_mult_excl_frac_ok`/`items_mult_frac_ok`（F497） |
+| multipleOf：number 叶小数 M **无界/单侧/exclusive**／混合叶 / 数组项整数叶**无界**小数 M / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`im_frac_unb`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469/F497） |
 | minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）**、**定长 pattern 叶（`c<n>x` 精确段，界限仅需包含固定长度）**、**多叶 mixed 的 s 叶与定长 p 叶共存** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 plan 中 s 叶顺序消费每属性界限——预算提取器按写入器消费顺序生成，p 叶不占位；定长 pattern 零写入器改动） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`/`p_len_ok`/`pattern_len_ok`/`len_mix_p`/`len_mix_bounds`/`mixed_len_p_ok`/`mixed_len_pattern_ok`（F399/F493/F494/F495） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |

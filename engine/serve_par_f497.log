@@ -1,0 +1,20 @@
+WARM ms=1158.7200164795 err=
+ATTN_MODE 2
+SPEC_WINDOW 2
+API_LISTEN 8001 (parallel: streaming text only)
+PAR slots=2
+PAR loop start
+SESSION par slot=A tokens=1 reason=eos
+SESSION par slot=A tokens=1 reason=stop
+SESSION par slot=A tokens=1 reason=eos
+SESSION par slot=A tokens=1 reason=eos
+SESSION par schema slot=0 bytes=19
+SESSION par slot=A tokens=103 reason=eos
+SESSION par slot=B tokens=103 reason=eos
+SESSION par slot=A tokens=2 reason=max
+SESSION par slot=B tokens=4 reason=max
+SESSION par slot=A tokens=101 reason=eos
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=B tokens=60 reason=max

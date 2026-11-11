@@ -1695,7 +1695,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F496 计划与完成（整数叶的小数 multipleOf：最简分子折叠 + 候选层完整字面过滤）
+## F497 计划与完成（整数数组项的 fractional multipleOf：同一最简分子论证）
+**核心思路**：`items` 的 `an` 叶与单整数叶同构——整数元素是 p/q 的倍数 ⇔ 是 p 的倍数，因此检测器把乘数读成最简分子 p 后交给既有 item writer（逐元素发出 p 的倍数）。数组路由不经候选枚举层，故无 F496 的“更早认领者”问题；本检测器已在 `api_schema_bounds_unsupported` 的早退名单里，路由归属直接由它决定。
+**实现**：`api_schema_array_item_multiple` 的 multipleOf 解析由 `[0-9]+` 前缀改为完整字面（后随分隔符）＋`api_schema_multiplier_numerator`；无界 fractional 仍拒绝（无后缀写入器可达）；number 型 items 维持原先的拒绝语义（委托 shape 的第 4 段不可能等于分子）。
+**门**：`im_excl_frac` `[]`→`[nums|3|3|3]`；新 `im_frac_unb=[]`、`im_frac_num=[]` 对照。
+**活体**：`items_mult_excl_frac_ok` 200 `{"nums":[3,3,3,3]}`；number-items 小数乘数由既有 F462/F469 路线服务（`{"nums":[1.2,…]}`，1.2 是 0.3 的倍数）——原“拒绝”对照被证伪并翻转为 `items_mult_frac_num_ok`；无解的 `items_mult_excl_unsat_refuse` 仍 400。
+**梯**：自检 **182/0**（`selftest_f497.log`，`: FAIL` 0）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.516×**；哨兵 **0**；BUILD_OK（`build_f497`）。
+**用法**：`scripts/build-check.sh`；无写入器改动。
+
+
 **核心思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（x=(p/q)k 为整数 ⇒ q|k ⇒ x=p·(k/q)，p、q 互素）。两处必须同时按**完整字面**读乘数：形状折叠取最简分子 p；候选枚举层（链首）此前用 `[0-9]+` 前缀把 `0.3` 读成 0，因而不过滤、自由枚举。
 **实现**：①helper `api_schema_multiplier_numerator`（1–5 位小数、gcd 约分）；②`api_schema_number_bounded_shape` 小数分支按 kind 分流（`i` 折分子落整数折叠、`n` 走原十进制网格）；③`api_schema_candidates` Pass 2 的 multipleOf 解析改为完整字面且要求后随分隔符（>5 位/指数形式枚举空集，交给折叠层裁决），整数 M 与分子 p 用同一过滤。
 **门**：`fm_intleaf` 1→0；`fm_int03=[n|3|3|3]`、`fm_int15=[n|3|3|3]`、`fm_int_unsat=[]`、`fm_int_cand=[{"n":3},{"n":6},{"n":9}]`。

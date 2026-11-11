@@ -2068,3 +2068,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`fm_intleaf=0`、`fm_int03/fm_int15=[n|3|3|3]`、`fm_int_unsat=[]`、`fm_int_cand=[{"n":3},{"n":6},{"n":9}]`。
 - **活体**：0.3 / 1.5 → `{"n":3}`，[1,2]+0.3 → 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f496b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.526×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F497，已完成）——整数数组项的 fractional multipleOf
+- **思路**：整数元素是 p/q 的倍数 ⇔ 是 p 的倍数；检测器读完整字面取最简分子，交给既有 item writer。
+- **实现**：`api_schema_array_item_multiple` 改完整字面解析（后随分隔符）；无界 fractional 与 number 型 items 保持原语义。
+- **门**：`im_excl_frac` `[]`→`[nums|3|3|3]`；新 `im_frac_unb=[]`、`im_frac_num=[]`。
+- **活体**：`items_mult_excl_frac_ok` 200 `{"nums":[3,3,3,3]}`；number-items 小数乘数由既有路线服务（`1.2` 是 0.3 的倍数），原拒绝对照翻转；unsat 仍 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f497.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.516×**；哨兵 **0**；BUILD_OK。
