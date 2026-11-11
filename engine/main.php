@@ -6905,6 +6905,16 @@ function api_schema_number_bounded_shape(string $schema): string
             $hi = 0;
         }
     }
+    // F514: the writer's hi slot doubles as the decimal grid marker (-999..-992 since F513), so a
+    // genuine integer upper bound inside that window is unreadable downstream - the F513 binary
+    // answered maximum:-992 wide-span with -0.02000000 (200) and the mult collapse landing on -992
+    // with -0.00000992. Refuse the window: the candidates tier keeps serving narrow spans that
+    // contain integers, bounds at -1000 and below keep the magnitude walk, and a future width
+    // extension must extend this window with its marker. Only the integer return is guarded - the
+    // decimal branches above return earlier with an INTENDED marker in hi.
+    if ($hi >= -999 && $hi <= -992) {
+        return "";
+    }
     return $kv[0] . "|" . $lo . "|" . $hi . "|" . $mult;
 }
 
@@ -18194,6 +18204,15 @@ function main(): void
     $bdIntFrac = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":0.3}}}}}');
     $bdIntQuarter = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":0.25}}}}}');
     $bdIntFive = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":5}}}}}');
+    // F514: an integer upper bound inside the decimal marker window (-999..-992) is refused - the
+    // writer reads that slot as a grid marker and answered it with scaled decimals. Bounds just
+    // outside the window (-1000) keep the magnitude walk; the narrow span [-1000,-992] refuses at
+    // the shape layer and stays served live through the candidates tier (see the harness case).
+    $bdWinWide = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":-2000000,"maximum":-992}}}');
+    $bdWinOne = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-992}}}');
+    $bdWinMult = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":-2000000,"maximum":-992,"multipleOf":992}}}');
+    $bdWinNarrow = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":-1000,"maximum":-992}}}');
+    $bdWinBelow = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":-2000000,"maximum":-1000}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -18273,6 +18292,8 @@ function main(): void
         . " mix_q_unsat=[" . $bdMixQUnsat . "] mix_q_d2=[" . $bdMixQD2 . "]"
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
+        . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -18287,6 +18308,8 @@ function main(): void
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
+        && $bdWinWide == "" && $bdWinOne == "" && $bdWinMult == ""
+        && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0"
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"

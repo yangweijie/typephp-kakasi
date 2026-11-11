@@ -2182,3 +2182,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`float_dec8_served` 200 `{"n":1.51111111}`、`num_mult_frac_d8_ok` 200 `{"n":0.00024690}`、`items_num_dec8_ok` 200（数组项写入器 -992 门**首次**有活体覆盖）；1–7 位不回退。
 - **过程**：位点按 F512 清单一次改全，自检首轮即 182/0（无需 b 轮）。一个非代码坑：直接跑 exe 缺 oneAPI 运行时 PATH（`libmmd.dll` 加载失败，exit 127）——自检与一切直跑都要带 gate_live 同款 PATH 导出。
 - **梯**：自检 **182/0**（`selftest_f513.log`，`: FAIL` 0、`RUN_EXIT=0`）；四 harness **PASS**（`schema_{bounds,required,count,pattern}_f513.log`，CHECK_EXIT=0）；8000 **115/0**；8001 par/fairness **0**；scaling **1.523×**；哨兵 **0**（`gate_live_f513.log`）；BUILD_OK（`build_f513`）。
+
+## ▶ 状态（F514，已完成）——整数上界落在 marker 窗口：静默违反改显式拒绝
+- **改前证据**：F513 二进制（`probe_f514pre.log`）——[-2000000,-992] 宽跨 **200 `{"n":-0.02000000}`**、单侧 max=-992 **200 `{"n":-0.00000001}`**、multipleOf=992 塌缩 **200 `{"n":-0.00000992}`**：hi 槽被写入器读成 d=8 marker，类型与上界双双违反。
+- **实现**：`api_schema_number_bounded_shape` 整数返回（仅该处）前加窗口守卫 `hi∈[-999,-992] ⇒ ""`；请求层 400 点名 numeric bounds。窄跨窗口由候选层先行认领不受影响；-1000 及以下幅值步进不变；小数/marker 分支在守卫前返回。未来扩宽（-991）须同步扩窗。
+- **门**：新 `win_wide`/`win_one`/`win_mult`/`win_narrow_shape` 全 `""`、`win_below=[n|-2000000|-1000|0]`；活体 `marker_window_{wide,one,mult}_refuse` 400、`marker_window_narrow_ok` 200 `{"n":-998}`、`marker_window_below_ok` 200。
+- **过程**：narrow 控制原用 [-1000,-992] ⇒ 活体暴露**另一既有缺陷**：候选枚举层对 ≥4 位负值发截断 JSON（`{"n":-1000`，200，引擎自记 json=bad）；同宽正值 1000 完整、≤3 位负值完整。tokenize oracle：`":-` 为单 token 52052，walk 末 "}" 步 next_allowed 连败 ⇒ 与挂账的 F228"首调空返回/整行 NaN"同族，控制改 [-998,-992]（全 3 位），缺陷记 F515（`probe_f514b/c.log` 留证）。
+- **梯**：自检 **182/0**（`selftest_f514.log`，`: FAIL` 0，首轮即绿）；四 harness **PASS**（`schema_*_f514.log`，CHECK_EXIT=0）；8000 **115/0**；8001 par/fairness **0**；scaling **1.539×**；哨兵 **0**（`gate_live_f514.log`）；BUILD_OK（`build_f514`）。

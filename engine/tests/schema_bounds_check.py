@@ -238,6 +238,30 @@ cases = [
      {"type": "object", "properties": {"nums": {"type": "array", "items": {"type": "number", "minimum": 1.51111111, "maximum": 1.51111119}}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list) and len(val_of(txt, "nums")) > 0
      and all(isinstance(v, (int, float)) and 1.51111111 <= v <= 1.51111119 for v in val_of(txt, "nums"))),
+    # F514: an integer maximum inside the decimal marker window (-999..-992) is refused instead of
+    # answered with a scaled decimal (the F513 binary returned 200 {"n":-0.02000000} for the wide
+    # case); just outside the window the magnitude walk keeps serving, and a narrow span stays
+    # served through the candidates tier. The narrow control keeps every enumerated value at three
+    # digits or fewer: a four-digit NEGATIVE candidate (e.g. -1000) currently comes back as
+    # truncated JSON ({"n":-1000, 200, json=bad) - a separate engine-level defect banked for the
+    # next increment, unrelated to the marker window (positive 1000 completes).
+    ("marker_window_wide_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -2000000, "maximum": -992}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("marker_window_one_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -992}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("marker_window_mult_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -2000000, "maximum": -992, "multipleOf": 992}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("marker_window_narrow_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -998, "maximum": -992}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and -998 <= val_of(txt, "n") <= -992),
+    ("marker_window_below_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -2000000, "maximum": -1000}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and -2000000 <= val_of(txt, "n") <= -1000),
     # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
     ("float_dec_neg", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": -1.9, "maximum": -1.5}}},
