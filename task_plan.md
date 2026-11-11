@@ -1696,7 +1696,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F510 计划与完成（混合对象内**有界**整数叶的 multipleOf：折叠常量 kind q）
+## F511 计划与完成（混合对象内 number 叶的小数网格折叠：marker 还原为字面量）
+**核心思路**：F510 只编码整数常量。number 叶 + 小数乘数的折叠结果是“缩放值 + marker”，把 marker 还原成位宽 d、再还原成字面小数（含符号与零填充），即可用同一个 `q` 分支发出——至此 mixed 内 multipleOf 的最后一个拒绝面闭合。
+**实现**：检测器 q 分支区分 marker（-999…-994）与整数折叠：marker 时 `d = mk + 1000`、`pow=10^d`、`lit = sign + intdiv(|v|,pow) + "." + zeropad(|v|%pow, d)`，编码 `name:q:<lit>`；写入器无需改动（q 分支发字面量）。
+**门（含翻转）**：`mix_q_bad` `[]`→`[city:s,count:q:1.2]`；新 `mix_q_unsat=[]`、`mix_q_d2=[city:s,count:q:1.25]`（**2 位小数**，专门覆盖位宽公式）。
+**过程**：首版位宽公式写成 `-998 - mk`（对 -994 得负数），d=1 恰好正确因而首轮自检通过；发现后改为 `mk + 1000` 并**新增 d=2 门**重建复验——单位宽用例不能证明位宽映射正确。
+**活体**：`mixed_mult_frac_bounded_ok` 200 `{"city":"…","count":1.2}`、`mixed_mult_frac_d2_ok` 200 `{"city":"…","count":1.25}`、`mixed_mult_frac_unsat_refuse` 400；number 叶不被候选层枚举，故 mixed 写入器同时发出 city。
+**梯**：自检 **182/0**（`selftest_f511b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.526×**；哨兵 **0**；BUILD_OK（`build_f511b`）。
+
+
 **核心思路**：F509 只覆盖无界叶（发 0）。有界叶若其 `multipleOf` 折叠**塌缩为唯一整数常量**（单属性折叠的既有论证），则该常量同时满足界与乘数，可编码进 plan 由 mixed 写入器直接发出。
 **实现**：①plan 新增 3 段 kind `q:<常量>`，`api_object_mixed` 的 kind 解析与分支发出该字面常量；②检测器把 `minimum|maximum` 从全局排除改为**逐叶**判定：带数值界的 i/n 叶必须有 multipleOf 且折叠结果 `lo==hi`、乘数为正整数、且不是小数 marker（-999…-994），否则整体拒绝；无乘数的数值界一律拒绝（顺带堵上“只有 exclusive 界”的旧静默口子）；③`api_schema_bounds_unsupported` 在 items 早退后加“mixed 检测器认领即放行”；④required 白名单加 `q`。
 **门（含翻转）**：新 `mix_q_plan=[city:s,count:q:3]`、`mix_q_bad=[]`（number+小数 M 的网格折叠不可编码）、`mix_excl_bad=[]`（无乘数的 exclusive 界）；F509 的 `mix_z_bad` 被证伪 ⇒ 期望改为 `city:s,count:q:3`。

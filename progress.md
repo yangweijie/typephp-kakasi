@@ -2160,3 +2160,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`{"count":3}`（city 可选）与 all-required `{"city":"…","count":3}`（真正走 q 分支）；小数网格有界叶与无乘数数值界仍 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f510b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.574×**；哨兵 **0**；BUILD_OK。
 - **记法**：可选键被候选层省略是合法的；覆盖新写入分支要用 all-required 挤掉候选层。
+
+## ▶ 状态（F511，已完成）——混合对象内 number 叶的小数网格折叠
+- **实现**：q 分支区分 marker 与整数折叠；marker → `d = mk + 1000` 还原字面小数（符号+零填充），写入器不变。
+- **门（含翻转）**：`mix_q_bad` `[]`→`[city:s,count:q:1.2]`；新 `mix_q_unsat=[]`、`mix_q_d2=[city:s,count:q:1.25]`。
+- **过程**：首版位宽公式 `-998-mk` 对 -994 为负，d=1 恰好正确 ⇒ 改 `mk+1000` 并加 d=2 门重建复验。
+- **活体**：`{"city":"…","count":1.2}`、`{"city":"…","count":1.25}`、无倍数区间 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f511b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.526×**；哨兵 **0**；BUILD_OK。

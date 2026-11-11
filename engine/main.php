@@ -6098,13 +6098,39 @@ function api_response_schema_mixed_object(string $body): string
                         return "";
                     }
                     $sg = explode("|", $sh);
-                    if (count($sg) != 4 || $sg[1] != $sg[2] || (int) $sg[3] < 1
-                        || $sg[2] == "-999" || $sg[2] == "-998" || $sg[2] == "-997"
-                        || $sg[2] == "-996" || $sg[2] == "-995" || $sg[2] == "-994") {
+                    if (count($sg) != 4) {
                         return "";
                     }
-                    $kv = [$kv[0], "q", $sg[1]];
-                    $items[$i] = $kv[0] . ":q:" . $sg[1];
+                    // F511: a decimal-grid fold (number leaf, fractional multiplier) carries its
+                    // value scaled with a marker in hi - reconstruct the literal the marker writer
+                    // would emit and carry THAT in the plan, so the same q branch serves it.
+                    $mk = (int) $sg[2];
+                    if ($mk >= -999 && $mk <= -994) {
+                        if ((int) $sg[3] != 0) {
+                            return "";
+                        }
+                        $d = $mk + 1000;
+                        $pow = 1;
+                        for ($pi = 0; $pi < $d; $pi++) {
+                            $pow = $pow * 10;
+                        }
+                        $iv = (int) $sg[1];
+                        $neg = $iv < 0 ? "-" : "";
+                        $av = $iv < 0 ? -$iv : $iv;
+                        $fs = "" . ($av % $pow);
+                        while (strlen($fs) < $d) {
+                            $fs = "0" . $fs;
+                        }
+                        $lit = $neg . intdiv($av, $pow) . "." . $fs;
+                        $kv = [$kv[0], "q", $lit];
+                        $items[$i] = $kv[0] . ":q:" . $lit;
+                    } else {
+                        if ($sg[1] != $sg[2] || (int) $sg[3] < 1) {
+                            return "";
+                        }
+                        $kv = [$kv[0], "q", $sg[1]];
+                        $items[$i] = $kv[0] . ":q:" . $sg[1];
+                    }
                 } else if ($hasMult) {
                     $kv[1] = "z";
                     $items[$i] = $kv[0] . ":z";
@@ -18158,6 +18184,11 @@ function main(): void
     // without a multiplier keeps the refusal.
     $bdMixQ = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}');
     $bdMixQBad = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"number","minimum":1,"maximum":9,"multipleOf":0.3}}}');
+    // F511: the decimal-grid fold is carried as a literal too; an interval with no multiple keeps
+    // the refusal.
+    $bdMixQUnsat = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"number","minimum":1,"maximum":1.1,"multipleOf":0.3}}}');
+    // F511: two fraction places - the marker-to-width mapping must give d=2 (literal 1.25).
+    $bdMixQD2 = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"number","minimum":1.1,"maximum":9,"multipleOf":0.25}}}');
     $bdMixExclBad = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","exclusiveMinimum":5}}}');
     // F438: the all-integer-multipleOf shape is served now; this asserts the writer receives BOTH
     // leaves with their own multipliers (the refusal above must not swallow them).
@@ -18208,6 +18239,7 @@ function main(): void
         . "] multi_big_plan=[" . $bdMultiBig . "] multi_frac_plan=[" . $bdMultiFrac . "]"
         . " mix_z_plan=[" . $bdMixZ . "] mix_z_bad=[" . $bdMixZBad . "]"
         . " mix_q_plan=[" . $bdMixQ . "] mix_q_bad=[" . $bdMixQBad . "] mix_excl_bad=[" . $bdMixExclBad . "]"
+        . " mix_q_unsat=[" . $bdMixQUnsat . "] mix_q_d2=[" . $bdMixQD2 . "]"
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
@@ -18227,7 +18259,8 @@ function main(): void
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"
-        && $bdMixQ == "city:s,count:q:3" && $bdMixQBad == "" && $bdMixExclBad == ""
+        && $bdMixQ == "city:s,count:q:3" && $bdMixQBad == "city:s,count:q:1.2" && $bdMixExclBad == ""
+        && $bdMixQUnsat == "" && $bdMixQD2 == "city:s,count:q:1.25"
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {

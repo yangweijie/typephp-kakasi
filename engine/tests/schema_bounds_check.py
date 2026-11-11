@@ -623,9 +623,21 @@ cases = [
       "required": ["city", "count"]},
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("city"), str)
      and json.loads(txt).get("count") == 3),
-    ("mixed_mult_frac_bounded_refuse", "Say where you are.",
+    # F511: a NUMBER leaf with a fractional multiplier folds on the decimal grid; the plan carries
+    # the reconstructed literal (1.2) and the mixed writer emits it.
+    ("mixed_mult_frac_bounded_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"},
                                        "count": {"type": "number", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("count"), (int, float))
+     and abs(json.loads(txt)["count"] - 1.2) < 1e-9),
+    ("mixed_mult_frac_d2_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "number", "minimum": 1.1, "maximum": 9, "multipleOf": 0.25}}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("count"), (int, float))
+     and abs(json.loads(txt)["count"] - 1.25) < 1e-9),
+    ("mixed_mult_frac_unsat_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "number", "minimum": 1, "maximum": 1.1, "multipleOf": 0.3}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     ("mixed_excl_nofold_refuse", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"},
