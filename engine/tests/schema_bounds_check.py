@@ -132,6 +132,11 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 987654321}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 987654321 == 0),
+    # F507: a multi-leaf all-integer plan with multipliers beyond the suffix width - zero per leaf.
+    ("multi_mult_huge_ok", "Give the numbers.",
+     {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 2000000000},
+                                       "b": {"type": "integer", "multipleOf": 2000000001}}},
+     lambda code, txt: (code == 200 and val_of(txt, "a") == 0 and val_of(txt, "b") == 0)),
     # F431: two leaves each carrying multipleOf. Either both keys come back each satisfying its own
     # multiplier, or the request is refused - what must not happen is a served object that silently
     # drops the second key while claiming to honour the schema.

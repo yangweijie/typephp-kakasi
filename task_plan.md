@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F506 计划与完成（无界 items 的 multipleOf 超过后缀宽度：逐元素发 0）
+## F507 计划与完成（多叶全整数 multipleOf 的超宽 M：每叶发 0）
+**核心思路**：与 F505/F506 同一论证——0 是任何 M 的倍数；多叶写入器逐叶调用后缀填充，超宽时该叶改发常量 `0`，避免整对象因一叶失败而中止（旧行为会掉到通用生成器）。
+**实现**：`api_multi_multiple_value` 的首叶与后续叶两处填充都加 `> 999999999 → 常量 0` 分支；检测器本就无上限。
+**门**：新 `multi_big_plan=[a|2000000000,b|2000000001]`；`mult_multi`（小 M）不回退。
+**活体**：`multi_mult_huge_ok` 200 `{"a":0,"b":0}`（两叶各满足自己的乘数）。
+**梯**：自检 **182/0**（`selftest_f507.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.513×**；哨兵 **0**；BUILD_OK（`build_f507`）。
+
+
 **核心思路**：与 F505 同一论证——0 是任何 M 的倍数；无界 items 的每个元素由后缀写入器产生，超出九位乘数时改为每个元素发常量 `0`。
 **实现**：`api_array_item_multiple_value` 的无界分支在 `mult > 999999999` 时用 `api_constrained_continue(["0"])`；`api_schema_array_item_multiple` 的无界分支删除两处九位上限拒绝。
 **门**：`im_big` `[]`→`[nums|2000000000|-1|-1]`；`im_unb`/`im_bnd`/有界小数例不回退。

@@ -2134,3 +2134,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`im_big` `[]`→`[nums|2000000000|-1|-1]`。
 - **活体**：`{"nums":[0,0,0,0]}`；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f506.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.508×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F507，已完成）——多叶全整数 multipleOf 的超宽 M
+- **实现**：多叶写入器两处填充在超宽时改发常量 0；检测器本就无上限。
+- **门**：新 `multi_big_plan=[a|2000000000,b|2000000001]`。
+- **活体**：`{"a":0,"b":0}`；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f507.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.513×**；哨兵 **0**；BUILD_OK。

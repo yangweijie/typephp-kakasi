@@ -7130,7 +7130,13 @@ function api_multi_multiple_value(string $ids, string $plan, int $maxSteps, int 
     if ($s == "") {
         return "";
     }
-    $body = api_multiple_fill((int) $first[1], $maxSteps);
+    // F507: beyond the suffix width zero is a multiple of every M - emit the constant per leaf.
+    $body = "";
+    if ((int) $first[1] > 999999999) {
+        $body = api_constrained_continue(["0"], 4);
+    } else {
+        $body = api_multiple_fill((int) $first[1], $maxSteps);
+    }
     if ($body == "") {
         return "";
     }
@@ -7145,7 +7151,12 @@ function api_multi_multiple_value(string $ids, string $plan, int $maxSteps, int 
             return "";
         }
         $s = $s . "," . $sep;
-        $body = api_multiple_fill((int) $kv[1], $maxSteps);
+        $body = "";
+        if ((int) $kv[1] > 999999999) {
+            $body = api_constrained_continue(["0"], 4);
+        } else {
+            $body = api_multiple_fill((int) $kv[1], $maxSteps);
+        }
         if ($body == "") {
             return "";
         }
@@ -18012,6 +18023,9 @@ function main(): void
     // F431: the unbounded multipleOf writer emits one property, so any schema with more than one
     // leaf is refused rather than answered with the other keys silently dropped.
     $bdBA = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}');
+    // F507: the multi-leaf plan still names both leaves when the multipliers exceed the suffix
+    // width; the writer emits 0 per leaf.
+    $bdMultiBig = api_schema_multi_multiple('{"properties":{"a":{"type":"integer","multipleOf":2000000000},"b":{"type":"integer","multipleOf":2000000001}}}');
     $bdBB = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer"}}}');
     // F438: the all-integer-multipleOf shape is served now; this asserts the writer receives BOTH
     // leaves with their own multipliers (the refusal above must not swallow them).
@@ -18059,6 +18073,7 @@ function main(): void
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
         . "] unb_big_shape=[" . $bdBig . "]"
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
+        . "] multi_big_plan=[" . $bdMultiBig . "]"
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
@@ -18075,7 +18090,7 @@ function main(): void
         && $bdZ == 0 && $bdAA == 1
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
-        && $bdBA == 0 && $bdBB == 1 && $bdBC == 0
+        && $bdBA == 0 && $bdBB == 1 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {

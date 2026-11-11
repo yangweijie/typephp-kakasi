@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F506）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F507）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3716,7 +3716,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
 | multipleOf 有界（任意 m） | **支持**（折叠到区间内最小倍数） | `SCHEMA-BOUND-REJECT bigmult_*`（F420/F424） |
 | multipleOf 无界：m=1 或 2..999999999 | **支持**（后缀宽度随位数 3–9；m=1 交普通整数） | `unbounded_ok`/`unbounded_2m`/`mult_one_ub`（F430/F443） |
-| multipleOf：多叶全整数且每叶各带 multipleOf | **支持**（逐叶后缀写入，各值整除各自乘数） | `mult_multi`/`multi_plan`（F438） |
+| multipleOf：多叶全整数且每叶各带 multipleOf（任意大小；超宽时每叶发 0） | **支持**（逐叶后缀写入，各值整除各自乘数；超出后缀宽度改为常量 0——0 是任何 M 的倍数） | `mult_multi`/`multi_plan`/`multi_big_plan`/`multi_mult_huge_ok`（F438/F507） |
 | multipleOf：number 叶**有界（整数 M）** | **支持**（折叠到区间内最小整数倍——整数是合法 number 且是 M 的倍数，子集论证） | `nm_shape`/`nm_text`/`num_mult_served`（F466） |
 | multipleOf：number 叶**有界（小数 M，inclusive/exclusive 界，双侧或单侧 ≤6 位）** | **支持**（界与 M 缩放到公共小数网格折叠；严格侧走下一格、同侧相等时 exclusive 胜；双侧取区间内最小倍数、单侧按方向取；六位经 -994 marker 发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_minonly`/`fm_maxpos`/`fm_maxneg`/`num_mult_frac_served`/`num_mult_frac_minonly_ok`/`fm_excl_lo`/`fm_excl_hi`/`fm_excl_bool`/`fm_excl_unsat`/`num_mult_frac_excl_ok`/`num_mult_frac_exclmax_ok`/`fm_d6`/`fm_d6_unsat`/`num_mult_frac_d6_ok`（F469/F478/F501/F502） |
 | multipleOf：**整数叶的小数 M（双界，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠：整数倍数 ⇔ p 的倍数；候选枚举层按同一字面过滤） | `fm_int03`/`fm_int15`/`fm_int_cand`/`num_mult_frac_intleaf_ok`/`num_mult_frac_intleaf_15_ok`（F496） |
