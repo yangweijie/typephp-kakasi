@@ -2153,3 +2153,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`mult_mixed` 1→0；新 `mix_z_plan=[city:s,count:z]`、`mix_z_bad=[]`。
 - **活体**：`{"city":"…","count":0}`（含 all-required）、`{"a":0,"b":100000}`；有界叶与 required 子集仍 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f509b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.520×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F510，已完成）——混合对象内有界整数叶的 multipleOf（kind q）
+- **实现**：plan 新 3 段 kind `q:<常量>`；检测器逐叶判定数值界（必须折叠为唯一整数常量）；bounds 守卫早期豁免；required 白名单加 q。
+- **门（含翻转）**：新 `mix_q_plan=[city:s,count:q:3]`、`mix_q_bad=[]`、`mix_excl_bad=[]`；F509 的 `mix_z_bad` 被证伪改期望。
+- **活体**：`{"count":3}`（city 可选）与 all-required `{"city":"…","count":3}`（真正走 q 分支）；小数网格有界叶与无乘数数值界仍 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f510b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.574×**；哨兵 **0**；BUILD_OK。
+- **记法**：可选键被候选层省略是合法的；覆盖新写入分支要用 all-required 挤掉候选层。

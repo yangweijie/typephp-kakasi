@@ -607,9 +607,29 @@ cases = [
       "required": ["city", "count"]},
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("city"), str)
      and json.loads(txt).get("count") == 0),
-    ("mixed_mult_bounded_refuse", "Say where you are.",
+    # F510: a BOUNDED integer leaf in a mixed object folds to one constant (3 here) and is emitted
+    # as that constant; a decimal-grid fold (number leaf, fractional M) and a bound without a
+    # multiplier keep the refusal.
+    ("mixed_mult_bounded_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"},
-                                       "count": {"type": "integer", "minimum": 1, "multipleOf": 0.3}}},
+                                       "count": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and json.loads(txt).get("count") == 3
+     and ("city" not in json.loads(txt) or isinstance(json.loads(txt)["city"], str))),
+    # With both keys required the candidates tier cannot render city, so the mixed writer serves
+    # the plan and the q leaf emits its folded constant - this is the case that exercises q.
+    ("mixed_mult_bounded_allreq_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 0.3}},
+      "required": ["city", "count"]},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("city"), str)
+     and json.loads(txt).get("count") == 3),
+    ("mixed_mult_frac_bounded_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "number", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    ("mixed_excl_nofold_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                       "count": {"type": "integer", "exclusiveMinimum": 5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     ("mixed_mult_subset_refuse", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"},

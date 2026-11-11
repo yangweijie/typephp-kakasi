@@ -1696,7 +1696,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F509 计划与完成（混合对象的 per-leaf multipleOf：无界叶发常量 0）
+## F510 计划与完成（混合对象内**有界**整数叶的 multipleOf：折叠常量 kind q）
+**核心思路**：F509 只覆盖无界叶（发 0）。有界叶若其 `multipleOf` 折叠**塌缩为唯一整数常量**（单属性折叠的既有论证），则该常量同时满足界与乘数，可编码进 plan 由 mixed 写入器直接发出。
+**实现**：①plan 新增 3 段 kind `q:<常量>`，`api_object_mixed` 的 kind 解析与分支发出该字面常量；②检测器把 `minimum|maximum` 从全局排除改为**逐叶**判定：带数值界的 i/n 叶必须有 multipleOf 且折叠结果 `lo==hi`、乘数为正整数、且不是小数 marker（-999…-994），否则整体拒绝；无乘数的数值界一律拒绝（顺带堵上“只有 exclusive 界”的旧静默口子）；③`api_schema_bounds_unsupported` 在 items 早退后加“mixed 检测器认领即放行”；④required 白名单加 `q`。
+**门（含翻转）**：新 `mix_q_plan=[city:s,count:q:3]`、`mix_q_bad=[]`（number+小数 M 的网格折叠不可编码）、`mix_excl_bad=[]`（无乘数的 exclusive 界）；F509 的 `mix_z_bad` 被证伪 ⇒ 期望改为 `city:s,count:q:3`。
+**活体**：`mixed_mult_bounded_ok` 200 `{"count":3}`（city 可选，候选层只发枚举键，3 是 0.3 的倍数）；`mixed_mult_bounded_allreq_ok` 200 `{"city":"…","count":3}`（**真正走到 q 写入分支**）；`mixed_mult_frac_bounded_refuse`、`mixed_excl_nofold_refuse` 400。
+**梯**：自检 **182/0**（`selftest_f510b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.574×**；哨兵 **0**；BUILD_OK（`build_f510b`）。
+**记法**：断言“某键必须出现”前先问 schema 是否 required——可选键被候选层省略是**合法**的；要覆盖新写入分支，必须用 all-required 把候选层挤掉。
+
+
 **可构造的子集**：mixed 对象里**无界**整数/number 叶带 `multipleOf`——发常量 `0` 即满足（0 是任何 M 的倍数），其余叶走既有分支。有界叶仍拒绝（需逐叶折叠进 mixed 计划，另做）。
 **实现**：①plan 新增 2 段 kind `z`，`api_object_mixed` 增 `$ty == "z"` 分支（键与冒号后发字面 `0`）；②`api_response_schema_mixed_object` 接受 body 或裸 schema、`multipleOf` 退出全局排除，逐叶把无界 i/n 且带 multipleOf 的叶改写为 `name:z`；若**每叶**都是带乘数的整数则让位给 F438 专用写入器（`api_schema_multi_multiple != ""` 时返回空）；③三处守卫豁免：bounds 无界多叶规则、两条 number+multipleOf 规则、keywords 的 all-required 分支——后者**必须校验计划叶 kind 都是写入器真能发出的**（s/i/n/b/z、p、计数数组），否则普通数组叶（`an`）会被误放行。
 **门（含翻转）**：`mult_mixed` 1→0；新 `mix_z_plan=[city:s,count:z]`、`mix_z_bad=[]`（有界对照）。

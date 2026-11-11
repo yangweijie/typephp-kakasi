@@ -5686,8 +5686,8 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
     $fTy = "";
     if (count($first) == 2) {
         $fTy = $first[1];
-    } else if (count($first) == 3 && $first[1] == "p") {
-        $fTy = "p";
+    } else if (count($first) == 3 && ($first[1] == "p" || $first[1] == "q")) {
+        $fTy = $first[1];
     } else {
         return "";
     }
@@ -5705,8 +5705,8 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
         $pSpec = "";
         if (count($kv) == 2) {
             $ty = $kv[1];
-        } else if (count($kv) == 3 && $kv[1] == "p") {
-            $ty = "p";
+        } else if (count($kv) == 3 && ($kv[1] == "p" || $kv[1] == "q")) {
+            $ty = $kv[1];
             $pSpec = $kv[2];
         } else {
             return "";
@@ -5993,6 +5993,15 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                 return "";
             }
             $s = $s . "," . $z;
+        } else if ($ty == "q") {
+            // F510: a bound-bearing numeric leaf whose multipleOf fold collapsed to ONE integer
+            // constant - emit that constant (it satisfies the bounds and the multiplier by
+            // construction, the same subset argument the single-property fold uses).
+            $qv = api_constrained_continue([$pSpec], 8);
+            if ($qv == "") {
+                return "";
+            }
+            $s = $s . "," . $qv;
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 6);
             if ($body != "") {
@@ -6021,10 +6030,12 @@ function api_response_schema_mixed_object(string $body): string
         }
     }
     // F404: `pattern` left the exclusion - the anchored class/count forms become p: plan kinds
-    // the mixed stepper emits; enum/const leaves and numeric bounds still disqualify.
+    // the mixed stepper emits; enum/const leaves still disqualify.
     // F509: `multipleOf` left the blanket exclusion too - an UNBOUNDED integer/number leaf that
     // carries it becomes the constant-zero kind z below (0 is a multiple of every M).
-    if (preg_match('/"(enum|const|minimum|maximum)"\s*:/', $schema) == 1) {
+    // F510: numeric bounds left it as well, but only per leaf - a bound-bearing numeric leaf is
+    // servable exactly when its multipleOf fold collapses to one integer constant (kind q).
+    if (preg_match('/"(enum|const)"\s*:/', $schema) == 1) {
         return "";
     }
     // F438/F507/F508 own the plan where EVERY leaf is an integer with its own multipleOf; leave
@@ -6062,15 +6073,39 @@ function api_response_schema_mixed_object(string $body): string
     $pCount = 0;
     for ($i = 0; $i < count($items); $i++) {
         $kv = explode(":", $items[$i]);
-        // F509: rewrite an unbounded integer/number leaf that carries multipleOf to the z kind;
-        // the writer emits the constant 0 for it. Bounds are excluded above, so nothing else of
-        // the leaf needs honouring.
+        // F509/F510: an unbounded numeric leaf with multipleOf becomes z (constant 0); a
+        // bound-bearing one becomes q:<constant> only when its fold collapses to a single integer.
+        // Any other bound-bearing numeric leaf keeps the refusal - the writer cannot honour it.
         if (count($kv) == 2 && ($kv[1] == "i" || $kv[1] == "n")) {
             $kp = strpos($block, "\"" . $kv[0] . "\"");
+            $lb = "";
             if ($kp !== false) {
                 $vo = strpos($block, "{", $kp);
                 $lb = $vo === false ? "" : api_balance_block($block, $vo);
-                if ($lb != "" && strpos($lb, "\"multipleOf\"") !== false) {
+            }
+            if ($lb != "") {
+                $hasBnd = strpos($lb, "\"minimum\"") !== false || strpos($lb, "\"maximum\"") !== false
+                    || strpos($lb, "\"exclusiveMinimum\"") !== false
+                    || strpos($lb, "\"exclusiveMaximum\"") !== false;
+                $hasMult = strpos($lb, "\"multipleOf\"") !== false;
+                if ($hasBnd) {
+                    if (!$hasMult) {
+                        return "";
+                    }
+                    $wrap = '{"properties":{"_item":' . $lb . '}}';
+                    $sh = api_schema_number_bounded_shape($wrap);
+                    if ($sh == "") {
+                        return "";
+                    }
+                    $sg = explode("|", $sh);
+                    if (count($sg) != 4 || $sg[1] != $sg[2] || (int) $sg[3] < 1
+                        || $sg[2] == "-999" || $sg[2] == "-998" || $sg[2] == "-997"
+                        || $sg[2] == "-996" || $sg[2] == "-995" || $sg[2] == "-994") {
+                        return "";
+                    }
+                    $kv = [$kv[0], "q", $sg[1]];
+                    $items[$i] = $kv[0] . ":q:" . $sg[1];
+                } else if ($hasMult) {
                     $kv[1] = "z";
                     $items[$i] = $kv[0] . ":z";
                 }
@@ -6079,9 +6114,11 @@ function api_response_schema_mixed_object(string $body): string
         if (count($kv) == 2 && $kv[1] != "s") {
             $hasNum = 1;
         }
-        if (count($kv) == 3 && $kv[1] == "p") {
+        if (count($kv) == 3 && ($kv[1] == "p" || $kv[1] == "q")) {
             $hasNum = 1;
-            $pCount = 1;
+            if ($kv[1] == "p") {
+                $pCount = 1;
+            }
         }
     }
     $plan = implode(",", $items);
@@ -11098,7 +11135,7 @@ function api_schema_keywords_unsupported(string $body): string
             foreach (explode(",", $mixPlan) as $ml) {
                 $mk = explode(":", $ml);
                 if (count($mk) == 3) {
-                    if ($mk[1] != "p") {
+                    if ($mk[1] != "p" && $mk[1] != "q") {
                         $mixOk = 0;
                         break;
                     }
@@ -11184,6 +11221,11 @@ function api_schema_bounds_unsupported(string $body): int
     if (api_schema_array_item_bounds($body) != ""
         || api_schema_array_item_number($body) != ""
         || api_schema_array_item_multiple($body) != "") {
+        return 0;
+    }
+    // F510: a mixed plan the detector claims is served - every bound-bearing numeric leaf folded
+    // to an integer constant (q) or to zero (z), and the other leaves are kinds the writer emits.
+    if (api_response_schema_mixed_object($body) != "") {
         return 0;
     }
     // F436/F437: the draft-4 BOOLEAN spelling is now HONOURED where the shape can convert it (the
@@ -18112,6 +18154,11 @@ function main(): void
     // keeps the refusal.
     $bdMixZ = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","multipleOf":0.3}}}');
     $bdMixZBad = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","minimum":1,"multipleOf":0.3}}}');
+    // F510: a bound-bearing integer leaf folds to one constant (q); a decimal-grid fold or a bound
+    // without a multiplier keeps the refusal.
+    $bdMixQ = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}');
+    $bdMixQBad = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"number","minimum":1,"maximum":9,"multipleOf":0.3}}}');
+    $bdMixExclBad = api_response_schema_mixed_object('{"properties":{"city":{"type":"string"},"count":{"type":"integer","exclusiveMinimum":5}}}');
     // F438: the all-integer-multipleOf shape is served now; this asserts the writer receives BOTH
     // leaves with their own multipliers (the refusal above must not swallow them).
     $bdBH = api_response_schema_multi_multiple('{"json_schema":{"schema":{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer","multipleOf":5}}}}}');
@@ -18160,6 +18207,7 @@ function main(): void
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
         . "] multi_big_plan=[" . $bdMultiBig . "] multi_frac_plan=[" . $bdMultiFrac . "]"
         . " mix_z_plan=[" . $bdMixZ . "] mix_z_bad=[" . $bdMixZBad . "]"
+        . " mix_q_plan=[" . $bdMixQ . "] mix_q_bad=[" . $bdMixQBad . "] mix_excl_bad=[" . $bdMixExclBad . "]"
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
@@ -18177,7 +18225,9 @@ function main(): void
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
-        && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z" && $bdMixZBad == ""
+        && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
+        && $bdMixZBad == "city:s,count:q:3"
+        && $bdMixQ == "city:s,count:q:3" && $bdMixQBad == "" && $bdMixExclBad == ""
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {
