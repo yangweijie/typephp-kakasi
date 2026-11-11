@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F494）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F495）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3720,10 +3720,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：number 叶**有界（整数 M）** | **支持**（折叠到区间内最小整数倍——整数是合法 number 且是 M 的倍数，子集论证） | `nm_shape`/`nm_text`/`num_mult_served`（F466） |
 | multipleOf：number 叶**有界（小数 M，inclusive 界，双侧或单侧 ≤5 位）** | **支持**（界与 M 缩放到公共小数网格折叠；双侧取区间内最小倍数、min-only 取最小上倍数、max-only 取 0 或最大负倍数；经 F440–F456 小数 marker 写入器发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_minonly`/`fm_maxpos`/`fm_maxneg`/`num_mult_frac_served`/`num_mult_frac_minonly_ok`（F469/F478） |
 | multipleOf：number 叶小数 M **无界/单侧/exclusive/整数叶**／混合叶 / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`fm_intleaf`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469） |
-| minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）**、**定长 pattern 叶（`c<n>x` 精确段，界限仅需包含固定长度）** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 s 叶顺序消费每属性界限；定长 pattern 零写入器改动） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`/`p_len_ok`/`pattern_len_ok`（F399/F493/F494） |
+| minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）**、**定长 pattern 叶（`c<n>x` 精确段，界限仅需包含固定长度）**、**多叶 mixed 的 s 叶与定长 p 叶共存** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 plan 中 s 叶顺序消费每属性界限——预算提取器按写入器消费顺序生成，p 叶不占位；定长 pattern 零写入器改动） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`/`p_len_ok`/`pattern_len_ok`/`len_mix_p`/`len_mix_bounds`/`mixed_len_p_ok`/`mixed_len_pattern_ok`（F399/F493/F494/F495） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
-| minItems / maxItems / minLength / maxLength：**含范围 pattern 叶（非定长）等不可计划命名的其他形状** | **显式 400** | `SCHEMA-KEYWORDS`/`mixed_len_pattern_refuse`/`p_len_bad`/`p_len_range`（F398–F400/F493/F494） |
+| minItems / maxItems / minLength / maxLength：**含范围 pattern 叶（非定长）、p 叶界限不含其定长等不可计划命名的其他形状** | **显式 400** | `SCHEMA-KEYWORDS`/`p_len_bad`/`p_len_range`/`len_mix_p_bad`/`mixed_len_p_bad_refuse`（F398–F400/F493–F495） |
 | uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
 | uniqueItems:true | **显式 400** | `uniq_true`（F425） |
 | additionalProperties:true/false **及 schema 值**（键名来自 plan，可与数组界并存；schema 值只判未声明键 ⇒ 真空满足） | **支持** | `addprops_*`/`addprops_schema`/`addprops_schema_served`（F402/F403/F492） |
@@ -4658,3 +4658,17 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **过程**：首版还在 mixed 中加入 escape-safe stepIds，为压缩回归面已移除（长度逻辑不需要）；`SCHEMA-LEN` 的 `mixed_refusal` 旧期望被同轮证伪并翻转。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f493b.log`）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.480×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（11 文件）。
 **记法**：**长度约束是"值级"的，可跨写入器复用同一字符预算逻辑**；但 bounds 列表与计划叶的**对齐规则**必须写清（这里：只有 s 叶依次消费），否则非字符串叶会错位。写入器改动要同时改**所有**路由调用点（本轮 4 处），漏一处会表现为"某条流式路径仍拒绝"。
+
+## F495：多叶 mixed 的 minLength/maxLength（s 叶由写入器保证、p 叶定长包含）
+**核心思路**：F493 已让 mixed 写入器对每个 s 叶执行按属性字符预算；若同一形状里的其余字符串叶是**定长 pattern**（F494 的 `c<n>x` 精确段判定，界限只需包含该定长），则整个对象的长度约束可证。形状入口必须用与 mixed 检测器**同源、但作用于裸 schema** 的资格扫描（关键字守卫收到的是提取出的 schema，不是带 `json_schema` 包装的请求体）。
+**实现**：新 helper `api_schema_lengths_ok`——`enum/const/minimum/maximum/multipleOf` 任一出现即 0；`api_schema_is_object`；properties 块 → `api_top_leaves`；逐叶：kind `s` 跳过（写入器预算），kind `p` 求定长并检查该属性自己的 `minLength/maxLength` 是否包含它，其它 kind 跳过；任一 p 叶有范围段或界限不含定长 ⇒ 0。关键字守卫在 F494 分支后加一行。
+**改前证据（`engine/schema_required_f495pre.log`，F494 二进制）**：`mixed_len_p_ok` 400、`mixed_len_p_bad_refuse` 400。
+**两次证伪（都是“守卫声称支持、实际没兑现”）**：
+1. helper 首版以 `api_response_schema_mixed_object($body) != ""` 作形状门——该检测器要求 `"json_schema"`，而守卫拿到的是裸 schema ⇒ 恒 0；自检门 `len_mix_p=[minLength]`、181/1。改为同源资格扫描后门转绿。
+2. 转绿后活体立刻暴露更深的问题：`api_response_schema_string_bounds` 基于 `api_response_schema_string_props`，后者**见任何 `pattern` 即返回空列表** ⇒ 含 p 叶的 mixed 形状 bounds 为 `""`，city 叶没有预算，输出 `"New York City, New York, USA, …"` 远超 `maxLength:8`。**F493 的“s 叶由写入器保证”只在预算真正送到写入器时才成立**——关键字守卫与预算提取器必须成对证明。
+**修法**：`api_response_schema_string_bounds` 改为按**实际消费它的写入器**生成列表——mixed 形状只列 mixed 计划里的 `s` 叶（按 plan 顺序；p 叶写自己的 spec，不消费），非 mixed 形状仍走 flat 的 required 字符串属性顺序；两者都用 properties 块内的平衡块定位叶子。
+**门**：`len_mix_p=[]`、`len_mix_p_bad=[minLength]`（p 叶 minLength:4 > 定长 3）、`len_mix_bounds=[3:8]`（直接钉住“预算到达写入器”，防止再次出现“守卫放行但写入器无预算”）；`SCHEMA-LEN` 的 `mixed_refusal` 与 `comb_bounds=[3:8,0:5]` 保持不变。
+**门翻转 / 活体翻转**：`mixed_len_pattern_refuse`（F493 留下的 400 对照）被证伪——其拒绝只因预算提取器见 `pattern` 失灵，形状本身（city:s 带 minLength + code:p 定长）可服务；改为 `mixed_len_pattern_ok`（200，city ≥3、code 三字母）。
+**活体**：`mixed_len_p_ok` 200 `{"city":"New York","code":"NYN","count":100000}`（city 8 ∈[3,8]、code 3 字母、count 整数）、`mixed_len_pattern_ok` 200、`mixed_len_p_bad_refuse` 400 点名 minLength；`mixed_len_ok`（F493）与 flat 的 `subset_with_length` 不回退。
+**梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f495c.log`）；bounds/required/count/pattern 全 **PASS**（`schema_*_f495c.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.447×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（`build_f495c`）。
+**记法**：**“守卫放行”必须与“执行者兑现”成对证明**——长度守卫只证明形状可被 mixed 写入器认领，却没有证明预算列表非空；预算提取器的旧扫描见 `pattern` 即弃，使 F493 的“s 叶由写入器保证”在这个组合上静默失效（输出自由文本、200）。修法不是加特判，而是让预算列表**按消费方的迭代顺序**生成（mixed 只列 plan 中的 s 叶）。自检门若只断言关键字判定（`len_mix_p`），这类缺陷仍会漏；需要一条直接断言中间产物（`len_mix_bounds`）的门。

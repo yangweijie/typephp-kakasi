@@ -8490,30 +8490,62 @@ function api_schema_bound_value(string $body, string $key, int $from): string
 // refusing the keywords, because their generators do not step strings the same way.
 function api_response_schema_string_bounds(string $body): string
 {
-    $props = api_response_schema_string_props_required($body);
-    if (count($props) == 0) {
-        return "";
-    }
     $schema = api_json_object_after($body, "schema");
     if ($schema == "") {
         return "";
     }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    // F495: the entries must line up with the writer that will consume them. The mixed writer
+    // consumes one per "s" leaf of its (required-filtered) plan, in plan order - a p leaf writes
+    // its own spec and takes none. The old extractor listed "string properties", which returned
+    // NOTHING as soon as any `pattern` appeared, so a mixed shape with a p leaf got no budgets at
+    // all and its s leaf ran past maxLength. The flat multi-string writer keeps consuming one per
+    // required string property.
+    $names = "";
+    $mixed = api_response_schema_mixed_object($body);
+    if ($mixed != "") {
+        foreach (explode(",", $mixed) as $leaf) {
+            $kv = explode(":", $leaf);
+            if (count($kv) == 2 && $kv[1] == "s") {
+                $names = $names . ($names == "" ? "" : ",") . $kv[0];
+            }
+        }
+    } else {
+        $props = api_response_schema_string_props_required($body);
+        for ($i = 0; $i < count($props); $i++) {
+            $names = $names . ($i == 0 ? "" : ",") . $props[$i];
+        }
+    }
+    if ($names == "") {
+        return "";
+    }
     $out = "";
-    for ($i = 0; $i < count($props); $i++) {
-        $key = "\"" . $props[$i] . "\"";
-        $p = strpos($schema, $key);
+    $n = 0;
+    foreach (explode(",", $names) as $name) {
         $mn = 0;
         $mx = 0;
-        if ($p !== false) {
-            $bo = strpos($schema, "{", $p);
-            $bc = $bo === false ? false : strpos($schema, "}", $bo);
-            if ($bo !== false && $bc !== false) {
-                $leaf = substr($schema, $bo, $bc - $bo + 1);
+        $kp = strpos($block, "\"" . $name . "\"");
+        if ($kp !== false) {
+            $vo = strpos($block, "{", $kp);
+            $leaf = $vo === false ? "" : api_balance_block($block, $vo);
+            if ($leaf != "") {
                 $mn = (int) api_schema_bound_value($leaf, "\"minLength\"", 0);
                 $mx = (int) api_schema_bound_value($leaf, "\"maxLength\"", 0);
             }
         }
-        $out = $out . ($i == 0 ? "" : ",") . $mn . ":" . $mx;
+        $out = $out . ($n == 0 ? "" : ",") . $mn . ":" . $mx;
+        $n++;
     }
     return $out;
 }
@@ -10636,6 +10668,88 @@ function api_schema_pattern_length_ok(string $schema): int
     return 1;
 }
 
+// F495: per-property lengths on a MULTI-LEAF shape the MIXED writer serves. Every string leaf must
+// be accounted for: kind s is enforced by that writer's own character budget (F493), and a kind p
+// leaf must have a FIXED length its own min/maxLength contain (F494's judgement). Other kinds carry
+// no string length. The shape gate is the mixed detector (which accepts p leaves), not
+// mixed_omittable (which does not).
+function api_schema_lengths_ok(string $schema): int
+{
+    // The keyword guard receives the extracted schema, not the request body, so the mixed
+    // detector's json_schema wrapper is unavailable here - run the same eligibility scan on the
+    // schema itself (enum/const/numeric leaves disqualify the mixed stepper).
+    if (preg_match('/"(enum|const|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
+        return 0;
+    }
+    if (api_schema_is_object($schema) != 1) {
+        return 0;
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return 0;
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return 0;
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return 0;
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return 0;
+    }
+    foreach (explode(",", $plan) as $leaf) {
+        $lkv = explode(":", $leaf);
+        if (count($lkv) == 2 && $lkv[1] == "s") {
+            continue;               // the mixed writer enforces its budget (F493)
+        }
+        if (count($lkv) != 3 || $lkv[1] != "p") {
+            continue;
+        }
+        $len = 0;
+        $fixed = 1;
+        foreach (explode("~", $lkv[2]) as $seg) {
+            $tag = substr($seg, 0, 1);
+            if ($tag == "l") {
+                $len = $len + strlen(substr($seg, 1));
+                continue;
+            }
+            $mc = [];
+            if ($tag != "c" || preg_match('/^c([0-9]+)x/', $seg, $mc) != 1) {
+                $fixed = 0;
+                break;
+            }
+            $len = $len + (int) $mc[1];
+        }
+        if ($fixed != 1) {
+            return 0;               // a ranged segment has no fixed length
+        }
+        $kp = strpos($block, "\"" . $lkv[0] . "\"");
+        if ($kp === false) {
+            return 0;
+        }
+        $vo = strpos($block, "{", $kp);
+        if ($vo === false) {
+            return 0;
+        }
+        $leafBlk = api_balance_block($block, $vo);
+        if ($leafBlk == "") {
+            return 0;
+        }
+        $mn = api_schema_bound_value($leafBlk, "\"minLength\"", 0);
+        $mx = api_schema_bound_value($leafBlk, "\"maxLength\"", 0);
+        if ($mn != "" && $len < (int) $mn) {
+            return 0;
+        }
+        if ($mx != "" && $len > (int) $mx) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 function api_schema_keywords_unsupported(string $body): string
 {
     foreach (explode(" ", "minItems maxItems minLength maxLength additionalProperties uniqueItems minProperties maxProperties") as $kw) {
@@ -10650,6 +10764,10 @@ function api_schema_keywords_unsupported(string $body): string
         }
         // F494: a fixed-length pattern leaf satisfies a length bound that contains its length.
         if (($kw == "minLength" || $kw == "maxLength") && api_schema_pattern_length_ok($body) == 1) {
+            continue;
+        }
+        // F495: a multi-leaf mixed shape - s leaves enforced by the writer, p leaves fixed-length.
+        if (($kw == "minLength" || $kw == "maxLength") && api_schema_lengths_ok($body) == 1) {
             continue;
         }
         // F400: minItems/maxItems are honoured for a single scalar-array property, whose stepper
@@ -18069,6 +18187,17 @@ function main(): void
     $pLenOk = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":3,"maxLength":8}}}');
     $pLenBad = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":4}}}');
     $pLenRange = api_schema_keywords_unsupported('{"properties":{"code":{"type":"string","pattern":"^[A-Z]{2,4}$","minLength":3}}}');
+    // F495: multi-leaf mixed with a fixed-length p leaf - the s leaf's bound is writer-enforced.
+    $lenMixP = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","minLength":3,"maxLength":8},"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":3},"count":{"type":"integer"}},"required":["city","code","count"]}');
+    $lenMixPBad = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string","minLength":3,"maxLength":8},"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":4},"count":{"type":"integer"}}}');
+    // The guard is only honest if the budget reaches the writer: the extractor lists one entry per
+    // s leaf in plan order (the p leaf writes its own spec and takes none), even though the schema
+    // carries a `pattern` - the old property scan bailed on any pattern and returned no budgets.
+    $lenMixPB = '{"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":'
+        . '{"type":"object","properties":{"city":{"type":"string","minLength":3,"maxLength":8},'
+        . '"code":{"type":"string","pattern":"^[A-Z]{3}$","minLength":3},"count":{"type":"integer"}},'
+        . '"required":["city","code","count"]}}}}';
+    $lenMixPBounds = api_response_schema_string_bounds($lenMixPB);
     $kwC = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"}},"additionalProperties":false}');
     // F402: additionalProperties is satisfied by construction where every key is named from the
     // plan, so the all-string case moved from "additionalProperties" to "". The counterparts that
@@ -18147,7 +18276,9 @@ function main(): void
     $kwAY = api_response_schema_array_string('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":false}}}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] p_len_ok=[" . $pLenOk . "] p_len_bad=[" . $pLenBad
-        . "] p_len_range=[" . $pLenRange . "] addProps=[" . $kwC
+        . "] p_len_range=[" . $pLenRange . "]"
+        . " len_mix_p=[" . $lenMixP . "] len_mix_p_bad=[" . $lenMixPBad
+        . "] len_mix_bounds=[" . $lenMixPBounds . "] addProps=[" . $kwC
         . "] req_all=[" . $kwD . "] req_subset=[" . $kwE . "] none=[" . $kwF
         . "] wire_all=[" . $kwG . "] wire_subset=[" . $kwH
         . "] arr_max=[" . $kwN . "] arr_minmax=[" . $kwO . "] obj_bound=[" . $kwP
@@ -18163,6 +18294,7 @@ function main(): void
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == ""
         && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
+        && $lenMixP == "" && $lenMixPBad == "minLength" && $lenMixPBounds == "3:8"
         && $kwC == ""
         && $kwD == "" && $kwE == "" && $kwF == ""
         && $kwG == "" && $kwH == ""

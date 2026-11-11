@@ -2054,3 +2054,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：`api_schema_pattern_length_ok`（逐段求定长＋界限包含）＋关键字分支；无写入器改动。
 - **门**：`p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]。
 - **活体**：`{"code":"CJL"}` 200、越界/范围 400；四 harness PASS；8000 115/0、8001 par/fairness 0、scaling 1.479×、哨兵 0；构建 BUILD_OK。
+
+## ▶ 状态（F495，已完成）——多叶 mixed 的 minLength/maxLength（s 叶写入器保证、p 叶定长包含）
+- **改前证据**：`mixed_len_p_ok`/`mixed_len_p_bad_refuse` 均 400（`schema_required_f495pre.log`，F494 二进制）。
+- **实现**：`api_schema_lengths_ok`（裸 schema 资格扫描；s 叶跳过、p 叶要求全精确且界限包含）+ 关键字分支；`api_response_schema_string_bounds` 改为按写入器消费顺序生成预算（mixed 只列 plan 中 s 叶）。
+- **过程（两次证伪）**：①helper 首版用需 `json_schema` 包装的检测器 ⇒ 门 `len_mix_p` 181/1；改裸 schema 扫描。②活体暴露预算提取器见 `pattern` 即返回空 ⇒ p 叶共存时 city 无预算超 maxLength；按消费顺序重写并加门 `len_mix_bounds=[3:8]`。旧对照 `mixed_len_pattern_refuse` 翻转为 `mixed_len_pattern_ok`。
+- **活体**：`mixed_len_p_ok` 200 `{"city":"New York","code":"NYN","count":100000}`、`mixed_len_pattern_ok` 200、`mixed_len_p_bad_refuse` 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f495c.log`，`len_mix_p=[]`/`len_mix_p_bad=[minLength]`/`len_mix_bounds=[3:8]`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.447×**；哨兵 **0**；构建 BUILD_OK（`build_f495c`）。

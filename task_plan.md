@@ -1695,6 +1695,16 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
+## F495 计划与完成（多叶 mixed 的 minLength/maxLength：s 叶由写入器保证、p 叶定长包含）
+**核心思路**：mixed 写入器（F493）已对每个 s 叶执行按属性长度预算；多叶形状中若其余字符串叶是**定长 pattern**（F494 的判定），整体长度约束即可证。判定的形状入口用与 mixed 检测器同源的裸 schema 资格扫描（`enum/const/minimum/maximum/multipleOf` 排除、`api_schema_is_object`、properties 块 plan），**不能**用 `api_response_schema_mixed_object`（它要求 `json_schema` 包装）或 `mixed_omittable`（后者拒绝 p 叶）。
+**实现**：新 helper `api_schema_lengths_ok`（遍历 plan：s 叶跳过（写入器保证）、p 叶要求 spec 全精确且其属性内 min/maxLength 包含固定长度、其它 kind 跳过）；关键字分支加该判定。
+**过程（两轮修正，均为“守卫声称支持但实际没兑现”类）**：①首版 helper 误用 `api_response_schema_mixed_object($body)`——关键字守卫拿到的是**裸 schema**，该检测器见不到 `json_schema` ⇒ 恒 0；门 `len_mix_p` 失败（181/1），改为裸 schema 资格扫描。②修完后活体暴露更严重的问题：`api_response_schema_string_bounds` 基于 `api_response_schema_string_props`，后者**见任何 `pattern` 就返回空** ⇒ 含 p 叶的 mixed 形状 bounds 为 `""`，city 叶无预算地跑出 maxLength（`"New York City, …"`）。F493 的前提“s 叶由写入器保证”只有在预算真正送到写入器时才成立。修法：预算列表按**实际消费它的写入器**生成——mixed 形状只列 plan 中的 s 叶（按 plan 顺序，p 叶自带 spec 不消费），否则走 flat 的 required 字符串属性；并加门 `len_mix_bounds=[3:8]` 直接钉住“预算到达写入器”。
+**门**：`len_mix_p=[]`、`len_mix_p_bad=[minLength]`（code minLength:4 > 3）、`len_mix_bounds=[3:8]`；旧活体对照 `mixed_len_pattern_refuse` 被证伪并翻转（F493 的拒绝只因预算提取器失灵，非形状不可服务）。
+**活体**：`mixed_len_p_ok`（200：city 长 3..8、code 三字母、count 整数）、`mixed_len_pattern_ok`（200：city ≥3、code 三字母）、`mixed_len_p_bad_refuse`（400 点名 minLength）。
+**用法**：`scripts/build-check.sh`；无写入器改动（改的是预算提取器与关键字守卫）。
+**梯（完成）**：自检 **182/0**（`selftest_f495c.log`）；bounds/required/count/pattern 全 PASS；8000 **115/0**；8001 par/fairness **0**；scaling **1.447×**；哨兵 **0**；BUILD_OK。
+
+
 ## F451 计划与完成（`patternProperties` 的空约束形式）
 **F450 已完成**：number 叶小数界到四位。
 **F451 已完成**：`api_schema_pattern_props_ok`——恰一条模式、长度 1–200、键集用 `api_schema_emitted_set`；任一键命中或模式不可读 ⇒ 拒绝，全不命中 ⇒ 放行（空约束）。`patternProperties` 从 `patternProperties|if` 拆出单独判定。

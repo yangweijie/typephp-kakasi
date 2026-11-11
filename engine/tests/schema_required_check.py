@@ -105,10 +105,16 @@ cases = [
      lambda code, txt: (code == 200 and keys_of(txt) == ["city", "count"]
                         and 3 <= len(json.loads(txt)["city"]) <= 8
                         and isinstance(json.loads(txt)["count"], int))),
-    ("mixed_len_pattern_refuse", "Say where you are.",
+    # F495: this used to be refused (the budget extractor bailed on any `pattern`, so the s leaf
+    # had nothing to hold it). Now the extractor lists one entry per s leaf and the mixed writer
+    # enforces the city length; the p leaf writes its own fixed 3-letter code.
+    ("mixed_len_pattern_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string", "minLength": 3},
                                        "code": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
-     lambda code, txt: code == 400 and "minLength" in txt),
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "code"]
+                        and len(json.loads(txt)["city"]) >= 3
+                        and len(json.loads(txt)["code"]) == 3
+                        and json.loads(txt)["code"].isupper())),
     # F494: a FIXED-length pattern leaf - exact spec segments make the emitted length known, so
     # minLength/maxLength that contain it hold by construction; a bound excluding it, or a ranged
     # pattern (no fixed length), keeps the refusal.
@@ -124,6 +130,25 @@ cases = [
     ("pattern_len_range_refuse", "Say the code.",
      {"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]{2,4}$",
                                                 "minLength": 3}}},
+     lambda code, txt: code == 400 and "minLength" in txt),
+    # F495: a MULTI-LEAF mixed shape - the s leaf's length is enforced by the mixed writer, the p
+    # leaf is fixed-length and its bound contains that length, so the pair is served; a p leaf whose
+    # bound excludes the fixed length keeps the refusal.
+    ("mixed_len_p_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string", "minLength": 3, "maxLength": 8},
+                                       "code": {"type": "string", "pattern": "^[A-Z]{3}$",
+                                                "minLength": 3},
+                                       "count": {"type": "integer"}},
+      "required": ["city", "code", "count"]},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "code", "count"]
+                        and 3 <= len(json.loads(txt)["city"]) <= 8
+                        and len(json.loads(txt)["code"]) == 3
+                        and isinstance(json.loads(txt)["count"], int))),
+    ("mixed_len_p_bad_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string", "minLength": 3, "maxLength": 8},
+                                       "code": {"type": "string", "pattern": "^[A-Z]{3}$",
+                                                "minLength": 4},
+                                       "count": {"type": "integer"}}},
      lambda code, txt: code == 400 and "minLength" in txt),
     # F402: additionalProperties names no key of its own - the generators emit the declared plan and
     # nothing else - so refusing it rejected a request that was already satisfied.
