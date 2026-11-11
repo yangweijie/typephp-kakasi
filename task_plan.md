@@ -1695,12 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F496 计划（**尝试后回退**：整数叶的小数 multipleOf 被候选枚举层先认领）
-**核心思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（x=(p/q)k 为整数 ⇒ q|k ⇒ x=p·(k/q)，p、q 互素）。因此整数叶遇到小数乘数时，取**最简分子** p 作为整数乘数，复用既有整数折叠（exclusive 界此前已转为相邻整数）；区间内无 p 的倍数 ⇒ 不可满足、保持 400。
-**已做的验证**：helper `api_schema_multiplier_numerator`（1–5 位小数、gcd 约分）＋小数分支按 kind 分流后，自检 `fm_intleaf=0`、`fm_int03=[n|3|3|3]`、`fm_int15=[n|3|3|3]`、`fm_int_unsat=[]` 全绿（`selftest_f496.log`）。
-**证伪与回退原因（已定位认领者）**：活体 `num_mult_frac_intleaf_ok` 返回 **200 `{"n":2}`** —— 2 不是 0.3 的倍数。非流式/流式链首（12180/7696 等）都会先调用 `api_response_schema_candidates`；其 **Pass 2**（8187–8250）把 `"type":"integer"` + 双界的叶按 **[lo..hi] 枚举候选**，span≤15 即认领，**不读 `multipleOf`**；`api_constrained` 于是自由选中 2。形状 `n|3|3|3` 的 `$scNumB` 分支根本没机会运行。按“宁可显式 400，不可静默违反”回退（`git checkout` 恢复 F495 源码），重建 `build_f495r` 并复跑 bounds harness **CHECK_EXIT=0**。
-**下一步（重新排队）**：Pass 2 在对象带 `multipleOf` 时按倍数**过滤候选**（整数 M：v % M；小数 p/q：v % p，p 为最简分子）——保留枚举路由不变，只收紧取值集；需同时为已由该层服务的整数 M 形状留回归门，并删掉/复用本轮证明可用的 `api_schema_multiplier_numerator`。落地前仍先用活体证明“枚举层确实是认领者”（可在 Pass 2 对含 `multipleOf` 的叶临时打印候选集）。数组项路线（`items_mult_excl_frac_refuse`）与 F496 无关，保持原状。
-**用法**：`scripts/build-check.sh`；无写入器改动（本轮全部回退）。
+## F496 计划与完成（整数叶的小数 multipleOf：最简分子折叠 + 候选层完整字面过滤）
+**核心思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（x=(p/q)k 为整数 ⇒ q|k ⇒ x=p·(k/q)，p、q 互素）。两处必须同时按**完整字面**读乘数：形状折叠取最简分子 p；候选枚举层（链首）此前用 `[0-9]+` 前缀把 `0.3` 读成 0，因而不过滤、自由枚举。
+**实现**：①helper `api_schema_multiplier_numerator`（1–5 位小数、gcd 约分）；②`api_schema_number_bounded_shape` 小数分支按 kind 分流（`i` 折分子落整数折叠、`n` 走原十进制网格）；③`api_schema_candidates` Pass 2 的 multipleOf 解析改为完整字面且要求后随分隔符（>5 位/指数形式枚举空集，交给折叠层裁决），整数 M 与分子 p 用同一过滤。
+**门**：`fm_intleaf` 1→0；`fm_int03=[n|3|3|3]`、`fm_int15=[n|3|3|3]`、`fm_int_unsat=[]`、`fm_int_cand=[{"n":3},{"n":6},{"n":9}]`。
+**过程**：首轮只改形状折叠 ⇒ 活体 **200 `{"n":2}`**；回退并定位认领者（非流式/流式链首 12180/7696 先调 `api_response_schema_candidates`，Pass 2 前缀读 0.3 为 0），第二轮同时修 Pass 2。**自检门只覆盖形状层，覆盖不到“谁先认领”**——本轮靠活体才暴露。
+**活体**：0.3 与 1.5 → **`{"n":3}`**（3/6/9 的候选集），[1,2]+0.3 → 400；数组项 fractional/exclusive 路线（`items_mult_excl_frac_refuse`）不变。
+**梯**：自检 **182/0**（`selftest_f496b.log`，`: FAIL` 0）；bounds/required/count/pattern 全 **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.526×**；哨兵 **0**；构建 BUILD_OK（`build_f496b`）。
+**用法**：`scripts/build-check.sh`；无写入器改动。
 
 
 **核心思路**：mixed 写入器（F493）已对每个 s 叶执行按属性长度预算；多叶形状中若其余字符串叶是**定长 pattern**（F494 的判定），整体长度约束即可证。判定的形状入口用与 mixed 检测器同源的裸 schema 资格扫描（`enum/const/minimum/maximum/multipleOf` 排除、`api_schema_is_object`、properties 块 plan），**不能**用 `api_response_schema_mixed_object`（它要求 `json_schema` 包装）或 `mixed_omittable`（后者拒绝 p 叶）。

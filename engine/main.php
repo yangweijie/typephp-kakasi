@@ -6364,6 +6364,38 @@ function api_schema_bound_exclusive(string $lit, int $isMin): int
 }
 
 // with -1 marking an absent side, or "".
+// F496: the INTEGER multiples of p/q (lowest terms) are exactly the multiples of p - x = (p/q)k
+// with x integer makes q divide k, so x = p*(k/q). Returning the reduced numerator lets an integer
+// leaf reuse the integer multiple walk for a fractional multiplier. Zero, a malformed literal and
+// more than five fraction places return 0 (no fold at this width).
+function api_schema_multiplier_numerator(string $lit): int
+{
+    $dot = strpos($lit, ".");
+    if ($dot === false) {
+        return (int) $lit;
+    }
+    $frac = substr($lit, $dot + 1);
+    if (strlen($frac) < 1 || strlen($frac) > 5 || preg_match('/^[0-9]+$/', $frac) != 1) {
+        return 0;
+    }
+    $num = (int) str_replace(".", "", $lit);
+    if ($num < 1) {
+        return 0;
+    }
+    $den = 1;
+    for ($i = 0; $i < strlen($frac); $i++) {
+        $den = $den * 10;
+    }
+    $a = $num;
+    $b = $den;
+    while ($b != 0) {
+        $t = $a % $b;
+        $a = $b;
+        $b = $t;
+    }
+    return intdiv($num, $a);
+}
+
 function api_schema_number_bounded_shape(string $schema): string
 {
     // F420: multipleOf left the exclusion - the writer emits the smallest multiple inside the
@@ -6499,6 +6531,14 @@ function api_schema_number_bounded_shape(string $schema): string
             return "";
         }
         if (strpos($mo[1], ".") !== false) {
+            if ($kv[1] == "i") {
+                // F496: integer leaf - fold the reduced numerator and let the integer multiple
+                // walk below run; exclusive bounds were already converted to adjacent integers.
+                $mult = api_schema_multiplier_numerator($mo[1]);
+                if ($mult < 1) {
+                    return "";
+                }
+            } else {
             // F478: ONE-SIDED inclusive bounds are served too - a minimum-only interval folds to
             // the smallest multiple at or above it (no upper check needed), and a maximum-only one
             // to zero (a multiple of every M) when the bound is non-negative, else to the largest
@@ -6580,10 +6620,12 @@ function api_schema_number_bounded_shape(string $schema): string
                 $mark = "-995";
             }
             return $kv[0] . "|" . $start . "|" . $mark . "|0";
-        }
-        $mult = (int) $mo[1];
-        if ($mult < 1) {
-            return "";
+            }
+        } else {
+            $mult = (int) $mo[1];
+            if ($mult < 1) {
+                return "";
+            }
         }
     }
     if ($loSet && $hiSet && $lo > $hi) {
@@ -8252,14 +8294,32 @@ function api_schema_candidates(string $tail): array
                 continue;
             }
             // multipleOf narrows a bounded integer to its multiples (the only unbounded-number
-            // constraint we can enumerate safely).
+            // constraint we can enumerate safely). F496: read the FULL literal and require a
+            // delimiter after it - the old [0-9]+ prefix read "0.3" as 0 and enumerated every
+            // integer (the silent-violation the live probe caught). For an integer leaf the
+            // multiples of p/q (lowest terms) are exactly the multiples of p; a literal this tier
+            // cannot fold (six+ places, exponent form) enumerates nothing so the grammar chain's
+            // own fold decides instead of silently ignoring it.
             $mo = [];
-            $mult = 0;
-            if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $obj, $mo)) {
-                $mult = (int) $mo[1];
+            $step = 1;
+            if (preg_match('/"multipleOf"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*[,}]/', $obj, $mo) == 1) {
+                $dot = strpos($mo[1], ".");
+                if ($dot === false) {
+                    $step = (int) $mo[1];
+                } else {
+                    $step = 0;
+                    if (strlen($mo[1]) - $dot - 1 <= 5) {
+                        $step = api_schema_multiplier_numerator($mo[1]);
+                    }
+                }
+            } else if (preg_match('/"multipleOf"\s*:/', $obj) == 1) {
+                $step = 0;
             }
             for ($v = $lo; $v <= $hi; $v++) {
-                if ($mult > 1 && $v % $mult != 0) {
+                if ($step == 0) {
+                    continue;
+                }
+                if ($step > 1 && $v % $step != 0) {
                     continue;
                 }
                 $vals[] = "" . $v;
@@ -18749,6 +18809,17 @@ function main(): void
     $fmNoInt = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5,"maximum":1.9,"multipleOf":0.3}}}}}');
     $fmItems = api_response_schema_array_item_number('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","minimum":1,"maximum":2,"multipleOf":0.3}}}}}}');
     $fmIntLeaf = api_schema_bounds_unsupported('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
+    // F496: an integer leaf folds a fractional multiplier through its reduced numerator (integer
+    // multiples of p/q are exactly the multiples of p); an interval with none still refuses. The
+    // candidates tier reads the same full literal, so its enumerated set must agree.
+    $fmInt03 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}');
+    $fmInt15 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":1.5}}}');
+    $fmIntUnsat = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":1,"maximum":2,"multipleOf":0.3}}}');
+    $fmIntCand = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
+    $fmIntCandTxt = "";
+    for ($i = 0; $i < count($fmIntCand); $i++) {
+        $fmIntCandTxt = $fmIntCandTxt . ($i == 0 ? "" : ",") . $fmIntCand[$i];
+    }
     // F478: one-sided inclusive bounds with a fractional multiplier.
     $fmMinOnly = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1,"multipleOf":0.3}}}}}');
     $fmMaxPos = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","maximum":2,"multipleOf":0.3}}}}}');
@@ -18952,6 +19023,8 @@ function main(): void
         . " fm_shape=[" . $fmShape . "] fm_unsat=[" . $fmUnsat . "] fm_neg=[" . $fmNeg
         . "] fm_d2=[" . $fmD2 . "] fm_noint=[" . $fmNoInt . "] fm_items=[" . $fmItems
         . "] fm_intleaf=" . $fmIntLeaf
+        . " fm_int03=[" . $fmInt03 . "] fm_int15=[" . $fmInt15 . "] fm_int_unsat=[" . $fmIntUnsat . "]"
+        . " fm_int_cand=[" . $fmIntCandTxt . "]"
         . " fm_minonly=[" . $fmMinOnly . "] fm_maxpos=[" . $fmMaxPos . "] fm_maxneg=[" . $fmMaxNeg . "]"
         . " fm_minonly_text=[" . $fmM1Text . "] fm_maxpos_text=[" . $fmM2Text . "] fm_maxneg_text=[" . $fmM3Text . "]"
         . " fm_text=[" . $fmText . "] fm_neg_text=[" . $fmNText . "] fm_d2_text=[" . $fmDText
@@ -19200,7 +19273,10 @@ function main(): void
         && $fmD2 == "n|120|-998|0"
         && $fmNoInt == "n|15|-999|0"
         && $fmItems == "nums|12|-999|0"
-        && $fmIntLeaf == 1
+        && $fmIntLeaf == 0
+        && $fmInt03 == "n|3|3|3" && $fmInt15 == "n|3|3|3" && $fmIntUnsat == ""
+        && count($fmIntCand) == 3 && strpos($fmIntCandTxt, "\"n\":3") !== false
+        && strpos($fmIntCandTxt, "\"n\":2") === false
         && $fmText == '{"n":1.2}'
         && api_json_ok($fmText) == 1
         && $fmNText == '{"n":-1.8}'

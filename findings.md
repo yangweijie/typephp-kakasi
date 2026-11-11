@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F495）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F496）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3719,7 +3719,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：多叶全整数且每叶各带 multipleOf | **支持**（逐叶后缀写入，各值整除各自乘数） | `mult_multi`/`multi_plan`（F438） |
 | multipleOf：number 叶**有界（整数 M）** | **支持**（折叠到区间内最小整数倍——整数是合法 number 且是 M 的倍数，子集论证） | `nm_shape`/`nm_text`/`num_mult_served`（F466） |
 | multipleOf：number 叶**有界（小数 M，inclusive 界，双侧或单侧 ≤5 位）** | **支持**（界与 M 缩放到公共小数网格折叠；双侧取区间内最小倍数、min-only 取最小上倍数、max-only 取 0 或最大负倍数；经 F440–F456 小数 marker 写入器发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_minonly`/`fm_maxpos`/`fm_maxneg`/`num_mult_frac_served`/`num_mult_frac_minonly_ok`（F469/F478） |
-| multipleOf：number 叶小数 M **无界/单侧/exclusive/整数叶**／混合叶 / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`fm_intleaf`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469） |
+| multipleOf：**整数叶的小数 M（双界，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠：整数倍数 ⇔ p 的倍数；候选枚举层按同一字面过滤） | `fm_int03`/`fm_int15`/`fm_int_cand`/`num_mult_frac_intleaf_ok`/`num_mult_frac_intleaf_15_ok`（F496） |
+| multipleOf：number 叶小数 M **无界/单侧/exclusive**／混合叶 / 数组项整数叶小数 M / 无界 >999999999 | **显式 400** | `nm_frac`/`nm_unb`/`items_mult_excl_frac_refuse`/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469/F496） |
 | minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）**、**定长 pattern 叶（`c<n>x` 精确段，界限仅需包含固定长度）**、**多叶 mixed 的 s 叶与定长 p 叶共存** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 plan 中 s 叶顺序消费每属性界限——预算提取器按写入器消费顺序生成，p 叶不占位；定长 pattern 零写入器改动） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`/`p_len_ok`/`pattern_len_ok`/`len_mix_p`/`len_mix_bounds`/`mixed_len_p_ok`/`mixed_len_pattern_ok`（F399/F493/F494/F495） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
@@ -4673,6 +4674,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f495c.log`）；bounds/required/count/pattern 全 **PASS**（`schema_*_f495c.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.447×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（`build_f495c`）。
 **记法**：**“守卫放行”必须与“执行者兑现”成对证明**——长度守卫只证明形状可被 mixed 写入器认领，却没有证明预算列表非空；预算提取器的旧扫描见 `pattern` 即弃，使 F493 的“s 叶由写入器保证”在这个组合上静默失效（输出自由文本、200）。修法不是加特判，而是让预算列表**按消费方的迭代顺序**生成（mixed 只列 plan 中的 s 叶）。自检门若只断言关键字判定（`len_mix_p`），这类缺陷仍会漏；需要一条直接断言中间产物（`len_mix_bounds`）的门。
 
-## F496（尝试后回退）：整数叶的小数 multipleOf——认领者是候选枚举层的 Pass 2
-**结论**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（最简分数；x=(p/q)k 整数 ⇒ q|k），据此把小数乘数折成最简分子并复用整数折叠，**形状层自检全部通过**（`fm_int03=[n|3|3|3]`、`fm_int_unsat=[]`）。但活体返回 **200 `{"n":2}`**：2 不是 0.3 的倍数。**认领者已定位**：响应链首（7696）先调 `api_response_schema_candidates`，其 Pass 2（8187–8250）对“integer + 双界”的叶按 [lo..hi] 枚举候选（span≤15 即认领），**不读 `multipleOf`**；`$scNumB` 的折叠写入器根本没机会运行。已全部回退并重建（`build_f495r`、bounds harness 绿）。
-**记法**：**放宽拒绝前要证明的不是“形状可服务”，而是“这条形状真的会走到那个执行者”**——小跨度整数有一条更早的枚举路由，检测器与自检门都覆盖不到它；此类错误的形态是**静默产出违反值**，比拒绝更糟。修法应是让枚举层按倍数过滤候选（保留路由），而不是优先路由或只放宽守卫。
+## F496：整数叶的小数 multipleOf——最简分子折叠，且候选枚举层必须按完整字面过滤
+**核心思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（最简分数；x=(p/q)k 整数 ⇒ q|k），据此把小数乘数折成最简分子并复用整数折叠。两处必须一致地读**完整字面**：形状折叠取分子 p；候选枚举层（响应链首）原用 `[0-9]+` 前缀，把 `0.3` 读成 0 ⇒ 过滤条件 `mult > 1` 不成立 ⇒ 枚举全部整数。
+**实现**：`api_schema_multiplier_numerator`（1–5 位、gcd 约分）；`api_schema_number_bounded_shape` 小数分支按 kind 分流；`api_schema_candidates` Pass 2 读完整字面并**要求后随分隔符**（6 位以上/指数形式枚举空集，让折叠层裁决），整数 M 与分子 p 走同一 `%` 过滤。
+**过程（一次回退）**：首轮只改形状折叠，自检全绿，但活体 **200 `{"n":2}`**——链首 `api_response_schema_candidates` 先认领（Pass 2），折叠写入器从未运行。回退、定位认领者后再同时修 Pass 2；第二轮自检 `fm_int_cand=[{"n":3},{"n":6},{"n":9}]`、活体 `{"n":3}`。
+**门**：`fm_intleaf` 1→0、`fm_int03`/`fm_int15`/`fm_int_unsat`/`fm_int_cand`；活体 0.3、1.5 均 200 且值为 3/6/9，[1,2]+0.3 → 400。
+**梯**：自检 **182/0**、四 harness **PASS**、8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**、BUILD_OK（`selftest_f496b.log` 等）。
+**记法**：**同一个字段可能被两处解析，两处都要按完整字面**——形状层修好后，更早的枚举层仍会用它的旧前缀正则静默产出违反值；判定“支持”必须覆盖**实际认领者**的取值路径。`mult > 1` 这类过滤在“解析失败读成 0”时会静默失效，正则前缀是最典型的来源。

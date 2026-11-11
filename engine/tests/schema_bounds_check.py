@@ -460,9 +460,20 @@ cases = [
     ("num_mult_frac_unsat_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1, "maximum": 1.1, "multipleOf": 0.3}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
-    # An integer leaf is not necessarily a multiple of a fractional multiplier - stays refused.
-    ("num_mult_frac_intleaf_refuse", "Give the number.",
+    # F496: an INTEGER leaf folds a fractional multiplier through its reduced numerator - integer
+    # multiples of p/q are exactly the multiples of p. 0.3 -> multiples of 3, 1.5 -> multiples of 3.
+    # The candidates tier enumerates the same filtered set (its old literal prefix read 0.3 as 0).
+    ("num_mult_frac_intleaf_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 0.3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and 1 <= val_of(txt, "n") <= 9 and val_of(txt, "n") % 3 == 0),
+    ("num_mult_frac_intleaf_15_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 9, "multipleOf": 1.5}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), int)
+     and 1 <= val_of(txt, "n") <= 9 and val_of(txt, "n") % 3 == 0),
+    # No integer multiple of 0.3 (=3) lies in [1,2]: still unsatisfiable, stays refused.
+    ("num_mult_frac_intleaf_unsat_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 2, "multipleOf": 0.3}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F478: a ONE-SIDED inclusive bound with a fractional multiplier - min-only folds to the
     # smallest multiple at or above it; max-only is 0 when the bound is non-negative (0 is a
