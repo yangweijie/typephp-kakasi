@@ -2174,3 +2174,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **过程**：首轮自检两 FAIL——`num_dec7=[n|1|-993|0]`（界折叠错误）与 `fm_d7=[]`（乘数被拒）——宽度位点仍有漏改；补齐字面正则与 d 检测位点后二轮 182/0。F450“宽度多处同改”教训第三次复现。
 - **活体**：`float_dec7_served` 200 `{"n":1.5111111}`（原 `float_dec7_refuse` 翻转）、`num_mult_frac_d7_ok` 200 `{"n":0.0002468}`（在界内且为 0.0001234 的倍数）；1–6 位与负数不回退。
 - **梯**：自检 **182/0**（`selftest_f512b.log`，`: FAIL` 0、`RUN_EXIT=0`）；四 harness **PASS**（`schema_{bounds,required,count,pattern}_f512b.log`，CHECK_EXIT=0）；8000 **115/0**；8001 par/fairness **0**；scaling **1.487×**；哨兵 **0**（`gate_live_f512.log`）；BUILD_OK（`build_f512b`，exe 新于源码）。
+
+## ▶ 状态（F513，已完成）——小数位扩到八位（新 marker -992）
+- **改前证据**：活体探针（F512 二进制）对 8 位界（1.51111111..1.51111119）与 8 位乘数（0.00012345）均 **400**；d=7 对照 200（`schema_bounds_f513pre.log`）。
+- **实现**：F512 位点清单推进一位——`api_schema_scaled` 正则 `{1,7}`→`{1,8}`＋`digits==8` 分支；`api_schema_multiplier_numerator` 上限 8；乘数分支字面正则 `{1,8}`×5；bounds-only 分支字面正则 `{1,8}`×2＋`\.[0-9]{8}` 检测；两处 marker 表 `d==8→-992`；`api_number_decimal_element` d=8/scale=10^8；`api_number_bounded_value`/`api_array_item_number_value` 门加 -992；mixed q 分支区间到 -992。
+- **门**：`num_dec8` `""`→`[n|151111111|-992|0]`（自检 nfS）；新 `fm_d8=[n|24690|-992|0]`（0.00012345×2=0.0002469 落 [0.0002,0.001]）。
+- **活体**：`float_dec8_served` 200 `{"n":1.51111111}`、`num_mult_frac_d8_ok` 200 `{"n":0.00024690}`、`items_num_dec8_ok` 200（数组项写入器 -992 门**首次**有活体覆盖）；1–7 位不回退。
+- **过程**：位点按 F512 清单一次改全，自检首轮即 182/0（无需 b 轮）。一个非代码坑：直接跑 exe 缺 oneAPI 运行时 PATH（`libmmd.dll` 加载失败，exit 127）——自检与一切直跑都要带 gate_live 同款 PATH 导出。
+- **梯**：自检 **182/0**（`selftest_f513.log`，`: FAIL` 0、`RUN_EXIT=0`）；四 harness **PASS**（`schema_{bounds,required,count,pattern}_f513.log`，CHECK_EXIT=0）；8000 **115/0**；8001 par/fairness **0**；scaling **1.523×**；哨兵 **0**（`gate_live_f513.log`）；BUILD_OK（`build_f513`）。

@@ -226,6 +226,18 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.0001234}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
      and 0.0002 <= val_of(txt, "n") <= 0.001 and is_mult(val_of(txt, "n"), 0.0001234)),
+    # F513: eight fraction places on the bounds grid and the multiplier (-992 marker).
+    ("float_dec8_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51111111, "maximum": 1.51111119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.51111111}'),
+    ("num_mult_frac_d8_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and 0.0002 <= val_of(txt, "n") <= 0.001 and is_mult(val_of(txt, "n"), 0.00012345)),
+    ("items_num_dec8_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array", "items": {"type": "number", "minimum": 1.51111111, "maximum": 1.51111119}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list) and len(val_of(txt, "nums")) > 0
+     and all(isinstance(v, (int, float)) and 1.51111111 <= v <= 1.51111119 for v in val_of(txt, "nums"))),
     # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
     ("float_dec_neg", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": -1.9, "maximum": -1.5}}},
