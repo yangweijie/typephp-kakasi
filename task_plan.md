@@ -1695,7 +1695,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F507 计划与完成（多叶全整数 multipleOf 的超宽 M：每叶发 0）
+## F508 计划与完成（多叶全整数的 fractional M：逐叶最简分子）
+**核心思路**：与 F496 同一论证应用到多叶计划——每叶的整数元素是 p/q 的倍数 ⇔ 是 p 的倍数；检测器逐叶读完整字面并折成最简分子，写入器（F507 已支持任意大小与 0）按计划逐叶发出。
+**实现**：`api_schema_multi_multiple` 的逐叶 multipleOf 解析由 `[0-9]+` 前缀改为完整字面（后随分隔符）＋`api_schema_multiplier_numerator`。
+**门**：新 `multi_frac_plan=[a|3,b|1]`；`multi_big_plan`/`mult_multi` 不回退。
+**活体**：`multi_mult_frac_ok` 200 `{"a":1000002,"b":1000000}`（a 被 3 整除 ⇒ 0.3 的倍数；b 是 0.5 的倍数）。
+**梯**：自检 **182/0**（`selftest_f508b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.566×**；哨兵 **0**；BUILD_OK（`build_f508b`）。
+**过程**：首轮门条件未加上（自检仍绿但未断言新字段），补齐条件后重建自检复验；门字段打印≠门已断言。
+
+
 **核心思路**：与 F505/F506 同一论证——0 是任何 M 的倍数；多叶写入器逐叶调用后缀填充，超宽时该叶改发常量 `0`，避免整对象因一叶失败而中止（旧行为会掉到通用生成器）。
 **实现**：`api_multi_multiple_value` 的首叶与后续叶两处填充都加 `> 999999999 → 常量 0` 分支；检测器本就无上限。
 **门**：新 `multi_big_plan=[a|2000000000,b|2000000001]`；`mult_multi`（小 M）不回退。

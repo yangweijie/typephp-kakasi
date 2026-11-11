@@ -2140,3 +2140,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：新 `multi_big_plan=[a|2000000000,b|2000000001]`。
 - **活体**：`{"a":0,"b":0}`；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f507.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.513×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F508，已完成）——多叶全整数的 fractional M
+- **实现**：多叶检测器逐叶读完整字面并折最简分子（F496 lemma）；写入器沿用 F507（任意大小/0）。
+- **门**：新 `multi_frac_plan=[a|3,b|1]`；首轮条件未加上，补齐后重建复验（门字段打印≠已断言）。
+- **活体**：`{"a":1000002,"b":1000000}`（a 被 3 整除、b 为 0.5 倍数）；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f508b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.566×**；哨兵 **0**；BUILD_OK。

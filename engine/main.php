@@ -7218,10 +7218,16 @@ function api_schema_multi_multiple(string $schema): string
             return "";
         }
         $mm = [];
-        if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $lblk, $mm) != 1) {
+        // F508: read the FULL literal per leaf - a fractional multiplier folds to its reduced
+        // numerator (the F496 lemma); the shared writer already emits multiples of any p.
+        if (preg_match('/"multipleOf"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*[,}]/', $lblk, $mm) != 1) {
             return "";
         }
-        $out = $out == "" ? $kv[0] . "|" . $mm[1] : $out . "," . $kv[0] . "|" . $mm[1];
+        $mval = api_schema_multiplier_numerator($mm[1]);
+        if ($mval < 1) {
+            return "";
+        }
+        $out = $out == "" ? $kv[0] . "|" . $mval : $out . "," . $kv[0] . "|" . $mval;
     }
     return $out;
 }
@@ -18026,6 +18032,9 @@ function main(): void
     // F507: the multi-leaf plan still names both leaves when the multipliers exceed the suffix
     // width; the writer emits 0 per leaf.
     $bdMultiBig = api_schema_multi_multiple('{"properties":{"a":{"type":"integer","multipleOf":2000000000},"b":{"type":"integer","multipleOf":2000000001}}}');
+    // F508: fractional multipliers on a multi-leaf all-integer plan fold per leaf to the reduced
+    // numerator (0.3 -> 3, 0.5 -> 1).
+    $bdMultiFrac = api_schema_multi_multiple('{"properties":{"a":{"type":"integer","multipleOf":0.3},"b":{"type":"integer","multipleOf":0.5}}}');
     $bdBB = api_schema_bounds_unsupported('{"properties":{"a":{"type":"integer","multipleOf":3},"b":{"type":"integer"}}}');
     // F438: the all-integer-multipleOf shape is served now; this asserts the writer receives BOTH
     // leaves with their own multipliers (the refusal above must not swallow them).
@@ -18073,7 +18082,7 @@ function main(): void
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
         . "] unb_big_shape=[" . $bdBig . "]"
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
-        . "] multi_big_plan=[" . $bdMultiBig . "]"
+        . "] multi_big_plan=[" . $bdMultiBig . "] multi_frac_plan=[" . $bdMultiFrac . "]"
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
@@ -18091,6 +18100,7 @@ function main(): void
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdBA == 0 && $bdBB == 1 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
+        && $bdMultiFrac == "a|3,b|1"
         && $bdBH == "a|3,b|5"
         && $bdBD == 0 && $bdBE == 0
         && $bdBF == "n|6|-1|0" && $bdBG == 1) {

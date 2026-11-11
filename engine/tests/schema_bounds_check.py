@@ -132,6 +132,13 @@ cases = [
      {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 987654321}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
      and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") % 987654321 == 0),
+    # F508: fractional multipliers on a multi-leaf all-integer plan fold per leaf (0.3 -> 3).
+    ("multi_mult_frac_ok", "Give the numbers.",
+     {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 0.3},
+                                       "b": {"type": "integer", "multipleOf": 0.5}}},
+     lambda code, txt: (code == 200 and isinstance(val_of(txt, "a"), int)
+                        and isinstance(val_of(txt, "b"), int)
+                        and val_of(txt, "a") % 3 == 0)),
     # F507: a multi-leaf all-integer plan with multipliers beyond the suffix width - zero per leaf.
     ("multi_mult_huge_ok", "Give the numbers.",
      {"type": "object", "properties": {"a": {"type": "integer", "multipleOf": 2000000000},
