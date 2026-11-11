@@ -2061,3 +2061,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **过程（两次证伪）**：①helper 首版用需 `json_schema` 包装的检测器 ⇒ 门 `len_mix_p` 181/1；改裸 schema 扫描。②活体暴露预算提取器见 `pattern` 即返回空 ⇒ p 叶共存时 city 无预算超 maxLength；按消费顺序重写并加门 `len_mix_bounds=[3:8]`。旧对照 `mixed_len_pattern_refuse` 翻转为 `mixed_len_pattern_ok`。
 - **活体**：`mixed_len_p_ok` 200 `{"city":"New York","code":"NYN","count":100000}`、`mixed_len_pattern_ok` 200、`mixed_len_p_bad_refuse` 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f495c.log`，`len_mix_p=[]`/`len_mix_p_bad=[minLength]`/`len_mix_bounds=[3:8]`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.447×**；哨兵 **0**；构建 BUILD_OK（`build_f495c`）。
+
+## ▶ 状态（F496，尝试后回退）——整数叶的小数 multipleOf 被更早的候选枚举层接手
+- **思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（最简分子），可复用整数折叠。
+- **形状层**：自检全绿（`fm_intleaf=0`、`fm_int03/fm_int15=[n|3|3|3]`、unsat=[]，`selftest_f496.log`）。
+- **证伪**：活体 `{"n":2}`（非 0.3 的倍数）——[1,9] 形状先被 `api_schema_candidates` 的枚举写入器接手，该层不看 `multipleOf`；守卫放宽 ⇒ 从 400 变静默违反。
+- **处置**：全部回退（源码回到 F495），重建 `build_f495r`，bounds harness **CHECK_EXIT=0**；下一步先补候选层取值规格/路由归属，再放宽守卫。

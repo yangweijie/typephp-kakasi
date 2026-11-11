@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F495 计划与完成（多叶 mixed 的 minLength/maxLength：s 叶由写入器保证、p 叶定长包含）
+## F496 计划（**尝试后回退**：整数叶的小数 multipleOf 被更早的枚举层接手）
+**核心思路**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（x=(p/q)k 为整数 ⇒ q|k ⇒ x=p·(k/q)，p、q 互素）。因此整数叶遇到小数乘数时，取**最简分子** p 作为整数乘数，复用既有整数折叠（exclusive 界此前已转为相邻整数）；区间内无 p 的倍数 ⇒ 不可满足、保持 400。
+**已做的验证**：helper `api_schema_multiplier_numerator`（1–5 位小数、gcd 约分）＋小数分支按 kind 分流后，自检 `fm_intleaf=0`、`fm_int03=[n|3|3|3]`、`fm_int15=[n|3|3|3]`、`fm_int_unsat=[]` 全绿（`selftest_f496.log`）。
+**证伪与回退原因**：活体 `num_mult_frac_intleaf_ok` 返回 **200 `{"n":2}`** —— 2 不是 0.3 的倍数。形状判定与折叠本身正确（自检断言 `n|3|3|3`），但请求先被**候选枚举层**（`api_schema_candidates`，小跨度整数 [1,9] 的枚举写入器）接手，该层不评估 `multipleOf`；放宽关键字守卫后它从“被 400 挡住”变成“静默产出违反值”。按“宁可显式 400，不可静默违反”的约束面原则回退（`git checkout` 恢复 F495 源码），重建 `build_f495r` 并复跑 bounds harness **CHECK_EXIT=0**。
+**下一步（重新排队）**：先做整数枚举/走位层的路由与取值规格——要么让候选枚举按 `multipleOf` 过滤元素，要么在小数乘数存在时把该形状**优先**路由到折叠写入器；两者都要先证明“谁先认领”，再放宽守卫。数组项路线（`items_mult_excl_frac_refuse`）与 F496 无关，保持原状。
+**用法**：`scripts/build-check.sh`；无写入器改动（本轮全部回退）。
+
+
 **核心思路**：mixed 写入器（F493）已对每个 s 叶执行按属性长度预算；多叶形状中若其余字符串叶是**定长 pattern**（F494 的判定），整体长度约束即可证。判定的形状入口用与 mixed 检测器同源的裸 schema 资格扫描（`enum/const/minimum/maximum/multipleOf` 排除、`api_schema_is_object`、properties 块 plan），**不能**用 `api_response_schema_mixed_object`（它要求 `json_schema` 包装）或 `mixed_omittable`（后者拒绝 p 叶）。
 **实现**：新 helper `api_schema_lengths_ok`（遍历 plan：s 叶跳过（写入器保证）、p 叶要求 spec 全精确且其属性内 min/maxLength 包含固定长度、其它 kind 跳过）；关键字分支加该判定。
 **过程（两轮修正，均为“守卫声称支持但实际没兑现”类）**：①首版 helper 误用 `api_response_schema_mixed_object($body)`——关键字守卫拿到的是**裸 schema**，该检测器见不到 `json_schema` ⇒ 恒 0；门 `len_mix_p` 失败（181/1），改为裸 schema 资格扫描。②修完后活体暴露更严重的问题：`api_response_schema_string_bounds` 基于 `api_response_schema_string_props`，后者**见任何 `pattern` 就返回空** ⇒ 含 p 叶的 mixed 形状 bounds 为 `""`，city 叶无预算地跑出 maxLength（`"New York City, …"`）。F493 的前提“s 叶由写入器保证”只有在预算真正送到写入器时才成立。修法：预算列表按**实际消费它的写入器**生成——mixed 形状只列 plan 中的 s 叶（按 plan 顺序，p 叶自带 spec 不消费），否则走 flat 的 required 字符串属性；并加门 `len_mix_bounds=[3:8]` 直接钉住“预算到达写入器”。

@@ -4672,3 +4672,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体**：`mixed_len_p_ok` 200 `{"city":"New York","code":"NYN","count":100000}`（city 8 ∈[3,8]、code 3 字母、count 整数）、`mixed_len_pattern_ok` 200、`mixed_len_p_bad_refuse` 400 点名 minLength；`mixed_len_ok`（F493）与 flat 的 `subset_with_length` 不回退。
 **梯**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`selftest_f495c.log`）；bounds/required/count/pattern 全 **PASS**（`schema_*_f495c.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.447×**（单次测量，如实记录）；哨兵 **0**；构建 **BUILD_OK**（`build_f495c`）。
 **记法**：**“守卫放行”必须与“执行者兑现”成对证明**——长度守卫只证明形状可被 mixed 写入器认领，却没有证明预算列表非空；预算提取器的旧扫描见 `pattern` 即弃，使 F493 的“s 叶由写入器保证”在这个组合上静默失效（输出自由文本、200）。修法不是加特判，而是让预算列表**按消费方的迭代顺序**生成（mixed 只列 plan 中的 s 叶）。自检门若只断言关键字判定（`len_mix_p`），这类缺陷仍会漏；需要一条直接断言中间产物（`len_mix_bounds`）的门。
+
+## F496（尝试后回退）：整数叶的小数 multipleOf——形状判对了，但路由不是它
+**结论**：整数 x 是 p/q 的倍数 ⇔ x 是 p 的倍数（最简分数；x=(p/q)k 整数 ⇒ q|k），据此把小数乘数折成最简分子并复用整数折叠，**形状层自检全部通过**（`fm_int03=[n|3|3|3]`、`fm_int_unsat=[]`）。但活体返回 **200 `{"n":2}`**：小跨度整数（[1,9]）先被**候选枚举层**接手，该层不评估 `multipleOf`，于是关键字守卫一放宽，它就从“被 400 挡住”变成“静默违反”。已全部回退并重建（`build_f495r`、bounds harness 绿）。
+**记法**：**放宽一个拒绝之前，先证明“谁会先认领这个形状”**——检测器返回可服务形状不等于该形状会走这条写入器；小跨度整数存在一条更早的枚举路由（F405 注释里的 candidates tier）。先补“路由归属 + 候选层取值规格”，再动守卫；这是“形状放行≠生成器认领”的又一实例，且此类错误的形态是**静默产出违反值**，比拒绝更糟。
