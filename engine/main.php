@@ -7090,7 +7090,14 @@ function api_multiple_value(string $ids, string $prop, int $mult, int $maxSteps,
     if ($s == "") {
         return "";
     }
-    $body = api_multiple_fill($mult, $maxSteps);
+    // F505: zero is a multiple of every M. When the multiplier is beyond what the forced suffix can
+    // express (nine digits), emit the constant 0 instead of refusing a satisfiable shape.
+    $body = "";
+    if ($mult > 999999999) {
+        $body = api_constrained_continue(["0"], 4);
+    } else {
+        $body = api_multiple_fill($mult, $maxSteps);
+    }
     // F430: a writer that could not produce the number must not emit the bare head - that is what
     // answered 200 with "{"n":" for a multipleOf the suffix mechanism could not reach.
     if ($body == "") {
@@ -7280,7 +7287,7 @@ function api_response_schema_multiple_unbounded(string $body): string
         return "";
     }
     $mult = api_schema_multiplier_numerator($mm[1]);
-    if ($mult < 1 || $mult > 999999999) {
+    if ($mult < 1) {
         return "";
     }
     return $kv[0] . "|" . $mult;
@@ -11124,14 +11131,8 @@ function api_schema_bounds_unsupported(string $body): int
     }
     if (strpos($body, "\"minimum\"") === false && strpos($body, "\"maximum\"") === false
         && strpos($body, "\"exclusiveMinimum\"") === false && strpos($body, "\"exclusiveMaximum\"") === false) {
-        // F430: an unbounded multipleOf the suffix writer cannot reach (> 999999) is refused here.
-        // Before this the writer bailed after emitting the key, and the answer was 200 with invalid
-        // JSON ("{"n":").
-        $mo = [];
-        if (preg_match('/"multipleOf"\s*:\s*([0-9]+)/', $body, $mo) == 1
-            && (int) $mo[1] > 999999999) {
-            return 1;
-        }
+        // F505: the nine-digit cap no longer refuses - zero is a multiple of every M and the
+        // writer emits it when the forced suffix cannot reach the multiplier.
         // F500: p == 1 (0.25, 0.5, ...) is satisfied by every integer; the suffix writer accepts
         // the reduced numerator 1 too (its residue is 0 and the value is prefix*10^k), so this
         // shape is served rather than refused (F499 refused it while the writer rejected 1).
@@ -17997,6 +17998,8 @@ function main(): void
     // F430: unbounded multipleOf - up to 999999 is served by a suffix whose width follows the
     // multiplier, beyond that it is refused, and 1 is trivially satisfied so it is not refused.
     $bdAB = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000000}}}');
+    // F505: a multiplier beyond the suffix width is served by the constant 0 (a multiple of every M).
+    $bdBig = api_response_schema_multiple_unbounded('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","multipleOf":2000000000}}}}}');
     $bdAC = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":5000}}}');
     $bdAD = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":1}}}');
     // F499/F500: an unbounded integer leaf with a fractional multiplier - the reduced numerator is
@@ -18055,6 +18058,7 @@ function main(): void
         . "] mix_sat=[" . $bdX . "] mix_unsat=[" . $bdY
         . "] bigmult_sat=[" . $bdZ . "] bigmult_unsat=[" . $bdAA
         . "] unbounded_big=[" . $bdAB . "] unbounded_ok=[" . $bdAC
+        . "] unb_big_shape=[" . $bdBig . "]"
         . "] mult_one_ub=[" . $bdAD . "] mult_multi=[" . $bdBA . "] mult_mixed=[" . $bdBB
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
@@ -18070,7 +18074,7 @@ function main(): void
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
         && $bdX == 0 && $bdY == 1
         && $bdZ == 0 && $bdAA == 1
-        && $bdAB == 1 && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
+        && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdBA == 0 && $bdBB == 1 && $bdBC == 0
         && $bdBH == "a|3,b|5"

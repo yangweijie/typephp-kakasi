@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F504（覆盖）：number items 的 fractional M + exclusive 界走同一形状折叠
+## F505 计划与完成（无界 multipleOf 超过后缀宽度：发常量 0）
+**核心思路**：0 是任何 M 的倍数（含小数 M 与任意大的 M），而强制后缀写入器只能表达 999999999 以内的残差。超过宽度时不再拒绝可满足的形状，直接发常量 `0`（整数与 number 叶都合法）。
+**实现**：`api_multiple_value` 在 `mult > 999999999` 时用 `api_constrained_continue(["0"])` 代替 `api_multiple_fill`；`api_response_schema_multiple_unbounded` 去掉上限（只留 `p ≥ 1`）；`api_schema_bounds_unsupported` 无界分支删除“>999999999 拒绝”规则。
+**门**：`unbounded_big` 1→0、新 `unb_big_shape=[n|2000000000]`；`unbounded_ok`/`mult_one_ub` 不回退。
+**活体**：`num_mult_unb_huge_ok`/`num_mult_unb_huge_num_ok`（M=2000000000，整数与 number 叶）均 200 `{"n":0}`；items 路线的 `im_big` 上限不变（本轮只开单属性路线）。
+**梯**：自检 **182/0**（`selftest_f505.log`，`: FAIL` 0；构建日志 `SKIPPED_RUN` 为 norun 模式正常输出，exe 11:15 新于源码 11:12）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.518×**；哨兵 **0**。
+
+
 **结论**：`api_schema_array_item_number`（F462）把 `items` 块包成单叶 properties 喂给 `api_schema_number_bounded_shape`，因此 F501 的严格侧网格折叠**无需另改 items 代码**即已生效。活体 `items_mult_frac_num_excl_ok`（`exclusiveMinimum:1.2, maximum:9, multipleOf:0.3`）返回 200 `{"nums":[1.5,1.5,1.5,1.5]}`——最小严格上倍数 1.5，且 1.5/0.3=5 为整数。
 **变更**：仅 harness 增例（覆盖断言），无引擎改动；二进制与 F503 相同。
 **验证**：bounds harness `CHECK_EXIT=0`（`schema_bounds_f504probe.log`）；其余三 harness 与 F503 同二进制、结论沿用（`*_f503b.log`）。

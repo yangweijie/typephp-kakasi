@@ -2120,3 +2120,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## ▶ 状态（F504，覆盖）——number items 的 fractional M + exclusive 界
 - **结论**：items number 路线复用同一 shape helper，F501 严格侧折叠已自动生效；无引擎改动。
 - **活体**：`items_mult_frac_num_excl_ok` 200 `{"nums":[1.5,1.5,1.5,1.5]}`（1.5/0.3=5），bounds harness CHECK_EXIT=0（`schema_bounds_f504probe.log`）；二进制与 F503 相同。
+
+## ▶ 状态（F505，已完成）——无界 multipleOf 超过后缀宽度：发常量 0
+- **思路**：0 是任何 M 的倍数；后缀宽度（≤999999999）之外的乘数不再拒绝。
+- **实现**：`api_multiple_value` 超宽发 `0`；探测器去掉上限；无界分支删上限拒绝。
+- **门**：`unbounded_big` 1→0、新 `unb_big_shape=[n|2000000000]`。
+- **活体**：整数/number 叶 M=2000000000 均 `{"n":0}`；items 上限不变；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f505.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.518×**；哨兵 **0**。
+- **注**：构建日志末行 `SKIPPED_RUN` 是 norun 模式的正常输出（实为链接成功，exe 11:15 新于源码 11:12）。

@@ -258,6 +258,14 @@ cases = [
     ("mix_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5, "exclusiveMaximum": 5}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F505: a multiplier beyond the forced-suffix width is served by the constant 0 - a multiple
+    # of every M - instead of being refused.
+    ("num_mult_unb_huge_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "multipleOf": 2000000000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") == 0),
+    ("num_mult_unb_huge_num_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "multipleOf": 2000000000}}},
+     lambda code, txt: code == 200 and val_of(txt, "n") == 0),
     # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",
