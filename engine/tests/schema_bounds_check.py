@@ -218,9 +218,14 @@ cases = [
     ("float_dec6_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511111, "maximum": 1.511119}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.511111}'),
-    ("float_dec7_refuse", "Give the number.",
+    ("float_dec7_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5111111, "maximum": 1.5111119}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.5111111}'),
+    # F512: seven fraction places on the multiplier too (0.0001234 x 2 = 0.0002468).
+    ("num_mult_frac_d7_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.0001234}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and 0.0002 <= val_of(txt, "n") <= 0.001 and is_mult(val_of(txt, "n"), 0.0001234)),
     # F442: negative decimal bounds ride the same grid; the sign is prefixed after the magnitude.
     ("float_dec_neg", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": -1.9, "maximum": -1.5}}},

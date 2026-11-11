@@ -1423,7 +1423,8 @@ function api_array_item_number_value(string $ids, string $prop, int $lo, int $hi
     }
     $dec = "";
     $decMode = 0;
-    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994) {
+    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994
+        || $hi == -993) {
         $dec = api_number_decimal_element($lo, $hi);
         if ($dec == "") {
             return "";
@@ -6105,7 +6106,7 @@ function api_response_schema_mixed_object(string $body): string
                     // value scaled with a marker in hi - reconstruct the literal the marker writer
                     // would emit and carry THAT in the plan, so the same q branch serves it.
                     $mk = (int) $sg[2];
-                    if ($mk >= -999 && $mk <= -994) {
+                    if ($mk >= -999 && $mk <= -993) {
                         if ((int) $sg[3] != 0) {
                             return "";
                         }
@@ -6367,7 +6368,7 @@ function api_response_schema_number_prop(string $body): string
 function api_schema_scaled(string $lit, int $digits): int
 {
     $m = [];
-    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,6}))?$/', $lit, $m) != 1) {
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,7}))?$/', $lit, $m) != 1) {
         return -2000000000;
     }
     $ip = (int) $m[2];
@@ -6394,6 +6395,8 @@ function api_schema_scaled(string $lit, int $digits): int
         $v = $ip * 100000 + (int) $fp;
     } else if ($digits == 6) {
         $v = $ip * 1000000 + (int) $fp;
+    } else if ($digits == 7) {
+        $v = $ip * 10000000 + (int) $fp;
     }
     if ($m[1] == "-") {
         $v = -$v;
@@ -6480,7 +6483,7 @@ function api_schema_multiplier_numerator(string $lit): int
         return (int) $lit;
     }
     $frac = substr($lit, $dot + 1);
-    if (strlen($frac) < 1 || strlen($frac) > 6 || preg_match('/^[0-9]+$/', $frac) != 1) {
+    if (strlen($frac) < 1 || strlen($frac) > 7 || preg_match('/^[0-9]+$/', $frac) != 1) {
         return 0;
     }
     $num = (int) str_replace(".", "", $lit);
@@ -6647,16 +6650,16 @@ function api_schema_number_bounded_shape(string $schema): string
             // F501: EXCLUSIVE bounds ride the same decimal grid - a strict side is "the next grid
             // point past the literal", and the draft-4 boolean form was already converted to a
             // numeric exclusive literal above.
-            // F502: six fraction places are supported too (the writer has the -994 marker), so the
-            // literal width check is 1..6.
+            // F502/F512: six and seven fraction places are supported (the writer has the -994 and
+            // -993 markers), so the literal width check is 1..7.
             if ($kv[1] != "n" || (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi)
-                || preg_match('/^[0-9]+(\.[0-9]{1,6})?$/', $mo[1]) != 1) {
+                || preg_match('/^[0-9]+(\.[0-9]{1,7})?$/', $mo[1]) != 1) {
                 return "";
             }
-            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mn[1]) != 1)
-                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mx[1]) != 1)
-                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $exn[1]) != 1)
-                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $exm[1]) != 1)) {
+            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,7})?$/', $mn[1]) != 1)
+                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,7})?$/', $mx[1]) != 1)
+                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,7})?$/', $exn[1]) != 1)
+                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,7})?$/', $exm[1]) != 1)) {
                 return "";
             }
             $lits = [$mo[1]];
@@ -6783,6 +6786,9 @@ function api_schema_number_bounded_shape(string $schema): string
             if ($d == 6) {
                 $mark = "-994";
             }
+            if ($d == 7) {
+                $mark = "-993";
+            }
             return $kv[0] . "|" . $start . "|" . $mark . "|0";
             }
         } else {
@@ -6804,8 +6810,8 @@ function api_schema_number_bounded_shape(string $schema): string
         // grid at this width and stay refused.
         $k = 0;
         if ($kv[1] == "n" && $hasLo && $hasHi && strpos($schema, "\"multipleOf\"") === false
-            && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mn[1]) == 1
-            && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mx[1]) == 1) {
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,7})?$/', $mn[1]) == 1
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,7})?$/', $mx[1]) == 1) {
             $d = 1;
             if (preg_match('/\.[0-9]{2}/', $mn[1]) == 1 || preg_match('/\.[0-9]{2}/', $mx[1]) == 1) {
                 $d = 2;
@@ -6821,6 +6827,9 @@ function api_schema_number_bounded_shape(string $schema): string
             }
             if (preg_match('/\.[0-9]{6}/', $mn[1]) == 1 || preg_match('/\.[0-9]{6}/', $mx[1]) == 1) {
                 $d = 6;
+            }
+            if (preg_match('/\.[0-9]{7}/', $mn[1]) == 1 || preg_match('/\.[0-9]{7}/', $mx[1]) == 1) {
+                $d = 7;
             }
             $tLo = api_schema_scaled($mn[1], $d);
             $tHi = api_schema_scaled($mx[1], $d);
@@ -6840,6 +6849,9 @@ function api_schema_number_bounded_shape(string $schema): string
                 }
                 if ($d == 6) {
                     $mark = "-994";
+                }
+                if ($d == 7) {
+                    $mark = "-993";
                 }
                 return $kv[0] . "|" . $tLo . "|" . $mark . "|0";
             }
@@ -6992,6 +7004,9 @@ function api_number_decimal_element(int $lo, int $hi): string
     } elseif ($hi == -994) {
         $d = 6;
         $scale = 1000000;
+    } elseif ($hi == -993) {
+        $d = 7;
+        $scale = 10000000;
     } else {
         return "";
     }
@@ -7016,7 +7031,8 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
     // means one place, -998 two, -997 three, -996 four, -995 five, -994 six), and the writer forces
     // "int.frac" (zero-padded to d digits) as one continuation, which is a legal `number` inside the
     // interval.
-    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994) {
+    if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994
+        || $hi == -993) {
         $dec = api_number_decimal_element($lo, $hi);
         if ($dec == "") {
             return "";
@@ -18496,7 +18512,7 @@ function main(): void
         && $nfH == 0
         && $nfI == "n|15|-999|0" && $nfJ == "n|151|-998|0" && $nfK == "n|1511|-997|0"
         && $nfL == "n|-19|-999|0" && $nfN == "n|15111|-996|0"
-        && $nfO == "n|151111|-995|0" && $nfQ == "n|1511111|-994|0" && $nfR == ""
+        && $nfO == "n|151111|-995|0" && $nfQ == "n|1511111|-994|0" && $nfR == "n|15111111|-993|0"
         && $nfText2 == "{\"n\":1.5}" && $nfText3 == "{\"n\":1.51}"
         && $nfText5 == "{\"n\":1.511}" && $nfText6 == "{\"n\":1.5111}"
         && $nfText7 == "{\"n\":1.51111}" && $nfText8 == "{\"n\":1.511111}"
@@ -19143,6 +19159,8 @@ function main(): void
     // F502: six fraction places on the multiplier (the -994 marker writer already exists).
     $fmD6 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1.000001,"maximum":2,"multipleOf":0.000001}}}');
     $fmD6Unsat = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1.000001,"maximum":1.000001,"multipleOf":0.000003}}}');
+    // F512: seven fraction places on the multiplier (-993 marker).
+    $fmD7 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":0.0002,"maximum":0.001,"multipleOf":0.0001234}}}');
     $fmIntCand = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
     $fmIntCandTxt = "";
     for ($i = 0; $i < count($fmIntCand); $i++) {
@@ -19355,7 +19373,7 @@ function main(): void
         . "] fm_intleaf=" . $fmIntLeaf
         . " fm_int03=[" . $fmInt03 . "] fm_int15=[" . $fmInt15 . "] fm_int_unsat=[" . $fmIntUnsat . "]"
         . " fm_excl_lo=[" . $fmExclLo . "] fm_excl_hi=[" . $fmExclHi . "] fm_excl_bool=[" . $fmExclBool . "] fm_excl_unsat=[" . $fmExclUnsat . "]"
-        . " fm_d6=[" . $fmD6 . "] fm_d6_unsat=[" . $fmD6Unsat . "]"
+        . " fm_d6=[" . $fmD6 . "] fm_d6_unsat=[" . $fmD6Unsat . "] fm_d7=[" . $fmD7 . "]"
         . " fm_int_cand=[" . $fmIntCandTxt . "]"
         . " fm_minonly=[" . $fmMinOnly . "] fm_maxpos=[" . $fmMaxPos . "] fm_maxneg=[" . $fmMaxNeg . "]"
         . " fm_minonly_text=[" . $fmM1Text . "] fm_maxpos_text=[" . $fmM2Text . "] fm_maxneg_text=[" . $fmM3Text . "]"
@@ -19610,7 +19628,7 @@ function main(): void
         && $fmInt03 == "n|3|3|3" && $fmInt15 == "n|3|3|3" && $fmIntUnsat == ""
         && $fmExclLo == "n|15|-999|0" && $fmExclHi == "n|12|-999|0"
         && $fmExclBool == "n|12|-999|0" && $fmExclUnsat == ""
-        && $fmD6 == "n|1000001|-994|0" && $fmD6Unsat == ""
+        && $fmD6 == "n|1000001|-994|0" && $fmD6Unsat == "" && $fmD7 == "n|2468|-993|0"
         && count($fmIntCand) == 3 && strpos($fmIntCandTxt, "\"n\":3") !== false
         && strpos($fmIntCandTxt, "\"n\":2") === false
         && $fmText == '{"n":1.2}'
