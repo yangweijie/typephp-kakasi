@@ -1294,14 +1294,16 @@ function api_schema_array_item_multiple(string $schema): string
     if ($mult < 1) {
         return "";                 // zero / malformed / more than five fraction places
     }
-    $frac = strpos($mo[1], ".") !== false ? 1 : 0;
     $bounded = strpos($isub, "\"minimum\"") !== false
         || strpos($isub, "\"maximum\"") !== false
         || strpos($isub, "\"exclusiveMinimum\"") !== false
         || strpos($isub, "\"exclusiveMaximum\"") !== false;
     if (!$bounded) {
-        if ($frac == 1) {
-            return "";             // unbounded fractional: no writer reaches it
+        // F498: an unbounded FRACTIONAL multiplier is served too - every multiple of the reduced
+        // numerator p is a multiple of p/q (p/q * q*k = p*k), and the suffix writer emits exactly
+        // a multiple of the value it is given. The nine-digit cap still applies.
+        if ($mult > 999999999) {
+            return "";
         }
         // Unbounded: the suffix writer reaches multipliers up to nine digits (F430/F443).
         if ($mult > 999999999) {
@@ -19267,7 +19269,7 @@ function main(): void
         && $imExclBool == "nums|3|3|3"
         && $imExclNum == "nums|3|3|3"
         && $imExclUnsat == ""
-        && $imExclFrac == "nums|3|3|3" && $imFracUnb == "" && $imFracNum == ""
+        && $imExclFrac == "nums|3|3|3" && $imFracUnb == "nums|3|-1|-1" && $imFracNum == ""
         && $imExclKw == "items"
         && $imXText == '{"nums":[3]}'
         && api_json_ok($imXText) == 1

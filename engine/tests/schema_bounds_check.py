@@ -419,6 +419,14 @@ cases = [
      and len(val_of(txt, "nums")) >= 1
      and all(isinstance(x, (int, float)) and 1 <= x <= 9 and is_mult(x, 0.3)
              for x in val_of(txt, "nums"))),
+    # F498: UNBOUNDED fractional integer items - every multiple of the reduced numerator p is a
+    # multiple of p/q, and the suffix writer emits a multiple of its argument.
+    ("items_mult_frac_unb_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "multipleOf": 0.3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, int) and x % 3 == 0 for x in val_of(txt, "nums"))),
     # F468: exclusive bounds on integer items WITHOUT a multipleOf - the same wrap-to-shape
     # judgement as the single-property route, so the numeric exclusive and draft-4 boolean
     # spellings are honoured element by element.

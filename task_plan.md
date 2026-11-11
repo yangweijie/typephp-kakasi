@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F497 计划与完成（整数数组项的 fractional multipleOf：同一最简分子论证）
+## F498 计划与完成（无界整数项的 fractional multipleOf：p 的倍数即 p/q 的倍数）
+**核心思路**：无界时既有 item writer 只需发出“所给乘数的倍数”（实测形状值 1234002 = 3×411334 等）；把乘数取成最简分子 p 后，发出的每个值都是 p 的倍数，而 p/(p/q)=q 为整数 ⇒ 必为 p/q 的倍数，构造满足。
+**实现**：删除 `api_schema_array_item_multiple` 无界分支里对 fractional 的拒绝；九位上限沿用。无写入器改动。
+**门**：`im_frac_unb` `[]`→`[nums|3|-1|-1]`；`im_frac_num`（number 型 items）保持 `[]` 对照。
+**活体**：`items_mult_frac_unb_ok` 200 `{"nums":[1234002,2345001,3456000,4567002]}`，每项均被 3 整除（即 0.3 的倍数）；有界三例与 number-items 路线不回退。
+**梯**：自检 **182/0**（`selftest_f498.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.504×**；哨兵 **0**；BUILD_OK（`build_f498`）。
+
+
 **核心思路**：`items` 的 `an` 叶与单整数叶同构——整数元素是 p/q 的倍数 ⇔ 是 p 的倍数，因此检测器把乘数读成最简分子 p 后交给既有 item writer（逐元素发出 p 的倍数）。数组路由不经候选枚举层，故无 F496 的“更早认领者”问题；本检测器已在 `api_schema_bounds_unsupported` 的早退名单里，路由归属直接由它决定。
 **实现**：`api_schema_array_item_multiple` 的 multipleOf 解析由 `[0-9]+` 前缀改为完整字面（后随分隔符）＋`api_schema_multiplier_numerator`；无界 fractional 仍拒绝（无后缀写入器可达）；number 型 items 维持原先的拒绝语义（委托 shape 的第 4 段不可能等于分子）。
 **门**：`im_excl_frac` `[]`→`[nums|3|3|3]`；新 `im_frac_unb=[]`、`im_frac_num=[]` 对照。

@@ -2075,3 +2075,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`im_excl_frac` `[]`→`[nums|3|3|3]`；新 `im_frac_unb=[]`、`im_frac_num=[]`。
 - **活体**：`items_mult_excl_frac_ok` 200 `{"nums":[3,3,3,3]}`；number-items 小数乘数由既有路线服务（`1.2` 是 0.3 的倍数），原拒绝对照翻转；unsat 仍 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f497.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.516×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F498，已完成）——无界整数项的 fractional multipleOf
+- **思路**：无界 item writer 发“所给乘数的倍数”；取最简分子 p 后，p/(p/q)=q 为整数 ⇒ 构造满足。
+- **实现**：删除无界分支对 fractional 的拒绝（九位上限沿用）。
+- **门**：`im_frac_unb` `[]`→`[nums|3|-1|-1]`；`im_frac_num` 保持 `[]`。
+- **活体**：`items_mult_frac_unb_ok` 200 `{"nums":[1234002,2345001,3456000,4567002]}` 全部为 3 的倍数；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f498.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.504×**；哨兵 **0**；BUILD_OK。
