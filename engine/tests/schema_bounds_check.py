@@ -536,6 +536,16 @@ cases = [
     ("num_mult_frac_d6_unsat_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.0002, "multipleOf": 0.000123}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F501/F504: a NUMBER items leaf with a fractional multiplier and an EXCLUSIVE bound - the
+    # number-items detector wraps the items block into the same shape helper, so the strict-side
+    # grid fold applies element by element (smallest multiple above 1.2 is 1.5).
+    ("items_mult_frac_num_excl_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "exclusiveMinimum": 1.2, "maximum": 9, "multipleOf": 0.3}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1
+     and all(isinstance(x, (int, float)) and 1.2 < x <= 9 and is_mult(x, 0.3)
+             for x in val_of(txt, "nums"))),
     # F478: a ONE-SIDED inclusive bound with a fractional multiplier - min-only folds to the
     # smallest multiple at or above it; max-only is 0 when the bound is non-negative (0 is a
     # multiple of every M) or the largest negative multiple otherwise.

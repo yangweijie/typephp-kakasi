@@ -2116,3 +2116,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门（含翻转）**：`nm_frac`/`nm_unb`/`mult_number` 1→0；新 `nm_frac_ub`/`nm_int_ub=[n|3]`（首轮漏翻 mult_number，1 FAIL 后补齐）。
 - **活体**：`{"n":2345001}`（0.3 与 3 两例）；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f503b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.524×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F504，覆盖）——number items 的 fractional M + exclusive 界
+- **结论**：items number 路线复用同一 shape helper，F501 严格侧折叠已自动生效；无引擎改动。
+- **活体**：`items_mult_frac_num_excl_ok` 200 `{"nums":[1.5,1.5,1.5,1.5]}`（1.5/0.3=5），bounds harness CHECK_EXIT=0（`schema_bounds_f504probe.log`）；二进制与 F503 相同。

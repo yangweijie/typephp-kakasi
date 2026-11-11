@@ -1695,7 +1695,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F503 计划与完成（无界 number 叶的 multipleOf：整数也是合法 number）
+## F504（覆盖）：number items 的 fractional M + exclusive 界走同一形状折叠
+**结论**：`api_schema_array_item_number`（F462）把 `items` 块包成单叶 properties 喂给 `api_schema_number_bounded_shape`，因此 F501 的严格侧网格折叠**无需另改 items 代码**即已生效。活体 `items_mult_frac_num_excl_ok`（`exclusiveMinimum:1.2, maximum:9, multipleOf:0.3`）返回 200 `{"nums":[1.5,1.5,1.5,1.5]}`——最小严格上倍数 1.5，且 1.5/0.3=5 为整数。
+**变更**：仅 harness 增例（覆盖断言），无引擎改动；二进制与 F503 相同。
+**验证**：bounds harness `CHECK_EXIT=0`（`schema_bounds_f504probe.log`）；其余三 harness 与 F503 同二进制、结论沿用（`*_f503b.log`）。
+**记法**：形状折叠被多条路线**共享**时，新语义（严格侧）会自动到达这些路线；这类“已生效”必须用活体钉住，否则下次重构可能在某条路线上悄悄丢失。
+
+
 **核心思路**：无界后缀写入器发出的值是一个整数；整数是合法 `number`，且同一最简分子 p 的倍数同时是 p/q 的倍数。故无界 number 叶（整数 M 与小 M 皆可）与整数叶同构，可由同一写入器服务。
 **实现**：`api_response_schema_multiple_unbounded` 接受完整 body **或**裸 schema（数值守卫复用同一判定），plan 叶 kind 放宽到 `i|n`；`api_schema_bounds_unsupported` 的两条 number+fractional/integer 守卫追加“该探测器为空才拒绝”。
 **门（含翻转）**：`nm_frac` 1→0、`nm_unb` 1→0、裸 schema 同族 `mult_number`（`$bdBC`）1→0（首轮漏翻，自检 1 FAIL 暴露）；新 `nm_frac_ub=[n|3]`、`nm_int_ub=[n|3]`。

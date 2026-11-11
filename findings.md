@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F503）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F504）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3722,7 +3722,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：**整数叶的小数 M（双界，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠：整数倍数 ⇔ p 的倍数；候选枚举层按同一字面过滤） | `fm_int03`/`fm_int15`/`fm_int_cand`/`num_mult_frac_intleaf_ok`/`num_mult_frac_intleaf_15_ok`（F496） |
 | multipleOf：**无界整数叶或 number 叶的小数/整数 M（任意 p，含 p=1）** | **支持**（后缀写入器发出 p 的倍数；整数是合法 number；p=1 时残差为 0、值=prefix·10^k，恒满足） | `unb_int_frac`/`unb_int_quarter`/`unb_int_five`/`nm_frac_ub`/`nm_int_ub`/`num_mult_frac_unb_int_ok`/`num_mult_frac_unb_quarter_ok`/`num_mult_frac_unb_num_ok`/`num_mult_unb_num_ok`（F499/F500/F503） |
 | multipleOf：**整数数组项的小数 M（有界/单侧/无界，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠后交给 item writer；有界按折叠、无界发出 p 的倍数——p/(p/q)=q 整数） | `im_excl_frac`/`im_frac_unb`/`items_mult_excl_frac_ok`/`items_mult_frac_ok`/`items_mult_frac_unb_ok`（F497/F498） |
-| multipleOf：七位及以上小数／混合叶 / 无界 >999999999 | **显式 400** | `nm_frac`→0（无界侧支持）/`mult_mixed`/`unbounded_big`（F430–F443/F466/F469/F502/F503） |
+| multipleOf：NUMBER items 叶的小数 M（inclusive/exclusive），与单属性共享形状折叠 | **支持**（items 块被包成单叶喂同一个 shape helper；元素按网格折叠） | `items_mult_frac_num_ok`/`items_mult_frac_num_excl_ok`/`items_mult_num_excl_ok`（F462/F501/F504） |
+| multipleOf：七位及以上小数／混合叶 / 无界 >999999999 | **显式 400** | `mult_mixed`/`unbounded_big`/`nm_frac`（F430–F443/F466/F469/F502/F503） |
 | minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）**、**定长 pattern 叶（`c<n>x` 精确段，界限仅需包含固定长度）**、**多叶 mixed 的 s 叶与定长 p 叶共存** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 plan 中 s 叶顺序消费每属性界限——预算提取器按写入器消费顺序生成，p 叶不占位；定长 pattern 零写入器改动） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`/`p_len_ok`/`pattern_len_ok`/`len_mix_p`/`len_mix_bounds`/`mixed_len_p_ok`/`mixed_len_pattern_ok`（F399/F493/F494/F495） |
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
