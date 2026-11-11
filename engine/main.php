@@ -6550,16 +6550,17 @@ function api_schema_number_bounded_shape(string $schema): string
                     return "";
                 }
             } else {
-            // F478: ONE-SIDED inclusive bounds are served too - a minimum-only interval folds to
-            // the smallest multiple at or above it (no upper check needed), and a maximum-only one
-            // to zero (a multiple of every M) when the bound is non-negative, else to the largest
-            // negative multiple at or below it.
-            if ($kv[1] != "n" || $hasExLo || $hasExHi || (!$hasLo && !$hasHi)
+            // F501: EXCLUSIVE bounds ride the same decimal grid - a strict side is "the next grid
+            // point past the literal", and the draft-4 boolean form was already converted to a
+            // numeric exclusive literal above.
+            if ($kv[1] != "n" || (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi)
                 || preg_match('/^[0-9]+(\.[0-9]{1,5})?$/', $mo[1]) != 1) {
                 return "";
             }
             if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mn[1]) != 1)
-                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) != 1)) {
+                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) != 1)
+                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $exn[1]) != 1)
+                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $exm[1]) != 1)) {
                 return "";
             }
             $lits = [$mo[1]];
@@ -6568,6 +6569,12 @@ function api_schema_number_bounded_shape(string $schema): string
             }
             if ($hasHi) {
                 $lits[] = $mx[1];
+            }
+            if ($hasExLo) {
+                $lits[] = $exn[1];
+            }
+            if ($hasExHi) {
+                $lits[] = $exm[1];
             }
             $d = 1;
             foreach ($lits as $lit) {
@@ -6582,38 +6589,85 @@ function api_schema_number_bounded_shape(string $schema): string
                 return "";
             }
             $start = 0;
-            if ($hasLo) {
-                $sLo = api_schema_scaled($mn[1], $d);
-                if ($sLo == -2000000000) {
-                    return "";
+            $haveLo = 0;
+            $sLo = 0;
+            $loStrict = 0;
+            if ($hasLo || $hasExLo) {
+                $haveLo = 1;
+                if ($hasLo) {
+                    $sLo = api_schema_scaled($mn[1], $d);
+                    if ($sLo == -2000000000) {
+                        return "";
+                    }
                 }
-                // Smallest multiple of sM at or above sLo: intdiv truncates toward zero, which
-                // already is the ceiling for a negative sLo; a positive remainder needs one step.
+                if ($hasExLo) {
+                    $sE = api_schema_scaled($exn[1], $d);
+                    if ($sE == -2000000000) {
+                        return "";
+                    }
+                    // The stricter lower bound governs; on equality the exclusive literal wins
+                    // (a value equal to it is not allowed).
+                    if (!$hasLo || $sE > $sLo) {
+                        $sLo = $sE;
+                        $loStrict = 1;
+                    } else if ($sE == $sLo) {
+                        $loStrict = 1;
+                    }
+                }
+                // Smallest multiple at or above sLo: intdiv truncates toward zero, which already
+                // is the ceiling for a negative sLo; a positive remainder needs one step. A strict
+                // side then steps once more when the multiple sits exactly on the literal.
                 $q = intdiv($sLo, $sM);
                 if ($sLo > 0 && ($sLo % $sM) != 0) {
                     $q = $q + 1;
                 }
                 $start = $q * $sM;
-            }
-            if ($hasHi) {
-                $sHi = api_schema_scaled($mx[1], $d);
-                if ($sHi == -2000000000) {
-                    return "";
+                if ($loStrict == 1 && $start <= $sLo) {
+                    $start = $start + $sM;
                 }
-                if (!$hasLo) {
-                    if ($sHi >= 0) {
+            }
+            $hiStrict = 0;
+            if ($hasHi || $hasExHi) {
+                $sHi = 0;
+                if ($hasHi) {
+                    $sHi = api_schema_scaled($mx[1], $d);
+                    if ($sHi == -2000000000) {
+                        return "";
+                    }
+                }
+                if ($hasExHi) {
+                    $sE = api_schema_scaled($exm[1], $d);
+                    if ($sE == -2000000000) {
+                        return "";
+                    }
+                    // The stricter (smaller) upper bound governs; on equality exclusive wins.
+                    if (!$hasHi || $sE < $sHi) {
+                        $sHi = $sE;
+                        $hiStrict = 1;
+                    } else if ($sE == $sHi) {
+                        $hiStrict = 1;
+                    }
+                }
+                if ($haveLo == 0) {
+                    if (!$hiStrict && $sHi >= 0) {
                         $start = 0;
                     } else {
-                        // Largest multiple at or below sHi (negative): truncation is the ceiling,
-                        // so a remainder steps one grid unit down.
+                        // Largest multiple strictly below (exclusive) or at (inclusive) sHi.
                         $q = intdiv($sHi, $sM);
                         if (($sHi % $sM) != 0) {
                             $q = $q - 1;
                         }
                         $start = $q * $sM;
+                        if ($hiStrict == 1 && $start >= $sHi) {
+                            $start = $start - $sM;
+                        }
                     }
                 }
-                if ($start > $sHi) {
+                if ($hiStrict == 1) {
+                    if ($start >= $sHi) {
+                        return "";
+                    }
+                } else if ($start > $sHi) {
                     return "";
                 }
             }
@@ -18877,6 +18931,12 @@ function main(): void
     $fmInt03 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}');
     $fmInt15 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":1.5}}}');
     $fmIntUnsat = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","minimum":1,"maximum":2,"multipleOf":0.3}}}');
+    // F501: fractional multiplier with EXCLUSIVE bounds on the decimal grid - a strict side steps
+    // past a literal the multiple sits on; the draft-4 boolean form tightens the inclusive literal.
+    $fmExclLo = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","exclusiveMinimum":1.2,"maximum":9,"multipleOf":0.3}}}');
+    $fmExclHi = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1,"exclusiveMaximum":1.5,"multipleOf":0.3}}}');
+    $fmExclBool = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1,"exclusiveMinimum":true,"maximum":9,"multipleOf":0.3}}}');
+    $fmExclUnsat = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","exclusiveMinimum":1.2,"exclusiveMaximum":1.5,"multipleOf":0.3}}}');
     $fmIntCand = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
     $fmIntCandTxt = "";
     for ($i = 0; $i < count($fmIntCand); $i++) {
@@ -19087,6 +19147,7 @@ function main(): void
         . "] fm_d2=[" . $fmD2 . "] fm_noint=[" . $fmNoInt . "] fm_items=[" . $fmItems
         . "] fm_intleaf=" . $fmIntLeaf
         . " fm_int03=[" . $fmInt03 . "] fm_int15=[" . $fmInt15 . "] fm_int_unsat=[" . $fmIntUnsat . "]"
+        . " fm_excl_lo=[" . $fmExclLo . "] fm_excl_hi=[" . $fmExclHi . "] fm_excl_bool=[" . $fmExclBool . "] fm_excl_unsat=[" . $fmExclUnsat . "]"
         . " fm_int_cand=[" . $fmIntCandTxt . "]"
         . " fm_minonly=[" . $fmMinOnly . "] fm_maxpos=[" . $fmMaxPos . "] fm_maxneg=[" . $fmMaxNeg . "]"
         . " fm_minonly_text=[" . $fmM1Text . "] fm_maxpos_text=[" . $fmM2Text . "] fm_maxneg_text=[" . $fmM3Text . "]"
@@ -19338,6 +19399,8 @@ function main(): void
         && $fmItems == "nums|12|-999|0"
         && $fmIntLeaf == 0
         && $fmInt03 == "n|3|3|3" && $fmInt15 == "n|3|3|3" && $fmIntUnsat == ""
+        && $fmExclLo == "n|15|-999|0" && $fmExclHi == "n|12|-999|0"
+        && $fmExclBool == "n|12|-999|0" && $fmExclUnsat == ""
         && count($fmIntCand) == 3 && strpos($fmIntCandTxt, "\"n\":3") !== false
         && strpos($fmIntCandTxt, "\"n\":2") === false
         && $fmText == '{"n":1.2}'

@@ -2096,3 +2096,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`unb_int_quarter` `[]`→`[n|1]`；frac/five 不回退。
 - **活体**：`{"n":2345000}`（/0.25 为整数）、0.3 例不变；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f500.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.576×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F501，已完成）——number 叶小数乘数 + exclusive 界
+- **思路**：十进制网格折叠；严格下界取下一格、严格上界取字面下方最大倍数；同侧相等时 exclusive 胜。
+- **实现**：小数分支允许 exclusive，字面/位数集合纳入 exclusive 字面。
+- **门**：`fm_excl_lo=[n|15|-999|0]`、`fm_excl_hi`/`fm_excl_bool=[n|12|-999|0]`、`fm_excl_unsat=[]`。
+- **活体**：`{"n":1.5}`（>1.2）、`{"n":1.2}`（<1.5）、1.2<x<1.5 → 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f501.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.546×**；哨兵 **0**；BUILD_OK。

@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F500 计划与完成（无界整数叶 p=1：后缀写入器接受乘数 1，F499 的 400 升级为支持）
+## F501 计划与完成（number 叶小数乘数 + exclusive 界：严格侧走下一格）
+**核心思路**：小数乘数的折叠在十进制网格上进行（d=字面最细位数，sM=缩放乘数）。严格下界 ⇒ 取 `>= 字面` 的最小倍数后，若恰好落在字面上再加一格；严格上界 ⇒ 取 `< 字面` 的最大倍数（单侧时同样处理 0 与负区间）；同侧同时有 inclusive/exclusive 时取更严者、相等时 exclusive 胜（与 F422/F423 的整数规则一致）；draft-4 布尔形式此前已转成数值 exclusive。
+**实现**：`api_schema_number_bounded_shape` 的小数分支允许 exclusive，字面/位数集合纳入 exclusive 字面，并按上述规则折叠；无写入器改动。
+**门**：`fm_excl_lo=[n|15|-999|0]`、`fm_excl_hi=[n|12|-999|0]`、`fm_excl_bool=[n|12|-999|0]`、`fm_excl_unsat=[]`。
+**活体**：`num_mult_frac_excl_ok` 200 `{"n":1.5}`（>1.2）、`num_mult_frac_exclmax_ok` 200 `{"n":1.2}`（<1.5）、`excl_unsat_refuse`（1.2<x<1.5 无 0.3 的倍数）400；既有 inclusive/单侧用例不回退。
+**梯**：自检 **182/0**（`selftest_f501.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.546×**；哨兵 **0**；BUILD_OK（`build_f501`）。
+
+
 **核心思路**：F499 拒绝 p=1 只因 `api_multiple_fill` 的 `$mult < 2` 守卫；算法对 1 天然成立——残差 `x=(1 - p·10^k % 1) % 1 = 0`，最终值 `prefix·10^k`，是 1 的倍数，也必是任何 p/q（p=1）的倍数。
 **实现**：`api_multiple_fill` 守卫 `< 2` → `< 1`；`api_response_schema_multiple_unbounded` 接受 p=1；删除 F499 加的无界 p<2 拒绝规则。
 **门**：`unb_int_quarter` `[]`→`[n|1]`；`unb_int_frac`/`unb_int_five` 不回退。
