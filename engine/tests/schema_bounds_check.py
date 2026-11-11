@@ -521,6 +521,17 @@ cases = [
     ("num_mult_frac_excl_unsat_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "exclusiveMinimum": 1.2, "exclusiveMaximum": 1.5, "multipleOf": 0.3}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F502: six fraction places on the multiplier and the bounds (the writer's -994 marker).
+    # 0.000123 is used instead of 0.000001: json.dumps writes very small floats in exponent form
+    # ("1e-06"), which the schema surface refuses by design, so it would not exercise the 6-place
+    # decimal path.
+    ("num_mult_frac_d6_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.000123}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and 0.0002 <= val_of(txt, "n") <= 0.001 and is_mult(val_of(txt, "n"), 0.000123)),
+    ("num_mult_frac_d6_unsat_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.0002, "multipleOf": 0.000123}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F478: a ONE-SIDED inclusive bound with a fractional multiplier - min-only folds to the
     # smallest multiple at or above it; max-only is 0 when the bound is non-negative (0 is a
     # multiple of every M) or the largest negative multiple otherwise.

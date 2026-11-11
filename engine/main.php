@@ -6386,7 +6386,7 @@ function api_schema_multiplier_numerator(string $lit): int
         return (int) $lit;
     }
     $frac = substr($lit, $dot + 1);
-    if (strlen($frac) < 1 || strlen($frac) > 5 || preg_match('/^[0-9]+$/', $frac) != 1) {
+    if (strlen($frac) < 1 || strlen($frac) > 6 || preg_match('/^[0-9]+$/', $frac) != 1) {
         return 0;
     }
     $num = (int) str_replace(".", "", $lit);
@@ -6553,14 +6553,16 @@ function api_schema_number_bounded_shape(string $schema): string
             // F501: EXCLUSIVE bounds ride the same decimal grid - a strict side is "the next grid
             // point past the literal", and the draft-4 boolean form was already converted to a
             // numeric exclusive literal above.
+            // F502: six fraction places are supported too (the writer has the -994 marker), so the
+            // literal width check is 1..6.
             if ($kv[1] != "n" || (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi)
-                || preg_match('/^[0-9]+(\.[0-9]{1,5})?$/', $mo[1]) != 1) {
+                || preg_match('/^[0-9]+(\.[0-9]{1,6})?$/', $mo[1]) != 1) {
                 return "";
             }
-            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mn[1]) != 1)
-                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $mx[1]) != 1)
-                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $exn[1]) != 1)
-                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,5})?$/', $exm[1]) != 1)) {
+            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mn[1]) != 1)
+                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $mx[1]) != 1)
+                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $exn[1]) != 1)
+                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,6})?$/', $exm[1]) != 1)) {
                 return "";
             }
             $lits = [$mo[1]];
@@ -6683,6 +6685,9 @@ function api_schema_number_bounded_shape(string $schema): string
             }
             if ($d == 5) {
                 $mark = "-995";
+            }
+            if ($d == 6) {
+                $mark = "-994";
             }
             return $kv[0] . "|" . $start . "|" . $mark . "|0";
             }
@@ -18937,6 +18942,9 @@ function main(): void
     $fmExclHi = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1,"exclusiveMaximum":1.5,"multipleOf":0.3}}}');
     $fmExclBool = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1,"exclusiveMinimum":true,"maximum":9,"multipleOf":0.3}}}');
     $fmExclUnsat = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","exclusiveMinimum":1.2,"exclusiveMaximum":1.5,"multipleOf":0.3}}}');
+    // F502: six fraction places on the multiplier (the -994 marker writer already exists).
+    $fmD6 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1.000001,"maximum":2,"multipleOf":0.000001}}}');
+    $fmD6Unsat = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1.000001,"maximum":1.000001,"multipleOf":0.000003}}}');
     $fmIntCand = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
     $fmIntCandTxt = "";
     for ($i = 0; $i < count($fmIntCand); $i++) {
@@ -19148,6 +19156,7 @@ function main(): void
         . "] fm_intleaf=" . $fmIntLeaf
         . " fm_int03=[" . $fmInt03 . "] fm_int15=[" . $fmInt15 . "] fm_int_unsat=[" . $fmIntUnsat . "]"
         . " fm_excl_lo=[" . $fmExclLo . "] fm_excl_hi=[" . $fmExclHi . "] fm_excl_bool=[" . $fmExclBool . "] fm_excl_unsat=[" . $fmExclUnsat . "]"
+        . " fm_d6=[" . $fmD6 . "] fm_d6_unsat=[" . $fmD6Unsat . "]"
         . " fm_int_cand=[" . $fmIntCandTxt . "]"
         . " fm_minonly=[" . $fmMinOnly . "] fm_maxpos=[" . $fmMaxPos . "] fm_maxneg=[" . $fmMaxNeg . "]"
         . " fm_minonly_text=[" . $fmM1Text . "] fm_maxpos_text=[" . $fmM2Text . "] fm_maxneg_text=[" . $fmM3Text . "]"
@@ -19401,6 +19410,7 @@ function main(): void
         && $fmInt03 == "n|3|3|3" && $fmInt15 == "n|3|3|3" && $fmIntUnsat == ""
         && $fmExclLo == "n|15|-999|0" && $fmExclHi == "n|12|-999|0"
         && $fmExclBool == "n|12|-999|0" && $fmExclUnsat == ""
+        && $fmD6 == "n|1000001|-994|0" && $fmD6Unsat == ""
         && count($fmIntCand) == 3 && strpos($fmIntCandTxt, "\"n\":3") !== false
         && strpos($fmIntCandTxt, "\"n\":2") === false
         && $fmText == '{"n":1.2}'

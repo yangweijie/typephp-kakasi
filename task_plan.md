@@ -1695,7 +1695,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F501 计划与完成（number 叶小数乘数 + exclusive 界：严格侧走下一格）
+## F502 计划与完成（小数乘数/界扩到 6 位：-994 marker 路径）
+**核心思路**：F473 已让无乘数的小数界写到 6 位（-994 marker）；本轮把 `multipleOf` 路线也开到 6 位——乘数最简分子解析、字面位数校验、网格位数上限、marker 映射四处一致放宽（F450 的“宽度假设一次改全”）。
+**实现**：`api_schema_multiplier_numerator` 小数位上限 5→6；number 小数分支的 5 个字面正则 `{1,5}`→`{1,6}`；折叠 marker 表补 `d==6 → -994`。
+**门**：`fm_d6=[n|1000001|-994|0]`（min=1.000001, M=0.000001）、`fm_d6_unsat=[]`（min=max=1.000001, M=0.000003）。
+**活体**：`num_mult_frac_d6_ok` 200 `{"n":0.000246}`（0.000123×2）、`d6_unsat_refuse` 400。**测试坑**：`json.dumps(0.000001)` 写成 `1e-06`（指数形式被本引擎按设计拒绝），活体用例改用 `0.000123`/`0.0002` 保证普通小数拼写。
+**梯**：自检 **182/0**（`selftest_f502.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.489×**；哨兵 **0**；BUILD_OK（`build_f502`）。
+
+
 **核心思路**：小数乘数的折叠在十进制网格上进行（d=字面最细位数，sM=缩放乘数）。严格下界 ⇒ 取 `>= 字面` 的最小倍数后，若恰好落在字面上再加一格；严格上界 ⇒ 取 `< 字面` 的最大倍数（单侧时同样处理 0 与负区间）；同侧同时有 inclusive/exclusive 时取更严者、相等时 exclusive 胜（与 F422/F423 的整数规则一致）；draft-4 布尔形式此前已转成数值 exclusive。
 **实现**：`api_schema_number_bounded_shape` 的小数分支允许 exclusive，字面/位数集合纳入 exclusive 字面，并按上述规则折叠；无写入器改动。
 **门**：`fm_excl_lo=[n|15|-999|0]`、`fm_excl_hi=[n|12|-999|0]`、`fm_excl_bool=[n|12|-999|0]`、`fm_excl_unsat=[]`。
