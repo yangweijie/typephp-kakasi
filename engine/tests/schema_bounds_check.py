@@ -269,6 +269,12 @@ cases = [
     ("marker_window_eleven_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -989}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
+    # (the self-test decodes its token continuation, not the HTTP body).
+    ("items_num_dec11_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array", "items": {"type": "number", "minimum": 1.51111111111, "maximum": 1.51111111119}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list) and len(val_of(txt, "nums")) > 0
+     and all(v == 1.51111111111 for v in val_of(txt, "nums"))),
     ("num_mult_frac_d8_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))

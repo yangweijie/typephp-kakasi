@@ -4702,4 +4702,4 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **改动**：自检 SCHEMA-NUM-FRAC 新增七条精确文本断言：对象路径 7/8/9/10/11 位、负 11 位，以及数组元素 11 位（`api_array_item_number_value`，此前无任何文本探针）。若把续写预算退回 F532 前的 12 步，这七条会同时 FAIL。
 **过程**：首轮对象六条全绿，数组探针 FAIL——解码从 token 0 起包含缓存 prompt，`^` 锚定的 JSON 守卫失败；值本身一直正确（三个 11 位元素）。改为取最后一个 `{` 之后的尾段再断言。
 **记法**：**探针要解码自己实际返回的流**——写入器的 continuation 起点可能带上缓存前缀，按 token 下标跳过只对已知前缀长度成立；对结构未知的前缀，按 JSON 起始字符切片比数下标稳。
-**证据**：`selftest_f533b.log`（RUN_EXIT=0 / 0 FAIL、SCHEMA-NUM-FRAC PASS）、gate_live f533、`schema_bounds_f533b.log`。
+**证据**：`selftest_f533b.log`（RUN_EXIT=0 / 0 FAIL、SCHEMA-NUM-FRAC PASS）、gate_live f533、`schema_bounds_f533b.log`；活体再加 `items_num_dec11_ok` 200 `{"nums":[1.51111111111×4]}`（`schema_bounds_f533c.log`）。
