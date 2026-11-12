@@ -2221,3 +2221,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## 下一步（F519 后）
 - **F515**：候选枚举层 ≥4 位负值截断（`{"n":-1000`），已证 `":-` 单 token 52052、末 `}` 步 next_allowed 连败，与 F228 同族，需 engine 判别量一轮。
 - **unevaluated\*** 真实求值（子 schema 求值器）；10+ 位小数（窗口继续内缩，收益/代价需先写规格）；FR-05/多分片（本机不可验证）。
+
+## ▶ 状态（F520，已完成）——数值 enum/const items
+- **实现**：enum 检测器放宽 kind 到 a/an/af，新增数值 enum/const 分支（`#` 前缀）；写入器按裸字面量发射（head/分隔不带引号）。
+- **过程**：先漏 kind 放宽（items 仍拒），再漏字符串引号假设（`{"nums":["2,…]}`），两次后 182/0。
+- **门**：`num_enum_items=[nums|#2~5~9]`、`num_const_items=[nums|#7]`、`num_enum_uniq=[]`。
+- **活体**：`[2,5,9,2]`、unique `[2,5,9]`、const `[7,7,7,7]`、const+unique+min2 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f520e.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**；哨兵 **0**；BUILD_OK。

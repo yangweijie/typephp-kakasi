@@ -398,6 +398,31 @@ cases = [
      lambda code, txt: code == 200 and isinstance(val_of(txt, "cities"), list)
      and len(val_of(txt, "cities")) == 2 and len(set(val_of(txt, "cities"))) == 2
      and all(x in ("paris", "lyon") for x in val_of(txt, "cities"))),
+    # F520: numeric enum/const items are a finite value table too - the writer emits the bare
+    # literals (the plan carries a "#" prefix), and uniqueItems forces distinct members.
+    ("items_num_enum_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "enum": [2, 5, 9]}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1 and all(x in (2, 5, 9) for x in val_of(txt, "nums"))),
+    ("items_num_enum_unique_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "enum": [2, 5, 9]},
+                                                "uniqueItems": True, "minItems": 2}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 2 and len(set(val_of(txt, "nums"))) == len(val_of(txt, "nums"))
+     and all(x in (2, 5, 9) for x in val_of(txt, "nums"))),
+    ("items_num_const_ok", "Give the number.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "const": 7}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) >= 1 and all(x == 7 for x in val_of(txt, "nums"))),
+    ("items_num_const_unique_min2_refuse", "Give the number.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "number", "const": 7},
+                                                "uniqueItems": True, "minItems": 2}}},
+     lambda code, txt: code == 400 and "uniqueItems" in txt),
+    # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000}}},

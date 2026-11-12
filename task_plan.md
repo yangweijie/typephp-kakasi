@@ -1696,7 +1696,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F519（覆盖）：const 单值域与锚定字面交替的 uniqueItems:true
+## F520 计划与完成（数值 enum/const items：有限值表 + 裸字面量编码）
+**核心思路**：字符串 enum items 已有写入器（F459/F470）；数值 enum/const 是同一类有限值表，只是元素要发**裸数字**。用 plan 前缀 `#` 区分：`nums|#2~5~9`，写入器剥掉 `#` 后按裸字面量逐个强制。uniqueItems 与 minItems 随之继承（F517 的机制：值域可枚举）。
+**实现**：①`api_schema_array_enum` 承认 kind `a/an/af`，新增数值 enum/const 两个分支（plain decimal 校验、`#` 前缀）；②写入器识别 `#`：head 不带开引号、元素间不补开引号、candidate 为裸字面量；③items 守卫与 minItems/uniqueItems 守卫因检测器非空自动放行。
+**过程（三处形状教训）**：宽松 kind 检查先只放 `a` ⇒ `items` 仍点名拒绝；放宽到 an/af 后输出 `{"nums":["2,"5,"9,"2]}`——字符串数组的引号假设还在 head 与元素分隔里；修正后 182/0。
+**门**：`num_enum_items=[nums|#2~5~9]`、`num_const_items=[nums|#7]`、`num_enum_uniq=[]`。
+**活体**：`items_num_enum_ok` 200 `{"nums":[2,5,9,2]}`；`items_num_enum_unique_ok` 200 `{"nums":[2,5,9]}`（互异）；`items_num_const_ok` 200 `{"nums":[7,7,7,7]}`；`const+unique+min2` 400 uniqueItems。
+**梯**：自检 **182/0**（`selftest_f520e.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**；哨兵 **0**；BUILD_OK（`build_f520e`）。
+
+
 **结论**：F470（const→单值 enum）与 F477（锚定纯字面交替→enum 计划）产出的都是非 `~` 前缀的有限值表，因此 F517 的去重写入器**自动覆盖**：`{"codes":["paris"]}`（单值域，隐式 maxItems 4 但域耗尽收尾）、`{"cities":["paris","lyon"]}`（交替两值互异）；`const + minItems:2` 因域不足仍点名拒绝。
 **变更**：仅 harness 三例，无引擎改动；二进制同 F518。
 **记法**：值域是否可枚举由**检测器产出的计划形态**决定（`~` 前缀=pattern 行走），不是由 JSON 关键字决定——新增有限域来源会自动继承 uniqueItems。
