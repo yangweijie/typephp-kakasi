@@ -343,6 +343,27 @@ cases = [
      lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
      and len(val_of(txt, "nums")) >= 1
      and all(x == 0 for x in val_of(txt, "nums"))),
+    # F517: uniqueItems:true on a FINITE enum-item domain - the writer forces the distinct values in
+    # declaration order, so uniqueness holds by construction; minItems must fit and pattern items
+    # (an unbounded value space) keep the refusal.
+    ("uniq_enum_ok", "Name some cities.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string", "enum": ["paris", "lyon", "nice"]},
+                                                  "uniqueItems": True, "minItems": 2}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "cities"), list)
+     and 2 <= len(val_of(txt, "cities")) <= 3
+     and len(set(val_of(txt, "cities"))) == len(val_of(txt, "cities"))
+     and all(x in ("paris", "lyon", "nice") for x in val_of(txt, "cities"))),
+    ("uniq_enum_unsat_refuse", "Name some cities.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string", "enum": ["paris", "lyon", "nice"]},
+                                                  "uniqueItems": True, "minItems": 4}}},
+     lambda code, txt: code == 400 and "uniqueItems" in txt),
+    ("uniq_enum_pat_refuse", "Name some codes.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string", "pattern": "^[A-Z]{3}$"},
+                                                  "uniqueItems": True}}},
+     lambda code, txt: code == 400 and "uniqueItems" in txt),
     # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",

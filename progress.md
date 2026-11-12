@@ -2202,3 +2202,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：新 `num_dec9=[n|1511111111|-991|0]`、`fm_d9=[n|246912|-991|0]`、`win_nine=[]`；1–8 位不回退。
 - **活体**：`{"n":1.511111111}`、`{"n":0.000246912}`、maximum:-991 → 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f516.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.548×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F517，已完成）——enum-item 有限域的 uniqueItems:true
+- **实现**：`api_array_enum_value` 增 `$unique`（去重值表/按序强制/域耗尽收尾/域<min 返回空）、4 个调用点传标志；uniqueItems 与 minItems 守卫按 enum 路由放宽。
+- **过程**：首轮 `uniq_enum=[minItems]`（minItems 先判定且 enum 路线未被 element_bounds 认领），放宽后 182/0。
+- **门**：`uniq_enum=[]`、`uniq_enum_unsat`/`uniq_enum_pat=[uniqueItems]`；`uniq_true`/`uniq_false` 不回退。
+- **活体**：`{"cities":["paris","lyon","nice"]}`（互异、3∈[2,3]）；域不足与 pattern 均 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f517b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.468×**；哨兵 **0**；BUILD_OK。

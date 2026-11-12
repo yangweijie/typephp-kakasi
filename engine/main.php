@@ -996,10 +996,21 @@ function api_schema_array_enum(string $schema): string
 
 function api_response_schema_array_enum(string $body): string
 {
-    if (preg_match('/"json_schema"/', $body) != 1) {
-        return "";
+    // F517: accepts a full body or a bare schema (the keyword guard reuses the detector).
+    $schema = $body;
+    if (preg_match('/"json_schema"/', $body) == 1) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return "";
+        }
     }
-    return api_schema_array_enum(api_json_object_after($body, "schema"));
+    return api_schema_array_enum($schema);
+}
+
+// F517: 1 when the request spells uniqueItems:true (the writer then emits distinct enum values).
+function api_schema_unique_true(string $body): int
+{
+    return preg_match('/"uniqueItems"\s*:\s*true/', $body) == 1 ? 1 : 0;
 }
 
 // F460/F461: "prop|lo|hi" for a single array property whose `items` is a bounded integer: both
@@ -1560,7 +1571,7 @@ function api_array_item_multiple_value(string $ids, string $prop, int $mult, int
 // emits each element as a whole candidate continuation (value + closing quote) and only "," / "]"
 // are reachable between elements - the same mechanism the flat enum writer and the bounded-number
 // writer use. At least one element is emitted, like the item-type writer.
-function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = ""): string
+function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = "", int $unique = 0): string
 {
     $commaIds = api_punct_ids(",");
     $bracketIds = api_punct_ids("]");
@@ -1595,6 +1606,21 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
     for ($i = 0; $i < count($vals); $i++) {
         $cands[] = $vals[$i] . "\"";
     }
+    // F517: uniqueItems:true on a finite enum domain - drop repeated values and force the distinct
+    // ones in declaration order, so every element differs by construction. The domain must cover
+    // minItems (the keyword guard refuses otherwise; this is the writer's own defensive check).
+    if ($unique == 1 && $patMode == 0) {
+        $uv = [];
+        for ($i = 0; $i < count($vals); $i++) {
+            if (!in_array($vals[$i], $uv, true)) {
+                $uv[] = $vals[$i];
+            }
+        }
+        $vals = $uv;
+        if ($bMin > count($vals)) {
+            return "";
+        }
+    }
     $s = api_constrained($ids, ["{\"" . $prop . "\":[\""], 64, $useCache);
     if ($s == "") {
         return "";
@@ -1602,6 +1628,9 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
     $endIds = $commaIds . "," . $bracketIds;
     $done = 0;
     for ($it = 0; $it < $maxItems; $it++) {
+        if ($unique == 1 && $patMode == 0 && $it >= count($vals)) {
+            break;                 // the domain is exhausted - the trailing close ends the array
+        }
         if ($it > 0) {
             $open = api_constrained_continue(["\""], 4);
             if ($open == "") {
@@ -1623,14 +1652,20 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             }
             $s = $s . "," . $cq;
         } else {
-            $f = api_constrained_continue($cands, 24);
+            if ($unique == 1) {
+                $f = api_constrained_continue([$vals[$it] . "\""], 24);
+            } else {
+                $f = api_constrained_continue($cands, 24);
+            }
             if ($f == "") {
                 return "";
             }
             $s = $s . "," . $f;
         }
         $offer = $endIds;
-        if ($it + 1 < $bMin) {
+        if ($unique == 1 && $patMode == 0 && $it + 1 >= count($vals)) {
+            $offer = $bracketIds;  // last distinct value emitted: the model must close
+        } else if ($it + 1 < $bMin) {
             $offer = $commaIds;
         } else if ($it + 1 >= $maxItems) {
             $offer = $bracketIds;
@@ -8174,7 +8209,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
     } else if ($scArrEnum != "") {
         $sae = explode("|", $scArrEnum);
         $scOut = api_array_enum_value($ids, $sae[0], $sae[1], 4, 1,
-            api_response_schema_array_bounds($body));
+            api_response_schema_array_bounds($body), api_schema_unique_true($body));
     } else if (api_response_schema_tuple($body) != "") {
         $tup = explode("|", api_response_schema_tuple($body));
         $scOut = api_tuple_value($ids, $tup[0], $tup[1], api_schema_charset(), 4, 1);
@@ -11115,7 +11150,11 @@ function api_schema_keywords_unsupported(string $body): string
         }
         // F400: minItems/maxItems are honoured for a single scalar-array property, whose stepper
         // can restrict the closing bracket by element count; every other shape still refuses them.
-        if (($kw == "minItems" || $kw == "maxItems") && api_schema_array_element_bounds($body) != "") {
+        // F517: an enum-item array consumes minItems/maxItems through the same bounds argument its
+        // writer already takes, so the count constraints are honoured on that route too.
+        if (($kw == "minItems" || $kw == "maxItems")
+            && (api_schema_array_element_bounds($body) != ""
+                || api_response_schema_array_enum($body) != "")) {
             continue;
         }
         // F402: additionalProperties holds by construction where every key is named from the plan.
@@ -11127,6 +11166,24 @@ function api_schema_keywords_unsupported(string $body): string
         // honoured and is refused. `false` allows duplicates - which is exactly what the generator
         // may emit - and the array detectors now tolerate that spelling, so it holds by
         // construction and must keep being served instead of falling back to prose.
+        // F425: uniqueItems:false allows duplicates - satisfied by construction. F517: true is
+        // honoured on a FINITE enum-item domain (the writer emits the distinct values in order);
+        // the domain must cover minItems or the constraint is unsatisfiable and stays refused.
+        if ($kw == "uniqueItems"
+            && preg_match_all('/"uniqueItems"\s*:/', $body) == 1
+            && preg_match('/"uniqueItems"\s*:\s*true/', $body) == 1) {
+            $ue = api_response_schema_array_enum($body);
+            if ($ue != "") {
+                $uu = explode("|", $ue);
+                if (count($uu) >= 2 && substr($uu[1], 0, 1) != "~") {
+                    $umo = api_schema_bound_value($body, "\"minItems\"", 0);
+                    if ($umo == "" || (int) $umo <= count(array_unique(explode("~", $uu[1])))) {
+                        continue;
+                    }
+                }
+            }
+            return "uniqueItems";
+        }
         if ($kw == "uniqueItems"
             && preg_match('/"uniqueItems"\s*:\s*(?:true|false)/', $body) == 1
             && preg_match('/"uniqueItems"\s*:\s*false/', $body) == 1
@@ -12804,7 +12861,7 @@ Connection: close
                                 } else if ($scArrEnum != "") {
                                     $sae2 = explode("|", $scArrEnum);
                                     $scOut = api_array_enum_value($ids, $sae2[0], $sae2[1], 4, 1,
-                                        api_response_schema_array_bounds($body));
+                                        api_response_schema_array_bounds($body), api_schema_unique_true($body));
                                 } else if (api_response_schema_tuple($body) != "") {
                                     $tup2 = explode("|", api_response_schema_tuple($body));
                                     $scOut = api_tuple_value($ids, $tup2[0], $tup2[1],
@@ -13949,7 +14006,7 @@ function api_serve(int $port): void
                         } else if ($sArrEnum != "") {
                             $sae3 = explode("|", $sArrEnum);
                             $sJOut = api_array_enum_value($ids, $sae3[0], $sae3[1], 4,
-                                $prefixCache, api_response_schema_array_bounds($body));
+                                $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body));
                         } else if (api_response_schema_tuple($body) != "") {
                             $tup3 = explode("|", api_response_schema_tuple($body));
                             $sJOut = api_tuple_value($ids, $tup3[0], $tup3[1],
@@ -14372,7 +14429,7 @@ function api_serve(int $port): void
                     } else if ($arrEnum != "") {
                         $ae4 = explode("|", $arrEnum);
                         $enumOut = api_array_enum_value($ids, $ae4[0], $ae4[1], 4,
-                            $prefixCache, api_response_schema_array_bounds($body));
+                            $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body));
                         $jsonMode = 1;
                     } else if (api_response_schema_tuple($body) != "") {
                         $tup4 = explode("|", api_response_schema_tuple($body));
@@ -18722,6 +18779,10 @@ function main(): void
     $kwAW = api_schema_keywords_unsupported('{"type":"object","properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":false}}}');
     $kwAX = api_schema_keywords_unsupported('{"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}}}');
     $kwAY = api_response_schema_array_string('{"json_schema":{"schema":{"properties":{"cities":{"type":"array","items":{"type":"string"},"uniqueItems":false}}}}}');
+    // F517: uniqueItems:true is honoured only on a finite enum-item domain that can cover minItems.
+    $uniqEnum = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon","nice"]},"uniqueItems":true,"minItems":2}}}');
+    $uniqEnumUnsat = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","enum":["paris","lyon","nice"]},"uniqueItems":true,"minItems":4}}}');
+    $uniqEnumPat = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string","pattern":"^[A-Z]{3}$"},"uniqueItems":true}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] p_len_ok=[" . $pLenOk . "] p_len_bad=[" . $pLenBad
         . "] p_len_range=[" . $pLenRange . "]"
@@ -18739,6 +18800,7 @@ function main(): void
         . "] addprops_wire=[" . $kwAA . "] addprops_form_arr=[" . $kwAB
         . "] multi_bounds=[" . $kwAG . "] multi_bad=[" . $kwAH . "] multi_addprops=[" . $kwAI
         . "] multi_allreq=[" . $kwAJ . "] uniq_true=[" . $kwAV . "] uniq_false=[" . $kwAW
+        . "] uniq_enum=[" . $uniqEnum . "] uniq_enum_unsat=[" . $uniqEnumUnsat . "] uniq_enum_pat=[" . $uniqEnumPat
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == ""
         && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
@@ -18760,6 +18822,7 @@ function main(): void
         && $kwAB == ""
         && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == ""
         && $kwAV == "uniqueItems" && $kwAW == "" && $kwAX == "uniqueItems"
+        && $uniqEnum == "" && $uniqEnumUnsat == "uniqueItems" && $uniqEnumPat == "uniqueItems"
         && $kwAY == "cities") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {

@@ -1696,7 +1696,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F516 计划与完成（小数位宽扩到九位：marker -991，窗口守卫同步扩宽）
+## F517 计划与完成（enum-item 有限域的 `uniqueItems:true`：按序强制不同值）
+**核心思路**：`uniqueItems` 约束元素取值；当 items 是**有限 enum** 时可以把值域枚举出来，按声明顺序逐个强制，互异性即构造满足。域大小必须覆盖 `minItems`，否则该约束不可满足、保持拒绝。pattern items（无界值域）仍拒绝。
+**实现**：①`api_response_schema_array_enum` 接受 body 或裸 schema；新增 `api_schema_unique_true`；②`api_array_enum_value` 增 `$unique`：去重值表、`bMin > 域大小` 时返回空、元素按序强制、域耗尽即收尾；4 个分发调用点传入标志；③关键字守卫：`uniqueItems:true` 在 enum 域且 minItems 可满足时放行，否则点名拒绝；同时放宽 `minItems/maxItems` 到 enum-array 路线（其写入器本就消费 bounds）。
+**门**：新 `uniq_enum=[]`、`uniq_enum_unsat=[uniqueItems]`（min4>3）、`uniq_enum_pat=[uniqueItems]`；`uniq_true`（普通 string items）/`uniq_false` 不回退。
+**活体**：`uniq_enum_ok` 200 `{"cities":["paris","lyon","nice"]}`（三个互异、长度 3∈[2,3]）；unsat 与 pattern 均 400 点名 uniqueItems。
+**梯**：自检 **182/0**（`selftest_f517b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.468×**；哨兵 **0**；BUILD_OK（`build_f517b`）。
+**过程**：首轮 `uniq_enum=[minItems]`——minItems 在关键字序里先被判定，enum 路线未被 `api_schema_array_element_bounds` 认领；放宽后 182/0。
+
+
 **背景**：F514 留下的规则——"宽度扩展必须同步扩宽 marker 窗口"。本轮验证该规则：九位小数（-991）落地时把窗口守卫从 `[-999,-992]` 扩到 `[-999,-991]`，并加 `win_nine` 门钉住"maximum:-991 必须拒绝"。
 **实现**（全部宽度站点）：写入器 marker 表（d=9, scale=10^9）、两处 marker 判定、`api_schema_scaled` 正则与 `digits==9` 分支、分子上限 9、multipleOf 分支 5 个字面正则与 marker 表、无乘数回退的 d 探测与 marker 表、mixed q marker 范围、数组项 marker 判定、窗口守卫。
 **门**：新 `num_dec9=[n|1511111111|-991|0]`、`fm_d9=[n|246912|-991|0]`、`win_nine=[]`；1–8 位全部不回退。
