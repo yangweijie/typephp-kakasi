@@ -2038,6 +2038,6 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **过程（两轮活体红证）**：(1) 首轮 260 层仍 200——拒绝链传的是 **schema 对象**而非整包 body，谓词首行要求 `"json_schema"` 直接返回 0；改为两形兼容（含 `json_schema` 才提取）。(2) 仍 200——滑窗后按**上一层键文本**定位，运行时键名逐层不同（k0→k1），depth 1 即失败；改为在 block 上**重新匹配下一层键**（与检测器同一打法）。修复后 `deep260_refuse` 400 且消息含 “256”。
 **门**：SCHEMA-DEEP200 `over200=0 / over260=1`；`deep260_refuse` 400；`deep200_cold_first_ok` 仍 200。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f535c.log`，SCHEMA-DEEP200 PASS）；bounds **PASS**（`f535c`，deep260 400）；8000 **115/0**、8001 par/fair **0**、scaling **1.559×**、哨兵 **0**（`gate_live f535c`）；required/count/pattern 在 `f535b` 上绿（同一服务路径，最终改动只影响谓词自身）。BUILD_OK（`build_f535c`）。
-**诚实边界**：只接非流式 `api_serve` 拒绝链；流式/Anthropic/Responses 若也走浅层 fallback 需各自接（入队）。
+**诚实边界**：8000 的四个嵌套分发点都在 `api_serve` 内、共用这一条拒绝链——流式 `stream:true` 实测 260 层同样 400（`serve_f535e` 探针），200 层正常流式输出 k0…k199；8001 并行服务对任何 `json_schema` 直接 400 “parallel mode: streaming text only”（`serve_par_f535d` 探针），不存在静默降级。故未接的传输仅为未来新增入口。
 
 

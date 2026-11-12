@@ -4715,4 +4715,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **改动**：`api_schema_nested_overflow` 与检测器同法数键链，第 257 层返回 1；非流式拒绝链给出 400。活体 `deep260_refuse` 由 200 `{"count":100000}` 翻为 400 “nested object depth beyond 256 levels is not supported”。
 **过程**：两轮红证都不是“阈值算错”，而是谓词与环境不匹配——① 拒绝链传入的是 **schema 对象**（`api_json_object_after($body,"schema")` 的结果），谓词却要求整包 body 含 `"json_schema"`，于是永远 0；② 滑窗按**上一层键的文本**回找，运行时键名逐层不同（k0→k1）在 depth 1 就 `strpos` 失败，而自检夹具每层同名键恰好掩盖了它。
 **记法**：**谓词必须消费与链相同的输入形态，并镜像检测器的定位方式**；用“每层同名键”的夹具测深度逻辑会伪造通过——深度类夹具要逐层不同名。负结论前先问“谓词在运行时的入参是什么”。
-**证据**：`selftest_f535c.log`（over200=0/over260=1、DEEP200 PASS）、`schema_bounds_f535c.log`（deep260 400、VERDICT PASS）、gate_live f535c（115/0、par/fair 0、scaling 1.559×、哨兵 0）。
+**证据**：`selftest_f535c.log`（over200=0/over260=1、DEEP200 PASS）、`schema_bounds_f535c.log`（deep260 400、VERDICT PASS）、gate_live f535c（115/0、par/fair 0、scaling 1.559×、哨兵 0）；传输覆盖实测——8000 `stream:true` 260 层 400、200 层正常（`serve_f535e.log`），8001 对任何 `json_schema` 一律 400（`serve_par_f535d.log`）。
+
+## F536（2026-11-12）：F535 的传输覆盖核对（无代码改动）
+**结论**：8000 的四个 `api_response_schema_nested_object` 分发点（chat 非流式/流式、Anthropic、Responses）都位于 `api_serve` 内、共用同一条 13661 拒绝链，故 F535 的溢出守卫天然覆盖全部 8000 入口；`stream:true` 260 层实测 400、200 层正常输出 200 层对象。8001 并行服务对任何 `json_schema` 直接 400“parallel mode: streaming text only”，不存在静默降级。
+**记法**：**“另一个传输”要先确认是不是同一个 handler**——分发点同函数时，一个拒绝分支即覆盖；把边界写成“其他传输待接”之前，先用一次请求与一次函数边界核对把范围钉死。
+**证据**：`serve_f535e.log`（stream 探针）、`serve_par_f535d.log`（8001 探针）。

@@ -2314,5 +2314,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **过程（两轮红证）**：① 谓词要求整包 body，但链传的是 schema 对象 → 兼容两形；② 滑窗按上一键文本定位，运行时节名逐层不同 → 改为在 block 上重新匹配下一层键（镜像检测器）。
 - **门/活体**：`over200=0/over260=1`；`deep260_refuse` 400 含 “256”；`deep200_cold_first_ok` 仍 200。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f535c.log`）；bounds PASS；8000 115/0；8001 par/fair 0；scaling 1.559×；哨兵 0（`gate_live f535c`）；BUILD_OK（`build_f535c`）。
-- **边界**：只接非流式链；其他传输待接（入队）。
+- **边界（实测收窄）**：8000 的四个嵌套分发点同处 `api_serve`、共用拒绝链——`stream:true` 260 层实测 400、200 层正常；8001 并行服务对任何 `json_schema` 一律 400（text-only），无静默降级。
 
