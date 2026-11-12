@@ -2213,3 +2213,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## ▶ 状态（F518，覆盖）——multipleOf-items 的计数界与 uniqueItems 对照
 - **结论**：items-multiple 写入器消费 bounds：`minItems:3/maxItems:3` 返回 `{"nums":[5000,5000,5000]}`；`uniqueItems:true` 对同值折叠数组仍点名拒绝。
 - **变更**：仅 harness 两例；无引擎改动，二进制同 F517；bounds harness CHECK_EXIT=0。
+
+## ▶ 状态（F519，覆盖）——const 与字面交替的 uniqueItems
+- **结论**：const（F470）与锚定字面交替（F477）产出有限 enum 计划，F517 去重自动覆盖：`{"codes":["paris"]}`、`{"cities":["paris","lyon"]}`；const+minItems:2 仍 400。
+- **变更**：仅 harness 三例，无引擎改动。
+
+## 下一步（F519 后）
+- **F515**：候选枚举层 ≥4 位负值截断（`{"n":-1000`），已证 `":-` 单 token 52052、末 `}` 步 next_allowed 连败，与 F228 同族，需 engine 判别量一轮。
+- **unevaluated\*** 真实求值（子 schema 求值器）；10+ 位小数（窗口继续内缩，收益/代价需先写规格）；FR-05/多分片（本机不可验证）。

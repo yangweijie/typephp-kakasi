@@ -378,7 +378,26 @@ cases = [
                                                 "items": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000},
                                                 "uniqueItems": True}}},
      lambda code, txt: code == 400 and "uniqueItems" in txt),
-    # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
+    # F519 probe: a one-value domain (const) and a finite literal-alternation pattern are enum
+    # plans too, so uniqueItems:
+    ("uniq_const_ok", "Name a code.",
+     {"type": "object", "properties": {"codes": {"type": "array",
+                                                 "items": {"type": "string", "const": "paris"},
+                                                 "uniqueItems": True}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "codes"), list)
+     and len(val_of(txt, "codes")) == 1 and val_of(txt, "codes")[0] == "paris"),
+    ("uniq_const_min2_refuse", "Name a code.",
+     {"type": "object", "properties": {"codes": {"type": "array",
+                                                 "items": {"type": "string", "const": "paris"},
+                                                 "uniqueItems": True, "minItems": 2}}},
+     lambda code, txt: code == 400 and "uniqueItems" in txt),
+    ("uniq_alt_ok", "Name some cities.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string", "pattern": "^(paris|lyon)$"},
+                                                  "uniqueItems": True, "minItems": 2}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "cities"), list)
+     and len(val_of(txt, "cities")) == 2 and len(set(val_of(txt, "cities"))) == 2
+     and all(x in ("paris", "lyon") for x in val_of(txt, "cities"))),
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000}}},

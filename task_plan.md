@@ -1696,7 +1696,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F518（覆盖）：multipleOf-items 数组的 minItems/maxItems 与 uniqueItems 对照
+## F519（覆盖）：const 单值域与锚定字面交替的 uniqueItems:true
+**结论**：F470（const→单值 enum）与 F477（锚定纯字面交替→enum 计划）产出的都是非 `~` 前缀的有限值表，因此 F517 的去重写入器**自动覆盖**：`{"codes":["paris"]}`（单值域，隐式 maxItems 4 但域耗尽收尾）、`{"cities":["paris","lyon"]}`（交替两值互异）；`const + minItems:2` 因域不足仍点名拒绝。
+**变更**：仅 harness 三例，无引擎改动；二进制同 F518。
+**记法**：值域是否可枚举由**检测器产出的计划形态**决定（`~` 前缀=pattern 行走），不是由 JSON 关键字决定——新增有限域来源会自动继承 uniqueItems。
+
+
 **结论**：items-multiple 写入器本就消费 `api_response_schema_array_bounds`，`minItems:3/maxItems:3` 的整数 multipleOf 数组返回恰好 3 个 5000 的倍数（`items_mult_min_ok`）；`uniqueItems:true` 对这类**同值折叠**数组仍点名拒绝（每个元素都是同一折叠值，去重必然违反；enum 有限域之外不服务）。
 **变更**：仅 harness 增两例（一正一拒），无引擎改动；二进制与 F517 相同，bounds harness `CHECK_EXIT=0`，其余三 harness 与 gate_live 沿用 F517 结论。
 **记法**：同值折叠写入器与 `uniqueItems` 天然冲突——支持面必须按“值域是否可枚举”划线，而不是按数组类型。
