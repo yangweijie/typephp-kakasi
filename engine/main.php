@@ -8225,6 +8225,16 @@ function api_schema_flatten_choices(string $s): string
             }
             $pos = $eb + strlen($eblk);
         }
+        // F540: a oneOf/anyOf branch may spell its single value as "const": X. For a finite-domain
+        // union that is the same candidate as "enum":[X], so fold it into the same list; branches
+        // carrying only numeric bounds stay unclaimed (the anyOf bounds case is still fail-closed
+        // work, not silently served here).
+        $cc = [];
+        preg_match_all('/"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
+            $inner, $cc);
+        for ($ci = 0; $ci < count($cc[1]); $ci++) {
+            $vals = $vals == "" ? $cc[1][$ci] : $vals . "," . $cc[1][$ci];
+        }
         if ($vals == "") {
             break;
         }

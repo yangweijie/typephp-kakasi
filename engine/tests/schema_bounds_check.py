@@ -952,6 +952,18 @@ cases = [
       "unevaluatedProperties": False},
      lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), dict)
      and set(json.loads(txt).keys()) == {"a"} and isinstance(json.loads(txt)["a"], str)),
+    # F540: const branches are single-value enums; oneOf/anyOf of them flattens to the same finite
+    # candidate set. F539 showed these exact shapes returned 200 free prose before the fold.
+    ("oneof_const_ok", "Name a city.",
+     {"type": "object", "properties": {"city": {"oneOf": [
+         {"type": "string", "const": "paris"},
+         {"type": "string", "const": "lyon"}]}}},
+     lambda code, txt: code == 200 and valid_json(txt) and val_of(txt, "city") in ("paris", "lyon")),
+    ("anyof_const_ok", "Name a city.",
+     {"type": "object", "properties": {"city": {"anyOf": [
+         {"type": "string", "const": "paris"},
+         {"type": "string", "const": "lyon"}]}}},
+     lambda code, txt: code == 200 and valid_json(txt) and val_of(txt, "city") in ("paris", "lyon")),
 ]
 
 bad = 0

@@ -4744,3 +4744,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **定位**：这是 F534/F535 同族但**更早一级**的问题——空计划/无人认领时不是落到错误值，而是落到**无约束生成**，且状态码 200。检测入口对 `$ref`/`oneOf`/`anyOf` 没有“无人认领就拒绝”的兜底。
 **队列（P0，按顺序）**：D1 `$ref` 顺序依赖（检测器应在整包 schema 上定位 `definitions`/`$defs`，不依赖键序，并加“定义在前/在后”成对门）；D2 oneOf/anyOf 的 fail-closed 400（先查 smoke 是否有可工作的 oneOf 夹具，再决定 blanket 拒绝或加认领检测器），两者都必须先有活体红证再改。
 **记法**：**“支持”必须在两种键序、两种分支位置都取证**；单次活体通过只证明一条路径。
+
+## F540（2026-11-12）：const 分支折叠——D2 的 finite-domain 部分闭合
+**改动**：`api_schema_flatten_choices` 原本只并集各分支的 `"enum"` 数组；F539 的 D2 证明 const 分支无人认领。现在同一次扫描里用 `preg_match_all` 把 `"const": <字符串|数字|布尔|null>` 字面量并入同一候选并集（单值 const 与 `"enum":[X]` 等价），oneOf 与 anyOf 都适用；分支若只有数值界则仍无候选（不静默认领）。
+**验证**：`oneof_const_ok` / `anyof_const_ok` 由 F539 的 200 自由文本变为 200 `{"city":"paris"}`；自检 RUN_EXIT=0、bounds PASS。
+**记法**：**有限值域的“另一种写法”优先折叠而不是新写检测器**——const 是单值 enum，折进既有并集即可复用全部下游（路由、唯一化、写入器）；只有“非有限域”的分支才需要新机制或显式 400。
+**遗留**：anyOf 的纯数值界分支、D1 `$ref` 顺序依赖仍为 P0。

@@ -2059,4 +2059,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **处置**：P0 入队，按“先成对门取证再改”执行——D1 加“定义在前/在后”成对门后修检测器定位；D2 先查 smoke 是否已有可工作的 oneOf 夹具，再决定 blanket 400 还是新增认领检测器。
 **证据**：`claims_f539.log`。
 
+## F540（2026-11-12）：oneOf/anyOf 的 const 分支折叠（F539-D2 的低风险部分）
+**实现**：`api_schema_flatten_choices` 在收集各分支 `"enum"` 之后，再用一次 `preg_match_all` 收集分支的 `"const": <字符串|数字|布尔|null>` 字面量并入同一候选并集——单值 const 与 `"enum":[X]` 等价。仅带数值界、无 enum/const 的分支仍不认领（anyOf 界分支仍是 fail-closed 工作，不静默服务）。
+**门/活体**：`oneof_const_ok` / `anyof_const_ok` 均 200 `{"city":"paris"}`（F539 时同形为 200 自由文本）。自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f540.log`）；bounds **PASS**（`f540`）。gate_live 见 `api_smoke_f540.log` 等。
+**剩余（P0）**：D1 `$ref` 顺序依赖；D2 的 anyOf 纯界分支需 fail-closed 或折叠。
+
 

@@ -2332,3 +2332,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **对照**：allOf+required、additionalProperties:true+required、数组 min/maxItems 均合法。
 - **处置**：入队 P0（先成对门取证再改：$ref 两种键序、oneOf 是否已有可工作夹具）；证据 `claims_f539.log`。
 
+## F540（2026-11-12）：oneOf/anyOf const 分支折叠
+- **改动**：`api_schema_flatten_choices` 收集完各分支 `"enum"` 后用 `preg_match_all` 并入 `"const"` 字面量（单值 const ≡ 单值 enum）；仅数值界分支不认领。
+- **活体**：`oneof_const_ok`、`anyof_const_ok` → 200 `{"city":"paris"}`（F539 时同形为 200 自由文本）。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f540.log`）；bounds PASS（`f540`）；gate_live 见 `api_smoke_f540.log`。
+
