@@ -2052,4 +2052,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **记法**：静态“可判”≠运行时“被认领”（与 F537 反向同型——静态拒绝≠运行时拒绝）；两个方向都必须发真请求核对。
 **梯**：无需重建（无引擎改动）；六条请求已在全新服务上取证。
 
+## F539（2026-11-12）：两类静默违反（200 + 自由文本）——P0
+**D1**：本地 `$ref` 顺序依赖——`definitions` 在 `properties` **之前**时返回 200 自由文本（schema 被忽略）；放在**之后**则 200 `{"city":…}` 合法。
+**D2**：oneOf/anyOf（属性级 string **const** 分支、根级 oneOf const 分支、属性级整数 anyOf）既未被认领也未 400，返回 200 自由文本——直接违反“要么实现要么显式 400”。**可工作的形态**是 smoke 里的 **enum 分支** oneOf（`chat-json-schema-oneof`/`chat-json-schema-root-oneof`）；const 分支本可折叠为单值 enum，是低风险修复点，anyOf 需先定策略（拒绝或折叠）。
+**对照**：allOf+required、additionalProperties:true+required 子集、数组 min/maxItems 的活体值均合法。
+**处置**：P0 入队，按“先成对门取证再改”执行——D1 加“定义在前/在后”成对门后修检测器定位；D2 先查 smoke 是否已有可工作的 oneOf 夹具，再决定 blanket 400 还是新增认领检测器。
+**证据**：`claims_f539.log`。
+
 

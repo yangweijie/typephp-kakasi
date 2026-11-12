@@ -4735,3 +4735,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 - `dependentRequired` 子集 → 400 点名 `dependentRequired`；items pattern 含元字符 `^a.c$` → 400 点名 pattern 元字符——与表一致。
 **记法**：**静态“可判”与运行时“被认领”是两种事实**，支持表只能写后者；核对支持表要发真请求并验值，不能读门字段。反过来，静态裁判列出关键字也不代表运行时一定拒绝（F537），两个方向都要活体验证。
 **影响**：表头改为“以活体为准”；`not` 数值 const 与根级 `contains` const 从“支持”降级为“静态可判、运行时 400”，除非未来新增认领它们的检测器。
+
+## F539（2026-11-12）：两类**静默违反**（200 + 自由文本）——本地 `$ref` 的顺序依赖与 oneOf/anyOf 无人认领
+**证据**（`claims_f539.log`，全新 8000、temperature 0）：
+- `{"definitions":{…},"properties":{"city":{"$ref":"#/definitions/c"}}}` → **200 自由文本**；把 `definitions` 放到 `properties` **之后** → 200 `{"city":"…"}` 合法。**`$ref` 支持是顺序依赖的**：定义在前时 schema 被整体忽略。
+- 属性级 `oneOf`（两个 string const）、根级 `oneOf`（const 分支）、属性级 `anyOf`（整数界）→ 全部 **200 自由文本**。oneOf/anyOf 既未被检测器认领、也未被拒绝——违反“要么实现要么显式 400”的项目不变量。**精确边界**：smoke 里可工作的 oneOf 是 **enum 分支**（`chat-json-schema-oneof`/`chat-json-schema-root-oneof`，`{type:string,enum:[…]}`）；换成 **const 分支**或 **anyOf** 即落空。const 分支本可等价折叠成单值 enum，是低风险修复点。
+- 同批对照：`allOf`+required、`additionalProperties:true`+required 子集、数组 min/maxItems 的活体值均合法。
+**定位**：这是 F534/F535 同族但**更早一级**的问题——空计划/无人认领时不是落到错误值，而是落到**无约束生成**，且状态码 200。检测入口对 `$ref`/`oneOf`/`anyOf` 没有“无人认领就拒绝”的兜底。
+**队列（P0，按顺序）**：D1 `$ref` 顺序依赖（检测器应在整包 schema 上定位 `definitions`/`$defs`，不依赖键序，并加“定义在前/在后”成对门）；D2 oneOf/anyOf 的 fail-closed 400（先查 smoke 是否有可工作的 oneOf 夹具，再决定 blanket 拒绝或加认领检测器），两者都必须先有活体红证再改。
+**记法**：**“支持”必须在两种键序、两种分支位置都取证**；单次活体通过只证明一条路径。

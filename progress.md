@@ -2326,3 +2326,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修正**：支持表头改为“以活体为准”；`not` 数值 const / 根级 `contains` const 从“支持”降为“静态可判、运行时 400”。
 - **证据**：`claims_f538.log`（六条原样输出）。
 
+## F539（2026-11-12）：两类静默违反（200 + 自由文本）
+- **D1 本地 `$ref` 顺序依赖**：`definitions` 在 `properties` 之前 → 200 自由文本；放在之后 → 200 合法对象。
+- **D2 oneOf/anyOf 无人认领**：属性级 oneOf（string const）、根级 oneOf、属性级 anyOf（整数界）全部 200 自由文本——未实现也未 400。
+- **对照**：allOf+required、additionalProperties:true+required、数组 min/maxItems 均合法。
+- **处置**：入队 P0（先成对门取证再改：$ref 两种键序、oneOf 是否已有可工作夹具）；证据 `claims_f539.log`。
+
