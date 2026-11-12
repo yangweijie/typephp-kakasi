@@ -860,6 +860,17 @@ cases = [
      {"type": "array", "items": {"type": "string", "const": "paris"}},
      lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
      and len(json.loads(txt)) >= 1 and all(x == "paris" for x in json.loads(txt))),
+    # F530: a root array whose single-schema `items` evaluates every element makes unevaluatedItems
+    # vacuous, whatever its value; a prefixItems tuple leaves elements unevaluated (control).
+    ("uneval_root_vacuous_ok", "Name some cities.",
+     {"type": "array", "items": {"type": "string"},
+      "unevaluatedItems": {"type": "integer"}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1 and all(isinstance(x, str) for x in json.loads(txt))),
+    ("uneval_root_tuple_refuse", "Give the number.",
+     {"type": "array", "prefixItems": [{"type": "string"}],
+      "unevaluatedItems": {"type": "integer"}},
+     lambda code, txt: code == 400 and ("unevaluatedItems" in txt or "prefixItems" in txt)),
 ]
 
 bad = 0

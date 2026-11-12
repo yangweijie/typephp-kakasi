@@ -1987,3 +1987,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**（`selftest_f529.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.582×**；哨兵 **0**；BUILD_OK（`build_f529`）。
 **代价（如实记录）**：窗口再内缩一位——整数上界 −990…−999 现为显式 400（此前 −991 起）；10 位小数为最后一档（double 有效位约 15–16）。
 
+## F530 计划与完成（unevaluatedItems 的根数组真空形态）
+**核心思路**：JSON Schema 中 `items` 的 schema 形式会评估**所有**元素，故根数组上的 `unevaluatedItems` 对任何值（false/true/schema）都作用于零个元素 → 真空满足。`items` 为元组（`items` 数组 / `prefixItems`）时后续元素未评估，仍拒绝。
+**实现**：`api_schema_unevaluated_items_ok` 增根数组分支（无 properties + 有 `unevaluatedItems`）：前缀项/元组 items ⇒ 0；`type:array` + `items:{schema}` ⇒ 1。根 string 数组检测器的尾巴容忍 `unevaluatedItems`（真空语义不改变发射）。
+**过程**：首轮门用错入口（`prefixItems` 由 structural 判）与**变量名撞名**（`$sfBF/$sfBG/$sfBH/$sfBI` 已被 contains 门复用）导致 1 FAIL；改为唯一名 `$ueRootVac/$ueRootTuple` 后 182/0。活体曾返回对象 `{"unevaluatedItems":102409}`——根因而非守卫而是根数组检测器拒绝多余关键字；修正后返回字符串数组。
+**门**：`ueRootVac=[]`、`ueRootTuple=[prefixItems]`。
+**活体**：`uneval_root_vacuous_ok` 200 `["New York City,"]`（字符串数组、合法）；`uneval_root_tuple_refuse` 400 点名 prefixItems。
+**梯**：自检 **182/0**（`selftest_f530e.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.581×**；哨兵 **0**；BUILD_OK（`build_f530e`）。
+

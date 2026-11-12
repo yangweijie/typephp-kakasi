@@ -2273,3 +2273,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门/活体**：`num_dec10`/`fm_d10`/`win_ten`；`{"n":1.5111111111}`、`{"n":0.0002469134}`、−990/−991 上界 400。
 - **代价**：整数上界 −990…−999 变为显式 400；10 位为末档。
 - **梯**：自检 182/0（`selftest_f529.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.582×；哨兵 0。
+
+## ▶ 状态（F530，已完成）——unevaluatedItems 的根数组真空形态
+- **思路**：`items`（schema）评估所有元素 ⇒ 根数组 `unevaluatedItems` 真空；tuple/prefixItems 仍拒绝。
+- **实现**：检测器根数组分支 + 根 string 数组检测器容忍该关键字。
+- **过程**：门入口/变量名撞名各 1 FAIL；活体曾返回对象（检测器拒绝多余关键字），修正后返回数组。
+- **门/活体**：`ueRootVac=[]`、`ueRootTuple=[prefixItems]`；`["New York City,"]`、tuple 400。
+- **梯**：自检 182/0（`selftest_f530e.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.581×；哨兵 0。
+

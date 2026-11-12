@@ -2794,10 +2794,14 @@ function api_response_schema_top_array_string(string $body): int
     if ($schema == "") {
         return 0;
     }
+    // F530: unevaluatedItems is vacuous on this shape (items evaluates every element), so the
+    // detector tolerates it: the writer still emits a plain string array.
     if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*'
         . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
         . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}'
-        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}\s*$/', $schema) != 1) {
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
+        . '(?:\s*,\s*"unevaluatedItems"\s*:\s*(?:true|false|\{[^{}]*\}))*'
+        . '\s*\}\s*$/', $schema) != 1) {
         return 0;
     }
     return 1;
@@ -11189,6 +11193,21 @@ function api_schema_unevaluated_props_ok(string $schema): int
 // a schema) then applies to no item. Same root-level guard.
 function api_schema_unevaluated_items_ok(string $schema): int
 {
+    // F530: a TOP-LEVEL array whose `items` is a single schema evaluates EVERY element, so
+    // unevaluatedItems applies to none and is vacuously satisfied for any value. A tuple
+    // (`items` as an array, or prefixItems) leaves later elements unevaluated and keeps the refusal.
+    if (strpos($schema, "\"unevaluatedItems\"") !== false && strpos($schema, "\"properties\"") === false) {
+        if (preg_match('/"prefixItems"\s*:\s*\[/', $schema) == 1) {
+            return 0;
+        }
+        if (preg_match('/"items"\s*:\s*\[/', $schema) == 1) {
+            return 0;
+        }
+        if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{/', $schema) == 1) {
+            return 1;
+        }
+        return 0;
+    }
     $pp = strpos($schema, "\"properties\"");
     if ($pp === false) {
         return 0;
@@ -19286,6 +19305,10 @@ function main(): void
     $sfBC = api_schema_keywords_unsupported('{"properties":{"cities":{"type":"array","items":{"type":"string"}}},"unevaluatedItems":false}');
     $sfBD = api_schema_keywords_unsupported('{"properties":{"city":{"type":"string"},"note":{"type":"string"}},"unevaluatedItems":false}');
     $sfBE = api_schema_keywords_unsupported('{"properties":{"a":{"type":"string"},"unevaluatedProperties":false}}');
+    // F530: a root array with a single-schema `items` evaluates every element, so
+    // unevaluatedItems is vacuous; a prefixItems tuple leaves elements unevaluated (control).
+    $ueRootVac = api_schema_structural_unsupported('{"type":"array","items":{"type":"string"},"unevaluatedItems":{"type":"integer"}}');
+    $ueRootTuple = api_schema_structural_unsupported('{"type":"array","prefixItems":[{"type":"string"}],"unevaluatedItems":{"type":"integer"}}');
     // F454: minContains/maxContains fold into the element bounds on the F449 contains form; an
     // unservable pair (ceiling exceeded, min above max) is refused by name, and the bounds function
     // must return the folded interval the writers will receive.
@@ -19770,6 +19793,7 @@ function main(): void
         . "] if_req_route=" . count($ifReqRoute)
         . "] uneval_props=[" . $sfBA . "] uneval_props_schema=[" . $sfBB
         . "] uneval_items=[" . $sfBC . "] uneval_items_wrong=[" . $sfBD
+        . " ] uneval_root=[" . $ueRootVac . "] uneval_root_tuple=[" . $ueRootTuple
         . "] uneval_prop_named=[" . $sfBE . "]"
         . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
         . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
@@ -19930,6 +19954,7 @@ function main(): void
         && $sfBB == ""
         && $sfBC == ""
         && $sfBD == "unevaluatedItems"
+        && $ueRootVac == "" && $ueRootTuple == "prefixItems"
         && $sfBE == "unevaluatedProperties"
         && $sfBF == ""
         && $sfBG == ""
