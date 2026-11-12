@@ -2261,3 +2261,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：先匹配后判完成；strict 哨兵 + 候选层 fail-closed 400；pair 骨架仅 `parReq==1` 构建（F199 门控）。
 - **门/活体**：`SCHEMA-NARROW-STRICT` PASS（`{"n":-1000}`）；`narrow_neg_no_bad_json` 200 合法；smoke 115/0。
 - **梯**：自检 **182/0**（`selftest_f527c.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.545×；哨兵 0。
+
+## ▶ 状态（F528，已完成）——顶层 string enum/const 数组
+- **结论**：F523 畸形引号的真因是 F527 的前缀完成 bug（短候选提前结束），不是 tokenizer。
+- **实现**：检测器 `@` 分支 + 写入器带引号模式；`$enumFlat` 已排他。
+- **门/活体**：`SCHEMA-TOPARR-STRENUM` PASS；`["paris","paris"]`、unique `["paris","lyon","nice"]`、const `["paris"]`。
+- **梯**：自检 182/0（`selftest_f528.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.592×；哨兵 0。

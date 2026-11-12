@@ -833,6 +833,22 @@ cases = [
      or (code == 200 and valid_json(txt)
          and isinstance(json.loads(txt).get("n"), int)
          and -1000 <= json.loads(txt)["n"] <= -992)),
+    # F528: TOP-LEVEL STRING enum/const arrays ride the same root route with quoted literals.
+    ("top_str_enum_ok", "Name some cities.",
+     {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon", "nice"]}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1
+     and all(x in ("paris", "lyon", "nice") for x in json.loads(txt))),
+    ("top_str_enum_unique_ok", "Name some cities.",
+     {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon", "nice"]},
+      "uniqueItems": True, "minItems": 2},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 2 and len(set(json.loads(txt))) == len(json.loads(txt))
+     and all(x in ("paris", "lyon", "nice") for x in json.loads(txt))),
+    ("top_str_const_ok", "Name a city.",
+     {"type": "array", "items": {"type": "string", "const": "paris"}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1 and all(x == "paris" for x in json.loads(txt))),
 ]
 
 bad = 0

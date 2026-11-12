@@ -2649,6 +2649,34 @@ function api_schema_top_array_scalar_enum_parts(string $schema): string
     if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"(?:integer|number|boolean)"\s*,\s*"const"\s*:\s*(true|false|-?[0-9]+(?:\.[0-9]+)?)\s*\}' . $tail . '\s*\}$/', $schema, $mc) == 1) {
         return "#" . $mc[1];
     }
+    // F528: a STRING enum/const items block rides the same root-array route; the "@" marker tells
+    // the writer the literals are quoted.
+    $mse = [];
+    if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}' . $tail . '\s*\}$/', $schema, $mse) == 1) {
+        $svals = api_list($mse[1]);
+        if (count($svals) < 1) {
+            return "";
+        }
+        $senc = "";
+        for ($i = 0; $i < count($svals); $i++) {
+            if ($svals[$i] == "" || strpos($svals[$i], "~") !== false
+                || strpos($svals[$i], ",") !== false || strpos($svals[$i], "\"") !== false
+                || strpos($svals[$i], "\\") !== false) {
+                return "";
+            }
+            $senc = $senc == "" ? $svals[$i] : $senc . "~" . $svals[$i];
+        }
+        return "@" . $senc;
+    }
+    $msc = [];
+    if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*,\s*"const"\s*:\s*"([^"]*)"\s*\}' . $tail . '\s*\}$/', $schema, $msc) == 1) {
+        $sv = $msc[1];
+        if ($sv == "" || strpos($sv, "~") !== false || strpos($sv, ",") !== false
+            || strpos($sv, "\\") !== false) {
+            return "";
+        }
+        return "@" . $sv;
+    }
     return "";
 }
 
@@ -2676,6 +2704,8 @@ function api_top_scalar_enum_value(string $ids, string $csv, int $maxItems, int 
     if (count($vals) < 1 || $vals[0] == "") {
         return "";
     }
+    // F528: "@" marks quoted string values, "#" bare scalar values.
+    $quoted = substr($csv, 0, 1) == "@" ? 1 : 0;
     $bMin = 0;
     $bMax = 0;
     if ($bounds != "") {
@@ -2701,8 +2731,11 @@ function api_top_scalar_enum_value(string $ids, string $csv, int $maxItems, int 
             return "";
         }
     }
-    $cands = $vals;
-    $s = api_constrained($ids, ["["], 64, $useCache);
+    $cands = [];
+    for ($i = 0; $i < count($vals); $i++) {
+        $cands[] = $quoted == 1 ? $vals[$i] . "\"" : $vals[$i];
+    }
+    $s = api_constrained($ids, [$quoted == 1 ? "[\"" : "["], 64, $useCache);
     if ($s == "") {
         return "";
     }
@@ -2712,7 +2745,15 @@ function api_top_scalar_enum_value(string $ids, string $csv, int $maxItems, int 
         if ($unique == 1 && $it >= count($vals)) {
             break;
         }
-        $f = api_constrained_continue($unique == 1 ? [$vals[$it]] : $cands, 24);
+        if ($it > 0 && $quoted == 1) {
+            $op = api_constrained_continue(["\""], 4);
+            if ($op == "") {
+                return "";
+            }
+            $s = $s . "," . $op;
+        }
+        $f = api_constrained_continue($unique == 1
+            ? [($quoted == 1 ? $vals[$it] . "\"" : $vals[$it])] : $cands, 24);
         if ($f == "") {
             return "";
         }
@@ -19024,6 +19065,9 @@ function main(): void
     // F522: a TOP-LEVEL scalar enum array (root array) is a finite value table too.
     $topScalarEnum = api_response_schema_top_array_scalar_enum('{"json_schema":{"schema":{"type":"array","items":{"type":"integer","enum":[2,5,9]}}}}');
     $topScalarConst = api_response_schema_top_array_scalar_enum('{"json_schema":{"schema":{"type":"array","items":{"type":"boolean","const":true}}}}');
+    // F528: the string variant uses the "@" (quoted) marker.
+    $topStrEnum = api_response_schema_top_array_scalar_enum('{"json_schema":{"schema":{"type":"array","items":{"type":"string","enum":["paris","lyon","nice"]}}}}');
+    $topStrConst = api_response_schema_top_array_scalar_enum('{"json_schema":{"schema":{"type":"array","items":{"type":"string","const":"paris"}}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] p_len_ok=[" . $pLenOk . "] p_len_bad=[" . $pLenBad
         . "] p_len_range=[" . $pLenRange . "]"
@@ -19045,6 +19089,7 @@ function main(): void
         . "] num_enum_items=[" . $numEnumItems . "] num_const_items=[" . $numConstItems . "] num_enum_uniq=[" . $numEnumUniq
         . "] bool_enum_items=[" . $boolEnumItems . "] bool_const_items=[" . $boolConstItems
         . "] top_scalar_enum=[" . $topScalarEnum . "] top_scalar_const=[" . $topScalarConst
+        . "] top_str_enum=[" . $topStrEnum . "] top_str_const=[" . $topStrConst
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == ""
         && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
@@ -19070,6 +19115,7 @@ function main(): void
         && $numEnumItems == "nums|#2~5~9" && $numConstItems == "nums|#7" && $numEnumUniq == ""
         && $boolEnumItems == "flags|#true~false" && $boolConstItems == "flags|#true"
         && $topScalarEnum == "#2~5~9" && $topScalarConst == "#true"
+        && $topStrEnum == "@paris~lyon~nice" && $topStrConst == "@paris"
         && $kwAY == "cities") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
@@ -20834,6 +20880,23 @@ function main(): void
         echo "SCHEMA-TOPARR-SCALAR: PASS (bare-literal enum array)\n";
     } else {
         echo "SCHEMA-TOPARR-SCALAR: FAIL\n";
+    }
+    // F528: the quoted ("@") variant emits a JSON string array.
+    $tseIds = tok_chat("user", "Name two cities.") . "," . tok_chat_open("assistant");
+    $tseCsv = "@paris~lyon";
+    $tseOut = api_top_scalar_enum_value($tseIds, $tseCsv, 2, 0, "2:2", 1);
+    $tseParts = explode(",", $tseOut);
+    $tseBase = count(explode(",", $tseIds));
+    $tseText = "";
+    for ($i = $tseBase; $i < count($tseParts); $i++) {
+        $tseText = $tseText . gguf_token_str((int) $tseParts[$i]);
+    }
+    $tseText = str_replace("Ġ", " ", $tseText);
+    echo "SCHEMA-TOPARR-STRENUM text=[" . $tseText . "]\n";
+    if (preg_match('/^\["paris","lyon"\]$/', $tseText) == 1 && api_json_ok($tseText) == 1) {
+        echo "SCHEMA-TOPARR-STRENUM: PASS (quoted enum array)\n";
+    } else {
+        echo "SCHEMA-TOPARR-STRENUM: FAIL\n";
     }
 
     // F526: the candidates tier must never emit TRUNCATED JSON for the four-digit negative span

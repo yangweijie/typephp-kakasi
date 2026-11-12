@@ -1,0 +1,6 @@
+WARM ms=1309.662103653 err=
+API_LISTEN 8000
+ATTN_MODE 2
+SPEC_WINDOW 2
+SESSION request completion=10 reason=complete json=ok tools=none seed=12345 cache=-1
+SESSION request completion=14 reason=complete json=ok tools=none seed=12345 cache=-1

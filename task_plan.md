@@ -1973,3 +1973,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体**：`narrow_neg_no_bad_json` 200 `{"n":-1000}`（合法且在界内）；smoke 115/0（含 `chat-tool-parallel-calls` 控制恢复为 1 调用）。
 **梯**：自检 **182/0**（`selftest_f527c.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.545×**；哨兵 **0**；BUILD_OK（`build_f527c`）。
 
+## F528 计划与完成（顶层 string enum/const 数组：F523 失败真因为 F527 的完成逻辑）
+**结论**：F523 的引号畸形（`["paris,"paris,…]`）并非 tokenizer，而是 `api_constrain_loop` 的前缀完成 bug——较短的兄弟候选在元素/闭引号前提前结束，输出停在半个引号。F527 修复后，同一实现（`@` 带引号标记 + 共享写入器）**活体正确**。
+**实现**：检测器新增 string enum/const 根数组分支（`@v1~v2`，值受 keyed enum 同款编码约束）；写入器按 `@` 标记发带引号字面量（head/分隔/元素一致）；`$enumFlat` 排他条件已覆盖（检测器非空）。
+**门**：`top_str_enum=[@paris~lyon~nice]`、`top_str_const=[@paris]`、`SCHEMA-TOPARR-STRENUM text=[["paris","lyon"]]` PASS。
+**活体**：`top_str_enum_ok` 200 `["paris","paris"]`、`top_str_enum_unique_ok` 200 `["paris","lyon","nice"]`、`top_str_const_ok` 200 `["paris"]`。
+**梯**：自检 **182/0**（`selftest_f528.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.592×**；哨兵 **0**；BUILD_OK（`build_f528`）。
+
