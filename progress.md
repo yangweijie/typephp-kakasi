@@ -2255,3 +2255,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **复现**：门内 `SCHEMA-NARROW cands=9 text=[{"n":-1000] json=0`（cache=0），与 F515 活体一致、与缓存无关。
 - **已排除**：候选串分词（TOKPROBE 正确）、continue/界写入器容错闭合（F524 strict 未改变）。
 - **下一步**：strict 哨兵 + 候选层 fail-closed 400 + 门升级为断言。
+
+## ▶ 状态（F527，已完成）——候选前缀匹配顺序 + 并行门控（F515 真因）
+- **真因**：短候选（7 token 的 `-999…-992`）未校验前缀就设 `done`，砍掉 `-1000` 的 `}`；非 tokenizer。
+- **实现**：先匹配后判完成；strict 哨兵 + 候选层 fail-closed 400；pair 骨架仅 `parReq==1` 构建（F199 门控）。
+- **门/活体**：`SCHEMA-NARROW-STRICT` PASS（`{"n":-1000}`）；`narrow_neg_no_bad_json` 200 合法；smoke 115/0。
+- **梯**：自检 **182/0**（`selftest_f527c.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.545×；哨兵 0。

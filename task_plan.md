@@ -1966,3 +1966,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **已排除**：候选串分词（`TOKPROBE`：`-1000`→`-|1|0|0|0`、`paris"`→`par|is|"` 正确）；`api_constrained_continue` 与界写入器的容错闭合（F524 的 strict 实验未改变本复现）。
 **下一步（规格）**：①恢复 strict 循环（被 block 的强制步返回哨兵）；②候选层分支 `count($schemaCands)>0 && $enumOut==""` 时 **fail-closed**：走与守卫一致的 400（"structured decode failed"），绝不落到自由生成；③把本门升级为断言（text 必须为空或合法 JSON），作为 F515 的回归门。判据：门内 `text=[]`，活体窄区间 400 或合法 JSON。
 
+## F527 计划与完成（候选前缀匹配顺序修复 + 并行门控：F515 真因闭合）
+**真因**：`api_constrain_loop` 在 `count($cand[$i]) == $d` 时**不校验已选前缀**就设 `$done=1`；对 `[-1000,-992]`，7 token 的 `{"n":-999}` 等短候选在 d=7 提前宣告完成，`-1000` 的末尾 `}` 被砍（200 截断 JSON）。**不是 tokenizer**（TOKPROBE 证明编码正确）。
+**实现**：①匹配顺序改为“先逐 token 比对已选前缀，再判完成/提供下一步”；②`api_constrain_loop` 增 strict 模式（强制步被 block 且重启耗尽 ⇒ 哨兵），`api_constrained(-continue)` 以空返回失败；③候选层 `schemaCands>0 && enumOut==""` 时 **fail-closed 400**（绝不落自由生成）；④顺带修复 F199 门控：`tool_choice:"required"` 的成对骨架原先**无条件**加入候选，单调用控制会回两调用（旧截断 bug 恰好掩盖）——pair 循环改为仅 `parReq==1` 构建。
+**门**：`SCHEMA-NARROW-STRICT cands=9 text=[{"n":-1000}]` PASS（常驻断言：候选层不得吐截断 JSON）。
+**活体**：`narrow_neg_no_bad_json` 200 `{"n":-1000}`（合法且在界内）；smoke 115/0（含 `chat-tool-parallel-calls` 控制恢复为 1 调用）。
+**梯**：自检 **182/0**（`selftest_f527c.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.545×**；哨兵 **0**；BUILD_OK（`build_f527c`）。
+

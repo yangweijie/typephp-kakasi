@@ -38,6 +38,13 @@ def ask(prompt, schema, max_tokens=64):
         return e.code, e.read().decode()[:900]
 
 
+def valid_json(text):
+    try:
+        json.loads(text)
+        return True
+    except Exception:
+        return False
+
 def val_of(text, key):
     try:
         return json.loads(text)[key]
@@ -817,6 +824,15 @@ cases = [
      {"type": "array", "items": {"type": "number", "const": 7},
       "uniqueItems": True, "minItems": 2},
      lambda code, txt: code == 400 and "uniqueItems" in txt),
+    # F526: the four-digit negative span the candidates tier used to answer with TRUNCATED JSON
+    # (200 {"n":-1000). The invariant is now "never 200 with invalid JSON": the decode fails closed
+    # (explicit 400), or a well-formed in-bounds answer is served.
+    ("narrow_neg_no_bad_json", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": -1000, "maximum": -992}}},
+     lambda code, txt: code == 400
+     or (code == 200 and valid_json(txt)
+         and isinstance(json.loads(txt).get("n"), int)
+         and -1000 <= json.loads(txt)["n"] <= -992)),
 ]
 
 bad = 0

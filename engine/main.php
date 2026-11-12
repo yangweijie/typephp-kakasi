@@ -366,7 +366,7 @@ function api_cache_should_store(int $hit, int $promptN): int
 // position (cold session: "no logits computed"), not because the grammar ran out. Re-prefilling
 // the tokens consumed so far restores exactly the state a successful decode would have left, so
 // one retry per blocked step recovers the rest of the forced literal instead of truncating it.
-function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = ""): array
+function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = "", int $strict = 0): array
 {
     $cand = [];
     for ($i = 0; $i < count($vals); $i++) {
@@ -384,20 +384,26 @@ function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = "")
         $allowed = "";
         $done = 0;
         for ($i = 0; $i < count($cand); $i++) {
-            if (count($cand[$i]) < $d + 1) {
-                if (count($cand[$i]) == $d) {
-                    $done = 1;      // this candidate is complete and its prefix matched
-                }
-                continue;
-            }
+            // F527: match the chosen prefix FIRST, then ask whether this candidate is complete.
+            // The old order set $done for ANY candidate whose length equalled d, so a shorter
+            // sibling (the 7-token {"n":-999}) ended the walk one token early and {"n":-1000}
+            // shipped without its closing brace.
             $match = 1;
-            for ($j = 0; $j < $d; $j++) {
+            $lim = $d < count($cand[$i]) ? $d : count($cand[$i]);
+            for ($j = 0; $j < $lim; $j++) {
                 if ($chosen[$j] != $cand[$i][$j]) {
                     $match = 0;
                     break;
                 }
             }
             if ($match == 0) {
+                continue;
+            }
+            if (count($cand[$i]) == $d) {
+                $done = 1;      // this candidate is complete and its prefix matched
+                continue;
+            }
+            if (count($cand[$i]) < $d + 1) {
                 continue;
             }
             $allowed = $allowed == "" ? $cand[$i][$d] : $allowed . "," . $cand[$i][$d];
@@ -410,6 +416,12 @@ function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = "")
             // Only a step the grammar fully determines (one forced id) is worth re-prefilling: a
             // refusal there is the cold 'no logits computed' defect, not the model declining.
             if ($restartIds == "" || $restarts >= 4 || strpos($allowed, ",") !== false) {
+                // F526: STRICT callers must not mistake a truncated forced literal for success -
+                // a blocked step leaves the candidate incomplete (the four-digit negative case
+                // answered {"n":-1000). Signal failure instead.
+                if ($strict == 1) {
+                    return ["-1"];
+                }
                 break;
             }
             $rp = $restartIds;
@@ -439,7 +451,10 @@ function api_constrained(string $ids, array $vals, int $maxSteps, int $useCache 
     if ($hitc < 0 && model_session_start(0, $ids) != 0) {
         return "";
     }
-    $chosen = api_constrain_loop($vals, $maxSteps, $ids);
+    $chosen = api_constrain_loop($vals, $maxSteps, $ids, 1);
+    if (count($chosen) == 1 && $chosen[0] == "-1") {
+        return "";
+    }
     if (api_cache_should_store($hitc, $promptNc) == 1) {
         model_cache_store(0, $ids, $pcPathC);
     }
@@ -454,7 +469,10 @@ function api_constrained(string $ids, array $vals, int $maxSteps, int $useCache 
 // after a grammar-constrained value). Returns the chosen ids as CSV, no prompt prefix.
 function api_constrained_continue(array $vals, int $maxSteps): string
 {
-    $chosen = api_constrain_loop($vals, $maxSteps);
+    $chosen = api_constrain_loop($vals, $maxSteps, "", 1);
+    if (count($chosen) == 1 && $chosen[0] == "-1") {
+        return "";
+    }
     $s = "";
     for ($i = 0; $i < count($chosen); $i++) {
         if ($i > 0) {
@@ -14426,11 +14444,15 @@ function api_serve(int $port): void
                 }
                 // enum/const constraint (non-streaming): decode only inside the listed answers.
                 $enumOut = "";
+                $decodeFail = 0;
                 // A schema with more than one "properties" block nests objects; the bare-enum
                 // branch below would answer only the enum literal and drop every level (F254).
                 $enumFlat = substr_count($body, "\"properties\"") < 2 ? 1 : 0;
                 if (count($schemaCands) > 0) {
                     $enumOut = api_constrained($ids, $schemaCands, 128, $prefixCache);
+                    if ($enumOut == "") {
+                        $decodeFail = 1;    // F526: fail closed below, never free-generate
+                    }
                 } else if ($enumFlat == 1 && api_response_schema_array_enum($body) == ""
                     && api_response_schema_top_array_scalar_enum($body) == ""
                     && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', api_schema_strip_root_not($body), $em)) {
@@ -14755,20 +14777,35 @@ function api_serve(int $port): void
                     if ($parReq == 1 && count($reqWire) > 1) {
                         $reqSkels = [];
                     }
-                    for ($ra = 0; $ra < count($reqWire); $ra++) {
-                        for ($rb = 0; $rb < count($reqWire); $rb++) {
-                            if ($ra == $rb) {
-                                continue;
+                    // F527b: pair candidates exist only when the caller ASKED for parallel calls -
+                    // the loop below used to append them unconditionally, so the single control
+                    // answered two calls (the old truncation bug happened to hide it).
+                    if ($parReq == 1 && count($reqWire) > 1) {
+                        for ($ra = 0; $ra < count($reqWire); $ra++) {
+                            for ($rb = 0; $rb < count($reqWire); $rb++) {
+                                if ($ra == $rb) {
+                                    continue;
+                                }
+                                // Every pair costs a candidate to scan at each decoded step, so the
+                                // cross product is capped rather than allowed to grow squared.
+                                if (count($reqSkels) >= 24) {
+                                    break;
+                                }
+                                $reqSkels[] = $reqWire[$ra] . "\n" . $reqWire[$rb];
                             }
-                            // Every pair costs a candidate to scan at each decoded step, so the
-                            // cross product is capped rather than allowed to grow squared.
-                            if (count($reqSkels) >= 24) {
-                                break;
-                            }
-                            $reqSkels[] = $reqWire[$ra] . "\n" . $reqWire[$rb];
                         }
                     }
                     $enumOut = api_constrained($ids, $reqSkels, 192, $prefixCache);
+                }
+                if ($decodeFail == 1) {
+                    // F526: the candidates tier could not complete a forced decode (the four-digit
+                    // negative truncation family). Refuse explicitly instead of free-generating.
+                    $status = "400 Bad Request";
+                    $payload = "{\"error\":{\"message\":\"structured output could not be decoded for this schema\",\"type\":\"invalid_request_error\"}}";
+                    fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                             . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                    fclose($c);
+                    continue;
                 }
                 if ($toolChoice != "") {
                     // Flat enum/const properties give real arguments; otherwise the object stays {}.
@@ -20797,6 +20834,27 @@ function main(): void
         echo "SCHEMA-TOPARR-SCALAR: PASS (bare-literal enum array)\n";
     } else {
         echo "SCHEMA-TOPARR-SCALAR: FAIL\n";
+    }
+
+    // F526: the candidates tier must never emit TRUNCATED JSON for the four-digit negative span
+    // (the F515 defect): with the strict loop the decode either completes or returns empty.
+    $nvBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":'
+        . '{"type":"object","properties":{"n":{"type":"integer","minimum":-1000,"maximum":-992}}}}}}';
+    $nvCands = api_response_schema_candidates($nvBody);
+    $nvIds = tok_chat("user", "Give the number.") . "," . tok_chat_open("assistant");
+    $nvOut = api_constrained($nvIds, $nvCands, 128, 0);
+    $nvParts = explode(",", $nvOut);
+    $nvBase = count(explode(",", $nvIds));
+    $nvText = "";
+    for ($i = $nvBase; $i < count($nvParts); $i++) {
+        $nvText = $nvText . gguf_token_str((int) $nvParts[$i]);
+    }
+    $nvText = str_replace("Ġ", " ", $nvText);
+    echo "SCHEMA-NARROW-STRICT cands=" . count($nvCands) . " text=[" . $nvText . "]\n";
+    if (count($nvCands) == 9 && ($nvText == "" || api_json_ok($nvText) == 1)) {
+        echo "SCHEMA-NARROW-STRICT: PASS (four-digit negative candidates complete; no truncation)\n";
+    } else {
+        echo "SCHEMA-NARROW-STRICT: FAIL\n";
     }
 
     // Top-level number array: digits only, list closed by the grammar.

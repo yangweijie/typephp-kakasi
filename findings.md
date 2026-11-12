@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F522）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F527）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3708,7 +3708,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | enum / const / bool | **支持** | `CONST-*`/`BOOL` |
 | pattern：字面、字面 alternation、`^…$`/`^(…)$` | **支持** | `SCHEMA-PAT-REJECT` 0 侧 + 活体 200 |
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
-| 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`（F405/F419） |
+| 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位；**四位及以上负值**经候选层完整解码——F527 修前缀匹配顺序，短候选不再提前结束） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`/`SCHEMA-NARROW-STRICT`/`narrow_neg_no_bad_json`（F405/F419/F527） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
 | 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至九位小数，可负**；十位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec5`/`num_dec6`/`num_dec7`/`num_dec8`/`num_dec9`/`dec*_text`/`float_dec6_served`/`float_dec7_served`/`float_dec8_served`/`float_dec9_served`（F439–F456/F473/F512/F513/F516） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
