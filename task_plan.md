@@ -2040,4 +2040,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f535c.log`，SCHEMA-DEEP200 PASS）；bounds **PASS**（`f535c`，deep260 400）；8000 **115/0**、8001 par/fair **0**、scaling **1.559×**、哨兵 **0**（`gate_live f535c`）；required/count/pattern 在 `f535b` 上绿（同一服务路径，最终改动只影响谓词自身）。BUILD_OK（`build_f535c`）。
 **诚实边界**：8000 的四个嵌套分发点都在 `api_serve` 内、共用这一条拒绝链——流式 `stream:true` 实测 260 层同样 400（`serve_f535e` 探针），200 层正常流式输出 k0…k199；8001 并行服务对任何 `json_schema` 直接 400 “parallel mode: streaming text only”（`serve_par_f535d` 探针），不存在静默降级。故未接的传输仅为未来新增入口。
 
+## F537（2026-11-12）：`unevaluatedProperties:false` 真空形态已服务（补活体门）
+**发现**：扁平对象在键全部声明时，`unevaluatedProperties:false`（带/不带 `additionalProperties:false`）返回 200 且值合法（键集恰为声明集）——该关键字作用于零个属性，真空满足。静态判定 `api_schema_keywords_unsupported` 仍列出关键字名，说明**静态拒绝清单是超集、不是运行时答案**（形状检测器先认领）。
+**改动**：bounds harness 增 `uneval_props_closed_ok` / `uneval_props_open_ok`（断言 200 + 精确键集）；无引擎改动。
+**梯**：bounds **PASS**（`f536b`）；其余不受影响。
+**队列修正**：此形态从“未实现”移入已服务（以活体值为准）。
+
 

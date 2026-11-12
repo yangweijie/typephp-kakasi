@@ -937,6 +937,21 @@ cases = [
      {"type": "array", "items": {"type": "boolean"}, "unevaluatedItems": False},
      lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
      and len(json.loads(txt)) >= 1 and all(isinstance(x, bool) for x in json.loads(txt))),
+    # F536: unevaluatedProperties:false is VACUOUS whenever every emitted key is declared in
+    # properties (the keyword constrains only properties no other keyword evaluated). The flat
+    # writer emits exactly the declared keys, with or without additionalProperties:false, so both
+    # forms serve a legal value; the keyword judge listing the name is a static superset, not the
+    # runtime answer. The assertions pin the key set, which is what makes the value legal.
+    ("uneval_props_closed_ok", "Name a city.",
+     {"type": "object", "properties": {"a": {"type": "string"}},
+      "additionalProperties": False, "unevaluatedProperties": False},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), dict)
+     and set(json.loads(txt).keys()) == {"a"} and isinstance(json.loads(txt)["a"], str)),
+    ("uneval_props_open_ok", "Name a city.",
+     {"type": "object", "properties": {"a": {"type": "string"}},
+      "unevaluatedProperties": False},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), dict)
+     and set(json.loads(txt).keys()) == {"a"} and isinstance(json.loads(txt)["a"], str)),
 ]
 
 bad = 0

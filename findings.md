@@ -4721,3 +4721,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结论**：8000 的四个 `api_response_schema_nested_object` 分发点（chat 非流式/流式、Anthropic、Responses）都位于 `api_serve` 内、共用同一条 13661 拒绝链，故 F535 的溢出守卫天然覆盖全部 8000 入口；`stream:true` 260 层实测 400、200 层正常输出 200 层对象。8001 并行服务对任何 `json_schema` 直接 400“parallel mode: streaming text only”，不存在静默降级。
 **记法**：**“另一个传输”要先确认是不是同一个 handler**——分发点同函数时，一个拒绝分支即覆盖；把边界写成“其他传输待接”之前，先用一次请求与一次函数边界核对把范围钉死。
 **证据**：`serve_f535e.log`（stream 探针）、`serve_par_f535d.log`（8001 探针）。
+
+## F537（2026-11-12）：`unevaluatedProperties:false` 的真空形态其实已被服务——静态判定 ≠ 运行时行为
+**发现**：扁平对象 `{"properties":{"a":{"type":"string"}},"unevaluatedProperties":false}`（带或不带 `additionalProperties:false`）活体返回 200 `{"a":"…"}`。这是**正确**的：发射器只发已声明的键，`unevaluatedProperties` 只约束“没有被其他关键字评估过的属性”，此处为零个 ⇒ 真空满足。而自检的静态判定 `api_schema_keywords_unsupported` 仍列出该关键字名（`sfF`/`uneval_props` 字段）——**静态拒绝清单是超集，不是运行时答案**：形状检测器先认领请求并发出合法值。
+**新增门**（活体，无需重建）：`uneval_props_closed_ok`、`uneval_props_open_ok`，断言 200 且键集恰为 `{a}`——用“值的合法性”而不是“判定文本”做判据。
+**记法**：**判定与认领是两层**——静态 unsupported 列表说明“若无人认领则拒绝”，不说明“一定拒绝”；给某关键字记门时必须先问哪个检测器会认领该形状，并把门写在值的合法性上。反过来说，把这类真空形态从支持表里划为“未实现”是错的。
+**证据**：`schema_bounds_f536b.log`（两门 PASS、VERDICT PASS）、`serve_f536c.log`（非流式/流式同值）。

@@ -2316,3 +2316,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f535c.log`）；bounds PASS；8000 115/0；8001 par/fair 0；scaling 1.559×；哨兵 0（`gate_live f535c`）；BUILD_OK（`build_f535c`）。
 - **边界（实测收窄）**：8000 的四个嵌套分发点同处 `api_serve`、共用拒绝链——`stream:true` 260 层实测 400、200 层正常；8001 并行服务对任何 `json_schema` 一律 400（text-only），无静默降级。
 
+## F537（2026-11-12）：`unevaluatedProperties:false` 真空形态的活体门
+- **发现**：扁平对象（键全部声明）上 `unevaluatedProperties:false` 已被服务且值合法（键集恰为声明集）；静态 `api_schema_keywords_unsupported` 列出关键字≠运行时会拒绝——形状检测器先认领。
+- **改动**：bounds harness 加 `uneval_props_closed_ok` / `uneval_props_open_ok`（200 且键集精确），无引擎改动、无需重建。
+- **梯**：bounds PASS（`f536b`，VERDICT PASS）；其余不受影响（仅测试新增）。
+
