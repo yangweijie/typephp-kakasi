@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F532）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F538；**“支持”以活体为准，仅静态门通过不算**）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -4727,3 +4727,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **新增门**（活体，无需重建）：`uneval_props_closed_ok`、`uneval_props_open_ok`，断言 200 且键集恰为 `{a}`——用“值的合法性”而不是“判定文本”做判据。
 **记法**：**判定与认领是两层**——静态 unsupported 列表说明“若无人认领则拒绝”，不说明“一定拒绝”；给某关键字记门时必须先问哪个检测器会认领该形状，并把门写在值的合法性上。反过来说，把这类真空形态从支持表里划为“未实现”是错的。
 **证据**：`schema_bounds_f536b.log`（两门 PASS、VERDICT PASS）、`serve_f536c.log`（非流式/流式同值）。
+
+## F538（2026-11-12）：六条支持表声明的活体核对——`not`/`contains` 的“支持”是静态高估
+**方法**：同一台全新 8000 服务、temperature 0，发六个 schema，逐条按“值是否合法”判定。结果（`claims_f538.log`）：
+- `not:{const:5}` + 整数界 → **400** 点名 `not`；`contains:{const:"paris"}` + items 字符串枚举 → **400** 点名 `contains`。两者在自检里的静态字段（`nt_const_num`/`cv_const` 为空=“可判”）**不代表运行时会认领**——HTTP 根级请求没有检测器认领，关键字裁判直接拒绝。
+- `if:{required:["city"]}` + then → **200** 合法对象；`propertyNames:{pattern:"^[a-z]+$"}` → **200** 合法。
+- `dependentRequired` 子集 → 400 点名 `dependentRequired`；items pattern 含元字符 `^a.c$` → 400 点名 pattern 元字符——与表一致。
+**记法**：**静态“可判”与运行时“被认领”是两种事实**，支持表只能写后者；核对支持表要发真请求并验值，不能读门字段。反过来，静态裁判列出关键字也不代表运行时一定拒绝（F537），两个方向都要活体验证。
+**影响**：表头改为“以活体为准”；`not` 数值 const 与根级 `contains` const 从“支持”降级为“静态可判、运行时 400”，除非未来新增认领它们的检测器。

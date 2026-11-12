@@ -1,0 +1,10 @@
+F538 live audit of six support-table claims (8000, fresh server, temperature 0)
+not_const5           status=400 text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property
+contains_const       status=400 text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array pro
+if_req               status=200 text={"city":"New York City, New York, United States. 1,300","note":"New York City is the most populous city in the United States and is the most
+pnames_ok            status=200 text={"city":"New York City, New York, United States. 1,300","note":"New York City is the most populous city in the United States and is the most
+dep_subset           status=400 text={"error":{"message":"schema keyword not supported: dependentRequired (minItems/maxItems are honoured on a single scalar-
+items_pattern_meta   status=400 text={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of liter
+Conclusions: not/contains are REFUSED at the HTTP root even though their static gate fields read supported;
+if (required subset) and propertyNames (ok pattern) serve legal objects; dependentRequired subsets and
+metacharacter item patterns are honest 400s as the table says.

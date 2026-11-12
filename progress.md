@@ -2321,3 +2321,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：bounds harness 加 `uneval_props_closed_ok` / `uneval_props_open_ok`（200 且键集精确），无引擎改动、无需重建。
 - **梯**：bounds PASS（`f536b`，VERDICT PASS）；其余不受影响（仅测试新增）。
 
+## F538（2026-11-12）：六条支持表声明的活体核对
+- **结果**：`not:{const:5}`、根级 `contains:{const}` 运行时 **400**（静态字段却显示可判）；`if:{required}`、`propertyNames` ok pattern **200 合法**；`dependentRequired` 子集与含元字符 items pattern 400（与表一致）。
+- **修正**：支持表头改为“以活体为准”；`not` 数值 const / 根级 `contains` const 从“支持”降为“静态可判、运行时 400”。
+- **证据**：`claims_f538.log`（六条原样输出）。
+
