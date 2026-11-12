@@ -2294,3 +2294,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`float_dec11_served` 200 `{"n":1.51111111111}`、`num_mult_frac_d11_ok` 200 `{"n":0.00024691356}`、`marker_window_eleven_refuse` 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f532c.log`）；四 harness PASS（bounds `f532e`）；8000 115/0；8001 par/fair 0；scaling 1.542×；哨兵 0；BUILD_OK（`build_f532c`）。
 
+## F533（2026-11-12）：7–11 位“发射文本”探针（对象 + 数组元素）
+- **动机**：F532 的截断只有活体看见——自检文本探针只到 6 位，数组元素小数写入器没有文本探针。
+- **改动**：SCHEMA-NUM-FRAC 新增 `dec7_text`…`dec11_text`、`neg11_text`、`arr11_text` 七条精确文本断言；数组解码取最后一个 `{` 之后的尾段（缓存 prompt 在前，`^` 锚定会误判）。
+- **门**：七条探针全部精确匹配（数组为三个 `1.51111111111`）。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f533b.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；哨兵 0（`gate_live f533`）；最终二进制复核 bounds（`f533b`）；BUILD_OK（`build_f533b`）。
+

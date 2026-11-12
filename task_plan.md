@@ -2012,4 +2012,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f532c.log`；`num_dec11=[n|151111111111|-989|0]`、`fm_d11=[n|24691356|-989|0]`、`win_eleven=[]`）；四 harness **PASS**（bounds `f532e`：`float_dec11_served` 200 `{"n":1.51111111111}`、`num_mult_frac_d11_ok` 200 `{"n":0.00024691356}`、`marker_window_eleven_refuse` 400）；8000 **115/0**；8001 par/fairness **0**；scaling **1.542×**；哨兵 **0**；BUILD_OK（`build_f532c`）。
 **教训**：计划型门只看形状（`n|…|-989|0`），看不见写出器截断；宽度扩宽必须同时有**发射文本**的判据（本次由活体精确文本提供）。
 
+## F533 规格与计划（把“发射文本”探针补齐到 7–11 位，含数组元素路径）
+**动机**：F532 的截断只能被活体发现——自检里 `dec*_text` 只覆盖到 6 位（`nfText8`），而 `api_array_item_number_value` 的小数续写站点**没有任何文本探针**。把 F532 的教训固化成门。
+**做法**：在 SCHEMA-NUM-FRAC 内新增对象路径 7/8/9/10/11 位与负 11 位六条文本探针（`api_number_bounded_value` + `gguf_token_str` 解码，按 `$nbBase` 跳过前缀），再新增数组元素 11 位探针（`api_array_item_number_value`，从 token 0 解码，正则断言每个元素都是 `1.51111111111`）。断言全部精确文本 + `api_json_ok`。
+**判据**：若把续写预算退回 12 步，这些探针必须 FAIL（F532 前二进制即此状态）；修复后 7–11 位以及负值、数组元素都完整。
+**性质**：只改自检代码，不动服务路径；仍按梯子重建并跑自检 + 四 harness + gate_live。
+**过程**：首轮 6 条对象文本探针全绿（`dec7_text`…`neg11_text`），数组探针 FAIL——不是写出器错，而是解码从 token 0 开始、缓存 prompt 前缀也在串里，`^` 锚定的 JSON 守卫失败；改为取最后一个 `{` 之后的尾段再断言（值本身始终是三个 11 位元素）。
+**门**：`dec7_text={"n":1.5111111}`、`dec8_text={"n":1.51111111}`、`dec9_text={"n":1.511111111}`、`dec10_text={"n":1.5111111111}`、`dec11_text={"n":1.51111111111}`、`neg11_text={"n":-1.51111111111}`、`arr11_text={"nums":[1.51111111111×3]}`。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f533b.log`，SCHEMA-NUM-FRAC PASS）；四 harness **PASS**、8000 **115/0**、8001 par/fair **0**、scaling **1.487×**、哨兵 **0**（`gate_live f533`）；`f533b` 只改自检探针代码、服务路径不变，仍对最终二进制复核了 bounds 活体（`f533b`）。BUILD_OK（`build_f533b`）。
+
 

@@ -4697,3 +4697,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **关键缺陷（活体才发现）**：两处小数写入器把续写预算写死为 `api_constrained_continue([$dec], 12)`；10 位字面量恰为 12 字符、12 步够用，11 位（13 字符）被截掉末位而 HTTP 仍 200。修复为 `strlen($dec) + 4`。同一轮还发现 `num_mult_frac_d11_ok` 的 `is_mult` 浮点容差把 `0.0002469135`（截断值）判成倍数——断言改为**精确文本**。
 **记法**：**形状门与文本门是两件事**——宽度类放宽若只断言 plan 元组（`n|…|-989|0`），写出器截断可静默通过；扩宽必须同时给出实际**发射文本**的判据（活体精确匹配，或自检里经 `gguf_token_str` 解码的 `dec*_text`）。此外，宽度增长不得依赖与宽度绑定的魔法常数，预算应按字面量长度推导。
 **证据**：`selftest_f532c.log`（RUN_EXIT=0 / 0 FAIL）、`schema_bounds_f532e.log`（三段活体精确文本）、`api_smoke_f532c.log`（115/0）、gate_live f532c（par/fair 0、scaling 1.542×、哨兵 0）。
+
+## F533（2026-11-12）：把“发射文本”探针补齐到 7–11 位
+**改动**：自检 SCHEMA-NUM-FRAC 新增七条精确文本断言：对象路径 7/8/9/10/11 位、负 11 位，以及数组元素 11 位（`api_array_item_number_value`，此前无任何文本探针）。若把续写预算退回 F532 前的 12 步，这七条会同时 FAIL。
+**过程**：首轮对象六条全绿，数组探针 FAIL——解码从 token 0 起包含缓存 prompt，`^` 锚定的 JSON 守卫失败；值本身一直正确（三个 11 位元素）。改为取最后一个 `{` 之后的尾段再断言。
+**记法**：**探针要解码自己实际返回的流**——写入器的 continuation 起点可能带上缓存前缀，按 token 下标跳过只对已知前缀长度成立；对结构未知的前缀，按 JSON 起始字符切片比数下标稳。
+**证据**：`selftest_f533b.log`（RUN_EXIT=0 / 0 FAIL、SCHEMA-NUM-FRAC PASS）、gate_live f533、`schema_bounds_f533b.log`。

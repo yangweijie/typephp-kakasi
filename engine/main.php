@@ -18931,6 +18931,66 @@ function main(): void
         $nfText3 = $nfText3 . gguf_token_str((int) $nfP3[$i]);
     }
     $nfText3 = str_replace("Ġ", " ", $nfText3);
+    // F533: emitted-text oracles for the widths the F532 budget bug could truncate (7..11 places).
+    // The plan tuple alone cannot see a writer that stops one step early; these decode the actual
+    // token continuation the same way the one-to-six-place probes do.
+    $nfOut9 = api_number_bounded_value($nbIds, "n", 15111111, -993, 0);
+    $nfP9 = explode(",", $nfOut9);
+    $nfText9 = "";
+    for ($i = $nbBase; $i < count($nfP9); $i++) {
+        $nfText9 = $nfText9 . gguf_token_str((int) $nfP9[$i]);
+    }
+    $nfText9 = str_replace("Ġ", " ", $nfText9);
+    $nfOut10 = api_number_bounded_value($nbIds, "n", 151111111, -992, 0);
+    $nfP10 = explode(",", $nfOut10);
+    $nfText10 = "";
+    for ($i = $nbBase; $i < count($nfP10); $i++) {
+        $nfText10 = $nfText10 . gguf_token_str((int) $nfP10[$i]);
+    }
+    $nfText10 = str_replace("Ġ", " ", $nfText10);
+    $nfOut11 = api_number_bounded_value($nbIds, "n", 1511111111, -991, 0);
+    $nfP11 = explode(",", $nfOut11);
+    $nfText11 = "";
+    for ($i = $nbBase; $i < count($nfP11); $i++) {
+        $nfText11 = $nfText11 . gguf_token_str((int) $nfP11[$i]);
+    }
+    $nfText11 = str_replace("Ġ", " ", $nfText11);
+    $nfOut12 = api_number_bounded_value($nbIds, "n", 15111111111, -990, 0);
+    $nfP12 = explode(",", $nfOut12);
+    $nfText12 = "";
+    for ($i = $nbBase; $i < count($nfP12); $i++) {
+        $nfText12 = $nfText12 . gguf_token_str((int) $nfP12[$i]);
+    }
+    $nfText12 = str_replace("Ġ", " ", $nfText12);
+    $nfOut13 = api_number_bounded_value($nbIds, "n", 151111111111, -989, 0);
+    $nfP13 = explode(",", $nfOut13);
+    $nfText13 = "";
+    for ($i = $nbBase; $i < count($nfP13); $i++) {
+        $nfText13 = $nfText13 . gguf_token_str((int) $nfP13[$i]);
+    }
+    $nfText13 = str_replace("Ġ", " ", $nfText13);
+    $nfOut14 = api_number_bounded_value($nbIds, "n", -151111111111, -989, 0);
+    $nfP14 = explode(",", $nfOut14);
+    $nfText14 = "";
+    for ($i = $nbBase; $i < count($nfP14); $i++) {
+        $nfText14 = $nfText14 . gguf_token_str((int) $nfP14[$i]);
+    }
+    $nfText14 = str_replace("Ġ", " ", $nfText14);
+    // The array-element writer has its own continuation site; decode from token 0 because its
+    // prefix ("{\"nums\":[") is longer than the object prefix.
+    $aiOut11 = api_array_item_number_value($nbIds, "nums", 151111111111, -989, 3, 0);
+    $aiP11 = explode(",", $aiOut11);
+    $aiText11 = "";
+    for ($i = 0; $i < count($aiP11); $i++) {
+        $aiText11 = $aiText11 . gguf_token_str((int) $aiP11[$i]);
+    }
+    $aiText11 = str_replace("Ġ", " ", $aiText11);
+    // The cached prompt rides in front of the answer; the JSON starts at the last "{".
+    $aiTail11 = $aiText11;
+    $aiCut11 = strrpos($aiTail11, "{");
+    if ($aiCut11 !== false) {
+        $aiTail11 = substr($aiTail11, $aiCut11);
+    }
     $nfOut = api_number_bounded_value($nbIds, "n", 2, 9, 0);
     $nfP = explode(",", $nfOut);
     $nfText = "";
@@ -18950,7 +19010,10 @@ function main(): void
         . "] num_dec8=[" . $nfS . "] num_dec9=[" . $nfT . "] num_dec10=[" . $nfU . "] num_dec11=[" . $nfW
         . "] dec_text=[" . $nfText2 . "] dec2_text=[" . $nfText3
         . "] dec3_text=[" . $nfText5 . "] dec4_text=[" . $nfText6
-        . "] dec5_text=[" . $nfText7 . "] dec6_text=[" . $nfText8 . "] neg_text=[" . $nfText4 . "]\n";
+        . "] dec5_text=[" . $nfText7 . "] dec6_text=[" . $nfText8 . "] neg_text=[" . $nfText4
+        . "] dec7_text=[" . $nfText9 . "] dec8_text=[" . $nfText10 . "] dec9_text=[" . $nfText11
+        . "] dec10_text=[" . $nfText12 . "] dec11_text=[" . $nfText13 . "] neg11_text=[" . $nfText14
+        . "] arr11_text=[" . $aiTail11 . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
         && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
         && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0
@@ -18964,7 +19027,12 @@ function main(): void
         && $nfText2 == "{\"n\":1.5}" && $nfText3 == "{\"n\":1.51}"
         && $nfText5 == "{\"n\":1.511}" && $nfText6 == "{\"n\":1.5111}"
         && $nfText7 == "{\"n\":1.51111}" && $nfText8 == "{\"n\":1.511111}"
-        && $nfText4 == "{\"n\":-1.9}") {
+        && $nfText4 == "{\"n\":-1.9}"
+        && $nfText9 == "{\"n\":1.5111111}" && $nfText10 == "{\"n\":1.51111111}"
+        && $nfText11 == "{\"n\":1.511111111}" && $nfText12 == "{\"n\":1.5111111111}"
+        && $nfText13 == "{\"n\":1.51111111111}" && $nfText14 == "{\"n\":-1.51111111111}"
+        && api_json_ok($aiTail11) == 1
+        && preg_match('/^\{"nums":\[1\.51111111111(,1\.51111111111){0,2}\]\}$/', $aiTail11) == 1) {
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";
