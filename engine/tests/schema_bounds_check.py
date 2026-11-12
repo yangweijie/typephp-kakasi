@@ -60,7 +60,37 @@ def is_mult(x, m):
     except Exception:
         return False
 
+
+def deep200_schema():
+    # Same nesting the self-test uses (k0 -> k1 -> ... -> k199 -> {city, count}); the F208-F226
+    # cold-start defect showed up on the FIRST constrained decode of a session, so this case is
+    # deliberately the first request the harness sends after the server's health probe.
+    leaf = {"type": "object", "properties": {"city": {"type": "string"},
+                                             "count": {"type": "integer"}}}
+    for i in range(199, -1, -1):
+        leaf = {"type": "object", "properties": {"k%d" % i: leaf}}
+    return leaf
+
+
+def deep200_ok(code, txt):
+    if code != 200 or not valid_json(txt):
+        return False
+    try:
+        v = json.loads(txt)
+        for i in range(200):
+            v = v["k%d" % i]
+        return (isinstance(v.get("city"), str)
+                and isinstance(v.get("count"), int)
+                and not isinstance(v.get("count"), bool))
+    except Exception:
+        return False
+
+
 cases = [
+    # F534: the cold-start oracle - the FIRST schema request after server start must assemble a
+    # 200-level object in one attempt (F208-F226 returned an empty body here). 4096 tokens because
+    # the assembled object is ~3900 characters.
+    ("deep200_cold_first_ok", "The capital of France is", deep200_schema(), deep200_ok, 4096),
     ("wide_0_100000", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0, "maximum": 100000}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
@@ -902,8 +932,10 @@ cases = [
 ]
 
 bad = 0
-for label, prompt, schema, ok in cases:
-    code, txt = ask(prompt, schema)
+for case in cases:
+    label, prompt, schema, ok = case[:4]
+    mt = case[4] if len(case) > 4 else 64
+    code, txt = ask(prompt, schema, mt)
     good = ok(code, txt)
     if not good:
         bad += 1

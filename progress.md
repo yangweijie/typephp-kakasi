@@ -2301,3 +2301,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体补强**：bounds harness 新增 `items_num_dec11_ok`——200 `{"nums":[1.51111111111,×4]}`（`f533c`），数组元素 11 位从 8 位覆盖再上一位。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f533b.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；哨兵 0（`gate_live f533`）；最终二进制复核 bounds（`f533b`）；BUILD_OK（`build_f533b`）。
 
+## F534（2026-11-12）：HTTP 200 层嵌套 schema 的静默错误答案（下降窗口 8000 字节）
+- **活体取证**：bounds harness 首请求（`deep200_cold_first_ok`）返回 `{"count":100000}`；手动深度扫描 40/64/96/128/129/150 全对、200 稳定错，非冷启动特有。
+- **根因**：`api_response_schema_nested_object` 只扫 `substr($schema,$ip,8000)`；200 层约 8.4 KB，`api_balance_block` 找不到闭合 ⇒ 空计划 ⇒ 静默落到浅层检测器回 200（违反“要么实现要么显式 400”）。
+- **修复**：去掉初始窗口（`$win = substr($schema,$ip)`）；每层 20000 上限大于 256 级最大文本，保留。
+- **门/活体**：`deep200_cold_first_ok` 200 且 k0…k199/city/count 全对；原 defect 二进制下的同用例为红（`{"count":100000}`）。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f534.log`）；bounds PASS（`f534d`）；required/count/pattern 0；8000 115/0；8001 par/fair 0；scaling 1.562×；哨兵 0；BUILD_OK（`build_f534`）。
+- **未做**：>256 层的 fail-closed（超限仍可能落浅层）——入队。
+

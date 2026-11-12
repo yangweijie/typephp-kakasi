@@ -4521,7 +4521,12 @@ function api_response_schema_nested_object(string $body): string
         return "";
     }
     $path = $pm[1];
-    $win = substr($schema, $ip, 8000);
+    // F534: the descent used to scan only 8000 bytes from the first key, so a legitimate
+    // 200-level chain (~8.4 KB) fell out of the window, api_response_schema_nested_object returned
+    // no plan, and the request fell through to a shallow detector that answered 200 with
+    // {"count":100000} - a silent schema violation. The window is gone; the 256-iteration cap
+    // below is the only depth limit.
+    $win = substr($schema, $ip);
     // Descend while the current properties block has no flat leaves, up to 64 levels.
     for ($depth = 0; $depth < 256; $depth++) {
         $pp = strpos($win, "\"properties\"");

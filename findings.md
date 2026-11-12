@@ -4703,3 +4703,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **过程**：首轮对象六条全绿，数组探针 FAIL——解码从 token 0 起包含缓存 prompt，`^` 锚定的 JSON 守卫失败；值本身一直正确（三个 11 位元素）。改为取最后一个 `{` 之后的尾段再断言。
 **记法**：**探针要解码自己实际返回的流**——写入器的 continuation 起点可能带上缓存前缀，按 token 下标跳过只对已知前缀长度成立；对结构未知的前缀，按 JSON 起始字符切片比数下标稳。
 **证据**：`selftest_f533b.log`（RUN_EXIT=0 / 0 FAIL、SCHEMA-NUM-FRAC PASS）、gate_live f533、`schema_bounds_f533b.log`；活体再加 `items_num_dec11_ok` 200 `{"nums":[1.51111111111×4]}`（`schema_bounds_f533c.log`）。
+
+## F534（2026-11-12）：200 层嵌套对象的 8000 字节下降窗口与静默降级
+**症状**：题面为 200 层嵌套对象的 `json_schema` 请求，HTTP 200 返回 `{"count":100000}`——缺 k0…k199 与 city，既非错误也非组装结果。深度扫描（同会话、非冷启动）：40/64/96/128/129/150 正确，200 稳定错误。
+**根因**：`api_response_schema_nested_object` 的下降窗口是 `substr($schema, $ip, 8000)`；200 层 schema 约 8.4 KB，`api_balance_block` 在窗口内找不到闭合，函数返回空计划，HTTP 路由静默落到浅层检测器并以 200 作答。这是 F198“流式侧静默兜底”同型的**非流式**版本。
+**修复**：窗口改为整个剩余 schema；每层重切片的 20000 上限大于 256 级最大文本（~10 KB），不构成限制。
+**记法**：**深度上限必须来自声明的循环上限，不能来自字节窗口**——窗口是隐式上限，且在超限时返回空计划会让路由静默降级；凡是“检测失败返回空”的入口都要问一句：空计划之后路由会做什么。
+**证据**：`schema_bounds_f534d.log`（`deep200_cold_first_ok` 200 + 逐层校验、VERDICT PASS）、`selftest_f534.log`（`first_len=3887`、`opens=200`）、`ladder_f534.log`（115/0、par/fair 0、scaling 1.562×、哨兵 0）。
