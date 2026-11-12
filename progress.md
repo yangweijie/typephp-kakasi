@@ -2287,3 +2287,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`[123,456,789]`、`[false]`、`["New York City,"]`；bounds harness PASS。
 - **梯**：自检 182/0（`selftest_f531e.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling ~1.58×；哨兵 0。
 
+## F532（2026-11-12）：11 位小数（marker -989，窗口 [-999,-989]）
+- **改动**：宽度站点按清单 +1 位（scaled 正则/分支、分子上限、5+2 条字面量正则、`{11}` 宽度探测、两处 marker 表、mixed q 范围、decimal element、两处写入器门、窗口守卫）。
+- **活体红证 → 修复**：计划门全绿但 `float_dec11_served` 返回 10 位截断；真因是两处 `api_constrained_continue([$dec], 12)` 预算与宽度绑定，改为 `strlen($dec) + 4`；`num_mult_frac_d11_ok` 的浮点容差放过截断值，改精确文本断言。
+- **门**：`num_dec11=[n|151111111111|-989|0]`、`fm_d11=[n|24691356|-989|0]`、`win_eleven=[]`。
+- **活体**：`float_dec11_served` 200 `{"n":1.51111111111}`、`num_mult_frac_d11_ok` 200 `{"n":0.00024691356}`、`marker_window_eleven_refuse` 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f532c.log`）；四 harness PASS（bounds `f532e`）；8000 115/0；8001 par/fair 0；scaling 1.542×；哨兵 0；BUILD_OK（`build_f532c`）。
+

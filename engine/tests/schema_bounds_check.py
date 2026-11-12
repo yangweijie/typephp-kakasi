@@ -259,6 +259,16 @@ cases = [
     ("marker_window_ten_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -990}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F532: eleven fraction places (-989 marker) and the window's new lower edge.
+    ("float_dec11_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51111111111, "maximum": 1.51111111119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.51111111111}'),
+    ("num_mult_frac_d11_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345678}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.00024691356}'),
+    ("marker_window_eleven_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -989}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     ("num_mult_frac_d8_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))

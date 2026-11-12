@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F531）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F532）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3710,7 +3710,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | pattern：真元字符 | **显式 400** | `SCHEMA-PAT-REJECT` 1 侧（F396） |
 | 数值界：integer 单叶，任意符号任意跨度 | **支持**（数字走位；**四位及以上负值**经候选层完整解码——F527 修前缀匹配顺序，短候选不再提前结束） | `SCHEMA-NUM-BND`/`SCHEMA-BOUND-REJECT`/`SCHEMA-NARROW-STRICT`/`narrow_neg_no_bad_json`（F405/F419/F527） |
 | 数值界：整数叶的小数界 | **支持**（向内取整） | `SCHEMA-NUM-FRAC`（F421） |
-| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至十位小数，可负**；十一位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec5`/`num_dec6`/`num_dec7`/`num_dec8`/`num_dec9`/`num_dec10`/`dec*_text`/`float_dec6_served`/`float_dec7_served`/`float_dec8_served`/`float_dec9_served`/`float_dec10_served`（F439–F456/F473/F512/F513/F516/F529） |
+| 数值界：number 叶的小数界 | **支持**（含整数→取整数；无整数→**一至十一位小数，可负**；十二位及以上仍 400） | `num_float`/`num_dec`/`num_dec_fine`/`num_dec3`/`num_dec4`/`num_dec5`/`num_dec6`/`num_dec7`/`num_dec8`/`num_dec9`/`num_dec10`/`num_dec11`/`dec*_text`/`float_dec6_served`/`float_dec7_served`/`float_dec8_served`/`float_dec9_served`/`float_dec10_served`/`float_dec11_served`（F439–F456/F473/F512/F513/F516/F529/F532） |
 | exclusive 界（仅 exclusive / 同侧混合） | **支持**（转相邻整数；同侧更严者胜） | `SCHEMA-NUM-EXCL`/`SCHEMA-EXCL`（F422/F423） |
 | exclusive 界：draft-4 布尔拼写（`":true"`） | **支持**（收紧同侧数值界；孤立布尔仍 400） | `excl_bool`/`bool_shape`/`bool_alone`（F436→F437） |
 | 空区间 / 区间内无倍数（不可满足） | **显式 400** | `SCHEMA-NUM-FRAC empty`/`mix_unsat`/`mult_unsat`（F420/F423） |
@@ -3723,7 +3723,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：**无界整数叶或 number 叶的小数/整数 M（任意 p，含 p=1；任意大小）** | **支持**（后缀写入器发出 p 的倍数；超出 999999999 的后缀宽度时发常量 0——0 是任何 M 的倍数；整数是合法 number） | `unb_int_frac`/`unb_int_quarter`/`unb_int_five`/`nm_frac_ub`/`nm_int_ub`/`unbounded_big`/`unb_big_shape`/`num_mult_frac_unb_int_ok`/`num_mult_frac_unb_quarter_ok`/`num_mult_frac_unb_num_ok`/`num_mult_unb_num_ok`/`num_mult_unb_huge_ok`/`num_mult_unb_huge_num_ok`（F499/F500/F503/F505） |
 | multipleOf：**整数数组项的小数 M（有界/单侧/无界，1–9 位小数，含 exclusive；无界时任意大小；可带 minItems/maxItems）** | **支持**（最简分子折叠后交给 item writer；有界按折叠、无界发出 p 的倍数——p/(p/q)=q 整数；超过九位后缀宽度时逐元素发 0；计数界由写入器消费） | `im_excl_frac`/`im_frac_unb`/`im_big`/`items_mult_excl_frac_ok`/`items_mult_frac_ok`/`items_mult_frac_unb_ok`/`items_mult_unb_huge_ok`/`items_mult_min_ok`（F497/F498/F506/F512/F513/F516/F518） |
 | multipleOf：NUMBER items 叶的小数 M（inclusive/exclusive），与单属性共享形状折叠 | **支持**（items 块被包成单叶喂同一个 shape helper；元素按网格折叠） | `items_mult_frac_num_ok`/`items_mult_frac_num_excl_ok`/`items_mult_num_excl_ok`（F462/F501/F504） |
-| multipleOf：**混合对象内的整数/number 叶**——无界（kind `z`→常量 0）、有界整数折叠（`q:<整数>`）、**有界小数网格折叠**（`q:<字面小数>`，1–10 位） | **支持**（0 是任何 M 的倍数；折叠常量/字面量同时满足界与乘数；all-required 由“每键都发”构造满足） | `mix_z_plan`/`mix_q_plan`/`mix_q_bad`/`mix_q_d2`/`mult_mixed`/`mixed_mult_zero_ok`/`mixed_mult_allreq_ok`/`mixed_mult_bounded_ok`/`mixed_mult_bounded_allreq_ok`/`mixed_mult_frac_bounded_ok`/`mixed_mult_frac_d2_ok`/`multi_leaf_mixed_ok`（F509/F510/F511/F512/F513/F516/F529） |
+| multipleOf：**混合对象内的整数/number 叶**——无界（kind `z`→常量 0）、有界整数折叠（`q:<整数>`）、**有界小数网格折叠**（`q:<字面小数>`，1–11 位） | **支持**（0 是任何 M 的倍数；折叠常量/字面量同时满足界与乘数；all-required 由“每键都发”构造满足） | `mix_z_plan`/`mix_q_plan`/`mix_q_bad`/`mix_q_d2`/`mult_mixed`/`mixed_mult_zero_ok`/`mixed_mult_allreq_ok`/`mixed_mult_bounded_ok`/`mixed_mult_bounded_allreq_ok`/`mixed_mult_frac_bounded_ok`/`mixed_mult_frac_d2_ok`/`multi_leaf_mixed_ok`/`fm_d11`（F509/F510/F511/F512/F513/F516/F529/F532） |
 | multipleOf：十一位及以上小数／混合对象内**无乘数的数值界**／**区间内无倍数**／required 严格子集 | **显式 400** | `mix_excl_bad`/`mix_q_unsat`/`mixed_excl_nofold_refuse`/`mixed_mult_frac_unsat_refuse`/`mixed_mult_subset_refuse`/`nm_frac`（F469/F502/F509/F510/F511/F512/F513/F516/F529） |
 | 整数上界落在 marker 窗口 `[-999,-990]`（hi 槽与小数 marker 复用；F529 随十位扩窗） | **显式 400**（形状层窗口守卫；小数/marker 分支在其前返回；窗内窄跨由候选层服务） | `win_wide`/`win_one`/`win_mult`/`win_narrow_shape`/`win_below`/`win_nine`/`win_ten`/`marker_window_wide_refuse`/`marker_window_one_refuse`/`marker_window_mult_refuse`/`marker_window_nine_refuse`/`marker_window_ten_refuse`/`marker_window_narrow_ok`（F514/F516/F529） |
 | minLength / maxLength：扁平全字符串对象、**mixed（按属性、仅作用于字符串叶）**、**定长 pattern 叶（`c<n>x` 精确段，界限仅需包含固定长度）**、**多叶 mixed 的 s 叶与定长 p 叶共存** | **支持**（按剩余字符预算过滤候选 token；mixed 写入器按 plan 中 s 叶顺序消费每属性界限——预算提取器按写入器消费顺序生成，p 叶不占位；定长 pattern 零写入器改动） | `SCHEMA-LEN`/`mixed_maxLength`/`mixed_len_ok`/`p_len_ok`/`pattern_len_ok`/`len_mix_p`/`len_mix_bounds`/`mixed_len_p_ok`/`mixed_len_pattern_ok`（F399/F493/F494/F495） |
@@ -3783,7 +3783,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
 
-**仍未实现（不装作支持）**：`not` 的**全字符集**字符串常量/可命中枚举成员/可被匹配的 pattern 值级形态（含外字符的无转义 const/enum/锚定交替 pattern 自 F479/F482 支持，非字符串标量自 F474）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式与 pattern 同 spec 自 F472/F481 支持）；`patternProperties` 对**自由字符串 `s`/数值非枚举/数组**种类的**值级**约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476、受支持 pattern `p:` 同 spec F480、对象数组 bare array F484 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 已全面支持（含无界/exclusive/整数叶/混合对象，1–10 位）；`unevaluated*` 会真正判定的形状；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
+**仍未实现（不装作支持）**：`not` 的**全字符集**字符串常量/可命中枚举成员/可被匹配的 pattern 值级形态（含外字符的无转义 const/enum/锚定交替 pattern 自 F479/F482 支持，非字符串标量自 F474）、`contains` 值级的自由字符串 items/更丰富子 schema（子集形式与 pattern 同 spec 自 F472/F481 支持）；`patternProperties` 对**自由字符串 `s`/数值非枚举/数组**种类的**值级**约束与嵌套子 schema（字符串枚举 F457、数值 enum/const F476、受支持 pattern `p:` 同 spec F480、对象数组 bare array F484 已支持）；`if` 的 properties/嵌套/数值条件与分支（bare type/bare required 自 F452/F475 支持）；`unevaluated*` 会真正判定的形状；数组项 pattern 的**含元字符/未锚定交替**形态（锚定纯字面量交替自 F477 支持；整数·number items 的界·单侧·负上下界·exclusive 数值/布尔拼写·整数 multipleOf 含 exclusive 组合·小数 multipleOf 有界·string enum/const/类计数 pattern/纯字面量交替自 F460–F477 支持）；小数 multipleOf 已全面支持（含无界/exclusive/整数叶/混合对象，1–11 位）；`unevaluated*` 会真正判定的形状；oneOf 的更多分支；分片多卡与 FR-05（本机不可验证）。
 **梯（F434 构建）**：自检 **182 PASS / 0 FAIL**、`RUN_EXIT=0`（`SCHEMA-STRUCT`/`PROPS-COUNT`/`BOUND-REJECT`/`NUM-EXCL`/`KEYWORDS`/`REQ-SUBSET`/`LEN`/`COUNT` 全 PASS）；8000 **115/0**；8001 `par` **0**、`fairness` **0**；scaling **1.559×**；哨兵 **0**。
 
 
@@ -4691,3 +4691,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`fm_intleaf` 1→0、`fm_int03`/`fm_int15`/`fm_int_unsat`/`fm_int_cand`；活体 0.3、1.5 均 200 且值为 3/6/9，[1,2]+0.3 → 400。
 **梯**：自检 **182/0**、四 harness **PASS**、8000 **115/0**、8001 par/fairness **0**、scaling **1.526×**、哨兵 **0**、BUILD_OK（`selftest_f496b.log` 等）。
 **记法**：**同一个字段可能被两处解析，两处都要按完整字面**——形状层修好后，更早的枚举层仍会用它的旧前缀正则静默产出违反值；判定“支持”必须覆盖**实际认领者**的取值路径。`mult > 1` 这类过滤在“解析失败读成 0”时会静默失效，正则前缀是最典型的来源。
+
+## F532（2026-11-12）：11 位小数（marker -989）与宽度绑定的续写预算
+**新增能力**：number 叶小数界与小数 multipleOf 支持 1–11 位（marker -989，scale 10^11）；整数上界窗口随标记内缩为 −999…−989（这些值显式 400；−1000 及以下、−988 及以上路径不变）。宽度站点按 F529 清单 +1 位一次改全：scaled 正则与 `digits==11` 分支、分子位上限、5+2 条字面量正则、`\.[0-9]{11}` 宽度探测、两处 marker 表、mixed q 范围、decimal element 写入器、两处写入器 marker 门、窗口守卫。
+**关键缺陷（活体才发现）**：两处小数写入器把续写预算写死为 `api_constrained_continue([$dec], 12)`；10 位字面量恰为 12 字符、12 步够用，11 位（13 字符）被截掉末位而 HTTP 仍 200。修复为 `strlen($dec) + 4`。同一轮还发现 `num_mult_frac_d11_ok` 的 `is_mult` 浮点容差把 `0.0002469135`（截断值）判成倍数——断言改为**精确文本**。
+**记法**：**形状门与文本门是两件事**——宽度类放宽若只断言 plan 元组（`n|…|-989|0`），写出器截断可静默通过；扩宽必须同时给出实际**发射文本**的判据（活体精确匹配，或自检里经 `gguf_token_str` 解码的 `dec*_text`）。此外，宽度增长不得依赖与宽度绑定的魔法常数，预算应按字面量长度推导。
+**证据**：`selftest_f532c.log`（RUN_EXIT=0 / 0 FAIL）、`schema_bounds_f532e.log`（三段活体精确文本）、`api_smoke_f532c.log`（115/0）、gate_live f532c（par/fair 0、scaling 1.542×、哨兵 0）。
