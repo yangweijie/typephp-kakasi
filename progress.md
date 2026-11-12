@@ -2309,3 +2309,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f534.log`）；bounds PASS（`f534d`）；required/count/pattern 0；8000 115/0；8001 par/fair 0；scaling 1.562×；哨兵 0；BUILD_OK（`build_f534`）。
 - **未做**：>256 层的 fail-closed（超限仍可能落浅层）——入队。
 
+## F535（2026-11-12）：>256 层嵌套的 fail-closed
+- **改动**：新增 `api_schema_nested_overflow`（按检测器同一键链下降计数，第 257 层返回 1）；非流式拒绝链插入 400 “nested object depth beyond 256 levels is not supported”。
+- **过程（两轮红证）**：① 谓词要求整包 body，但链传的是 schema 对象 → 兼容两形；② 滑窗按上一键文本定位，运行时节名逐层不同 → 改为在 block 上重新匹配下一层键（镜像检测器）。
+- **门/活体**：`over200=0/over260=1`；`deep260_refuse` 400 含 “256”；`deep200_cold_first_ok` 仍 200。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f535c.log`）；bounds PASS；8000 115/0；8001 par/fair 0；scaling 1.559×；哨兵 0（`gate_live f535c`）；BUILD_OK（`build_f535c`）。
+- **边界**：只接非流式链；其他传输待接（入队）。
+

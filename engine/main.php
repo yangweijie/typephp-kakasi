@@ -4562,9 +4562,58 @@ function api_response_schema_nested_object(string $body): string
     return "";
 }
 
-// An array of flat objects, e.g. {"people":[{"name":" a","age":123}, …]}. The element plan is
-// "<name>:<s|i|n>,…" taken from items.properties. Each element is closed by a forced "}", then
-// only "," (another element) or "]" (end) is reachable.
+// F535: api_response_schema_nested_object descends at most 256 object levels; past that it returns
+// an empty plan and the route would fall through to a shallow detector (the F534 symptom, one step
+// further out). This guard measures the same key chain and lets the refusal chain answer 400, so a
+// schema the decoder cannot honour is never answered by a value that violates it.
+function api_schema_nested_overflow(string $body): int
+{
+    // The refusal chain passes the schema object itself; test fixtures pass the whole request.
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return 0;
+        }
+    }
+    if (api_schema_is_object($schema) != 1) {
+        return 0;
+    }
+    $win = $schema;
+    $depth = 0;
+    while ($depth < 300) {
+        $pp = strpos($win, "\"properties\"");
+        if ($pp === false) {
+            return 0;
+        }
+        $bo = strpos($win, "{", $pp);
+        if ($bo === false) {
+            return 0;
+        }
+        $block = api_balance_block($win, $bo);
+        if ($block == "") {
+            return 0;
+        }
+        $depth = $depth + 1;
+        if ($depth > 256) {
+            return 1;
+        }
+        // Re-match on the block, exactly like the detector: the next level's key usually has a
+        // different name, so searching for the previous key's text would stop at depth 1.
+        if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s',
+            $block, $m) != 1) {
+            return 0;
+        }
+        $ci = strpos($block, $m[0]);
+        if ($ci === false) {
+            return 0;
+        }
+        $win = substr($block, $ci);
+    }
+    return 1;
+}
+
+
 function api_array_object_value(string $ids, string $prop, string $plan, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $charsetIds = gguf_charset_ids($charset);
@@ -13609,6 +13658,13 @@ function api_serve(int $port): void
                 // missing; what remains is float bounds and multi-property bounds.
                 $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; an unbounded multipleOf up to 999999 is served by a forced suffix whose width follows the multiplier, and one above that is refused; a multipleOf on a schema with more than one property, or on a number (non-integer) leaf, is not supported; the draft-4 boolean spelling (exclusiveMinimum/exclusiveMaximum:true) is not supported; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
+            } else if (api_schema_nested_overflow($schBody) == 1) {
+                // F535: deeper than the 256-level descent the nested-object detector supports. Past
+                // the cap it returned an empty plan and the request fell through to a shallow
+                // detector - F534 showed that answering 200 with a wrong object is worse than a
+                // refusal.
+                $payload = "{\"error\":{\"message\":\"nested object depth beyond 256 levels is not supported\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
                 // being ignored. Since then minItems/maxItems, minLength/maxLength, a required
@@ -18257,6 +18313,19 @@ function main(): void
         $d2Path = $i == 0 ? $d2K[$i] : $d2Path . "/" . $d2K[$i];
     }
     $d2Want = $d2Path . "|city:s,count:i";
+    // F535: the overflow guard must say 0 at the supported 200 levels and 1 past the 256-level cap.
+    $d2Over = api_schema_nested_overflow($d2Body);
+    $d260Part = "";
+    for ($i = 0; $i < 260; $i++) {
+        $d260Part = $d260Part . "{\"k\":{\"type\":\"object\",\"properties\":";
+    }
+    $d260Close = "";
+    for ($i = 0; $i < 260; $i++) {
+        $d260Close = $d260Close . "}}";
+    }
+    $d260Body = "{\"json_schema\":{\"schema\":{\"type\":\"object\",\"properties\":" . $d260Part
+        . "{\"city\":{\"type\":\"string\"},\"count\":{\"type\":\"integer\"}}" . $d260Close . "}}}";
+    $d2Over260 = api_schema_nested_overflow($d260Body);
     $d2Ids = tok_chat("user", "The capital of France is") . "," . tok_chat_open("assistant");
     $d2Probe = api_nested_object_value($d2Ids, $d2Path, "city:s,count:i",
         "abcdefghijklmnopqrstuvwxyz ", 6, 0);
@@ -18264,7 +18333,8 @@ function main(): void
     // the depth sweep in this very run gets text at 256 while this one came back empty.
     $d2Probe2 = api_nested_object_value($d2Ids, $d2Path, "city:s,count:i",
         "abcdefghijklmnopqrstuvwxyz ", 6, 0);
-    echo "SCHEMA-DEEP200-RETRY first_len=" . strlen($d2Probe) . " second_len=" . strlen($d2Probe2) . "\n";
+    echo "SCHEMA-DEEP200-RETRY first_len=" . strlen($d2Probe) . " second_len=" . strlen($d2Probe2)
+        . " over200=" . $d2Over . " over260=" . $d2Over260 . "\n";
     $d2Parts = explode(",", $d2Probe2);
     $d2Base = count(explode(",", $d2Ids));
     $d2Text = "";
@@ -18279,12 +18349,14 @@ function main(): void
     // Graded on the FIRST call, not a warm retry: a cold session must assemble the whole object
     // too. F208-F225 traced the empty first result to 'no logits computed' blocking the forced
     // prefix, and F226 recovered it by re-prefilling the consumed ids inside the constrain loop.
-    if ($d2Plan == $d2Want && $d2Opens == 200 && $d2Json == 1 && strlen($d2Probe) > 0) {
-        echo "SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the first attempt)\n";
+    if ($d2Plan == $d2Want && $d2Opens == 200 && $d2Json == 1 && strlen($d2Probe) > 0
+        && $d2Over == 0 && $d2Over260 == 1) {
+        echo "SCHEMA-DEEP200: PASS (two-hundred-level object assembled on the first attempt; 260 levels refuse)\n";
     } else {
         echo "SCHEMA-DEEP200: FAIL plan=" . ($d2Plan == $d2Want ? "ok" : "bad")
             . " opens=" . $d2Opens . " json=" . $d2Json
-            . " first_len=" . strlen($d2Probe) . "\n";
+            . " first_len=" . strlen($d2Probe)
+            . " over200=" . $d2Over . " over260=" . $d2Over260 . "\n";
     }
 
     // Mixed object: a string leaf and an integer leaf at the same level, keys forced in order.

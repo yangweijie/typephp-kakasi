@@ -61,15 +61,19 @@ def is_mult(x, m):
         return False
 
 
-def deep200_schema():
-    # Same nesting the self-test uses (k0 -> k1 -> ... -> k199 -> {city, count}); the F208-F226
-    # cold-start defect showed up on the FIRST constrained decode of a session, so this case is
-    # deliberately the first request the harness sends after the server's health probe.
+def deep_schema(n=200):
+    # Same nesting the self-test uses (k0 -> k1 -> ... -> k(n-1) -> {city, count}); the F208-F226
+    # cold-start defect showed up on the FIRST constrained decode of a session, so the 200-level case
+    # is deliberately the first request the harness sends after the server's health probe.
     leaf = {"type": "object", "properties": {"city": {"type": "string"},
                                              "count": {"type": "integer"}}}
-    for i in range(199, -1, -1):
+    for i in range(n - 1, -1, -1):
         leaf = {"type": "object", "properties": {"k%d" % i: leaf}}
     return leaf
+
+
+def deep200_schema():
+    return deep_schema(200)
 
 
 def deep200_ok(code, txt):
@@ -91,6 +95,10 @@ cases = [
     # 200-level object in one attempt (F208-F226 returned an empty body here). 4096 tokens because
     # the assembled object is ~3900 characters.
     ("deep200_cold_first_ok", "The capital of France is", deep200_schema(), deep200_ok, 4096),
+    # F535: past the 256-level descent the route must refuse instead of answering through a shallow
+    # detector (F534 showed that answer was a silent violation).
+    ("deep260_refuse", "The capital of France is", deep_schema(260),
+     lambda code, txt: code == 400 and "256" in txt, 64),
     ("wide_0_100000", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 0, "maximum": 100000}}},
      lambda code, txt: code == 200 and val_of(txt, "n") is not None
