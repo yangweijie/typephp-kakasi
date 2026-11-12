@@ -796,6 +796,27 @@ cases = [
                                        "count": {"type": "integer", "multipleOf": 0.3}},
       "required": ["city"]},
      lambda code, txt: code == 400 and "required" in txt),
+    # F522: TOP-LEVEL scalar enum arrays (root array) - bare literals, uniqueItems via the finite
+    # domain, and an unsatisfiable const+unique+min2 control. The non-streaming chain's scalar-enum
+    # branch (which answers ONE value for any "enum" in the body) must yield to this route.
+    ("top_num_enum_ok", "Give the numbers.",
+     {"type": "array", "items": {"type": "integer", "enum": [2, 5, 9]}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1 and all(x in (2, 5, 9) for x in json.loads(txt))),
+    ("top_scalar_enum_unique_ok", "Give the numbers.",
+     {"type": "array", "items": {"type": "integer", "enum": [2, 5, 9]},
+      "uniqueItems": True, "minItems": 2},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 2 and len(set(json.loads(txt))) == len(json.loads(txt))
+     and all(x in (2, 5, 9) for x in json.loads(txt))),
+    ("top_bool_enum_ok", "Give the flags.",
+     {"type": "array", "items": {"type": "boolean", "enum": [True, False]}},
+     lambda code, txt: code == 200 and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1 and all(isinstance(x, bool) for x in json.loads(txt))),
+    ("top_scalar_const_unique_min2_refuse", "Give the number.",
+     {"type": "array", "items": {"type": "number", "const": 7},
+      "uniqueItems": True, "minItems": 2},
+     lambda code, txt: code == 400 and "uniqueItems" in txt),
 ]
 
 bad = 0

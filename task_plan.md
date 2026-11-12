@@ -1696,12 +1696,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F522（尝试后回退）：顶层标量 enum 数组——写入器与流式已通，非流式未接线
-**目标**：根数组 `{"type":"array","items":{"type":"integer","enum":[2,5,9]}}`（无 properties 包装）此前被 `items` 点名拒绝；实现检测器 `api_schema_top_array_scalar_enum`（`#` 前缀有限值表）、裸字面量写入器 `api_top_scalar_enum_value`、四处分发插入与 items/minItems/uniqueItems 守卫。
-**已验证**：检测器门 `top_scalar_enum=[#2~5~9]`/`#true`；**写入器级门** `SCHEMA-TOPARR-SCALAR text=[2,5,9,2]` PASS；**流式**活体返回 `[2,5,9,2]`。
-**证伪**：**非流式**同一请求 `json=off`、content 仅 `2`（自由生成，schema 要求数组）——即 400 被换成静默违反；说明 8000 非流式链（`api_serve` 的 json=off 路径）另有认领者/入口，四处插入点均未生效。
-**处置**：为避免静默违反，`engine/main.php` 与 harness 全部回退（源码回到 F521），重建 `build_f522revert`，bounds harness `CHECK_EXIT=0`。证据日志保留（`serve_f522probe.log`、`selftest_f522b.log`、`schema_bounds_f522*.log`）。
-**下一步**：在非流式链入口打判别量（`$jsonMode`、各 detector 返回值、`SESSION request` 前的实际分支），定位吞掉根标量 enum 的认领者，再按同一实现接线；写入器/检测器可照本记录重建。
+## F522 计划与完成（顶层标量 enum 数组：`#` 有限值表 + 标量 enum 分支让位）
+**核心思路**：根数组 `{"type":"array","items":{"type":"integer","enum":[…]}}`（无 properties 包装）此前被 `items` 点名拒绝。有限值表编码（`#v1~v2`）与裸字面量写入器适用于根数组；uniqueItems/minItems 由有限域规则继承。
+**实现**：检测器 `api_schema_top_array_scalar_enum`（body/裸 schema 两用）、`api_schema_top_bounds`、写入器 `api_top_scalar_enum_value`、四处分发插入（流式、8001、`api_serve` 两条）、items/minItems/uniqueItems 守卫豁免。
+**根因（判别量定位）**：非流式请求被 `$enumFlat` 分支吞掉——该分支只要 body 里出现**任意** `"enum":[…]`（包括 items 内的）就把它当成“单值 enum 答案”，返回一个元素 `2`。给它加 `api_response_schema_top_array_scalar_enum($body) == ""` 排他后，请求落到本路线，非流式返回 `[2,5,9,2]`、日志 `json=ok`。
+**过程（一次回退 + 判别量）**：首版只接线路由，非流式仍返回自由文本 `2`（400 被换成静默违反）⇒ 全部回退并留证；随后加 `DBG_TOPSCALAR/DBG_TS_*` 判别量，证明链未到达/被吞，定位 `$enumFlat` 后再接线。
+**门**：`top_scalar_enum=[#2~5~9]`、`top_scalar_const=[#true]`、`SCHEMA-TOPARR-SCALAR text=[[2,5,9,2]]` PASS。
+**活体**：`top_num_enum_ok` 200 `[2,5,9,2]`、`top_scalar_enum_unique_ok` 200 `[2,5,9]`、`top_bool_enum_ok` 200 `[false]`、`const+unique+min2` 400。
+**梯**：自检 **182/0**（`selftest_f522b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.531×**；哨兵 **0**；BUILD_OK（`build_f522b`）。
 
 
 **核心思路**：F520 的 `#` 裸字面量编码天然容纳 `true/false`；把检测器的标量 enum/const 分支扩到 `boolean`、kind 放宽到 `ab`，uniqueItems/minItems 自动继承（域 {true,false} 必须覆盖 minItems）。

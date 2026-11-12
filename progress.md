@@ -2235,8 +2235,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`[false×4]`、unique `[true,false]`、const `[true×4]`；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f521.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.556×**；哨兵 **0**；BUILD_OK。
 
-## ▶ 状态（F522，尝试后回退）——顶层标量 enum 数组
-- **已实现并验证**：检测器（`#` 有限值表）、裸字面量写入器（`SCHEMA-TOPARR-SCALAR text=[2,5,9,2]` PASS）、四处分发插入；流式活体 `[2,5,9,2]` 正确。
-- **证伪**：非流式同请求 `json=off`、content 仅 `2`（自由生成）——400 被换成静默违反，说明非流式链另有认领者/入口。
-- **处置**：源码与 harness 全部回退（回到 F521），重建 `build_f522revert`，bounds harness CHECK_EXIT=0；证据日志保留。
-- **下一步**：非流式链入口判别量定位吞掉者后再接线。
+## ▶ 状态（F522，已完成）——顶层标量 enum 数组
+- **实现**：检测器 `api_schema_top_array_scalar_enum`（`#` 有限值表）、`api_schema_top_bounds`、裸字面量根数组写入器、四处分发 + 三处守卫豁免。
+- **根因（判别量定位）**：非流式被 `$enumFlat` 分支吞掉（body 里任意 `"enum":[…]` 被当成单值答案）⇒ 排他条件后落到本路线，非流式 `[2,5,9,2]`、`json=ok`。
+- **过程**：首版只接线路由 ⇒ 非流式自由文本 `2`（静默违反）⇒ 全部回退留证；加 DBG 判别量后定位并完成。
+- **门/活体**：`top_scalar_enum=[#2~5~9]`、`top_scalar_const=[#true]`、`SCHEMA-TOPARR-SCALAR` PASS；`[2,5,9,2]`、unique `[2,5,9]`、bool `[false]`、const+unique+min2 400。
+- **梯**：自检 **182/0**（`selftest_f522b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.531×**；哨兵 **0**；BUILD_OK。

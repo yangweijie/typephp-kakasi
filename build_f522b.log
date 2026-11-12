@@ -43,12 +43,12 @@ Starting parallel compilation with 4 jobs for 11 files
 [2/11] 19% src\gguf.cc
 [3/11] 28% src\ops.cc
 [4/11] 37% src\tokenizer.cc
-[5/11] 46% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_main.cc
-[6/11] 55% extension-kakasi_engine.cc
-[7/11] 64% php\tpc_v0.9.5_windows_x64\phpx\src\misc\php_cli_process_title.c
-[8/11] 73% php\tpc_v0.9.5_windows_x64\phpx\src\misc\ps_title.c
-[9/11] 82% src\model.cc
-[10/11] 91% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_runtime.cc
+[5/11] 46% extension-kakasi_engine.cc
+[6/11] 55% src\model.cc
+[7/11] 64% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_runtime.cc
+[8/11] 73% php\tpc_v0.9.5_windows_x64\phpx\src\misc\php_cli_process_title.c
+[9/11] 82% php\tpc_v0.9.5_windows_x64\phpx\src\misc\typephp_main.cc
+[10/11] 91% php\tpc_v0.9.5_windows_x64\phpx\src\misc\ps_title.c
 [11/11] 100% \main.cc
 Successfully compiled 11 files
 link "@C:\git\c\typephp-kakasi\engine\build\gen\cache\link\kakasi_engine.exe.rsp" /OUT:"C:\git\c\typephp-kakasi\engine/build/kakasi_engine.exe" /LIBPATH:"C:\git\php\tpc_v0.9.5_windows_x64\phpx\lib" /LIBPATH:"C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib" /LIBPATH:"C:\Program Files (x86)\Intel\oneAPI\compiler\latest\lib" /NODEFAULTLIB:LIBCMT /nologo "C:\git\php\tpc_v0.9.5_windows_x64\phpx\lib\phpx.lib" "C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib\php8ts.lib" "C:\git\php\tpc_v0.9.5_windows_x64\SDK\lib\php8embed.lib" "user32.lib" "gdi32.lib" "kernel32.lib" "gmp.lib" "gmpxx.lib" "mpfr.lib" "libmpdec-4.0.1.dll.lib" "libmpdec++-4.0.1.dll.lib" "sycl.lib" "ur_loader.lib" "tbb12.lib"

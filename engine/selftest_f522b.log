@@ -9,7 +9,7 @@ backends validated: 3/3
   b0 gemm_q5 PASS x3 (last=7.5869787501731E-7)
   b0 gemm_q4 PASS x3 (last=4.173769104429E-6)
   b0 rms PASS x3 (last=5.9604644775391E-7)
-  b0 deq_q8_0(embd) EXACT (343.185 ms)
+  b0 deq_q8_0(embd) EXACT (446.4095 ms)
   b1 deq_f32 PASS x3 (last=0)
   b1 deq_q5 PASS x3 (last=0)
   b1 deq_q4 PASS x3 (last=0)
@@ -17,7 +17,7 @@ backends validated: 3/3
   b1 gemm_q5 PASS x3 (last=7.5869787501731E-7)
   b1 gemm_q4 PASS x3 (last=4.173769104429E-6)
   b1 rms PASS x3 (last=1.1920928955078E-7)
-  b1 deq_q8_0(embd) EXACT (216.6976 ms)
+  b1 deq_q8_0(embd) EXACT (492.8745 ms)
   b2 deq_f32 PASS x3 (last=0)
   b2 deq_q5 PASS x3 (last=0)
   b2 deq_q4 PASS x3 (last=0)
@@ -25,16 +25,16 @@ backends validated: 3/3
   b2 gemm_q5 PASS x3 (last=7.5869787501731E-7)
   b2 gemm_q4 PASS x3 (last=4.173769104429E-6)
   b2 rms PASS x3 (last=1.1920928955078E-7)
-  b2 deq_q8_0(embd) EXACT (178.4543 ms)
+  b2 deq_q8_0(embd) EXACT (288.6629 ms)
 OPS: PASS
-  b0 forward PASS top1=12095 logit=16.377742767334 (1135.6298923492 ms)
-  b1 forward PASS top1=12095 logit=16.361446380615 (5154.7241210938 ms)
+  b0 forward PASS top1=12095 logit=16.377742767334 (1119.7669506073 ms)
+  b1 forward PASS top1=12095 logit=16.361446380615 (4975.6062030792 ms)
   backend-drift PASS |b1-b0| logit = 0.01629638671875
 FORWARD: PASS (oracle ' Paris')
 gen ids(11): 785,6722,315,9625,374,12095,13,1084,374,279,7772
 decoded: The capital of France is Paris. It is the largest
 GENERATE: PASS (step-1 matches oracle; n=11)
-perf: prefill=1014.0377 ms, decode steps=95.8039 ms
+perf: prefill=922.3563 ms, decode steps=111.6859 ms
   residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
   samp[greedy-equiv] PASS
   samp[tiny-nucleus] PASS first-nucleus=1
@@ -77,33 +77,33 @@ CHAT: PASS
 PIPELINE decoded: The capital of France is Paris. It
 PIPELINE: text-in/text-out OK
 parity tokens: 274
-PERF steady: prefill(5 tok)=43.821 ms  prefill(200 tok)=451.5739 ms  decode=256.9742 ms over 15 steps
-PERF tok/s (decode, steady) = 58.371618629419
-PERF stages(1 tok): s0=0.0904 s1=12.7815 s2=2.3028 (s0=emb+rope s1=24 blocks s2=norm+lm_head)
-PERF stages(5 tok): s0=0.1905 s1=32.8178 s2=2.0009
-PERF sweep L=8: m0: s1=11.3765 step=13.636112213135 s1=11.0456 step=13.288974761963 tok=3283 | m1: s1=15.1698 step=17.606973648071 s1=12.2262 step=14.528036117554 tok=3283 | m2: s1=10.6301 step=12.971878051758 s1=11.3756 step=13.926982879639 tok=3283 |
-PERF sweep L=32: m0: s1=18.3075 step=21.204948425293 s1=22.6713 step=25.050163269043 tok=279 | m1: s1=24.2882 step=26.669025421143 s1=21.0937 step=23.559808731079 tok=279 | m2: s1=17.3882 step=19.769906997681 s1=13.1326 step=16.023874282837 tok=279 |
-PERF sweep L=64: m0: s1=26.7073 step=29.906988143921 s1=32.2845 step=34.764051437378 tok=6722 | m1: s1=35.3118 step=37.799119949341 s1=39.4235 step=41.908979415894 tok=6722 | m2: s1=19.8998 step=22.413969039917 s1=21.456 step=24.685144424438 tok=6722 |
-PERF sweep L=128: m0: s1=41.5373 step=44.048070907593 s1=41.3144 step=43.817043304443 tok=315 | m1: s1=62.4416 step=64.81409072876 s1=60.9503 step=64.480066299438 tok=315 | m2: s1=19.1093 step=21.539926528931 s1=22.0218 step=24.810075759888 tok=315 |
-PERF sweep L=256: m0: s1=62.8976 step=65.428018569946 s1=68.4741 step=70.986032485962 tok=374 | m1: s1=113.6002 step=116.90783500671 s1=111.599 step=114.27092552185 tok=374 | m2: s1=16.9143 step=19.273042678833 s1=22.5592 step=25.410890579224 tok=374 |
+PERF steady: prefill(5 tok)=43.206 ms  prefill(200 tok)=455.9139 ms  decode=269.383 ms over 15 steps
+PERF tok/s (decode, steady) = 55.682801067625
+PERF stages(1 tok): s0=0.4503 s1=12.3892 s2=2.1846 (s0=emb+rope s1=24 blocks s2=norm+lm_head)
+PERF stages(5 tok): s0=0.2133 s1=43.7424 s2=2.3803
+PERF sweep L=8: m0: s1=13.7381 step=17.699003219604 s1=10.9858 step=13.25798034668 tok=3283 | m1: s1=15.0743 step=17.627954483032 s1=14.3599 step=17.689943313599 tok=3283 | m2: s1=21.4014 step=23.890018463135 s1=16.3988 step=19.0269947052 tok=3283 |
+PERF sweep L=32: m0: s1=20.7488 step=23.706197738647 s1=17.9118 step=24.669885635376 tok=279 | m1: s1=38.5459 step=41.444063186646 s1=27.946 step=30.375003814697 tok=279 | m2: s1=13.5967 step=16.160011291504 s1=16.5698 step=19.829034805298 tok=279 |
+PERF sweep L=64: m0: s1=28.5061 step=32.92989730835 s1=22.0361 step=25.382995605469 tok=6722 | m1: s1=45.0486 step=47.667980194092 s1=41.7248 step=44.133901596069 tok=6722 | m2: s1=13.3337 step=19.016027450562 s1=14.1716 step=17.030954360962 tok=6722 |
+PERF sweep L=128: m0: s1=47.7009 step=50.349950790405 s1=41.6684 step=44.557094573975 tok=315 | m1: s1=85.2446 step=89.131116867065 s1=60.6357 step=65.619945526123 tok=315 | m2: s1=15.8933 step=18.305063247681 s1=22.9497 step=25.856018066406 tok=315 |
+PERF sweep L=256: m0: s1=66.9829 step=69.91982460022 s1=66.5945 step=69.303035736084 tok=374 | m1: s1=124.7768 step=128.27086448669 s1=111.1918 step=113.89899253845 tok=374 | m2: s1=34.693 step=39.033889770508 s1=18.4169 step=20.882129669189 tok=374 |
 ATTN-MODE: PASS (score cache and three-pass sample the same tokens)
 ATTN-SPLIT: PASS (split-KV agrees with the score cache on the greedy token)
-PERF kv-sweep f16=0: L=8 s1=11.1448 step=13.531923294067 tok=3283 | L=64 s1=14.3813 step=16.641855239868 tok=6722 | L=256 s1=22.144 step=25.915861129761 tok=374 |
-PERF kv-sweep f16=1: L=8 s1=10.8254 step=13.126134872437 tok=3283 | L=64 s1=14.7808 step=17.323970794678 tok=6722 | L=256 s1=20.1353 step=22.596120834351 tok=374 |
-PERF ablate m0: L=8: s1=11.1011 step=13.589859008789 s1=13.0702 step=15.449047088623 | L=64: s1=24.2457 step=26.634931564331 s1=22.9476 step=25.511980056763 | L=256: s1=67.9428 step=70.613145828247 s1=65.9725 step=70.096015930176 |
-PERF ablate m4: L=8: s1=10.3949 step=12.818813323975 s1=13.5955 step=16.72887802124 | L=64: s1=20.3798 step=23.484945297241 s1=16.4789 step=18.873929977417 | L=256: s1=43.2803 step=45.727968215942 s1=44.4713 step=46.860933303833 |
-PERF ablate m5: L=8: s1=10.9776 step=13.718843460083 s1=10.0583 step=12.377023696899 | L=64: s1=21.1924 step=23.825883865356 s1=25.2129 step=27.685880661011 | L=256: s1=41.0519 step=46.08416557312 s1=41.8463 step=45.020818710327 |
+PERF kv-sweep f16=0: L=8 s1=23.5862 step=26.064872741699 tok=3283 | L=64 s1=15.5806 step=24.752855300903 tok=6722 | L=256 s1=17.3237 step=20.784854888916 tok=374 |
+PERF kv-sweep f16=1: L=8 s1=10.4984 step=13.032197952271 tok=3283 | L=64 s1=14.3788 step=16.758918762207 tok=6722 | L=256 s1=25.886 step=28.940916061401 tok=374 |
+PERF ablate m0: L=8: s1=10.1768 step=12.453079223633 s1=12.9517 step=17.606973648071 | L=64: s1=23.2096 step=27.761936187744 s1=30.2505 step=32.814025878906 | L=256: s1=69.8051 step=72.463989257812 s1=84.7725 step=87.399005889893 |
+PERF ablate m4: L=8: s1=16.2964 step=19.721031188965 s1=9.5036 step=11.752128601074 | L=64: s1=44.392 step=47.455072402954 s1=21.0977 step=23.460865020752 | L=256: s1=40.9045 step=43.848037719727 s1=45.9174 step=48.337936401367 |
+PERF ablate m5: L=8: s1=9.2549 step=13.813972473145 s1=10.154 step=12.607097625732 | L=64: s1=16.9944 step=19.618988037109 s1=16.8317 step=19.097089767456 | L=256: s1=55.2615 step=57.899951934814 s1=41.5045 step=43.931007385254 |
 SPEC-EQ-LONG: PASS produced=48 ids identical and same length (drafts=48 accepted=45 verifies=12 alt_branch=0 max_branches=0 drafting=on)
 SPEC-EQ-STOP: PASS every cap stopped at the same place with the same ids cap=4 plain_n=4 spec_n=4 first_diff=-1 | cap=8 plain_n=8 spec_n=8 first_diff=-1 | cap=12 plain_n=12 spec_n=12 first_diff=-1 | cap=16 plain_n=16 spec_n=16 first_diff=-1 | cap=32 plain_n=32 spec_n=32 first_diff=-1 |
 SPEC-STOP-EOS: PASS plain_n=11 spec_n=11 identical sequences (drafts=8 accepted=8 verifies=2 alt_branch=0 max_branches=0 drafting=on)
 PERF ablate note: m4 collapses the V read-modify-writes, m5 drops the dot chain; modes 4 and 5 produce garbage output by design and are not used by any gate
 ATTN-ENGAGE: PASS (every attention mode requested is the one the engine reports)
-PERF long: prefill(512 tok)=1291.4898395538 ms (396.44136896724 tok/s) err=
+PERF long: prefill(512 tok)=1314.2049312592 ms (389.58916362416 tok/s) err=
 ORCH plan b0 dev=Intel(R) Arc(TM) B390 GPU total=25.34GiB budget=13.94GiB weights_f32=1.84GiB weights_f16=0.92GiB kv(2048 tok)=0.047GiB strategy=weights-resident resident_now=0.50GiB
 ORCH plan b1 dev=Intel(R) Core(TM) Ultra X7 358H total=31.52GiB budget=17.34GiB weights_f32=1.84GiB weights_f16=0.92GiB kv(2048 tok)=0.047GiB strategy=weights-resident resident_now=0.50GiB
-  curve[0GiB] step=19.8313 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
-  curve[0.6GiB] step=19.0653 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=0.60GiB device=25.34GiB hot_embedding_kept=1
-  curve[0.05GiB] step=1029.02186 ms  residency enabled=1 kept=205/290 planned=0.05GiB used=0.05GiB budget=0.05GiB device=25.34GiB hot_embedding_kept=0
+  curve[0GiB] step=17.9435 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
+  curve[0.6GiB] step=19.3729 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=0.60GiB device=25.34GiB hot_embedding_kept=1
+  curve[0.05GiB] step=1025.2282 ms  residency enabled=1 kept=205/290 planned=0.05GiB used=0.05GiB budget=0.05GiB device=25.34GiB hot_embedding_kept=0
   orch[policy] PASS -> plan b0 dev=Intel(R) Arc(TM) B390 GPU total=25.34GiB budget=0.05GiB weights_f32=1.84GiB weights_f16=0.92GiB kv(2048 tok)=0.047GiB strategy=stream-weights resident_now=0.00GiB
   orch[fallback] PASS streaming path produced identical tokens (6 steps)
   residency tiny=residency enabled=1 kept=205/290 planned=0.05GiB used=0.05GiB budget=0.05GiB device=25.34GiB hot_embedding_kept=0
@@ -660,65 +660,65 @@ PARITY16 273 220 -8.2436314948535
 KVQ cache f16 = 0.005859375 GiB (mode=1)
 KVQ f16 vs f32 logp over 273 positions: mean=0.00037287823496828 max=0.013297588656734
 KVQ: PASS (f16 cache within 0.5 nat of f32; greedy ids identical)
-WPREC int8 step=18.85718 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
-WPREC f16  step=26.43314 ms  residency enabled=1 kept=290/290 planned=0.93GiB used=0.93GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
+WPREC int8 step=14.53642 ms  residency enabled=1 kept=290/290 planned=0.50GiB used=0.50GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
+WPREC f16  step=20.26838 ms  residency enabled=1 kept=290/290 planned=0.93GiB used=0.93GiB budget=13.94GiB device=25.34GiB hot_embedding_kept=1
 WPREC: PASS (ids identical across int8 and f16 weight residency)
 API-UNIT: PASS
 STREAM-UNIT: PASS (session stepping == batched generate, 6 tokens)
 SESSION-SNAP: PASS (parked/resumed two conversations, ids identical)
-SESSION-PAR: PASS (16 tokens interleaved, ids identical; 277.51016616821 ms incl switches)
+SESSION-PAR: PASS (16 tokens interleaved, ids identical; 215.1050567627 ms incl switches)
 SESSION-POS: PASS (refused step left the position at 3)
 SESSION-GROW: PASS (530 steps past the 512-row boundary)
 PEEK-API: PASS (id=279 len=533 unchanged)
 SAMPLE-API: PASS (u1=0.13307966866143 u2=0.20481663336166 x=451)
 PROB-API: PASS (p_top=0.096617742944676 p_other=8.654921377731E-8)
 SPEC-SAMPLE: PASS (acc=9 rej=15 diff=15 reproducible)
-SPEC-COST: PASS greedy_ms=423.84696006775 sampling_ms=443.9389705658 ratio=1.0474039273393
+SPEC-COST: PASS greedy_ms=332.44395256042 sampling_ms=353.09290885925 ratio=1.0621125941374
 SPEC-DBG prompt_tokens=47 tail3_earlier_hits=3
 SPEC-SWEEP
-  k=2 400.57492256165 ms drafts=26 accepted=23 verifies=13 alt_branch=0 max_branches=0 drafting=on len=71/71 prefix=ok
-  k=5 479.11596298218 ms drafts=30 accepted=23 verifies=6 alt_branch=0 max_branches=0 drafting=on len=71/71 prefix=ok
-  k=8 313.15398216248 ms drafts=24 accepted=24 verifies=3 alt_branch=0 max_branches=0 drafting=on len=71/71 prefix=ok
+  k=2 335.18004417419 ms drafts=26 accepted=23 verifies=13 alt_branch=0 max_branches=0 drafting=on len=71/71 prefix=ok
+  k=5 421.10180854797 ms drafts=30 accepted=23 verifies=6 alt_branch=0 max_branches=0 drafting=on len=71/71 prefix=ok
+  k=8 265.94996452332 ms drafts=24 accepted=24 verifies=3 alt_branch=0 max_branches=0 drafting=on len=71/71 prefix=ok
 SPEC0: PASS (k=0 reduces to greedy stepping)
-SPEC drafts=24 accepted=24 verifies=6 alt_branch=0 max_branches=0 drafting=on greedy=597.13506698608 ms spec=260.59198379517 ms speedup=2.2914560083147x
+SPEC drafts=24 accepted=24 verifies=6 alt_branch=0 max_branches=0 drafting=on greedy=479.93111610413 ms spec=219.44117546082 ms speedup=2.1870604506939x
 SPEC: PASS (identical ids; speculative path is the same engine)
-SPEC-TREE bins=2 depth=3 296.0422039032 ms drafts=24 accepted=24 verifies=8 alt_branch=0 max_branches=1 drafting=on
+SPEC-TREE bins=2 depth=3 247.92790412903 ms drafts=24 accepted=24 verifies=8 alt_branch=0 max_branches=1 drafting=on
 SPEC-TREE: PASS (tree verify: ids identical)
 SPEC-TREE-SWEEP
-  tree bins=2 depth=2 1181.1800003052 ms drafts=24 accepted=24 verifies=12 alt_branch=0 max_branches=1 drafting=on ok
-  tree bins=2 depth=3 479.61497306824 ms drafts=24 accepted=24 verifies=8 alt_branch=0 max_branches=1 drafting=on ok
-  tree bins=3 depth=2 849.95889663696 ms drafts=24 accepted=24 verifies=12 alt_branch=0 max_branches=1 drafting=on ok
+  tree bins=2 depth=2 1222.4309444427 ms drafts=24 accepted=24 verifies=12 alt_branch=0 max_branches=1 drafting=on ok
+  tree bins=2 depth=3 472.7520942688 ms drafts=24 accepted=24 verifies=8 alt_branch=0 max_branches=1 drafting=on ok
+  tree bins=3 depth=2 777.93598175049 ms drafts=24 accepted=24 verifies=12 alt_branch=0 max_branches=1 drafting=on ok
 SPEC-TREE-SAMPLE: PASS temp0==greedy_tree reproducible diff=22/71 drafts=6 accepted=6 verifies=2 alt_branch=0 max_branches=1 drafting=on
-SPEC-TREE-WALL: PASS off_ms=1074.3839740753 off_len=95 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=off
-  on_ms=641.73698425293 on_len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
-  speedup=1.6741811683583x
+SPEC-TREE-WALL: PASS off_ms=864.18604850769 off_len=95 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=off
+  on_ms=530.70092201233 on_len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
+  speedup=1.6283861826183x
 SPEC-TREE-ALT: PASS greedy-identical under both branch orders
 SPEC-TREE-ALT-COVERAGE: COVERED alt_branch=nat6/rev0/smp0 max_branches=2
 SPEC-TREE-CTRL: PASS defect reproduced without the repair (alt_branch=2 diffs=4/84)
-SPEC-TREE-DIVERSITY: PASS off_ms=894.72007751465 recency_ms=843.2400226593 freq_ms=827.18992233276 speedup_recency=1.0610502982211x speedup_freq=1.0816380293796x
+SPEC-TREE-DIVERSITY: PASS off_ms=748.23999404907 recency_ms=694.11206245422 freq_ms=694.99611854553 speedup_recency=1.077981545809x speedup_freq=1.0766103206662x
   recency: drafts=21 accepted=18 verifies=5 alt_branch=0 max_branches=2 drafting=on
   freq:    drafts=21 accepted=18 verifies=5 alt_branch=1 max_branches=2 drafting=on
-SPEC-TREE-WIDEN: PASS NOTWIDENED branches=2->2 temp0_greedy_identical=1 narrow_ms=619.79579925537 wide_ms=603.55281829834
+SPEC-TREE-WIDEN: PASS NOTWIDENED branches=2->2 temp0_greedy_identical=1 narrow_ms=506.46996498108 wide_ms=502.77614593506
   narrow: drafts=36 accepted=40 verifies=11 alt_branch=0 max_branches=2 drafting=on
   wide:   drafts=36 accepted=40 verifies=11 alt_branch=0 max_branches=2 drafting=on
-SPEC-TREE-SHAPES: PASS off_ms=1114.599943161 off_len=95
-  bins=1 depth=3 ms=637.27402687073 speedup=1.7490120358963x len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
-  bins=1 depth=6 ms=679.22401428223 speedup=1.6409901883974x len=95 drafts=42 accepted=48 verifies=7 alt_branch=0 max_branches=1 drafting=on
-  bins=1 depth=8 ms=1245.9509372711 speedup=0.89457771555773x len=95 drafts=24 accepted=6 verifies=3 alt_branch=0 max_branches=1 drafting=on
-  bins=1 depth=10 ms=1000.0438690186 speedup=1.1145510489004x len=95 drafts=10 accepted=9 verifies=1 alt_branch=0 max_branches=1 drafting=on
-  bins=1 depth=12 ms=970.37315368652 speedup=1.1486302345923x len=95 drafts=48 accepted=25 verifies=4 alt_branch=0 max_branches=1 drafting=on
-  bins=2 depth=3 ms=636.11102104187 speedup=1.7522097657347x len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
-  bins=4 depth=3 ms=638.34309577942 speedup=1.7460828675527x len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
-  bins=2 depth=4 ms=872.6179599762 speedup=1.2773057561082x len=95 drafts=24 accepted=24 verifies=6 alt_branch=0 max_branches=1 drafting=on
-  best=2,3 speedup=1.7522097657347x
-SPEC-TREE-SELFSEED: PASS temp0_greedy_identical=1 branches=1->4 SEEDED MEDIAN_NOGAIN pairs= 0.72366595764358 0.70842050264873 0.67508680273206 median_ratio=0.70842050264873
+SPEC-TREE-SHAPES: PASS off_ms=880.17702102661 off_len=95
+  bins=1 depth=3 ms=518.37706565857 speedup=1.6979474582048x len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
+  bins=1 depth=6 ms=579.64706420898 speedup=1.5184705924936x len=95 drafts=42 accepted=48 verifies=7 alt_branch=0 max_branches=1 drafting=on
+  bins=1 depth=8 ms=991.84107780457 speedup=0.88741739047033x len=95 drafts=24 accepted=6 verifies=3 alt_branch=0 max_branches=1 drafting=on
+  bins=1 depth=10 ms=809.01288986206 speedup=1.0879641499614x len=95 drafts=10 accepted=9 verifies=1 alt_branch=0 max_branches=1 drafting=on
+  bins=1 depth=12 ms=790.38095474243 speedup=1.1136111209985x len=95 drafts=48 accepted=25 verifies=4 alt_branch=0 max_branches=1 drafting=on
+  bins=2 depth=3 ms=529.79207038879 speedup=1.6613631464523x len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
+  bins=4 depth=3 ms=527.63700485229 speedup=1.6681487707122x len=95 drafts=36 accepted=48 verifies=12 alt_branch=0 max_branches=1 drafting=on
+  bins=2 depth=4 ms=717.08297729492 speedup=1.2274409641503x len=95 drafts=24 accepted=24 verifies=6 alt_branch=0 max_branches=1 drafting=on
+  best=1,3 speedup=1.6979474582048x
+SPEC-TREE-SELFSEED: PASS temp0_greedy_identical=1 branches=1->4 SEEDED MEDIAN_NOGAIN pairs= 0.67114068214884 0.67771337525599 0.6721541070889 median_ratio=0.6721541070889
   plain:  drafts=36 accepted=45 verifies=12 alt_branch=0 max_branches=1 drafting=on
   seeded: drafts=62 accepted=48 verifies=12 alt_branch=0 max_branches=4 drafting=on
-SPEC-CHAIN-VS-TREE: PASS greedy-identical greedy_med_ms=587.55612373352 chain8_med_ms=310.65201759338 (x1.8913642611605) chain12_med_ms=254.64105606079 (x2.3073895970383) chain16_med_ms=265.75589179993 (x2.2108865385978) tree(b1d3)_ms=311.85102462769 tree(b2d3)_ms=304.09717559814 fastest=chain12
+SPEC-CHAIN-VS-TREE: PASS greedy-identical greedy_med_ms=476.57012939453 chain8_med_ms=265.09594917297 (x1.7977269395526) chain12_med_ms=219.6261882782 (x2.1699148591099) chain16_med_ms=227.89096832275 (x2.0912199061772) tree(b1d3)_ms=255.49817085266 tree(b2d3)_ms=249.22204017639 fastest=chain12
   chain: drafts=28 accepted=24 verifies=2 alt_branch=0 max_branches=0 drafting=on
   tree2: drafts=24 accepted=24 verifies=8 alt_branch=0 max_branches=1 drafting=on
-SPEC-AMB chain=308.02297592163 ms drafts=15 accepted=5 verifies=5 alt_branch=0 max_branches=0 drafting=on
-SPEC-AMB tree =383.3110332489 ms drafts=21 accepted=5 verifies=5 alt_branch=0 max_branches=2 drafting=on
+SPEC-AMB chain=247.68304824829 ms drafts=15 accepted=5 verifies=5 alt_branch=0 max_branches=0 drafting=on
+SPEC-AMB tree =316.01405143738 ms drafts=21 accepted=5 verifies=5 alt_branch=0 max_branches=2 drafting=on
 SPEC-AMB: PASS (both greedy-identical; numbers above say which drafting paid)
 SPEC-CONSTRAIN text=[London] unconstrained=151644,872,198,785,6722,315,9625,374,151645,198,151644,77091,198,59604,151645
 SPEC-CONSTRAIN: PASS (only the allowed answers are reachable)
@@ -872,15 +872,15 @@ SPEC-ADAPT drafts=4 accepted=0 verifies=1 alt_branch=0 max_branches=0 drafting=o
 SPEC-ADAPT: PASS (ids identical; wasted verifies bounded, total=1)
 SPEC-NEG drafts=12 accepted=0 verifies=3 alt_branch=0 max_branches=0 drafting=off
 SPEC-NEG: PASS (forced rejection: ids identical, drafting disabled after misses)
-PREFIXCACHE stored=1 hit_prefix=19/19 cold=71.4111328125 ms warm=22.541999816895 ms
+PREFIXCACHE stored=1 hit_prefix=19/19 cold=62.340974807739 ms warm=15.721797943115 ms
 PREFIXCACHE: PASS (reused 19 prefix tokens; continuation identical)
 PREFIXPART: PASS (partial hit reproduces fresh logits and tokens)
 CACHE-EVICT: PASS 2-way protected primary=32 distinct_slot=1 hit_own=49 hit_after=49 (single-slot build lost 49->22 on this same pair)
 CACHE-LRU: PASS policy victim=earlier_used equal=primary
 CACHE-LRU-INTEGRATION: COVERED hot entry survived the triple (own=48 after=48, victim=49->21)
 BATCH-EQ: PASS tokens=10 rows=2 batch==single for both conversations
-BATCH-THRU: PASS single_tps=54.50 batch_tps=101.33 ratio=1.85 single_ms=220.16 batch_ms=236.83
+BATCH-THRU: PASS single_tps=71.37 batch_tps=125.31 ratio=1.75 single_ms=168.12 batch_ms=191.50
 BATCH-M3: PASS tokens=8 rows=3 three batched conversations == each alone
-BATCH-M3-COST: M=1 step_ms=18.09 per_tok_ms=18.09 M=2 step_ms=19.46 per_tok_ms=9.73 M=3 step_ms=20.17 per_tok_ms=6.72 M=4 step_ms=22.27 per_tok_ms=5.56
+BATCH-M3-COST: M=1 step_ms=13.98 per_tok_ms=13.98 M=2 step_ms=15.41 per_tok_ms=7.70 M=3 step_ms=16.60 per_tok_ms=5.53 M=4 step_ms=17.76 per_tok_ms=4.44
 INT8-REPRO requant_b0=0 requant_b1=0 cross_b0_b1=0.01629638671875
 ==RUN_EXIT=0== 

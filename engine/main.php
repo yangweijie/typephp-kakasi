@@ -2586,6 +2586,146 @@ function api_top_array_string_value(string $ids, string $charset, int $maxItems,
 
 // 1 when the schema itself is {"type":"array","items":{"type":"string"}} (top level, no object);
 // F406 lets minItems/maxItems ride beside items the same way the keyed detector accepts them.
+// F522: element-count bounds of a TOP-LEVEL array schema (body or bare schema).
+function api_schema_top_bounds(string $schema): string
+{
+    if (preg_match('/"json_schema"/', $schema) == 1) {
+        $schema = api_json_object_after($schema, "schema");
+        if ($schema == "") {
+            return "";
+        }
+    }
+    $mn = 0;
+    $mx = 0;
+    $m = [];
+    if (preg_match('/"minItems"\s*:\s*([0-9]+)/', $schema, $m) == 1) {
+        $mn = (int) $m[1];
+    }
+    if (preg_match('/"maxItems"\s*:\s*([0-9]+)/', $schema, $m) == 1) {
+        $mx = (int) $m[1];
+    }
+    return "" . $mn . ":" . $mx;
+}
+
+// F522: a TOP-LEVEL array whose items are a scalar enum/const. Returns "#v1~v2" or "".
+function api_schema_top_array_scalar_enum_parts(string $schema): string
+{
+    $m = [];
+    $tail = '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+|\s*,\s*"uniqueItems"\s*:\s*(?:true|false))*';
+    if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"(?:integer|number|boolean)"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}' . $tail . '\s*\}$/', $schema, $m) == 1) {
+        $vals = api_list($m[1]);
+        if (count($vals) < 1) {
+            return "";
+        }
+        $enc = "";
+        for ($i = 0; $i < count($vals); $i++) {
+            if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $vals[$i]) != 1
+                && $vals[$i] != "true" && $vals[$i] != "false") {
+                return "";
+            }
+            $enc = $enc == "" ? $vals[$i] : $enc . "~" . $vals[$i];
+        }
+        return "#" . $enc;
+    }
+    $mc = [];
+    if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"(?:integer|number|boolean)"\s*,\s*"const"\s*:\s*(true|false|-?[0-9]+(?:\.[0-9]+)?)\s*\}' . $tail . '\s*\}$/', $schema, $mc) == 1) {
+        return "#" . $mc[1];
+    }
+    return "";
+}
+
+function api_response_schema_top_array_scalar_enum(string $body): string
+{
+    $schema = $body;
+    if (preg_match('/"json_schema"/', $body) == 1) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return "";
+        }
+    }
+    return api_schema_top_array_scalar_enum_parts($schema);
+}
+
+// F522: the top-level bare-literal array writer (plan values in declaration order).
+function api_top_scalar_enum_value(string $ids, string $csv, int $maxItems, int $useCache = 1, string $bounds = "", int $unique = 0): string
+{
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($commaIds == "" || $bracketIds == "") {
+        return "";
+    }
+    $vals = explode("~", substr($csv, 1));
+    if (count($vals) < 1 || $vals[0] == "") {
+        return "";
+    }
+    $bMin = 0;
+    $bMax = 0;
+    if ($bounds != "") {
+        $bp = explode(":", $bounds);
+        $bMin = (int) $bp[0];
+        $bMax = (int) $bp[1];
+        if ($bMax > 0 && $bMax < $maxItems) {
+            $maxItems = $bMax;
+        }
+        if ($bMin > $maxItems) {
+            $maxItems = $bMin;
+        }
+    }
+    if ($unique == 1) {
+        $uv = [];
+        for ($i = 0; $i < count($vals); $i++) {
+            if (!in_array($vals[$i], $uv, true)) {
+                $uv[] = $vals[$i];
+            }
+        }
+        $vals = $uv;
+        if ($bMin > count($vals)) {
+            return "";
+        }
+    }
+    $cands = $vals;
+    $s = api_constrained($ids, ["["], 64, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $endIds = $commaIds . "," . $bracketIds;
+    $done = 0;
+    for ($it = 0; $it < $maxItems; $it++) {
+        if ($unique == 1 && $it >= count($vals)) {
+            break;
+        }
+        $f = api_constrained_continue($unique == 1 ? [$vals[$it]] : $cands, 24);
+        if ($f == "") {
+            return "";
+        }
+        $s = $s . "," . $f;
+        $offer = $endIds;
+        if ($unique == 1 && $it + 1 >= count($vals)) {
+            $offer = $bracketIds;
+        } else if ($it + 1 < $bMin) {
+            $offer = $commaIds;
+        } else if ($it + 1 >= $maxItems) {
+            $offer = $bracketIds;
+        }
+        $nx = model_session_next_allowed(0, $offer);
+        if ($nx < 0) {
+            break;
+        }
+        $s = $s . "," . $nx;
+        if (strpos("," . $commaIds . ",", "," . $nx . ",") === false) {
+            $done = 1;
+            break;
+        }
+    }
+    if ($done == 0) {
+        $rb = api_constrained_continue(["]"], 4);
+        if ($rb != "") {
+            $s = $s . "," . $rb;
+        }
+    }
+    return $s;
+}
+
 function api_response_schema_top_array_string(string $body): int
 {
     if (preg_match('/"json_schema"/', $body) != 1) {
@@ -8256,6 +8396,10 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
             4, 3, 1, api_response_schema_array_bounds($body));
     } else if ($scMix != "") {
         $scOut = api_object_mixed($ids, $scMix, api_schema_charset(), 16, 1, api_response_schema_string_bounds($body));
+    } else if (api_response_schema_top_array_scalar_enum($body) != "") {
+        $tsse = api_response_schema_top_array_scalar_enum($body);
+        $scOut = api_top_scalar_enum_value($ids, $tsse, 4, 1,
+            api_schema_top_bounds($body), api_schema_unique_true($body));
     } else if (api_response_schema_top_array_string($body) == 1) {
         $scOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4, 1,
             api_response_schema_array_bounds($body));
@@ -10493,7 +10637,8 @@ function api_schema_structural_unsupported(string $schema): string
         && api_schema_array_enum($schema) == ""
         && api_schema_array_item_bounds($schema) == ""
         && api_schema_array_item_number($schema) == ""
-        && api_schema_array_item_multiple($schema) == "") {
+        && api_schema_array_item_multiple($schema) == ""
+        && api_schema_top_array_scalar_enum_parts($schema) == "") {
         return "items";
     }
     // F429: propertyNames is judged against the plan's key names first - if those names satisfy the
@@ -11188,7 +11333,8 @@ function api_schema_keywords_unsupported(string $body): string
         // writer already takes, so the count constraints are honoured on that route too.
         if (($kw == "minItems" || $kw == "maxItems")
             && (api_schema_array_element_bounds($body) != ""
-                || api_response_schema_array_enum($body) != "")) {
+                || api_response_schema_array_enum($body) != ""
+                || api_response_schema_top_array_scalar_enum($body) != "")) {
             continue;
         }
         // F402: additionalProperties holds by construction where every key is named from the plan.
@@ -11207,6 +11353,10 @@ function api_schema_keywords_unsupported(string $body): string
             && preg_match_all('/"uniqueItems"\s*:/', $body) == 1
             && preg_match('/"uniqueItems"\s*:\s*true/', $body) == 1) {
             $ue = api_response_schema_array_enum($body);
+            $ut = api_response_schema_top_array_scalar_enum($body);
+            if ($ue == "" && $ut != "") {
+                $ue = "top|" . $ut;
+            }
             if ($ue != "") {
                 $uu = explode("|", $ue);
                 if (count($uu) >= 2 && substr($uu[1], 0, 1) != "~") {
@@ -14055,6 +14205,10 @@ function api_serve(int $port): void
                         } else if ($sMix != "") {
                             $sJOut = api_object_mixed($ids, $sMix, api_schema_charset(), 16,
                                 $prefixCache, api_response_schema_string_bounds($body));
+                        } else if (api_response_schema_top_array_scalar_enum($body) != "") {
+                            $tsse3 = api_response_schema_top_array_scalar_enum($body);
+                            $sJOut = api_top_scalar_enum_value($ids, $tsse3, 4, $prefixCache,
+                                api_schema_top_bounds($body), api_schema_unique_true($body));
                         } else if (api_response_schema_top_array_string($body) == 1) {
                             $sJOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4,
                                 $prefixCache, api_response_schema_array_bounds($body));
@@ -14278,6 +14432,7 @@ function api_serve(int $port): void
                 if (count($schemaCands) > 0) {
                     $enumOut = api_constrained($ids, $schemaCands, 128, $prefixCache);
                 } else if ($enumFlat == 1 && api_response_schema_array_enum($body) == ""
+                    && api_response_schema_top_array_scalar_enum($body) == ""
                     && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', api_schema_strip_root_not($body), $em)) {
                     $evals = api_list($em[1]);
                     if (count($evals) > 0) {
@@ -14482,6 +14637,11 @@ function api_serve(int $port): void
                     } else if ($mixPlan != "") {
                         $enumOut = api_object_mixed($ids, $mixPlan, api_schema_charset(), 16,
                             $prefixCache, api_response_schema_string_bounds($body));
+                        $jsonMode = 1;
+                    } else if (api_response_schema_top_array_scalar_enum($body) != "") {
+                        $tsse4 = api_response_schema_top_array_scalar_enum($body);
+                        $enumOut = api_top_scalar_enum_value($ids, $tsse4, 4, $prefixCache,
+                            api_schema_top_bounds($body), api_schema_unique_true($body));
                         $jsonMode = 1;
                     } else if (api_response_schema_top_array_string($body) == 1) {
                         $enumOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4,
@@ -18824,6 +18984,9 @@ function main(): void
     // F521: boolean enum/const items ride the same bare-literal table.
     $boolEnumItems = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"flags":{"type":"array","items":{"type":"boolean","enum":[true,false]}}}}}}');
     $boolConstItems = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"flags":{"type":"array","items":{"type":"boolean","const":true}}}}}}');
+    // F522: a TOP-LEVEL scalar enum array (root array) is a finite value table too.
+    $topScalarEnum = api_response_schema_top_array_scalar_enum('{"json_schema":{"schema":{"type":"array","items":{"type":"integer","enum":[2,5,9]}}}}');
+    $topScalarConst = api_response_schema_top_array_scalar_enum('{"json_schema":{"schema":{"type":"array","items":{"type":"boolean","const":true}}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] p_len_ok=[" . $pLenOk . "] p_len_bad=[" . $pLenBad
         . "] p_len_range=[" . $pLenRange . "]"
@@ -18844,6 +19007,7 @@ function main(): void
         . "] uniq_enum=[" . $uniqEnum . "] uniq_enum_unsat=[" . $uniqEnumUnsat . "] uniq_enum_pat=[" . $uniqEnumPat
         . "] num_enum_items=[" . $numEnumItems . "] num_const_items=[" . $numConstItems . "] num_enum_uniq=[" . $numEnumUniq
         . "] bool_enum_items=[" . $boolEnumItems . "] bool_const_items=[" . $boolConstItems
+        . "] top_scalar_enum=[" . $topScalarEnum . "] top_scalar_const=[" . $topScalarConst
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == ""
         && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
@@ -18868,6 +19032,7 @@ function main(): void
         && $uniqEnum == "" && $uniqEnumUnsat == "uniqueItems" && $uniqEnumPat == "uniqueItems"
         && $numEnumItems == "nums|#2~5~9" && $numConstItems == "nums|#7" && $numEnumUniq == ""
         && $boolEnumItems == "flags|#true~false" && $boolConstItems == "flags|#true"
+        && $topScalarEnum == "#2~5~9" && $topScalarConst == "#true"
         && $kwAY == "cities") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
@@ -20612,6 +20777,26 @@ function main(): void
         echo "SCHEMA-TOPARR: PASS (top-level string array constrained)\n";
     } else {
         echo "SCHEMA-TOPARR: FAIL shape=" . $taShape . "\n";
+    }
+
+    // F522: the top-level scalar-enum writer emits a bare-literal array.
+    $tsBody = '{"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"array","items":{"type":"integer","enum":[2,5,9]}}}}}';
+    $tsIds = tok_chat("user", "Give the numbers.") . "," . tok_chat_open("assistant");
+    $tsCsv = api_response_schema_top_array_scalar_enum($tsBody);
+    $tsOut = api_top_scalar_enum_value($tsIds, $tsCsv, 4, 0);
+    $tsParts = explode(",", $tsOut);
+    $tsBase = count(explode(",", $tsIds));
+    $tsText = "";
+    for ($i = $tsBase; $i < count($tsParts); $i++) {
+        $tsText = $tsText . gguf_token_str((int) $tsParts[$i]);
+    }
+    $tsText = str_replace("Ġ", " ", $tsText);
+    echo "SCHEMA-TOPARR-SCALAR det=[" . $tsCsv . "] text=[" . $tsText . "]\n";
+    if ($tsCsv == "#2~5~9" && preg_match('/^\[(2|5|9)(,(2|5|9))*\]$/', $tsText) == 1
+        && api_json_ok($tsText) == 1) {
+        echo "SCHEMA-TOPARR-SCALAR: PASS (bare-literal enum array)\n";
+    } else {
+        echo "SCHEMA-TOPARR-SCALAR: FAIL\n";
     }
 
     // Top-level number array: digits only, list closed by the grammar.

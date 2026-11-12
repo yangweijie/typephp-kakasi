@@ -1,0 +1,9 @@
+WARM ms=1334.69414711 err=
+API_LISTEN 8000
+ATTN_MODE 2
+SPEC_WINDOW 2
+DBG_TOPSCALAR top=[#2~5~9] arrNI=[] arrProp=[] arrNum=[] arrEnum=[] mix=[] jsonMode=0
+DBG_TS_TAKEN4 csv=[#2~5~9]
+DBG_TS_OK outlen=87
+DBG_TS_OUT4 len=87
+SESSION request completion=9 reason=complete json=ok tools=none seed=12345 cache=-1

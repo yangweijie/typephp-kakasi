@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F521）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F522）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3730,6 +3730,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | minItems / maxItems：单属性标量数组（≤8 元素） | **支持**（按元素计数过滤闭括号） | `SCHEMA-COUNT`（F400） |
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
 | minItems / maxItems / minLength / maxLength：**含范围 pattern 叶（非定长）、p 叶界限不含其定长等不可计划命名的其他形状** | **显式 400** | `SCHEMA-KEYWORDS`/`p_len_bad`/`p_len_range`/`len_mix_p_bad`/`mixed_len_p_bad_refuse`（F398–F400/F493–F495） |
+| **顶层**（根数组）标量 enum/const 数组（无 properties 包装；可带 minItems/maxItems/uniqueItems） | **支持**（plan `#v1~v2`，裸字面量根数组；`$enumFlat` 单值分支对根数组让位） | `top_scalar_enum`/`top_scalar_const`/`SCHEMA-TOPARR-SCALAR`/`top_num_enum_ok`/`top_scalar_enum_unique_ok`/`top_bool_enum_ok`（F522） |
 | uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
 | items 的**标量 enum/const**（integer/number/boolean 有限值表，可带 minItems/maxItems） | **支持**（plan `prop|#v1~v2`，写入器发裸字面量；uniqueItems 走有限域去重） | `num_enum_items`/`num_const_items`/`bool_enum_items`/`bool_const_items`/`items_num_enum_ok`/`items_num_const_ok`/`items_num_enum_unique_ok`/`items_bool_enum_ok`/`items_bool_enum_unique_ok`/`items_bool_const_ok`（F520/F521） |
 | uniqueItems:true：**enum-items 的有限域**（域大小 ≥ minItems；const 单值域、锚定字面交替、**标量 enum/const**同为有限域） | **支持**（写入器按声明顺序强制互异值，域耗尽即收尾） | `uniq_enum`/`uniq_enum_ok`/`uniq_const_ok`/`uniq_alt_ok`/`items_num_enum_unique_ok`/`items_bool_enum_unique_ok`（F517/F519/F520/F521） |
