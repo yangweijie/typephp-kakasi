@@ -1961,3 +1961,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **结果**：检测器/写入器/门全部实现；写入器级门在 cache=0 下通过（`["paris","lyon"]`），但**活体**（prefixCache 上下文）输出 `["paris,"paris,"paris,"paris]`——闭引号位置被分词成逗号，属**静默坏 JSON**。与 F515 同族（tokenizer 上下文相关）。
 **处置**：string 分支与相关门/活体全部回退（源码回到 F522 的提交内容），重建并自检 182/0、bounds harness 绿。证据：`schema_bounds_f523probe.log`、`selftest_f523c.log`、`serve_f523probe.log`。
 **下一步**：先解决 tokenizer 语境下的引号分词（与 F515 一并），再启用 string 根数组；写入器级门通过不能代替活体。
+## F525（调查）：候选层四位负值截断——门内复现成立
+**复现（自检门，无需活体）**：对 `{"n":{"type":"integer","minimum":-1000,"maximum":-992}}`，`api_response_schema_candidates` 产出 **9 个候选**，`api_constrained(...,cache=0)` 的输出文本为 `{"n":-1000`、`api_json_ok=0`（`selftest_f525probe.log: SCHEMA-NARROW cands=9 text=[{"n":-1000] json=0`）。3 位负值与同宽正值完整 ⇒ 与 F515 活体一致，且**与 prefixCache 无关**。
+**已排除**：候选串分词（`TOKPROBE`：`-1000`→`-|1|0|0|0`、`paris"`→`par|is|"` 正确）；`api_constrained_continue` 与界写入器的容错闭合（F524 的 strict 实验未改变本复现）。
+**下一步（规格）**：①恢复 strict 循环（被 block 的强制步返回哨兵）；②候选层分支 `count($schemaCands)>0 && $enumOut==""` 时 **fail-closed**：走与守卫一致的 400（"structured decode failed"），绝不落到自由生成；③把本门升级为断言（text 必须为空或合法 JSON），作为 F515 的回归门。判据：门内 `text=[]`，活体窄区间 400 或合法 JSON。
+
