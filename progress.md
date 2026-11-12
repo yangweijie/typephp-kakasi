@@ -2234,3 +2234,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`bool_enum_items=[flags|#true~false]`、`bool_const_items=[flags|#true]`。
 - **活体**：`[false×4]`、unique `[true,false]`、const `[true×4]`；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f521.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.556×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F522，尝试后回退）——顶层标量 enum 数组
+- **已实现并验证**：检测器（`#` 有限值表）、裸字面量写入器（`SCHEMA-TOPARR-SCALAR text=[2,5,9,2]` PASS）、四处分发插入；流式活体 `[2,5,9,2]` 正确。
+- **证伪**：非流式同请求 `json=off`、content 仅 `2`（自由生成）——400 被换成静默违反，说明非流式链另有认领者/入口。
+- **处置**：源码与 harness 全部回退（回到 F521），重建 `build_f522revert`，bounds harness CHECK_EXIT=0；证据日志保留。
+- **下一步**：非流式链入口判别量定位吞掉者后再接线。

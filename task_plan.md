@@ -1696,7 +1696,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F521 计划与完成（boolean enum/const items：同一有限值表）
+## F522（尝试后回退）：顶层标量 enum 数组——写入器与流式已通，非流式未接线
+**目标**：根数组 `{"type":"array","items":{"type":"integer","enum":[2,5,9]}}`（无 properties 包装）此前被 `items` 点名拒绝；实现检测器 `api_schema_top_array_scalar_enum`（`#` 前缀有限值表）、裸字面量写入器 `api_top_scalar_enum_value`、四处分发插入与 items/minItems/uniqueItems 守卫。
+**已验证**：检测器门 `top_scalar_enum=[#2~5~9]`/`#true`；**写入器级门** `SCHEMA-TOPARR-SCALAR text=[2,5,9,2]` PASS；**流式**活体返回 `[2,5,9,2]`。
+**证伪**：**非流式**同一请求 `json=off`、content 仅 `2`（自由生成，schema 要求数组）——即 400 被换成静默违反；说明 8000 非流式链（`api_serve` 的 json=off 路径）另有认领者/入口，四处插入点均未生效。
+**处置**：为避免静默违反，`engine/main.php` 与 harness 全部回退（源码回到 F521），重建 `build_f522revert`，bounds harness `CHECK_EXIT=0`。证据日志保留（`serve_f522probe.log`、`selftest_f522b.log`、`schema_bounds_f522*.log`）。
+**下一步**：在非流式链入口打判别量（`$jsonMode`、各 detector 返回值、`SESSION request` 前的实际分支），定位吞掉根标量 enum 的认领者，再按同一实现接线；写入器/检测器可照本记录重建。
+
+
 **核心思路**：F520 的 `#` 裸字面量编码天然容纳 `true/false`；把检测器的标量 enum/const 分支扩到 `boolean`、kind 放宽到 `ab`，uniqueItems/minItems 自动继承（域 {true,false} 必须覆盖 minItems）。
 **实现**：enum 分支类型正则加 `boolean`、值校验加 true/false；const 分支字面量加 `(true|false)`；kind 检查加 `ab`。
 **门**：`bool_enum_items=[flags|#true~false]`、`bool_const_items=[flags|#true]`。
