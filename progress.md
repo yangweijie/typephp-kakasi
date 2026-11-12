@@ -2241,3 +2241,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **过程**：首版只接线路由 ⇒ 非流式自由文本 `2`（静默违反）⇒ 全部回退留证；加 DBG 判别量后定位并完成。
 - **门/活体**：`top_scalar_enum=[#2~5~9]`、`top_scalar_const=[#true]`、`SCHEMA-TOPARR-SCALAR` PASS；`[2,5,9,2]`、unique `[2,5,9]`、bool `[false]`、const+unique+min2 400。
 - **梯**：自检 **182/0**（`selftest_f522b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.531×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F523，尝试后回退）——顶层 string enum 数组
+- **证伪**：写入器门（cache=0）通过，但活体（prefixCache）输出 `["paris,"paris,…]`（引号被分词成逗号）——静默坏 JSON。
+- **处置**：string 分支/门/活体全部回退，源码回到 F522；重建自检 182/0、bounds harness 绿；证据日志入库。

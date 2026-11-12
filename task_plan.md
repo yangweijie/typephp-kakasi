@@ -1956,3 +1956,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**、8000 **115/0**、8001 par/fairness **0**、scaling **1.523×**、哨兵 **0**（`engine/selftest_f443.log`、`engine/schema_bounds_f443.log`、`engine/api_smoke_f443.log`、`engine/throughput_f443.log`）。
 **明确留拒（排队）**：三位及以上小数、无界 `multipleOf` > 999999999（需更长后缀或换机制）、tuple 实现、`dependentSchemas`/`dependencies`。
 **顺位**：分片多卡 / FR-05（本机不可验证，保持排队）。
+## F523（尝试后回退）：顶层 string enum 数组——分词级引号畸形
+**目标**：把 F522 的根数组路线扩到 string enum/const items（`@` 带引号标记）。
+**结果**：检测器/写入器/门全部实现；写入器级门在 cache=0 下通过（`["paris","lyon"]`），但**活体**（prefixCache 上下文）输出 `["paris,"paris,"paris,"paris]`——闭引号位置被分词成逗号，属**静默坏 JSON**。与 F515 同族（tokenizer 上下文相关）。
+**处置**：string 分支与相关门/活体全部回退（源码回到 F522 的提交内容），重建并自检 182/0、bounds harness 绿。证据：`schema_bounds_f523probe.log`、`selftest_f523c.log`、`serve_f523probe.log`。
+**下一步**：先解决 tokenizer 语境下的引号分词（与 F515 一并），再启用 string 根数组；写入器级门通过不能代替活体。
