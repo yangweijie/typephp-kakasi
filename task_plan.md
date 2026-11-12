@@ -1696,7 +1696,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F514 计划与完成（整数上界落在 marker 窗口：静默违反改显式拒绝）
+## F516 计划与完成（小数位宽扩到九位：marker -991，窗口守卫同步扩宽）
+**背景**：F514 留下的规则——"宽度扩展必须同步扩宽 marker 窗口"。本轮验证该规则：九位小数（-991）落地时把窗口守卫从 `[-999,-992]` 扩到 `[-999,-991]`，并加 `win_nine` 门钉住"maximum:-991 必须拒绝"。
+**实现**（全部宽度站点）：写入器 marker 表（d=9, scale=10^9）、两处 marker 判定、`api_schema_scaled` 正则与 `digits==9` 分支、分子上限 9、multipleOf 分支 5 个字面正则与 marker 表、无乘数回退的 d 探测与 marker 表、mixed q marker 范围、数组项 marker 判定、窗口守卫。
+**门**：新 `num_dec9=[n|1511111111|-991|0]`、`fm_d9=[n|246912|-991|0]`、`win_nine=[]`；1–8 位全部不回退。
+**活体**：`float_dec9_served` 200 `{"n":1.511111111}`、`num_mult_frac_d9_ok` 200 `{"n":0.000246912}`、`marker_window_nine_refuse`（integer maximum:-991）400。
+**梯**：自检 **182/0**（`selftest_f516.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.548×**；哨兵 **0**；BUILD_OK（`build_f516`）。
+**注**：F515（候选枚举层四位负值截断）仍按原顺位挂账，与本轮独立。
+
+
 **核心思路**：写入器的 hi 槽自 F441 起复用为小数网格 marker（-999…-992），整数计划的真实上界走同一槽——窗口内的 maximum 把写入器带进 marker 分支发出缩放小数。改前活体证据（F513 二进制，`probe_f514pre.log`）：[-2000000,-992] 宽跨 200 `{"n":-0.02000000}`、单侧 max=-992 200 `{"n":-0.00000001}`、multipleOf=992 塌缩 200 `{"n":-0.00000992}`——类型与上界双双违反。
 **实现**：`api_schema_number_bounded_shape` 整数返回（仅该处）前加窗口守卫 `hi∈[-999,-992] ⇒ ""`（请求层 400）；窄跨窗口区间由候选枚举层先行认领不受影响，-1000 及以下幅值步进不变，小数/marker 分支在守卫前返回不受影响；未来宽度扩展须同步扩窗。
 **门**：新 `win_wide`/`win_one`/`win_mult`/`win_narrow_shape` 全 ""、`win_below=[n|-2000000|-1000|0]`；活体 `marker_window_{wide,one,mult}_refuse` 400、`marker_window_narrow_ok` 200（[-998,-992] 候选层服务）、`marker_window_below_ok` 200。

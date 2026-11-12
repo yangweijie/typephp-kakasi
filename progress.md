@@ -2196,3 +2196,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：新 `win_wide`/`win_one`/`win_mult`/`win_narrow_shape` 全 `""`、`win_below=[n|-2000000|-1000|0]`；活体 `marker_window_{wide,one,mult}_refuse` 400、`marker_window_narrow_ok` 200 `{"n":-998}`、`marker_window_below_ok` 200。
 - **过程**：narrow 控制原用 [-1000,-992] ⇒ 活体暴露**另一既有缺陷**：候选枚举层对 ≥4 位负值发截断 JSON（`{"n":-1000`，200，引擎自记 json=bad）；同宽正值 1000 完整、≤3 位负值完整。tokenize oracle：`":-` 为单 token 52052，walk 末 "}" 步 next_allowed 连败 ⇒ 与挂账的 F228"首调空返回/整行 NaN"同族，控制改 [-998,-992]（全 3 位），缺陷记 F515（`probe_f514b/c.log` 留证）。
 - **梯**：自检 **182/0**（`selftest_f514.log`，`: FAIL` 0，首轮即绿）；四 harness **PASS**（`schema_*_f514.log`，CHECK_EXIT=0）；8000 **115/0**；8001 par/fairness **0**；scaling **1.539×**；哨兵 **0**（`gate_live_f514.log`）；BUILD_OK（`build_f514`）。
+
+## ▶ 状态（F516，已完成）——小数位宽扩到九位（marker -991），窗口守卫同步扩宽
+- **实现**：全部宽度站点一次改全（写入器/marker 判定/scaled 正则与 digits==9/分子上限/形状 5 正则与 marker 表/回退 d 探测/mixed q 范围/数组项判定）；窗口守卫 `[-999,-992]`→`[-999,-991]`。
+- **门**：新 `num_dec9=[n|1511111111|-991|0]`、`fm_d9=[n|246912|-991|0]`、`win_nine=[]`；1–8 位不回退。
+- **活体**：`{"n":1.511111111}`、`{"n":0.000246912}`、maximum:-991 → 400；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f516.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.548×**；哨兵 **0**；BUILD_OK。

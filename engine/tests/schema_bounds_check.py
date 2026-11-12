@@ -230,6 +230,17 @@ cases = [
     ("float_dec8_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51111111, "maximum": 1.51111119}}},
      lambda code, txt: code == 200 and txt.strip() == '{"n":1.51111111}'),
+    ("float_dec9_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511111111, "maximum": 1.511111119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.511111111}'),
+    # F516: nine fraction places on the multiplier (0.000123456 x 2 = 0.000246912).
+    ("num_mult_frac_d9_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.000123456}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
+     and 0.0002 <= val_of(txt, "n") <= 0.001 and is_mult(val_of(txt, "n"), 0.000123456)),
+    ("marker_window_nine_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -991}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     ("num_mult_frac_d8_ok", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345}}},
      lambda code, txt: code == 200 and isinstance(val_of(txt, "n"), (int, float))
