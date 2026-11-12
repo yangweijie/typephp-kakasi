@@ -2281,3 +2281,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门/活体**：`ueRootVac=[]`、`ueRootTuple=[prefixItems]`；`["New York City,"]`、tuple 400。
 - **梯**：自检 182/0（`selftest_f530e.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.581×；哨兵 0。
 
+## ▶ 状态（F531，已完成）——根 number/boolean 数组的 unevaluatedItems
+- **实现**：三个根数组检测器统一**前置剥离** `,"unevaluatedItems":<浅对象|true|false>` 后再匹配。
+- **过程**：正则尾部容忍方案门内失败（-1/0），改剥离后 `ue_num_det=1`、`ue_bool_det=1`。
+- **活体**：`[123,456,789]`、`[false]`、`["New York City,"]`；bounds harness PASS。
+- **梯**：自检 182/0（`selftest_f531e.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling ~1.58×；哨兵 0。
+

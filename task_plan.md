@@ -1995,3 +1995,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体**：`uneval_root_vacuous_ok` 200 `["New York City,"]`（字符串数组、合法）；`uneval_root_tuple_refuse` 400 点名 prefixItems。
 **梯**：自检 **182/0**（`selftest_f530e.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.581×**；哨兵 **0**；BUILD_OK（`build_f530e`）。
 
+## F531 计划与完成（根 number/boolean 数组的 unevaluatedItems 真空形态）
+**核心思路**：与 F530 同一论证——`items`（schema）评估所有元素 ⇒ 真空。落地方式改为**前置剥离**：检测器先删去 `,"unevaluatedItems":<浅对象|true|false>`，再跑原有形状正则（深子 schema 保持拒绝）。
+**实现**：`api_response_schema_top_array_number/string/boolean` 三个检测器统一加剥离行（string 的原尾部容忍表达式回退为剥离，行为等价且覆盖 true/false）。
+**过程**：先试“正则尾部容忍”，门内 `ue_num_det=-1`、`ue_bool_det=0`——尾部拼接未匹配；PHP CLI 直测亦 0 ⇒ 改剥离后两者均为 1。
+**门**：`ue_num_det=1`、`ue_bool_det=1`；`ueRootVac=[]`/`ueRootTuple=[prefixItems]` 不回退。
+**活体**：`uneval_root_num_ok` 200 `[123,456,789]`、`uneval_root_bool_ok` 200 `[false]`、`uneval_root_vacuous_ok` 200 `["New York City,"]`。
+**梯**：自检 **182/0**（`selftest_f531e.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling ~1.58×；哨兵 **0**；BUILD_OK（`build_f531e`）。
+

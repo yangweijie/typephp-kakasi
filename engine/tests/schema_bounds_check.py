@@ -871,6 +871,18 @@ cases = [
      {"type": "array", "prefixItems": [{"type": "string"}],
       "unevaluatedItems": {"type": "integer"}},
      lambda code, txt: code == 400 and ("unevaluatedItems" in txt or "prefixItems" in txt)),
+    # F531: the same vacuous keyword on number and boolean root arrays; the writers still emit
+    # item-typed elements.
+    ("uneval_root_num_ok", "Give the numbers.",
+     {"type": "array", "items": {"type": "number"},
+      "unevaluatedItems": {"type": "string"}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1
+     and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in json.loads(txt))),
+    ("uneval_root_bool_ok", "Give the flags.",
+     {"type": "array", "items": {"type": "boolean"}, "unevaluatedItems": False},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), list)
+     and len(json.loads(txt)) >= 1 and all(isinstance(x, bool) for x in json.loads(txt))),
 ]
 
 bad = 0

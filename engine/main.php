@@ -2487,8 +2487,9 @@ function api_response_schema_top_array_bool(string $body): int
     if (preg_match('/"(enum|const|pattern)"\s*:/', $schema) == 1) {
         return 0;
     }
+    $scan = preg_replace('/,\s*"unevaluatedItems"\s*:\s*(?:\{[^{}]*\}|true|false)/', '', $schema);
     if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"boolean"'
-        . '\s*\}\s*\}/s', $schema) != 1) {
+        . '\s*\}\s*\}/s', $scan) != 1) {
         return 0;
     }
     return 1;
@@ -2505,8 +2506,11 @@ function api_response_schema_top_array_number(string $body): int
         return -1;
     }
     $pm = [];
+    // F531: unevaluatedItems is vacuous on a root array with a single-schema items, so strip the
+    // keyword (shallow subschemas only) before the shape regex; deeper bodies stay refused.
+    $scan = preg_replace('/,\s*"unevaluatedItems"\s*:\s*(?:\{[^{}]*\}|true|false)/', '', $schema);
     if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*'
-        . '"(integer|number)"\s*\}\s*\}/s', $schema, $pm) != 1) {
+        . '"(integer|number)"\s*\}\s*\}/s', $scan, $pm) != 1) {
         return -1;
     }
     if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $schema) == 1) {
@@ -2794,14 +2798,12 @@ function api_response_schema_top_array_string(string $body): int
     if ($schema == "") {
         return 0;
     }
-    // F530: unevaluatedItems is vacuous on this shape (items evaluates every element), so the
-    // detector tolerates it: the writer still emits a plain string array.
+    // F530/F531: strip the vacuous keyword before the shape regex (shallow subschemas only).
+    $scan = preg_replace('/,\s*"unevaluatedItems"\s*:\s*(?:\{[^{}]*\}|true|false)/', '', $schema);
     if (preg_match('/^\s*\{\s*"type"\s*:\s*"array"\s*'
         . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
         . '\s*,\s*"items"\s*:\s*\{\s*"type"\s*:\s*"string"\s*\}'
-        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*'
-        . '(?:\s*,\s*"unevaluatedItems"\s*:\s*(?:true|false|\{[^{}]*\}))*'
-        . '\s*\}\s*$/', $schema) != 1) {
+        . '(?:\s*,\s*"(?:minItems|maxItems)"\s*:\s*[0-9]+)*\s*\}\s*$/', $scan) != 1) {
         return 0;
     }
     return 1;
@@ -19309,6 +19311,9 @@ function main(): void
     // unevaluatedItems is vacuous; a prefixItems tuple leaves elements unevaluated (control).
     $ueRootVac = api_schema_structural_unsupported('{"type":"array","items":{"type":"string"},"unevaluatedItems":{"type":"integer"}}');
     $ueRootTuple = api_schema_structural_unsupported('{"type":"array","prefixItems":[{"type":"string"}],"unevaluatedItems":{"type":"integer"}}');
+    // F531: number/boolean root arrays tolerate the vacuous keyword at the detector layer too.
+    $ueRootNumDet = api_response_schema_top_array_number('{"json_schema":{"schema":{"type":"array","items":{"type":"number"},"unevaluatedItems":{"type":"string"}}}}');
+    $ueRootBoolDet = api_response_schema_top_array_bool('{"json_schema":{"schema":{"type":"array","items":{"type":"boolean"},"unevaluatedItems":false}}}');
     // F454: minContains/maxContains fold into the element bounds on the F449 contains form; an
     // unservable pair (ceiling exceeded, min above max) is refused by name, and the bounds function
     // must return the folded interval the writers will receive.
@@ -19793,7 +19798,8 @@ function main(): void
         . "] if_req_route=" . count($ifReqRoute)
         . "] uneval_props=[" . $sfBA . "] uneval_props_schema=[" . $sfBB
         . "] uneval_items=[" . $sfBC . "] uneval_items_wrong=[" . $sfBD
-        . " ] uneval_root=[" . $ueRootVac . "] uneval_root_tuple=[" . $ueRootTuple
+        . "] uneval_root=[" . $ueRootVac . "] uneval_root_tuple=[" . $ueRootTuple
+        . "] ue_num_det=" . $ueRootNumDet . " ue_bool_det=" . $ueRootBoolDet
         . "] uneval_prop_named=[" . $sfBE . "]"
         . " cont_min=[" . $sfBF . "] cont_max=[" . $sfBG . "] cont_min_big=[" . $sfBH
         . "] cont_min_over=[" . $sfBI . "] cont_bounds=[" . $sfBJ . "]"
@@ -19955,6 +19961,7 @@ function main(): void
         && $sfBC == ""
         && $sfBD == "unevaluatedItems"
         && $ueRootVac == "" && $ueRootTuple == "prefixItems"
+        && $ueRootNumDet == 1 && $ueRootBoolDet == 1
         && $sfBE == "unevaluatedProperties"
         && $sfBF == ""
         && $sfBG == ""

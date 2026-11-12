@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F530）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F531）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3731,7 +3731,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数组项 / 多属性对象上的界（计数形式） | **支持** | `SCHEMA-KEYWORDS ao_bounds/ao_multi/multi_bounds`（F418） |
 | minItems / maxItems / minLength / maxLength：**含范围 pattern 叶（非定长）、p 叶界限不含其定长等不可计划命名的其他形状** | **显式 400** | `SCHEMA-KEYWORDS`/`p_len_bad`/`p_len_range`/`len_mix_p_bad`/`mixed_len_p_bad_refuse`（F398–F400/F493–F495） |
 | **顶层**（根数组）标量/string enum/const 数组（无 properties 包装；可带 minItems/maxItems/uniqueItems） | **支持**（plan `#`/`@` 前缀，裸/带引号字面量根数组；`$enumFlat` 单值分支对根数组让位） | `top_scalar_enum`/`top_scalar_const`/`top_str_enum`/`top_str_const`/`SCHEMA-TOPARR-SCALAR`/`SCHEMA-TOPARR-STRENUM`/`top_num_enum_ok`/`top_scalar_enum_unique_ok`/`top_bool_enum_ok`/`top_str_enum_ok`/`top_str_enum_unique_ok`/`top_str_const_ok`（F522/F528） |
-| unevaluatedItems：**根数组且 `items` 为单一 schema**（items 评估所有元素 ⇒ 真空满足，任意值） | **支持** | `ueRootVac`/`uneval_root_vacuous_ok`（F530） |
+| unevaluatedItems：**根数组且 `items` 为单一 schema（string/number/boolean）**（items 评估所有元素 ⇒ 真空满足，任意值） | **支持**（检测器前置剥离该关键字后再匹配形状） | `ueRootVac`/`ue_num_det`/`ue_bool_det`/`uneval_root_vacuous_ok`/`uneval_root_num_ok`/`uneval_root_bool_ok`（F530/F531） |
 | unevaluatedItems：**元组形态（`items` 数组 / `prefixItems`）** | **显式 400** | `ueRootTuple`/`uneval_root_tuple_refuse`（F530） |
 | uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
 | items 的**标量 enum/const**（integer/number/boolean 有限值表，可带 minItems/maxItems） | **支持**（plan `prop|#v1~v2`，写入器发裸字面量；uniqueItems 走有限域去重） | `num_enum_items`/`num_const_items`/`bool_enum_items`/`bool_const_items`/`items_num_enum_ok`/`items_num_const_ok`/`items_num_enum_unique_ok`/`items_bool_enum_ok`/`items_bool_enum_unique_ok`/`items_bool_const_ok`（F520/F521） |
