@@ -2267,3 +2267,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **实现**：检测器 `@` 分支 + 写入器带引号模式；`$enumFlat` 已排他。
 - **门/活体**：`SCHEMA-TOPARR-STRENUM` PASS；`["paris","paris"]`、unique `["paris","lyon","nice"]`、const `["paris"]`。
 - **梯**：自检 182/0（`selftest_f528.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.592×；哨兵 0。
+
+## ▶ 状态（F529，已完成）——小数位宽扩到 10 位（marker -990）
+- **实现**：宽度站点一次改全；窗口守卫 `[-999,-990]`。
+- **门/活体**：`num_dec10`/`fm_d10`/`win_ten`；`{"n":1.5111111111}`、`{"n":0.0002469134}`、−990/−991 上界 400。
+- **代价**：整数上界 −990…−999 变为显式 400；10 位为末档。
+- **梯**：自检 182/0（`selftest_f529.log`）；四 harness PASS；8000 115/0；8001 par/fair 0；scaling 1.582×；哨兵 0。

@@ -1980,3 +1980,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **活体**：`top_str_enum_ok` 200 `["paris","paris"]`、`top_str_enum_unique_ok` 200 `["paris","lyon","nice"]`、`top_str_const_ok` 200 `["paris"]`。
 **梯**：自检 **182/0**（`selftest_f528.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.592×**；哨兵 **0**；BUILD_OK（`build_f528`）。
 
+## F529 计划与完成（小数位宽扩到 10 位：marker -990，窗口同步）
+**实现**：全部宽度站点一次改全（marker 表/两处 marker 判定/scaled 正则与 `digits==10` 分支/分子上限/形状 5 正则与 marker 表/回退 d 探测与 marker 表/mixed q 范围/窗口守卫 `[-999,-990]`）。
+**门**：`num_dec10=[n|15111111111|-990|0]`、`fm_d10=[n|2469134|-990|0]`、`win_ten=[]`；`win_nine`/1–9 位不回退。
+**活体**：`float_dec10_served` 200 `{"n":1.5111111111}`、`num_mult_frac_d10_ok` 200 `{"n":0.0002469134}`、`marker_window_nine/ten_refuse` 400。
+**梯**：自检 **182/0**（`selftest_f529.log`）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.582×**；哨兵 **0**；BUILD_OK（`build_f529`）。
+**代价（如实记录）**：窗口再内缩一位——整数上界 −990…−999 现为显式 400（此前 −991 起）；10 位小数为最后一档（double 有效位约 15–16）。
+
