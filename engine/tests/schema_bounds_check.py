@@ -364,6 +364,20 @@ cases = [
                                                   "items": {"type": "string", "pattern": "^[A-Z]{3}$"},
                                                   "uniqueItems": True}}},
      lambda code, txt: code == 400 and "uniqueItems" in txt),
+    # F518 probe: element-count bounds on a multipleOf-items array - the item writer already takes
+    # the bounds argument, so the count should hold element by element.
+    ("items_mult_min_ok", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000},
+                                                "minItems": 3, "maxItems": 3}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "nums"), list)
+     and len(val_of(txt, "nums")) == 3
+     and all(isinstance(x, int) and x % 5000 == 0 and 1 <= x <= 1000000 for x in val_of(txt, "nums"))),
+    ("items_mult_unique_refuse", "Give the numbers.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000},
+                                                "uniqueItems": True}}},
+     lambda code, txt: code == 400 and "uniqueItems" in txt),
     # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",

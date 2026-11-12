@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F517）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F518）
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
@@ -3721,7 +3721,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | multipleOf：number 叶**有界（小数 M，inclusive/exclusive 界，双侧或单侧 ≤9 位）** | **支持**（界与 M 缩放到公共小数网格折叠；严格侧走下一格、同侧相等时 exclusive 胜；双侧取区间内最小倍数、单侧按方向取；七/八/九位经 -993/-992/-991 marker 发射；子集论证） | `fm_shape`/`fm_text`/`fm_neg`/`fm_d2`/`fm_noint`/`fm_minonly`/`fm_maxpos`/`fm_maxneg`/`num_mult_frac_served`/`num_mult_frac_minonly_ok`/`fm_excl_lo`/`fm_excl_hi`/`fm_excl_bool`/`fm_excl_unsat`/`num_mult_frac_excl_ok`/`num_mult_frac_exclmax_ok`/`fm_d6`/`fm_d6_unsat`/`num_mult_frac_d6_ok`/`fm_d7`/`num_mult_frac_d7_ok`/`fm_d8`/`num_mult_frac_d8_ok`/`fm_d9`/`num_mult_frac_d9_ok`（F469/F478/F501/F502/F512/F513/F516） |
 | multipleOf：**整数叶的小数 M（双界，1–5 位小数，含 exclusive）** | **支持**（最简分子折叠：整数倍数 ⇔ p 的倍数；候选枚举层按同一字面过滤） | `fm_int03`/`fm_int15`/`fm_int_cand`/`num_mult_frac_intleaf_ok`/`num_mult_frac_intleaf_15_ok`（F496） |
 | multipleOf：**无界整数叶或 number 叶的小数/整数 M（任意 p，含 p=1；任意大小）** | **支持**（后缀写入器发出 p 的倍数；超出 999999999 的后缀宽度时发常量 0——0 是任何 M 的倍数；整数是合法 number） | `unb_int_frac`/`unb_int_quarter`/`unb_int_five`/`nm_frac_ub`/`nm_int_ub`/`unbounded_big`/`unb_big_shape`/`num_mult_frac_unb_int_ok`/`num_mult_frac_unb_quarter_ok`/`num_mult_frac_unb_num_ok`/`num_mult_unb_num_ok`/`num_mult_unb_huge_ok`/`num_mult_unb_huge_num_ok`（F499/F500/F503/F505） |
-| multipleOf：**整数数组项的小数 M（有界/单侧/无界，1–9 位小数，含 exclusive；无界时任意大小）** | **支持**（最简分子折叠后交给 item writer；有界按折叠、无界发出 p 的倍数——p/(p/q)=q 整数；超过九位后缀宽度时逐元素发 0） | `im_excl_frac`/`im_frac_unb`/`im_big`/`items_mult_excl_frac_ok`/`items_mult_frac_ok`/`items_mult_frac_unb_ok`/`items_mult_unb_huge_ok`（F497/F498/F506/F512/F513/F516） |
+| multipleOf：**整数数组项的小数 M（有界/单侧/无界，1–9 位小数，含 exclusive；无界时任意大小；可带 minItems/maxItems）** | **支持**（最简分子折叠后交给 item writer；有界按折叠、无界发出 p 的倍数——p/(p/q)=q 整数；超过九位后缀宽度时逐元素发 0；计数界由写入器消费） | `im_excl_frac`/`im_frac_unb`/`im_big`/`items_mult_excl_frac_ok`/`items_mult_frac_ok`/`items_mult_frac_unb_ok`/`items_mult_unb_huge_ok`/`items_mult_min_ok`（F497/F498/F506/F512/F513/F516/F518） |
 | multipleOf：NUMBER items 叶的小数 M（inclusive/exclusive），与单属性共享形状折叠 | **支持**（items 块被包成单叶喂同一个 shape helper；元素按网格折叠） | `items_mult_frac_num_ok`/`items_mult_frac_num_excl_ok`/`items_mult_num_excl_ok`（F462/F501/F504） |
 | multipleOf：**混合对象内的整数/number 叶**——无界（kind `z`→常量 0）、有界整数折叠（`q:<整数>`）、**有界小数网格折叠**（`q:<字面小数>`，1–9 位） | **支持**（0 是任何 M 的倍数；折叠常量/字面量同时满足界与乘数；all-required 由“每键都发”构造满足） | `mix_z_plan`/`mix_q_plan`/`mix_q_bad`/`mix_q_d2`/`mult_mixed`/`mixed_mult_zero_ok`/`mixed_mult_allreq_ok`/`mixed_mult_bounded_ok`/`mixed_mult_bounded_allreq_ok`/`mixed_mult_frac_bounded_ok`/`mixed_mult_frac_d2_ok`/`multi_leaf_mixed_ok`（F509/F510/F511/F512/F513/F516） |
 | multipleOf：十位及以上小数／混合对象内**无乘数的数值界**／**区间内无倍数**／required 严格子集 | **显式 400** | `mix_excl_bad`/`mix_q_unsat`/`mixed_excl_nofold_refuse`/`mixed_mult_frac_unsat_refuse`/`mixed_mult_subset_refuse`/`nm_frac`（F469/F502/F509/F510/F511/F512/F513/F516） |
@@ -3732,7 +3732,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | minItems / maxItems / minLength / maxLength：**含范围 pattern 叶（非定长）、p 叶界限不含其定长等不可计划命名的其他形状** | **显式 400** | `SCHEMA-KEYWORDS`/`p_len_bad`/`p_len_range`/`len_mix_p_bad`/`mixed_len_p_bad_refuse`（F398–F400/F493–F495） |
 | uniqueItems:false | **支持**（构造满足；检测器容忍该拼写 ⇒ 路由保留） | `uniq_false`/`uniq_route`（F425） |
 | uniqueItems:true：**enum-items 的有限域**（域大小 ≥ minItems） | **支持**（写入器按声明顺序强制互异值，域耗尽即收尾） | `uniq_enum`/`uniq_enum_ok`（F517） |
-| uniqueItems:true：普通 string/数值/pattern items（无界值域）／域小于 minItems | **显式 400** | `uniq_true`/`uniq_enum_unsat`/`uniq_enum_pat`/`uniq_enum_unsat_refuse`/`uniq_enum_pat_refuse`（F425/F517） |
+| uniqueItems:true：普通 string/数值/pattern items（无界值域）／域小于 minItems／**同值折叠的 multipleOf-items** | **显式 400** | `uniq_true`/`uniq_enum_unsat`/`uniq_enum_pat`/`uniq_enum_unsat_refuse`/`uniq_enum_pat_refuse`/`items_mult_unique_refuse`（F425/F517/F518） |
 | additionalProperties:true/false **及 schema 值**（键名来自 plan，可与数组界并存；schema 值只判未声明键 ⇒ 真空满足） | **支持** | `addprops_*`/`addprops_schema`/`addprops_schema_served`（F402/F403/F492） |
 | additionalProperties：嵌套对象叶子 / 含非字符串枚举叶（plan 叶不可按 kind 命名） | **显式 400** | `addprops_nested`/`addprops_enum`（F402/F492） |
 | required = 全部声明属性 | **支持**（构造上满足） | `req_all`（F398） |

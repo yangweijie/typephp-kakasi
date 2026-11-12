@@ -1696,7 +1696,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F517 计划与完成（enum-item 有限域的 `uniqueItems:true`：按序强制不同值）
+## F518（覆盖）：multipleOf-items 数组的 minItems/maxItems 与 uniqueItems 对照
+**结论**：items-multiple 写入器本就消费 `api_response_schema_array_bounds`，`minItems:3/maxItems:3` 的整数 multipleOf 数组返回恰好 3 个 5000 的倍数（`items_mult_min_ok`）；`uniqueItems:true` 对这类**同值折叠**数组仍点名拒绝（每个元素都是同一折叠值，去重必然违反；enum 有限域之外不服务）。
+**变更**：仅 harness 增两例（一正一拒），无引擎改动；二进制与 F517 相同，bounds harness `CHECK_EXIT=0`，其余三 harness 与 gate_live 沿用 F517 结论。
+**记法**：同值折叠写入器与 `uniqueItems` 天然冲突——支持面必须按“值域是否可枚举”划线，而不是按数组类型。
+
+
 **核心思路**：`uniqueItems` 约束元素取值；当 items 是**有限 enum** 时可以把值域枚举出来，按声明顺序逐个强制，互异性即构造满足。域大小必须覆盖 `minItems`，否则该约束不可满足、保持拒绝。pattern items（无界值域）仍拒绝。
 **实现**：①`api_response_schema_array_enum` 接受 body 或裸 schema；新增 `api_schema_unique_true`；②`api_array_enum_value` 增 `$unique`：去重值表、`bMin > 域大小` 时返回空、元素按序强制、域耗尽即收尾；4 个分发调用点传入标志；③关键字守卫：`uniqueItems:true` 在 enum 域且 minItems 可满足时放行，否则点名拒绝；同时放宽 `minItems/maxItems` 到 enum-array 路线（其写入器本就消费 bounds）。
 **门**：新 `uniq_enum=[]`、`uniq_enum_unsat=[uniqueItems]`（min4>3）、`uniq_enum_pat=[uniqueItems]`；`uniq_true`（普通 string items）/`uniq_false` 不回退。

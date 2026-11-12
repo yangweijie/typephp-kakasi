@@ -2209,3 +2209,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`uniq_enum=[]`、`uniq_enum_unsat`/`uniq_enum_pat=[uniqueItems]`；`uniq_true`/`uniq_false` 不回退。
 - **活体**：`{"cities":["paris","lyon","nice"]}`（互异、3∈[2,3]）；域不足与 pattern 均 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f517b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.468×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F518，覆盖）——multipleOf-items 的计数界与 uniqueItems 对照
+- **结论**：items-multiple 写入器消费 bounds：`minItems:3/maxItems:3` 返回 `{"nums":[5000,5000,5000]}`；`uniqueItems:true` 对同值折叠数组仍点名拒绝。
+- **变更**：仅 harness 两例；无引擎改动，二进制同 F517；bounds harness CHECK_EXIT=0。
