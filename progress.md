@@ -2168,6 +2168,13 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`{"city":"…","count":1.2}`、`{"city":"…","count":1.25}`、无倍数区间 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f511b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.526×**；哨兵 **0**；BUILD_OK。
 
+## ▶ 状态（F512，已完成）——小数位宽扩到 7 位（marker -993）
+- **实现**：写入器 marker 表/两处 marker 判定/`api_schema_scaled`（隐藏的第四处：digits if 链）/形状 5 个正则与 marker 表/回退 d 探测/mixed q 范围/分子上限 一次改全。
+- **过程**：首轮 `num_dec7=[n|1|-993|0]` 暴露 `api_schema_scaled` 的 if 链只到 6 位（7 位退化为整数部分），补 `digits==7` 后 182/0。
+- **门（含翻转）**：`num_dec7` `[]`→`[n|15111111|-993|0]`；新 `fm_d7=[n|2468|-993|0]`。
+- **活体**：`{"n":1.5111111}`（原拒绝用例翻转）、`{"n":0.0002468}`；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f512b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.546×**；哨兵 **0**；BUILD_OK。
+
 ## ▶ 状态（F512，已完成）——小数位扩到七位（新 marker -993）
 - **实现**：宽度阶梯一次改全——`api_schema_scaled` 正则 `{1,6}`→`{1,7}`＋`digits==7` 分支；`api_schema_multiplier_numerator` 位数上限 6→7；乘数分支字面正则（乘数＋四个界）到 `{1,7}`（d 由字面小数实际长度推导，无正则阶梯）；bounds-only 分支字面正则到 `{1,7}`＋`\.[0-9]{7}` 检测；两处 marker 表加 `d==7→-993`；`api_number_decimal_element` 加 d=7/scale=10^7；`api_number_bounded_value`/`api_array_item_number_value` 的 marker 门加 -993；mixed q 分支 marker 区间扩到 -993（还原公式 `mk+1000` 本就通用，无需改）。
 - **门（含翻转）**：`num_dec7` `""`→`[n|15111111|-993|0]`（自检 nfR 期望由拒翻转为折叠）；新 `fm_d7=[n|2468|-993|0]`（乘数 0.0001234 七位、界 [0.0002,0.001]，首倍数 0.0001234×2=0.0002468）。

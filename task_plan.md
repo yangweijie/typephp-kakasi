@@ -1722,7 +1722,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **182/0**（`selftest_f512b.log`，`: FAIL` 0）；四 harness **PASS**（`schema_*_f512b.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.487×**；哨兵 **0**（`gate_live_f512.log`）；BUILD_OK（`build_f512b`）。
 
 
-## F511 计划与完成（混合对象内 number 叶的小数网格折叠：marker 还原为字面量）
+## F512 计划与完成（小数位宽扩到 7 位：新 marker -993）
+**核心思路**：小数写入器本就是“marker → (d, scale)”表，扩一位只需同步**全部**宽度站点（F450/F502 的教训）。七处一次改全：写入器 marker 表、两处 marker 判定、`api_schema_scaled`（**第四处隐藏站点**：digits if 链只到 6，7 位时退化为整数部分——首轮自检 `num_dec7=[n|1|…]` 正是它）、形状小数分支的 5 个字面正则与 marker 表、无乘数回退的 d 探测/marker 表、mixed 的 q marker 范围、分子解析上限。
+**实现**：以上各站点 `{1,6}`→`{1,7}`、`d==7 → -993`、scale=10^7。
+**门（含翻转）**：`num_dec7` `[]`→`[n|15111111|-993|0]`；新 `fm_d7=[n|2468|-993|0]`（M=0.0001234、min 0.0002 的最小平倍数 0.0002468）。
+**活体**：`float_dec7_served` 200 `{"n":1.5111111}`（原拒绝用例翻转）、`num_mult_frac_d7_ok` 200 `{"n":0.0002468}`；1–6 位与既有族不回退。
+**梯**：自检 **182/0**（`selftest_f512b.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.546×**；哨兵 **0**；BUILD_OK（`build_f512b`）。
+
+
 **核心思路**：F510 只编码整数常量。number 叶 + 小数乘数的折叠结果是“缩放值 + marker”，把 marker 还原成位宽 d、再还原成字面小数（含符号与零填充），即可用同一个 `q` 分支发出——至此 mixed 内 multipleOf 的最后一个拒绝面闭合。
 **实现**：检测器 q 分支区分 marker（-999…-994）与整数折叠：marker 时 `d = mk + 1000`、`pow=10^d`、`lit = sign + intdiv(|v|,pow) + "." + zeropad(|v|%pow, d)`，编码 `name:q:<lit>`；写入器无需改动（q 分支发字面量）。
 **门（含翻转）**：`mix_q_bad` `[]`→`[city:s,count:q:1.2]`；新 `mix_q_unsat=[]`、`mix_q_d2=[city:s,count:q:1.25]`（**2 位小数**，专门覆盖位宽公式）。
