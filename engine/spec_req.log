@@ -8715,3 +8715,9 @@
 1794523910.6735 SPECREQ mode=tree k=2 want=128 got=128 cache=-2  win=2 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1619.579076767
 1794523912.3168 SPECREQ mode=tree k=2 want=128 got=128 cache=-2  win=2 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1622.1661567688
 1794523913.9606 SPECREQ mode=tree k=2 want=128 got=128 cache=-2  win=2 drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on ms=1627.5370121002
+1794525085.2341 SPECREQ mode=plain k=0 want=128 got=45 cache=0  win=2 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=724.21503067017
+1794525085.9434 SPECREQ mode=plain k=0 want=128 got=45 cache=0  win=2 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=689.70489501953
+1794525376.2513 SPECREQ mode=plain k=0 want=64 got=45 cache=0  win=2 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=700.52099227905
+1794525377.4036 SPECREQ mode=plain k=0 want=64 got=45 cache=0  win=2 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=708.31704139709
+1794525378.1529 SPECREQ mode=plain k=0 want=64 got=45 cache=0  win=2 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=743.35908889771
+1794525378.8895 SPECREQ mode=plain k=0 want=64 got=45 cache=0  win=2 drafts=0 accepted=0 verifies=0 alt_branch=0 max_branches=0 drafting=on ms=706.06899261475
