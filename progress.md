@@ -2228,3 +2228,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`num_enum_items=[nums|#2~5~9]`、`num_const_items=[nums|#7]`、`num_enum_uniq=[]`。
 - **活体**：`[2,5,9,2]`、unique `[2,5,9]`、const `[7,7,7,7]`、const+unique+min2 400；四 harness PASS。
 - **梯**：自检 **182/0**（`selftest_f520e.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.528×**；哨兵 **0**；BUILD_OK。
+
+## ▶ 状态（F521，已完成）——boolean enum/const items
+- **实现**：标量 enum/const 分支加 boolean、kind 加 `ab`；复用 `#` 裸字面量写入与有限域去重。
+- **门**：`bool_enum_items=[flags|#true~false]`、`bool_const_items=[flags|#true]`。
+- **活体**：`[false×4]`、unique `[true,false]`、const `[true×4]`；四 harness PASS。
+- **梯**：自检 **182/0**（`selftest_f521.log`）；8000 **115/0**；8001 par/fairness **0**；scaling **1.556×**；哨兵 **0**；BUILD_OK。

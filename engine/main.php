@@ -918,9 +918,9 @@ function api_schema_array_enum(string $schema): string
     if ($tk !== false) {
         $kind = substr($kind, 0, $tk);
     }
-    // F520: the string branches below only match items of type string; the numeric enum/const
-    // branches match integer/number items (kind an/af), so all three kinds are admitted here.
-    if ($kind != "a" && $kind != "an" && $kind != "af") {
+    // F520/F521: the string branches below only match items of type string; the scalar enum/const
+    // branches match integer/number/boolean items (kind an/af/ab), so those kinds are admitted too.
+    if ($kind != "a" && $kind != "an" && $kind != "af" && $kind != "ab") {
         return "";
     }
     $kp = strpos($block, "\"" . $lkv[0] . "\"");
@@ -941,17 +941,18 @@ function api_schema_array_enum(string $schema): string
     if ($isub == "") {
         return "";
     }
-    // F520: a NUMERIC enum/const is the same finite value table; the "#" prefix tells the writer
-    // to emit bare literals instead of quoted strings. Values must be plain decimals.
+    // F520/F521: a SCALAR (integer/number/boolean) enum/const is the same finite value table; the
+    // "#" prefix tells the writer to emit bare literals instead of quoted strings.
     $mne = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"(?:integer|number)"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $isub, $mne) == 1) {
+    if (preg_match('/^\{\s*"type"\s*:\s*"(?:integer|number|boolean)"\s*,\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $isub, $mne) == 1) {
         $nvals = api_list($mne[1]);
         if (count($nvals) < 1) {
             return "";
         }
         $nenc = "";
         for ($i = 0; $i < count($nvals); $i++) {
-            if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $nvals[$i]) != 1) {
+            if (preg_match('/^-?[0-9]+(\.[0-9]+)?$/', $nvals[$i]) != 1
+                && $nvals[$i] != "true" && $nvals[$i] != "false") {
                 return "";
             }
             $nenc = $nenc == "" ? $nvals[$i] : $nenc . "~" . $nvals[$i];
@@ -959,7 +960,7 @@ function api_schema_array_enum(string $schema): string
         return $lkv[0] . "|#" . $nenc;
     }
     $mnc = [];
-    if (preg_match('/^\{\s*"type"\s*:\s*"(?:integer|number)"\s*,\s*"const"\s*:\s*(-?[0-9]+(?:\.[0-9]+)?)\s*\}$/', $isub, $mnc) == 1) {
+    if (preg_match('/^\{\s*"type"\s*:\s*"(?:integer|number|boolean)"\s*,\s*"const"\s*:\s*(true|false|-?[0-9]+(?:\.[0-9]+)?)\s*\}$/', $isub, $mnc) == 1) {
         return $lkv[0] . "|#" . $mnc[1];
     }
     $me = [];
@@ -18820,6 +18821,9 @@ function main(): void
     $numEnumItems = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"integer","enum":[2,5,9]}}}}}}');
     $numConstItems = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"nums":{"type":"array","items":{"type":"number","const":7}}}}}}');
     $numEnumUniq = api_schema_keywords_unsupported('{"properties":{"nums":{"type":"array","items":{"type":"integer","enum":[2,5,9]},"uniqueItems":true,"minItems":2}}}');
+    // F521: boolean enum/const items ride the same bare-literal table.
+    $boolEnumItems = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"flags":{"type":"array","items":{"type":"boolean","enum":[true,false]}}}}}}');
+    $boolConstItems = api_response_schema_array_enum('{"json_schema":{"schema":{"properties":{"flags":{"type":"array","items":{"type":"boolean","const":true}}}}}}');
     echo "SCHEMA-KEYWORDS minItems=[" . $kwA . "] flat_maxLength=[" . $kwB
         . "] mixed_maxLength=[" . $kwI . "] p_len_ok=[" . $pLenOk . "] p_len_bad=[" . $pLenBad
         . "] p_len_range=[" . $pLenRange . "]"
@@ -18839,6 +18843,7 @@ function main(): void
         . "] multi_allreq=[" . $kwAJ . "] uniq_true=[" . $kwAV . "] uniq_false=[" . $kwAW
         . "] uniq_enum=[" . $uniqEnum . "] uniq_enum_unsat=[" . $uniqEnumUnsat . "] uniq_enum_pat=[" . $uniqEnumPat
         . "] num_enum_items=[" . $numEnumItems . "] num_const_items=[" . $numConstItems . "] num_enum_uniq=[" . $numEnumUniq
+        . "] bool_enum_items=[" . $boolEnumItems . "] bool_const_items=[" . $boolConstItems
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
     if ($kwA == "minItems" && $kwB == "" && $kwI == ""
         && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
@@ -18862,6 +18867,7 @@ function main(): void
         && $kwAV == "uniqueItems" && $kwAW == "" && $kwAX == "uniqueItems"
         && $uniqEnum == "" && $uniqEnumUnsat == "uniqueItems" && $uniqEnumPat == "uniqueItems"
         && $numEnumItems == "nums|#2~5~9" && $numConstItems == "nums|#7" && $numEnumUniq == ""
+        && $boolEnumItems == "flags|#true~false" && $boolConstItems == "flags|#true"
         && $kwAY == "cities") {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {

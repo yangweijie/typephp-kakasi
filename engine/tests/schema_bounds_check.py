@@ -422,7 +422,24 @@ cases = [
                                                 "items": {"type": "number", "const": 7},
                                                 "uniqueItems": True, "minItems": 2}}},
      lambda code, txt: code == 400 and "uniqueItems" in txt),
-    # F424: a bounded multipleOf above the old 1000 guard - the smallest multiple in the interval is
+    # F521: boolean enum/const items are the same finite table (bare true/false), with uniqueItems
+    # forcing both members when the minimum asks for two.
+    ("items_bool_enum_ok", "Give the flags.",
+     {"type": "object", "properties": {"flags": {"type": "array",
+                                                 "items": {"type": "boolean", "enum": [True, False]}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "flags"), list)
+     and len(val_of(txt, "flags")) >= 1 and all(isinstance(x, bool) for x in val_of(txt, "flags"))),
+    ("items_bool_enum_unique_ok", "Give the flags.",
+     {"type": "object", "properties": {"flags": {"type": "array",
+                                                 "items": {"type": "boolean", "enum": [True, False]},
+                                                 "uniqueItems": True, "minItems": 2}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "flags"), list)
+     and sorted(val_of(txt, "flags")) == [False, True]),
+    ("items_bool_const_ok", "Give the flags.",
+     {"type": "object", "properties": {"flags": {"type": "array",
+                                                 "items": {"type": "boolean", "const": True}}}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "flags"), list)
+     and len(val_of(txt, "flags")) >= 1 and all(x is True for x in val_of(txt, "flags"))),
     # served deterministically (the subset argument); the value must be exactly that multiple.
     ("bigmult_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 1000000, "multipleOf": 5000}}},

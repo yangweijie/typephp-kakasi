@@ -1696,7 +1696,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **F494 已完成**：`api_schema_pattern_length_ok`（定长 spec＋界限包含）接入关键字分支；门 `p_len_ok=[]`、`p_len_bad`/`p_len_range`=[minLength]；活体 200/400/400；构建 BUILD_OK；全梯绿。
 
 
-## F520 计划与完成（数值 enum/const items：有限值表 + 裸字面量编码）
+## F521 计划与完成（boolean enum/const items：同一有限值表）
+**核心思路**：F520 的 `#` 裸字面量编码天然容纳 `true/false`；把检测器的标量 enum/const 分支扩到 `boolean`、kind 放宽到 `ab`，uniqueItems/minItems 自动继承（域 {true,false} 必须覆盖 minItems）。
+**实现**：enum 分支类型正则加 `boolean`、值校验加 true/false；const 分支字面量加 `(true|false)`；kind 检查加 `ab`。
+**门**：`bool_enum_items=[flags|#true~false]`、`bool_const_items=[flags|#true]`。
+**活体**：`items_bool_enum_ok` 200 `{"flags":[false,false,false,false]}`（无 unique 允许重复）、`items_bool_enum_unique_ok` 200 `{"flags":[true,false]}`（域耗尽收尾）、`items_bool_const_ok` 200 `{"flags":[true,true,true,true]}`。
+**梯**：自检 **182/0**（`selftest_f521.log`，`: FAIL` 0）；四 harness **PASS**；8000 **115/0**；8001 par/fairness **0**；scaling **1.556×**；哨兵 **0**；BUILD_OK（`build_f521`）。
+
+
 **核心思路**：字符串 enum items 已有写入器（F459/F470）；数值 enum/const 是同一类有限值表，只是元素要发**裸数字**。用 plan 前缀 `#` 区分：`nums|#2~5~9`，写入器剥掉 `#` 后按裸字面量逐个强制。uniqueItems 与 minItems 随之继承（F517 的机制：值域可枚举）。
 **实现**：①`api_schema_array_enum` 承认 kind `a/an/af`，新增数值 enum/const 两个分支（plain decimal 校验、`#` 前缀）；②写入器识别 `#`：head 不带开引号、元素间不补开引号、candidate 为裸字面量；③items 守卫与 minItems/uniqueItems 守卫因检测器非空自动放行。
 **过程（三处形状教训）**：宽松 kind 检查先只放 `a` ⇒ `items` 仍点名拒绝；放宽到 an/af 后输出 `{"nums":["2,"5,"9,"2]}`——字符串数组的引号假设还在 head 与元素分隔里；修正后 182/0。
