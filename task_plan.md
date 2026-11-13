@@ -2189,4 +2189,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f558.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.572×**；哨兵 **0**。BUILD_OK（`build_f558b`）。
 **记法**：**“键集判定”不能借 plan 解析**——const/enum 叶子不是 plan，键名判定要用深度感知的顶层键扫描；否则条件会被误判为空。
 
+## F559（2026-11-12）：dependencies（draft-04）的真空值级子 schema
+**语义**：`dependencies:{trigger:{properties:{x:…}}}` 在 x 从未被发射时真空；数组形式与 bare required 形式沿用既有键集判定。
+**实现**：`api_schema_dependencies_ok` 对象分支增加“只含 properties 且键集与发射集不相交 ⇒ 通过”；新增 `api_schema_strip_vacuous_dependencies`——判定通过即把整条 `dependencies` 删除（所有条目对该值都成立，且防止 plan 提取器命中子块），接入两条预处理链。
+**门**：`deps_vacuous_props`（200 键集 city/note）、`deps_emitted_key_refuse`（约束已发射键 ⇒ 400）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f559.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.582×**；哨兵 **0**。BUILD_OK（`build_f559`）。
+
 

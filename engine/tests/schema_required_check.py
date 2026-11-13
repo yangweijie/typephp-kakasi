@@ -537,6 +537,16 @@ cases = [
       "if": {"type": "string"},
       "else": {"properties": {"note": {"const": "q"}}}},
      lambda code, txt: code == 400 and "if" in txt),
+    # F559: the draft-04 dependencies mirror - a properties subschema for keys the answer never
+    # emits is vacuous; one constraining an emitted key still needs evaluation and refuses.
+    ("deps_vacuous_props", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependencies": {"city": {"properties": {"x": {"type": "string"}}}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("deps_emitted_key_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependencies": {"city": {"properties": {"note": {"const": "q"}}}}},
+     lambda code, txt: code == 400 and "dependencies" in txt),
     # F447: `dependencies` in both spellings (array, bare-required object) is judged by the emitted
     # key set; an omitted dependency and a richer subschema body stay refused.
     ("deps_arr_ok", "Say where you are.",

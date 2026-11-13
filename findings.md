@@ -3724,6 +3724,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**键集判定不要借 plan 解析**——const/enum 叶子不是 plan；顶层键扫描必须自己感知括号深度与字符串状态。
 **证据**：`schema_required_f558.log`（红）、`schema_required_f558b.log`（全绿）、gate_live f558。
 
+## F559（2026-11-12）：dependencies 的真空值级子 schema（F557 的 draft-04 镜像）
+**语义**：`dependencies:{trigger:{properties:{x:…}}}` 在 x 从未被发射时真空；数组与 bare-required 形式沿用既有键集判定。
+**实现**：对象分支增加真空通过；判定通过后整条 `dependencies` 由 `api_schema_strip_vacuous_dependencies` 删除（所有条目对该值都成立，且防 plan 提取器命中子块），接入两条预处理链。
+**记法**：**“判定通过即可整条剥离”的充分条件**是：判定的成立性不依赖生成值的选择，只依赖已知键集——这类关键字（dependencies/if/空 dependentSchemas）都可以先判后删，生成器只见干净 schema。
+**证据**：`schema_required_f559.log`（两门）、gate_live f559。
+
 ## F556（2026-11-12）：嵌套 enum 误路由的边界核对（无新缺陷）
 **方法**：把 `contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 作为诱饵，看 `$enumFlat` 是否会把它们发成顶层值。结果（`claims_f556.log`）四例全部 **400 点名关键字**——这些关键字在拒绝链里先行被拒，生成阶段根本不会到达 `$enumFlat`。
 **结论**：误路由只发生在“关键字裁判**接受**但没有检测器认领”的缝隙（`propertyNames` enum 是唯一实例，F555 已修）。`enumFlat` 现有的守卫（数组/根数组/propertyNames）覆盖了已观察到的缝隙；若未来放宽某个关键字裁判，必须同时检查 `$enumFlat` 是否会再次吞掉其子 schema 的 enum。

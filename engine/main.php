@@ -10209,6 +10209,65 @@ function api_schema_emitted_set(string $schema): string
 // F447: `dependencies` is the draft-7 spelling of both conditionals - an ARRAY value means the keys
 // it names must accompany the trigger (dependentRequired), an OBJECT value is honoured only when it
 // is exactly {"required":[...]} (dependentSchemas). Any other value keeps the refusal.
+// F559: when api_schema_dependencies_ok accepts, every entry is satisfied for the emitted key set
+// (array deps are emitted, bare-required deps hold, properties subschemas name only unemitted
+// keys), so the whole entry can be removed before the plan extractors run - the F557 misroute
+// class. Non-vacuous dependencies are never stripped because the judge refuses them.
+function api_schema_strip_vacuous_dependencies(string $body): string
+{
+    if (strpos($body, "\"dependencies\"") === false) {
+        return $body;
+    }
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return $body;
+        }
+    }
+    if (api_schema_dependencies_ok($schema) != 1) {
+        return $body;
+    }
+    $kp = strpos($body, "\"dependencies\"");
+    if ($kp === false) {
+        return $body;
+    }
+    $bo = strpos($body, "{", $kp);
+    if ($bo === false) {
+        return $body;
+    }
+    $blk = api_balance_block($body, $bo);
+    if ($blk == "") {
+        return $body;
+    }
+    $kend = $bo + strlen($blk);
+    $cutA = $kp;
+    $j = $kp - 1;
+    while ($j >= 0) {
+        $jc = substr($body, $j, 1);
+        if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+            break;
+        }
+        $j = $j - 1;
+    }
+    if ($j >= 0 && substr($body, $j, 1) == ",") {
+        $cutA = $j;
+    } else {
+        $j = $kend;
+        while ($j < strlen($body)) {
+            $jc = substr($body, $j, 1);
+            if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                break;
+            }
+            $j = $j + 1;
+        }
+        if ($j < strlen($body) && substr($body, $j, 1) == ",") {
+            $kend = $j + 1;
+        }
+    }
+    return substr($body, 0, $cutA) . substr($body, $kend);
+}
+
 function api_schema_dependencies_ok(string $schema): int
 {
     // F490: same exact-key-set premise as F489.
@@ -10273,20 +10332,47 @@ function api_schema_dependencies_ok(string $schema): int
             }
             $off = $obj + strlen($sub) + 1;
             $entries++;
-            $mr = [];
-            if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mr) != 1) {
-                return 0;
-            }
             if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+                continue;   // the trigger is not emitted, so the subschema does not apply
+            }
+            $mr = [];
+            if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mr) == 1) {
+                foreach (explode(",", $mr[1]) as $dep) {
+                    $dep = str_replace("\"", "", $dep);
+                    $dep = str_replace(" ", "", $dep);
+                    if ($dep != "" && strpos("," . $emit . ",", "," . $dep . ",") === false) {
+                        return 0;
+                    }
+                }
                 continue;
             }
-            foreach (explode(",", $mr[1]) as $dep) {
-                $dep = str_replace("\"", "", $dep);
-                $dep = str_replace(" ", "", $dep);
-                if ($dep != "" && strpos("," . $emit . ",", "," . $dep . ",") === false) {
+            // F559: a subschema carrying only properties for keys the answer never emits is
+            // vacuously true; anything else (an emitted key, other keywords) needs evaluation.
+            if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) == 1) {
+                $pbo3 = strpos($sub, "{", strpos($sub, "\"properties\""));
+                $pblk3 = $pbo3 === false ? "" : api_balance_block($sub, $pbo3);
+                if ($pblk3 == "") {
                     return 0;
                 }
+                $rest4 = substr($sub, $pbo3 + strlen($pblk3));
+                $rest4 = str_replace(" ", "", $rest4);
+                $rest4 = str_replace("\n", "", $rest4);
+                $rest4 = str_replace("\t", "", $rest4);
+                if ($rest4 != "}") {
+                    return 0;
+                }
+                $keys4 = api_block_keys($pblk3);
+                if ($keys4 == "") {
+                    return 0;
+                }
+                foreach (explode(",", $keys4) as $k4) {
+                    if ($k4 == "" || strpos("," . $emit . ",", "," . $k4 . ",") !== false) {
+                        return 0;
+                    }
+                }
+                continue;
             }
+            return 0;
         } else {
             return 0;
         }
@@ -13677,6 +13763,9 @@ function api_serve_par(int $port): void
                 if (strpos($body, "\"if\"") !== false) {
                     $body = api_schema_strip_vacuous_if($body);
                 }
+                if (strpos($body, "\"dependencies\"") !== false) {
+                    $body = api_schema_strip_vacuous_dependencies($body);
+                }
             }
             if (strpos($body, '"allOf"') !== false) {
                 $body = api_schema_merge_allof($body);
@@ -14298,6 +14387,9 @@ function api_serve(int $port): void
         }
         if (strpos($body, "\"if\"") !== false) {
             $body = api_schema_strip_vacuous_if($body);
+        }
+        if (strpos($body, "\"dependencies\"") !== false) {
+            $body = api_schema_strip_vacuous_dependencies($body);
         }
         if (strpos($body, '"allOf"') !== false) {
             $body = api_schema_merge_allof($body);

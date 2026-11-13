@@ -2431,3 +2431,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`if_vacuous_then_ok`/`if_vacuous_else_ok` 200；条件/分支命中已发射键 ⇒ 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f558.log`）；bounds/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.572×；哨兵 0；BUILD_OK（`build_f558b`）。
 
+## F559（2026-11-12）：dependencies（draft-04）的真空值级子 schema
+- **实现**：对象分支接受“只含未发射键的 properties”；新增 `api_schema_strip_vacuous_dependencies`（判定通过即整条删除），两条预处理链接入。
+- **门**：`deps_vacuous_props` 200（键集 city/note）；`deps_emitted_key_refuse` 400；既有数组/bare-required 用例不回退。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f559.log`）；bounds/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.582×；哨兵 0；BUILD_OK（`build_f559`）。
+
