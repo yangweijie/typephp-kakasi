@@ -2093,4 +2093,14 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **下一步**：在流式分支镜像 F543 的 enum/const 折叠（字符串加引号、const 折叠），加 `stream:true` 活体门；修前红证已留档。
 **队列**：D4 流式根标量折叠（P0）→ `unevaluated*` 子 schema 求值器 → FR-05/多分片。
 
+## F545（2026-11-12）：流式路径的根标量 enum/const 折叠（D4）
+**实现**：新增 `api_root_scalar_choices($body)`——仅当无 `properties`、且 `const`/`enum` 是 schema 对象**直接子键**（`[^{}]*`）时返回候选；字符串枚举加引号（`api_esc`），混合枚举保留裸字面量，items 里的 const/enum 不算根标量。流式骨架链在顶层标量 enum 分支前接入该候选表，复用既有 SSE 发射路径。
+**门**：静态 `SCHEMA-ROOT-SCALAR`（`enum=["paris","lyon"]`、`const` 折叠为 `"paris"`、items 内 const 不认领、整数 enum 3 值）。
+**活体（待填）**：`stream:true` 的 string enum/const 应流式返回 `"paris"`。
+**梯（待填）**。
+**过程（两次定位错误）**：① 新增 helper 时替换掉了 `api_response_schema_nested_object` 的函数声明，留下裸块 → `TPC_BUILD_FAILED: Unsupported statement: Stmt_Block`（main.php:4594），补回声明即可；② 首版把分支插进了**非流式**骨架链（`$enumFlat` 先命中，分支成死码），流式探针仍散文；改用**流式发射点**（14585 `$sJOut != ""` 之前的兜底）后命中。
+**活体**：`stream:true` → `str_enum` `"paris"`（json_ok=True）、`str_const` `"paris"`、`int_enum` `2`（`stream_root_f545b.log`）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f545c.log`；`SCHEMA-ROOT-SCALAR: PASS`）；bounds **PASS**（`f545c`）；required/count/pattern **CHECK_EXIT=0**；8000 **115/0**；8001 par/fair **0**；scaling **1.569×**；哨兵 **0**。BUILD_OK（`build_f545c`）。
+**记法**：**改“另一个传输”先确认分支被谁包围**——同名分支链可能在非流式里；最稳的是把兜底放在**发射点之前**（`$sJOut != ""`），统一覆盖所有骨架来源。helper 插入时锚点要包含函数声明整行。
+
 

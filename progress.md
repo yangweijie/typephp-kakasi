@@ -2356,3 +2356,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f543b.log`）；bounds PASS（`f543b`）；8000 115/0；8001 par/fair 0；scaling 1.579×；哨兵 0；BUILD_OK（`build_f543b`）。
 - **边界**：流式根级字符串 enum 未验（入队）。
 
+## F545（2026-11-12）：流式根标量 enum/const 折叠（D4 闭合）
+- **缺陷**：`stream:true` 时根级 string enum/const 流式返回 200 散文（F544 取证）。
+- **实现**：`api_root_scalar_choices`（根层直接子键、字符串加引号、const 折叠、items 内 const 排除）；在流式发射点 `$sJOut` 为空时兜底填入候选，复用既有 JSON 发射。
+- **过程**：① helper 插入吞掉下一个函数声明 → `Stmt_Block` 构建失败，补回；② 首版分支插进非流式链成死码，改到发射点后生效。
+- **活体**：`stream:true` → `"paris"`/`"paris"`/2（`stream_root_f545b.log`）。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f545c.log`）；bounds/required/count/pattern PASS；8000 115/0；8001 par/fair 0；scaling 1.569×；哨兵 0；BUILD_OK（`build_f545c`）。
+

@@ -4552,6 +4552,45 @@ function api_schema_choices_pure_bounds(string $body): int
     return 0;
 }
 
+// F545: the root scalar enum/const fold used by the streaming skeleton chain (F543 did the
+// non-streaming path). Returns the candidate literals with strings quoted; empty for anything that
+// is not a root-level enum/const (properties or a nested const in items disqualify it, because
+// then the answer is not a scalar).
+function api_root_scalar_choices(string $body): array
+{
+    $out = [];
+    if (strpos($body, "\"properties\"") !== false) {
+        return $out;
+    }
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return $out;
+        }
+    }
+    $schema = api_schema_strip_root_not($schema);
+    if (preg_match('/^\s*\{\s*[^{}]*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
+        $schema, $m) == 1) {
+        $out[] = $m[1];
+        return $out;
+    }
+    if (preg_match('/^\s*\{\s*[^{}]*"enum"\s*:\s*\[(.*?)\]/s', $schema, $m) == 1) {
+        $vals = api_list($m[1]);
+        $bare = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '', $m[1]);
+        $bare = str_replace(",", "", $bare);
+        $bare = str_replace(" ", "", $bare);
+        $bare = str_replace("\n", "", $bare);
+        $bare = str_replace("\t", "", $bare);
+        $allStr = $bare == "" && strpos($m[1], "\"") !== false;
+        for ($i = 0; $i < count($vals); $i++) {
+            $out[] = $allStr ? "\"" . api_esc($vals[$i]) . "\"" : $vals[$i];
+        }
+    }
+    return $out;
+}
+
+
 function api_response_schema_nested_object(string $body): string
 {
     if (preg_match('/"json_schema"/', $body) != 1) {
@@ -14543,6 +14582,14 @@ function api_serve(int $port): void
                             }
                         }
                     }
+                    if ($sJOut == "") {
+                        // F545: a root scalar enum/const has no skeleton in the chain above; fold it
+                        // here so the existing JSON emission streams the constrained literal.
+                        $rsc2 = api_root_scalar_choices($body);
+                        if (count($rsc2) > 0) {
+                            $sJOut = api_constrained($ids, $rsc2, 24, $prefixCache);
+                        }
+                    }
                     if ($sJOut != "") {
                         $sJson = api_gen_text($sJOut, $promptN);
                         if ($sJson == "") {
@@ -21512,6 +21559,25 @@ function main(): void
         echo "SCHEMA-CHOICES-BOUNDS: PASS (bounds-only branches refuse; claimable branches do not)\n";
     } else {
         echo "SCHEMA-CHOICES-BOUNDS: FAIL\n";
+    }
+
+    // F545: the streaming root-scalar fold uses quoted candidates for string enums, folds const,
+    // and stays empty for a const nested in items (that answer is not a scalar).
+    $rscA = api_root_scalar_choices('{"json_schema":{"schema":{"type":"string","enum":["paris","lyon"]}}}');
+    $rscB = api_root_scalar_choices('{"json_schema":{"schema":{"type":"string","const":"paris"}}}');
+    $rscC = api_root_scalar_choices('{"json_schema":{"schema":{"type":"array","items":{"type":"string","const":"paris"}}}}');
+    $rscD = api_root_scalar_choices('{"json_schema":{"schema":{"enum":[2,5,9]}}}');
+    $rscAj = "";
+    for ($i = 0; $i < count($rscA); $i++) {
+        $rscAj = $rscAj == "" ? $rscA[$i] : $rscAj . "," . $rscA[$i];
+    }
+    echo "SCHEMA-ROOT-SCALAR enum=[" . $rscAj . "] const=[" . count($rscB) . "] items=[" . count($rscC)
+        . "] int=[" . count($rscD) . "]\n";
+    if ($rscAj == "\"paris\",\"lyon\"" && count($rscB) == 1 && $rscB[0] == "\"paris\""
+        && count($rscC) == 0 && count($rscD) == 3) {
+        echo "SCHEMA-ROOT-SCALAR: PASS (string enums quoted, const folded, nested const excluded)\n";
+    } else {
+        echo "SCHEMA-ROOT-SCALAR: FAIL\n";
     }
 
     // External $ref: resolved from a caller-supplied registry, never fetched. The ref must be gone

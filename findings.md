@@ -4775,3 +4775,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **证据**（`claims_f544.log`，`stream:true`）：根级 `{"type":"string","enum":["paris","lyon"]}` 与 `{"type":"string","const":"paris"}` 都流式返回 200 自由散文（`json_ok=False`）。非流式已在 F543 修复；流式分支没有对应的 `$enumFlat` 折叠。对象形状的流式约束是好的（F534 的 200 层对象流式正常），所以缺口**只**在根标量折叠。
 **处置**：入队 P0——在流式分支镜像 F543 的 enum/const 折叠（字符串加引号、const 折叠），并加 `stream:true` 的活体门；修前红证已在此日志。
 **记法**：**同一语义在两个传输里是两份实现**——“非流式修好了”不等于“流式也修好了”；根标量的折叠逻辑在两条分支各有一份，必须成对门。
+
+## F545（2026-11-12）：流式根标量折叠——兜底放在“发射点之前”
+**实现**：`api_root_scalar_choices` 判定根层 enum/const（直接子键 `[^{}]*`、字符串加引号、const 折叠、items 内 const 不算）；流式分支在 `$sJOut != ""` 发射判断**之前**兜底填入候选，从而覆盖所有骨架来源而不依赖某条链是否被进入。活体：`stream:true` 下 string enum/const 流式返回 `"paris"`、整数 enum 返回 `2`。
+**两次定位错误（记法）**：① 用 helper 替换锚点时吞掉了下一个函数的声明行，留下裸 `{` → tpc 报 `Unsupported statement: Stmt_Block`；**插入函数时锚点要包含被替换的声明行本身**。② 首版把分支插进看似相同的骨架链，但那一条在 `$enumFlat` 之后、属于非流式，分支成死码；**“同名分支链”不等于“正在改的传输”**——最稳是挂在统一的发射点前，而不是某条检测链中间。
+**证据**：`claims_f544.log`（修前红）、`stream_root_f545b.log`（修后绿）、`selftest_f545c.log`、`schema_bounds_f545c.log`、gate_live f545c。
