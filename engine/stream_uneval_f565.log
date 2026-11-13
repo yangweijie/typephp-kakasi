@@ -1,0 +1,3 @@
+STREAM uneval_items_str   status=200 kind=list head=["New York City,"]
+STREAM uneval_items_num   status=200 kind=list head=[192]
+STREAM pnames_enum        status=200 kind=dict head={"city":"New York City, New York, United States. 1,300","note":"New York City is the most 

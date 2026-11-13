@@ -3748,6 +3748,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **处置**：全部回滚（`git checkout`），重建后 required harness PASS（`schema_required_f564c.log`）。
 **结论**：按值计划要求**路由顺序与判定同源**——候选层、required 守卫、混合分支三者必须共同认可同一份“按值计划”；只改混合写入器不足以生效。入队为独立子系统（规格见 task_plan F562/F564 节）。
 
+## F565（2026-11-12）：unevaluatedItems 真空形态与 propertyNames 枚举的流式对账（无新缺陷）
+**方法**：三个代表性形状在 `stream:true` 下重发并判值——根 string 数组 + `unevaluatedItems:{type:integer}`（真空）、根 number 数组 + `unevaluatedItems:false`、对象 + `propertyNames:{enum:[city,note]}`。结果（`stream_uneval_f565.log`）：分别流式返回 `["New York City,"]`（字符串数组）、`[192]`（数字数组）、`{"city":…,"note":…}` 对象——全部合法。
+**结论**：F530/F531/F555 的能力在流式传输上同样成立，未发现新的传输级差异。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
