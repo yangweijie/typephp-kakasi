@@ -2156,4 +2156,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`contains_const_min2_ok`（两个 paris）、`contains_const_unique_min2_refuse`（uniqueItems+K>1 ⇒ 400）、`contains_const_maxitems_over_refuse`（maxItems<K ⇒ 400）。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f553.log`）；bounds **PASS**（`f553b`）；required/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.572×**；哨兵 **0**。BUILD_OK（`build_f553b`）。
 
+## F554（2026-11-12）：const contains 的 maxContains——匹配数恰为 K
+**原理**：强制前 K 个元素为必需值后，其余元素**从域中排除该值**，匹配数就恰好是 K；`maxContains` 因此成为构造界（K≤M 才可满足）。
+**实现**：① `api_schema_contains_required` 去掉 maxContains 拒绝；② `api_schema_contains_count` 解析 maxContains（K>M ⇒ 0）；③ 写入器在 `$must` 非空时用“域减必需值”作后续候选；域只有该值 ⇒ `bMax=maxItems=K`（恰 K 个后收口）。
+**过程（一轮红）**：单值域用例首轮给出 `["paris","paris"]`——只收窄了 `$bMax` 未同步 `$maxItems`，循环仍在第 2 个元素前提供逗号；同步收缩后 `["paris"]`。
+**门**：`contains_const_max1_ok`（恰 1）、`contains_const_min1_max1_ok`（恰 1）、`contains_const_single_domain_ok`（`["paris"]`）、`contains_const_max0_refuse`（400）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f554.log`）；bounds **PASS**（`f554b`）；required/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.600×**；哨兵 **0**。BUILD_OK（`build_f554b`）。
+
 

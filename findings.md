@@ -3704,6 +3704,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 > **F550 补充**：items 与 contains **同一 pattern 字面量**时，全部元素都匹配 ⇒ 构造满足（`contains_pattern_same_ok`）；不同 pattern 仍需一个元素同时匹配两者，仍 400。
 > **F551 补充**：同 pattern 下 `minContains`/`maxContains` 就是元素个数上下限（全部元素都是匹配），由 `api_response_schema_array_bounds` 折叠；无 `minItems` 时以 `0:0` 为基。不可满足组合（min>max）仍 400。流式同形由 smoke `chat-stream-contains-min3`/`chat-stream-contains-max1` 常驻门覆盖（F552）。
 > **F553 补充**：const 形态下 `minContains:K` 由写入器把前 K 个元素强制为必需值（`$mustCount`）；`uniqueItems`+K>1 或 `maxItems<K` 不可满足 ⇒ 400；`maxContains` 对 const 仍需求值，保持 400。
+> **F554 补充**：const 形态的 `maxContains` 现为构造界——强制前 K 个后，其余元素**从域中排除必需值**，匹配数恰为 K（K≤M 可满足，K>M 400）；单值域收缩 `bMax=maxItems=K` 恰发 K 个。
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |

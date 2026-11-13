@@ -1039,6 +1039,35 @@ cases = [
                                 "items": {"type": "string", "enum": ["paris", "lyon"]}}},
       "contains": {"const": "paris"}, "minContains": 2},
      lambda code, txt: code == 400 and ("contains" in txt or "minContains" in txt or "keyword" in txt)),
+    # F554: after the forced prefix the writer excludes the required value, so the match count is
+    # exactly minContains - maxContains becomes a construction bound.
+    ("contains_const_max1_ok", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "maxContains": 1},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "cities"), list)
+     and val_of(txt, "cities").count("paris") == 1
+     and all(x in ("paris", "lyon") for x in val_of(txt, "cities"))),
+    ("contains_const_min1_max1_ok", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "minContains": 1, "maxContains": 1},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "cities"), list)
+     and val_of(txt, "cities").count("paris") == 1),
+    ("contains_const_single_domain_ok", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris"]}}},
+      "contains": {"const": "paris"}, "maxContains": 2},
+     lambda code, txt: code == 200 and val_of(txt, "cities") == ["paris"]),
+    ("contains_const_max0_refuse", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "maxContains": 0},
+     lambda code, txt: code == 400 and ("contains" in txt or "maxContains" in txt or "keyword" in txt)),
     # F550: the same pattern on items and contains means every element matches - construction
     # satisfied; a different contains pattern needs an element matching both and stays refused.
     ("contains_pattern_same_ok", "Give the codes.",

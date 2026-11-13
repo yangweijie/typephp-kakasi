@@ -1653,6 +1653,24 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
     for ($i = 0; $i < count($vals); $i++) {
         $cands[] = $numMode == 1 ? $vals[$i] : $vals[$i] . "\"";
     }
+    // F554: after the forced prefix the remaining elements must NOT match the required literal, so
+    // the match count is exactly mustCount - that is what makes maxContains a construction bound.
+    if ($must != "" && $numMode == 0 && $patMode == 0) {
+        $c2 = [];
+        for ($i = 0; $i < count($vals); $i++) {
+            if ($vals[$i] != $must) {
+                $c2[] = $vals[$i] . "\"";
+            }
+        }
+        if (count($c2) > 0) {
+            $cands = $c2;
+        } else if ($bMax < 1 || $bMax > $mustCount) {
+            $bMax = $mustCount;   // single-value domain: close right after the forced prefix
+            if ($maxItems > $mustCount) {
+                $maxItems = $mustCount;
+            }
+        }
+    }
     // F517: uniqueItems:true on a finite enum domain - drop repeated values and force the distinct
     // ones in declaration order, so every element differs by construction. The domain must cover
     // minItems (the keyword guard refuses otherwise; this is the writer's own defensive check).
@@ -10491,9 +10509,8 @@ function api_schema_contains_required(string $schema): string
             return "";
         }
     }
-    if (preg_match('/"maxContains"\s*:/', $s) == 1) {
-        return "";
-    }
+    // F554: maxContains is allowed for the const form - the writer excludes the value after the
+    // forced prefix, so api_schema_contains_count decides whether the counts are satisfiable.
     $cp = strpos($s, "\"contains\"");
     if ($cp === false) {
         return "";
@@ -10626,15 +10643,19 @@ function api_schema_contains_count(string $body): int
             return 0;
         }
     }
-    if (preg_match('/"maxContains"\s*:/', $s) == 1) {
-        return 0;
-    }
     $k = 1;
     $mc = [];
     if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1) {
         $k = (int) $mc[1];
         if ($k < 1) {
             $k = 1;
+        }
+    }
+    $mx = 0;
+    if (preg_match('/"maxContains"\s*:\s*([0-9]+)/', $s, $mc) == 1) {
+        $mx = (int) $mc[1];
+        if ($k > $mx) {
+            return 0;   // the forced prefix already exceeds the match ceiling
         }
     }
     if ($k > 1 && preg_match('/"uniqueItems"\s*:\s*true/', $s) == 1) {
