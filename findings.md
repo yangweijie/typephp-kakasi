@@ -4763,3 +4763,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：静态 `SCHEMA-CHOICES-BOUNDS`（pure=1，root_enum/const/enum_int=0）；活体 `anyof_bounds_refuse` 400、`oneof_const_ok` 仍 200 `{"city":"paris"}`；全梯子绿。
 **记法**：**兜底拒绝要按“数组内是否有可认领分支”判定，而不是按关键字本身**——oneOf 关键字本身有多个可工作形态，按关键字 blanket 拒绝会打掉 smoke 与文法分支；“无人认领”的粒度是分支集合。
 **证据**：`selftest_f542.log`、`schema_bounds_f542.log`、gate_live f542。
+
+## F543（2026-11-12）：根级 string enum 的引号与根级 const
+**缺陷**：根级 `{"type":"string","enum":["paris","lyon"]}` 返回裸 `paris`——`api_list` 会剥掉引号，约束候选因此是裸文本，输出的不是合法 JSON；根级 `{"const":"paris"}` 完全没进 enum 分支，返回 200 散文。
+**修复**：全字符串根级 enum 的候选改写为带引号形式（`api_esc` 转义；混合 enum 保留裸字面量）；新增根级 const 分支，字符串 const 保引号、数字/布尔裸写。
+**回归**：首版 const 分支按全文匹配，抢走了根数组 `items.const`，`top_str_const_ok` 由 `["paris"]` 退化为 `"paris"`。根层判定改为 `"schema"\s*:\s*\{[^{}]*"const"`（直接子键）后恢复，并与 items/properties 的 const 分开。
+**记法**：**根层关键字的判定必须限定“直接子键”**（`[^{}]*`），全文存在性会把嵌套层的关键字误认领——“这个关键字在不在 body 里”与“这个关键字是不是根层”是两个问题。
+**证据**：`schema_bounds_f543.log`（回归红）、`schema_bounds_f543b.log`（全绿：`root_str_enum_quoted_ok`/`root_str_const_quoted_ok`=`"paris"`、`top_str_const_ok=["paris"]`）、gate_live f543b。

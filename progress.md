@@ -2349,3 +2349,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：静态 `SCHEMA-CHOICES-BOUNDS pure=1/root_enum=0/const=0/enum_int=0`；活体 `anyof_bounds_refuse` 400；F540 的 `oneof_const_ok` 仍 200。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f542.log`）；bounds/required/count/pattern PASS；8000 115/0；8001 par/fair 0；scaling 1.577×；哨兵 0；BUILD_OK（`build_f542`）。
 
+## F543（2026-11-12）：根级 string enum 加引号 + 根级 const 折叠
+- **缺陷**：根级 string enum 返回裸 `paris`（非法 JSON）；根级 const 返回 200 散文。
+- **修复**：enum 分支对全字符串枚举改发带引号候选（`api_esc` 转义）；新增根 const 分支（直接子键正则，字符串保引号）。
+- **回归与修复**：首版 const 分支误抢根数组 items 的 const（`top_str_const_ok` 退化），加 `"schema":{[^{}]*"const"` 直接子键限定后恢复。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f543b.log`）；bounds PASS（`f543b`）；8000 115/0；8001 par/fair 0；scaling 1.579×；哨兵 0；BUILD_OK（`build_f543b`）。
+- **边界**：流式根级字符串 enum 未验（入队）。
+

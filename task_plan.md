@@ -2079,4 +2079,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：静态 `SCHEMA-CHOICES-BOUNDS`（`pure=1`、`root_enum=0`、`const=0`、`enum_int=0`）；活体 `anyof_bounds_refuse` 400。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f542.log`）；bounds **PASS**（`f542`：`anyof_bounds_refuse` 400 点名 oneOf/anyOf，`oneof_const_ok` 仍 200 `{"city":"paris"}`）；required/count/pattern **CHECK_EXIT=0**；8000 **115/0**；8001 par/fair **0**；scaling **1.577×**；哨兵 **0**。BUILD_OK（`build_f542`）。
 
+## F543（2026-11-12）：根级 string enum 加引号 + 根级 const 折叠
+**活体证据**：根级 `{"type":"string","enum":["paris","lyon"]}` 返回裸 `paris`（非法 JSON）；根级 `{"type":"string","const":"paris"}` 与 `{"const":"paris"}` 返回 **200 散文**（const 未接 enum 分支）；根级整数 enum 返回裸 `2`（合法）。
+**改动**：`$enumFlat` 分支把“全为字符串”的根级 enum 改写为带引号候选（用 `api_esc` 转义），混合 enum 保持裸字面量；新增根级 const 分支（无 `properties` 时），字符串 const 保留引号、数字/布尔裸写。
+**门**：活体 `root_str_enum_quoted_ok`（JSON 可解析且值 ∈ enum）、`root_str_const_quoted_ok`（`"paris"`）、`root_int_enum_ok`（裸 2/5/9）。
+**边界**：本次门覆盖非流式路径；流式根级字符串 enum 的引号需另验（入队）。
+**过程（一轮回归）**：首版 const 分支没有限定“根层直接子键”，把根**数组** items 里的 const 抢走了——`top_str_const_ok` 由 `["paris"]` 退化为 `"paris"`（`f543`，VERDICT FAIL）。改为 `"schema"\s*:\s*\{[^{}]*"const"` 只认 schema 对象直接子键后恢复。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f543b.log`）；bounds **PASS**（`f543b`：`top_str_const_ok=["paris"]`、`root_str_enum_quoted_ok`/`root_str_const_quoted_ok`=`"paris"`、`root_int_enum_ok`=2）；required/count/pattern **CHECK_EXIT=0**；8000 **115/0**；8001 par/fair **0**；scaling **1.579×**；哨兵 **0**。BUILD_OK（`build_f543b`）。
+**记法**：根层判定要用“直接子键”正则（`[^{}]*`），不要用全文存在性——否则 items/properties 里的同名关键字会被误认领。
+
 

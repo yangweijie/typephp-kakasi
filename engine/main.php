@@ -14716,9 +14716,32 @@ function api_serve(int $port): void
                     && api_response_schema_top_array_scalar_enum($body) == ""
                     && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', api_schema_strip_root_not($body), $em)) {
                     $evals = api_list($em[1]);
+                    // F543: a root-level enum of strings is a JSON string, not bare text; quote the
+                    // constrained answers. Any bare token left after removing the quoted literals
+                    // means the enum also carries numbers/booleans, which stay unquoted.
+                    $bare = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '', $em[1]);
+                    $bare = str_replace(",", "", $bare);
+                    $bare = str_replace(" ", "", $bare);
+                    $bare = str_replace("\n", "", $bare);
+                    $bare = str_replace("\t", "", $bare);
+                    if ($bare == "" && strpos($em[1], "\"") !== false) {
+                        $qvals = [];
+                        for ($qi = 0; $qi < count($evals); $qi++) {
+                            $qvals[] = "\"" . api_esc($evals[$qi]) . "\"";
+                        }
+                        $evals = $qvals;
+                    }
                     if (count($evals) > 0) {
                         $enumOut = api_constrained($ids, $evals, 24, $prefixCache);
                     }
+                } else if ($enumFlat == 1 && strpos($body, "\"properties\"") === false
+                    && preg_match('/"schema"\s*:\s*\{[^{}]*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
+                        api_schema_strip_root_not($body), $cm) == 1) {
+                    // F543: a ROOT-level const is a one-value enum; the direct-child regex keeps a
+                    // const nested in items/properties off this branch (top_str_const_ok regressed
+                    // when the array's items const answered a bare string). A string spelling keeps
+                    // its quotes while numbers/booleans stay bare.
+                    $enumOut = api_constrained($ids, [$cm[1]], 24, $prefixCache);
                 } else {
                     // One-level nested string first: the flat detector would otherwise mistake
                     // the inner property for a top-level one.

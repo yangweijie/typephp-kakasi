@@ -994,6 +994,14 @@ cases = [
          {"type": "integer", "minimum": 1, "maximum": 9},
          {"type": "integer", "minimum": 50, "maximum": 60}]}}},
      lambda code, txt: code == 400 and ("oneOf/anyOf" in txt or "numeric bounds" in txt)),
+    # F543: a root-level string schema is a JSON string: enum answers must be quoted, and a root
+    # const is a one-value enum. A root integer enum stays a bare (already valid) literal.
+    ("root_str_enum_quoted_ok", "Name a city.", {"type": "string", "enum": ["paris", "lyon"]},
+     lambda code, txt: code == 200 and valid_json(txt) and json.loads(txt) in ("paris", "lyon")),
+    ("root_str_const_quoted_ok", "Name a city.", {"type": "string", "const": "paris"},
+     lambda code, txt: code == 200 and valid_json(txt) and json.loads(txt) == "paris"),
+    ("root_int_enum_ok", "Give the number.", {"enum": [2, 5, 9]},
+     lambda code, txt: code == 200 and valid_json(txt) and json.loads(txt) in (2, 5, 9)),
 ]
 
 bad = 0
