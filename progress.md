@@ -2397,3 +2397,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **过程**：首版花括号多一个， smoke 0 条即 SyntaxError；加 `ast.parse` 预检后通过。
 - **结果**：SMOKE 120/0；8001 par/fair 0；哨兵 0。**基线：8000 smoke 120/0（F552 起）**。
 
+## F553（2026-11-12）：const contains 的 minContains（前 K 个元素）
+- **实现**：required 放宽 minContains；`api_schema_contains_count`（unique+K>1 / maxItems<K ⇒ 0）；写入器 `$mustCount`；bounds 的 `0:0` 基覆盖 const 形态。
+- **过程**：首轮被 minmax 裁判拒绝（无 minItems 时 bounds 为空）；扩展基后通过。
+- **活体**：min2 → `["paris","paris"]`；unique+min2、maxItems<min2 → 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f553.log`）；bounds PASS（`f553b`）；required/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.572×；哨兵 0；BUILD_OK（`build_f553b`）。
+

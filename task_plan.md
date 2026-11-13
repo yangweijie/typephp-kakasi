@@ -2150,4 +2150,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **结果**：`SMOKE: PASS=120 FAIL=0`；8001 par/fair 0；哨兵 0。**基线：8000 smoke 120/0（F552 起）。**
 **记法**：改 smoke 夹具后**先做语法预检**——语法错会在 0 条 PASS 时退出，看起来像空跑。
 
+## F553（2026-11-12）：const contains 的 minContains（强制前 K 个元素）
+**实现**：① `api_schema_contains_required` 去掉 minContains≤1 限制（仍拒绝 maxContains）；② 新增 `api_schema_contains_count`（默认 1；uniqueItems 且 K>1 或 maxItems<K ⇒ 0）；③ 写入器 `$mustCount`：前 K 个元素只约束到必需值、bMin≥K；④ 四个调用点传入计数；⑤ bounds 的 `0:0` 基同时覆盖 const 形态（否则 minmax 裁判拿不到非空 bounds）。
+**过程（一轮红）**：首轮 `contains_const_min2_ok` 被 “keyword not supported: minContains” 拒绝——`api_schema_minmax_contains_ok` 要求非空 bounds，而无 minItems 时 bounds 为空；把 `0:0` 基扩展到 const 形态后通过。
+**门**：`contains_const_min2_ok`（两个 paris）、`contains_const_unique_min2_refuse`（uniqueItems+K>1 ⇒ 400）、`contains_const_maxitems_over_refuse`（maxItems<K ⇒ 400）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f553.log`）；bounds **PASS**（`f553b`）；required/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.572×**；哨兵 **0**。BUILD_OK（`build_f553b`）。
+
 

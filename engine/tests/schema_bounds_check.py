@@ -1017,6 +1017,28 @@ cases = [
                                 "items": {"type": "string", "enum": ["paris", "lyon"]}}},
       "contains": {"const": "nice"}},
      lambda code, txt: code == 400 and ("contains" in txt or "keyword" in txt)),
+    # F553: minContains 2 on the const form forces the first two elements to the value;
+    # uniqueItems or a maxItems below the count makes the pair unsatisfiable and must refuse.
+    ("contains_const_min2_ok", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "minContains": 2},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "cities"), list)
+     and val_of(txt, "cities").count("paris") >= 2
+     and all(x in ("paris", "lyon") for x in val_of(txt, "cities"))),
+    ("contains_const_unique_min2_refuse", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array", "uniqueItems": True,
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "minContains": 2},
+     lambda code, txt: code == 400 and ("contains" in txt or "uniqueItems" in txt or "keyword" in txt)),
+    ("contains_const_maxitems_over_refuse", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array", "maxItems": 1,
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}, "minContains": 2},
+     lambda code, txt: code == 400 and ("contains" in txt or "minContains" in txt or "keyword" in txt)),
     # F550: the same pattern on items and contains means every element matches - construction
     # satisfied; a different contains pattern needs an element matching both and stays refused.
     ("contains_pattern_same_ok", "Give the codes.",

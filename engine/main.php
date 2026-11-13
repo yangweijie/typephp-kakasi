@@ -1613,7 +1613,7 @@ function api_array_item_multiple_value(string $ids, string $prop, int $mult, int
 // emits each element as a whole candidate continuation (value + closing quote) and only "," / "]"
 // are reachable between elements - the same mechanism the flat enum writer and the bounded-number
 // writer use. At least one element is emitted, like the item-type writer.
-function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = "", int $unique = 0, string $must = ""): string
+function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = "", int $unique = 0, string $must = "", int $mustCount = 1): string
 {
     $commaIds = api_punct_ids(",");
     $bracketIds = api_punct_ids("]");
@@ -1668,8 +1668,9 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             return "";
         }
     }
-    // F548: a required contains literal must appear; force it into element 0 (unique mode reorders
-    // the domain so its own per-element sequence starts with it) and forbid an empty array.
+    // F548/F553: the required contains literal must appear minContains times; force it into the
+    // first mustCount elements (unique mode reorders the domain so its own per-element sequence
+    // starts with it) and forbid an array shorter than that.
     if ($must != "" && $patMode == 0) {
         if ($unique == 1) {
             $nv = [$must];
@@ -1680,8 +1681,8 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             }
             $vals = $nv;
         }
-        if ($bMin < 1) {
-            $bMin = 1;
+        if ($bMin < $mustCount) {
+            $bMin = $mustCount;
         }
     }
     // F520: numeric values are bare literals - the head carries no opening quote in that mode.
@@ -1720,7 +1721,7 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             }
             $s = $s . "," . $cq;
         } else {
-            if ($must != "" && $it == 0 && $unique == 0 && $patMode == 0) {
+            if ($must != "" && $it < $mustCount && $unique == 0 && $patMode == 0) {
                 $f = api_constrained_continue([$numMode == 1 ? $must : $must . "\""], 24);
             } else if ($unique == 1) {
                 $f = api_constrained_continue([$numMode == 1 ? $vals[$it] : $vals[$it] . "\""], 24);
@@ -8662,7 +8663,7 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
         $sae = explode("|", $scArrEnum);
         $scOut = api_array_enum_value($ids, $sae[0], $sae[1], 4, 1,
             api_response_schema_array_bounds($body), api_schema_unique_true($body),
-            api_schema_contains_required($body));
+            api_schema_contains_required($body), api_schema_contains_count($body));
     } else if (api_response_schema_tuple($body) != "") {
         $tup = explode("|", api_response_schema_tuple($body));
         $scOut = api_tuple_value($ids, $tup[0], $tup[1], api_schema_charset(), 4, 1);
@@ -9792,9 +9793,11 @@ function api_response_schema_array_bounds(string $body): string
         return $b;
     }
     if ($b == "") {
-        // F551: the same-pattern contains makes every element a match, so minContains/maxContains
-        // are pure element counts - they need no minItems/maxItems to ride on.
-        if (($mn != "" || $mx != "") && api_schema_contains_pattern_ok($schema) == 1) {
+        // F551/F553: same-pattern contains and the required-const form both turn the counts into
+        // element counts the writer honours - they need no minItems/maxItems to ride on.
+        if (($mn != "" || $mx != "")
+            && (api_schema_contains_pattern_ok($schema) == 1
+                || api_schema_contains_required($schema) != "")) {
             $b = "0:0";
         } else {
             return "";          // the counts need the counted shape; the refusal layer names it
@@ -10491,10 +10494,6 @@ function api_schema_contains_required(string $schema): string
     if (preg_match('/"maxContains"\s*:/', $s) == 1) {
         return "";
     }
-    $mc = [];
-    if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1 && (int) $mc[1] > 1) {
-        return "";
-    }
     $cp = strpos($s, "\"contains\"");
     if ($cp === false) {
         return "";
@@ -10616,11 +10615,44 @@ function api_schema_contains_pattern_ok(string $schema): int
     return $same >= 2 ? 1 : 0;
 }
 
+// F553: how many elements the required const must fill. minContains defaults to 1; a maxContains
+// needs real evaluation, uniqueItems forbids two equal elements, and maxItems must allow K.
+function api_schema_contains_count(string $body): int
+{
+    $s = $body;
+    if (strpos($s, "\"json_schema\"") !== false) {
+        $s = api_json_object_after($s, "schema");
+        if ($s == "") {
+            return 0;
+        }
+    }
+    if (preg_match('/"maxContains"\s*:/', $s) == 1) {
+        return 0;
+    }
+    $k = 1;
+    $mc = [];
+    if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1) {
+        $k = (int) $mc[1];
+        if ($k < 1) {
+            $k = 1;
+        }
+    }
+    if ($k > 1 && preg_match('/"uniqueItems"\s*:\s*true/', $s) == 1) {
+        return 0;
+    }
+    $mi = api_schema_bound_value($s, "\"maxItems\"", 0);
+    if ($mi != "" && (int) $mi > 0 && $k > (int) $mi) {
+        return 0;
+    }
+    return $k;
+}
+
 function api_schema_contains_ok(string $schema): int
 {
     // F548: a contains the writer can satisfy by construction is honoured (the required literal is
-    // forced into element 0); the vacuous forms below stay separate.
-    if (api_schema_contains_required($schema) != "") {
+    // forced into the first minContains elements); the vacuous forms below stay separate.
+    if (api_schema_contains_required($schema) != ""
+        && api_schema_contains_count($schema) >= 1) {
         return 1;
     }
     // F550: same-pattern items and contains - every element matches by construction.
@@ -13524,7 +13556,7 @@ Connection: close
                                     $sae2 = explode("|", $scArrEnum);
                                     $scOut = api_array_enum_value($ids, $sae2[0], $sae2[1], 4, 1,
                                         api_response_schema_array_bounds($body), api_schema_unique_true($body),
-                                        api_schema_contains_required($body));
+                                        api_schema_contains_required($body), api_schema_contains_count($body));
                                 } else if (api_response_schema_tuple($body) != "") {
                                     $tup2 = explode("|", api_response_schema_tuple($body));
                                     $scOut = api_tuple_value($ids, $tup2[0], $tup2[1],
@@ -14683,7 +14715,7 @@ function api_serve(int $port): void
                             $sae3 = explode("|", $sArrEnum);
                             $sJOut = api_array_enum_value($ids, $sae3[0], $sae3[1], 4,
                                 $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body),
-                                api_schema_contains_required($body));
+                                api_schema_contains_required($body), api_schema_contains_count($body));
                         } else if (api_response_schema_tuple($body) != "") {
                             $tup3 = explode("|", api_response_schema_tuple($body));
                             $sJOut = api_tuple_value($ids, $tup3[0], $tup3[1],
@@ -15147,7 +15179,7 @@ function api_serve(int $port): void
                         $ae4 = explode("|", $arrEnum);
                         $enumOut = api_array_enum_value($ids, $ae4[0], $ae4[1], 4,
                             $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body),
-                            api_schema_contains_required($body));
+                            api_schema_contains_required($body), api_schema_contains_count($body));
                         $jsonMode = 1;
                     } else if (api_response_schema_tuple($body) != "") {
                         $tup4 = explode("|", api_response_schema_tuple($body));
