@@ -2173,4 +2173,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **结果**（`claims_f556.log`）：`contains`/`if`/`dependentSchemas`/`not` 子 schema 的 enum 诱饵全部 400——拒绝链先于生成，`$enumFlat` 到不了；唯一缝隙是“裁判接受但无人认领”的 `propertyNames`（F555 已修）。
 **记法**：静默误路由的土壤是“裁判接受 + 无人认领”；审计按“哪些关键字会被接受”枚举。
 
+## F557（2026-11-12）：dependentSchemas 的真空值级子 schema
+**原理**：子 schema 只带 `properties` 且这些键**从不会被发射**时，触发键出现与否都无约束 ⇒ 真空满足；一旦约束到已发射键，或带 `additionalProperties:false` 等其他关键字，就需求值，继续拒绝。
+**实现**：`api_schema_dependent_schemas_ok` 的逐条校验从“仅 bare required”扩展为“bare required 或 只含 properties 且键集与发射集不相交”；翻转旧夹具 `depsch_other_body` → `depsch_vacuous_props`（200，键集 city/note）。
+**门**：`depsch_vacuous_props`（200）、`depsch_emitted_key_refuse`（约束已发射键 ⇒ 400）、`depsch_addprops_refuse`（带 additionalProperties ⇒ 400）。
+**过程（一轮活体红）**：只放宽判定时返回 200 但值是 `{"city":{"x":"0.000000"}}`——生成器把 dependent 子 schema 的 properties 当成了主 plan。修法：新增 `api_schema_strip_vacuous_dep`，在两条预处理链（refs 之后）把真空条目剥离，剩余非真空条目照旧由裁判拒绝；剥离后 `{"city":…,"note":…}`。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f557.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.613×**；哨兵 **0**。BUILD_OK（`build_f557c`）。
+**记法**：**放宽判定后必须验证“谁在生成”**——判定层接受不等于生成器会用对 properties 块；对会影响 plan 提取的子 schema，正确做法是**剥离**而不是只豁免。
+
 

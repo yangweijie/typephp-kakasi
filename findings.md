@@ -3712,6 +3712,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**“在整包上扫关键字”会命中子 schema 里的同名关键字**——顶层枚举判定要限定根层（F543 的 const 已这样做），否则嵌套的 enum/const 会被发成裸值。
 **证据**：`claims_f555.log`、`schema_bounds_f555.log`（两门 PASS）、gate_live f555。
 
+## F557（2026-11-12）：dependentSchemas 真空值级子 schema——判定与剥离必须成对
+**语义**：`dependentSchemas:{trigger:{properties:{x:…}}}` 在 x **从不被发射**时对任何值都成立；一旦约束到已发射键或带 `additionalProperties:false`，就需求值、继续 400。
+**过程（关键红证）**：只放宽判定 → 200 但内容是 `{"city":{"x":"0.000000"}}`——生成器把 dependent 子 schema 的 properties 块当成了主 plan，产出违反主 schema 的值。修法不是再豁免一层，而是**剥离**：`api_schema_strip_vacuous_dep` 在 `$ref` 之后的两条预处理链删除真空条目（全真空则连键带逗号删除，否则只保留非真空条目），生成器看到干净的 schema。
+**记法**：**判定层“可以放行”≠生成层“会用对”**。放宽任何“子 schema 参与 plan 提取”的关键字前，先问生成器的 properties/items 扫描会不会命中子块；需要时用剥离把约束从 body 里移除，保留判定只做安全网。
+**证据**：`schema_required_f557.log`（红值与修后值）、`schema_required_f557b.log`（全绿）、gate_live f557。
+
 ## F556（2026-11-12）：嵌套 enum 误路由的边界核对（无新缺陷）
 **方法**：把 `contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 作为诱饵，看 `$enumFlat` 是否会把它们发成顶层值。结果（`claims_f556.log`）四例全部 **400 点名关键字**——这些关键字在拒绝链里先行被拒，生成阶段根本不会到达 `$enumFlat`。
 **结论**：误路由只发生在“关键字裁判**接受**但没有检测器认领”的缝隙（`propertyNames` enum 是唯一实例，F555 已修）。`enumFlat` 现有的守卫（数组/根数组/propertyNames）覆盖了已观察到的缝隙；若未来放宽某个关键字裁判，必须同时检查 `$enumFlat` 是否会再次吞掉其子 schema 的 enum。

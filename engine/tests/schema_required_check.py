@@ -499,9 +499,20 @@ cases = [
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "required": ["city"], "dependentSchemas": {"city": {"required": ["note"]}}},
      lambda code, txt: code == 400 and "dependentSchemas" in txt),
-    ("depsch_other_body", "Say where you are.",
+    # F557 flipped this expectation: a dependent subschema whose `properties` names only keys the
+    # answer never emits is vacuously true (the old name was depsch_other_body and it expected 400).
+    ("depsch_vacuous_props", "Say where you are.",
      {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "dependentSchemas": {"city": {"properties": {"x": {"type": "string"}}}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("depsch_emitted_key_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependentSchemas": {"city": {"properties": {"note": {"const": "q"}}}}},
+     lambda code, txt: code == 400 and "dependentSchemas" in txt),
+    ("depsch_addprops_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "dependentSchemas": {"city": {"properties": {"x": {"type": "string"}},
+                                    "additionalProperties": False}}},
      lambda code, txt: code == 400 and "dependentSchemas" in txt),
     # F447: `dependencies` in both spellings (array, bare-required object) is judged by the emitted
     # key set; an omitted dependency and a richer subschema body stay refused.

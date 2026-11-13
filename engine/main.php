@@ -10880,22 +10880,60 @@ function api_schema_dependent_schemas_ok(string $schema): int
         $off = $ob + strlen($sub) + 1;
         $entries++;
         $mr = [];
-        if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mr) != 1) {
-            return 0;               // any subschema body other than a bare `required`
+        if (preg_match('/^\{\s*"required"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $mr) == 1) {
+            if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+                continue;               // the trigger is not emitted, so the subschema does not apply
+            }
+            foreach (explode(",", $mr[1]) as $dep) {
+                $dep = str_replace("\"", "", $dep);
+                $dep = str_replace(" ", "", $dep);
+                if ($dep == "") {
+                    continue;
+                }
+                if (strpos("," . $emit . ",", "," . $dep . ",") === false) {
+                    return 0;
+                }
+            }
+            continue;
         }
-        if (strpos("," . $emit . ",", "," . $key . ",") === false) {
-            continue;               // the trigger is not emitted, so the subschema does not apply
-        }
-        foreach (explode(",", $mr[1]) as $dep) {
-            $dep = str_replace("\"", "", $dep);
-            $dep = str_replace(" ", "", $dep);
-            if ($dep == "") {
+        // F557: a subschema that only carries `properties` for keys the answer NEVER emits is
+        // vacuously true; the moment it constrains an emitted key (or carries any other keyword
+        // such as additionalProperties:false) it needs evaluation and stays refused.
+        if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) == 1) {
+            if (strpos("," . $emit . ",", "," . $key . ",") === false) {
                 continue;
             }
-            if (strpos("," . $emit . ",", "," . $dep . ",") === false) {
+            $pbo = strpos($sub, "{", strpos($sub, "\"properties\""));
+            if ($pbo === false) {
                 return 0;
             }
+            $pblk = api_balance_block($sub, $pbo);
+            if ($pblk == "") {
+                return 0;
+            }
+            $rest = substr($sub, $pbo + strlen($pblk));
+            $rest = str_replace(" ", "", $rest);
+            $rest = str_replace("\n", "", $rest);
+            $rest = str_replace("\t", "", $rest);
+            if ($rest != "}") {
+                return 0;
+            }
+            $plan2 = api_top_leaves($pblk, 64);
+            if ($plan2 == "") {
+                return 0;
+            }
+            foreach (explode(",", $plan2) as $leaf) {
+                $kv2 = explode(":", $leaf);
+                if ($kv2[0] == "") {
+                    return 0;
+                }
+                if (strpos("," . $emit . ",", "," . $kv2[0] . ",") !== false) {
+                    return 0;
+                }
+            }
+            continue;
         }
+        return 0;                       // any other subschema body
     }
     if ($entries == 0) {
         return 0;
@@ -10903,8 +10941,146 @@ function api_schema_dependent_schemas_ok(string $schema): int
     return 1;
 }
 
-// F432: dependentRequired is satisfied when, for every trigger key the answer will contain, its
-// dependencies are contained too. On the flat all-string shape the emitted key set is the declared
+// F557: remove dependentSchemas entries that are vacuous for the emitted key set (bare properties
+// for keys the answer never emits). The generation detectors scan properties blocks, so leaving the
+// block in place misroutes the plan (the first live run answered {"city":{"x":...}}); stripping is
+// the safe half of the exemption and the judge then sees no keyword for these entries. Entries that
+// constrain an emitted key or carry any other keyword stay, and the refusal layer names them.
+function api_schema_strip_vacuous_dep(string $body): string
+{
+    $dp = strpos($body, "\"dependentSchemas\"");
+    if ($dp === false) {
+        return $body;
+    }
+    $bo = strpos($body, "{", $dp);
+    if ($bo === false) {
+        return $body;
+    }
+    $block = api_balance_block($body, $bo);
+    if ($block == "") {
+        return $body;
+    }
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+    }
+    if ($schema == ""
+        || (api_schema_flat_all_string($schema) != 1 && api_schema_mixed_omittable($schema) != 1)) {
+        return $body;
+    }
+    $emit = api_schema_required_filter($schema);
+    if ($emit == "") {
+        $pp = strpos($schema, "\"properties\"");
+        if ($pp === false) {
+            return $body;
+        }
+        $pbo = strpos($schema, "{", $pp);
+        if ($pbo === false) {
+            return $body;
+        }
+        $pblk = api_balance_block($schema, $pbo);
+        if ($pblk == "") {
+            return $body;
+        }
+        $plan = api_top_leaves($pblk, 64);
+        if ($plan == "") {
+            return $body;
+        }
+        $emit = "";
+        foreach (explode(",", $plan) as $leaf) {
+            $kv = explode(":", $leaf);
+            $emit = $emit == "" ? $kv[0] : $emit . "," . $kv[0];
+        }
+    }
+    $inner = substr($block, 1, strlen($block) - 2);
+    $keep = "";
+    $kept = 0;
+    $off = 0;
+    while ($off < strlen($inner)) {
+        $q = strpos($inner, "\"", $off);
+        if ($q === false) {
+            break;
+        }
+        $qe = strpos($inner, "\"", $q + 1);
+        if ($qe === false) {
+            return $body;
+        }
+        $key = substr($inner, $q + 1, $qe - $q - 1);
+        $ob = strpos($inner, "{", $qe);
+        if ($ob === false) {
+            return $body;
+        }
+        $sub = api_balance_block($inner, $ob);
+        if ($sub == "") {
+            return $body;
+        }
+        $off = $ob + strlen($sub);
+        $vac = 0;
+        if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) == 1) {
+            if (strpos("," . $emit . ",", "," . $key . ",") === false) {
+                $vac = 1;
+            } else {
+                $pbo2 = strpos($sub, "{", strpos($sub, "\"properties\""));
+                $pblk2 = $pbo2 === false ? "" : api_balance_block($sub, $pbo2);
+                if ($pblk2 != "") {
+                    $rest = str_replace(" ", "", substr($sub, $pbo2 + strlen($pblk2)));
+                    $rest = str_replace("\n", "", $rest);
+                    $rest = str_replace("\t", "", $rest);
+                    if ($rest == "}") {
+                        $plan2 = api_top_leaves($pblk2, 64);
+                        if ($plan2 != "") {
+                            $vac = 1;
+                            foreach (explode(",", $plan2) as $leaf) {
+                                $kv2 = explode(":", $leaf);
+                                if ($kv2[0] == ""
+                                    || strpos("," . $emit . ",", "," . $kv2[0] . ",") !== false) {
+                                    $vac = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if ($vac == 0) {
+            $piece = "\"" . $key . "\":" . $sub;
+            $keep = $kept == 0 ? $piece : $keep . "," . $piece;
+            $kept = $kept + 1;
+        }
+    }
+    if ($kept == 0) {
+        // drop the whole entry (key, value, one adjacent comma) like the definitions container
+        $kend = $bo + strlen($block);
+        $cutA = $dp;
+        $j = $dp - 1;
+        while ($j >= 0) {
+            $jc = substr($body, $j, 1);
+            if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                break;
+            }
+            $j = $j - 1;
+        }
+        if ($j >= 0 && substr($body, $j, 1) == ",") {
+            $cutA = $j;
+        } else {
+            $j = $kend;
+            while ($j < strlen($body)) {
+                $jc = substr($body, $j, 1);
+                if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                    break;
+                }
+                $j = $j + 1;
+            }
+            if ($j < strlen($body) && substr($body, $j, 1) == ",") {
+                $kend = $j + 1;
+            }
+        }
+        return substr($body, 0, $cutA) . substr($body, $kend);
+    }
+    return substr($body, 0, $bo) . "{" . $keep . "}" . substr($body, $bo + strlen($block));
+}
+
+
 // plan or its required subset - both known before generation - so the rule can be checked instead
 // of refused. Shapes whose key set is not proven, or a dependency on a key that is never emitted,
 // keep the refusal.
@@ -13293,6 +13469,9 @@ function api_serve_par(int $port): void
             }
             if (strpos($body, '"$ref"') !== false) {
                 $body = api_schema_resolve_refs($body);
+                if (strpos($body, "\"dependentSchemas\"") !== false) {
+                    $body = api_schema_strip_vacuous_dep($body);
+                }
             }
             if (strpos($body, '"allOf"') !== false) {
                 $body = api_schema_merge_allof($body);
@@ -13908,6 +14087,9 @@ function api_serve(int $port): void
         }
         if (strpos($body, '"$ref"') !== false) {
             $body = api_schema_resolve_refs($body);
+        }
+        if (strpos($body, '"dependentSchemas"') !== false) {
+            $body = api_schema_strip_vacuous_dep($body);
         }
         if (strpos($body, '"allOf"') !== false) {
             $body = api_schema_merge_allof($body);

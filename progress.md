@@ -2419,3 +2419,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：`contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 全部 400 点名关键字（拒绝链先于生成），无误路由；`propertyNames` 是唯一缝隙（F555 已修）。
 - **证据**：`claims_f556.log`。
 
+## F557（2026-11-12）：dependentSchemas 的真空值级子 schema
+- **实现**：判定接受“只含 properties 且键集与发射集不相交”的子 schema；新增 `api_schema_strip_vacuous_dep`，在两条预处理链剥离真空条目（否则生成器把 dependent properties 当主 plan）。
+- **过程**：仅改判定时值为 `{"city":{"x":"0.000000"}}`；剥离后 `{"city":…,"note":…}`。
+- **门**：`depsch_vacuous_props` 200；约束已发射键/带 additionalProperties ⇒ 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f557.log`）；bounds/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.613×；哨兵 0；BUILD_OK（`build_f557c`）。
+
