@@ -2371,3 +2371,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：smoke 增 `chat-stream-root-strenum`/`chat-stream-root-strconst`（引号 JSON 字符串断言）。
 - **结果**：SMOKE 117/0；8001 par/fair 0；哨兵 0。**基线：8000 smoke 117/0（F547 起）**。
 
+## F548（2026-11-12）：contains 的构造满足形态
+- **实现**：`api_schema_contains_required`（const/enum ∩ items 域、无 maxContains、minContains≤1）；`api_array_enum_value` 增 `$must`（元素 0 强制、bMin 提到 1、unique 模式重排域首）；`api_schema_contains_ok` 豁免；四处调用点接入。
+- **活体**：`contains_const_ok` 200 `{"cities":["paris","paris"]}`；`contains_miss_refuse` 400。
+- **期望翻转**：count harness 的 `contains_subset_miss_refuse`（曾期望 400）改为 `contains_const_served`（200 且含 paris）。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f548.log`）；bounds PASS（`f548`）；count PASS（`f548b`）；required/pattern 0；8000 117/0；8001 par/fair 0；scaling 1.560×；哨兵 0；BUILD_OK（`build_f548`）。
+

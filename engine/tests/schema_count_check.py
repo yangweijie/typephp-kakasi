@@ -283,10 +283,14 @@ cases = [
      lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
      and len(json.loads(txt)["cities"]) >= 1
      and all(x in ["paris", "lyon"] for x in json.loads(txt)["cities"]), ask),
-    ("contains_subset_miss_refuse", "Name some French cities.",
+    # F548 flipped this expectation: the writer now forces the required literal into element 0, so
+    # a contains const inside the item domain is served by construction (it was 400 while no
+    # writer guarantee existed - the old name was contains_subset_miss_refuse).
+    ("contains_const_served", "Name some French cities.",
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string", "enum": ["paris", "lyon"]}}},
       "contains": {"const": "paris"}},
-     lambda code, txt: code == 400 and "contains" in txt, ask),
+     lambda code, txt: code == 200 and isinstance(json.loads(txt).get("cities"), list)
+     and len(json.loads(txt)["cities"]) >= 1 and "paris" in json.loads(txt)["cities"], ask),
     # F481: pattern items build every element from one spec, so a contains pattern with the SAME
     # spec is matched by every element (>=1), i.e. contains holds; a different spec stays refused.
     ("contains_pattern_items_same_ok", "Give the codes.",

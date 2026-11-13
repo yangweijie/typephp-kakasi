@@ -1002,6 +1002,21 @@ cases = [
      lambda code, txt: code == 200 and valid_json(txt) and json.loads(txt) == "paris"),
     ("root_int_enum_ok", "Give the number.", {"enum": [2, 5, 9]},
      lambda code, txt: code == 200 and valid_json(txt) and json.loads(txt) in (2, 5, 9)),
+    # F548: contains by construction - the required literal is forced into element 0, so a
+    # minContains:1 holds; a value the item domain cannot emit stays an explicit 400 (control).
+    ("contains_const_ok", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "paris"}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(val_of(txt, "cities"), list)
+     and len(val_of(txt, "cities")) >= 1 and "paris" in val_of(txt, "cities")),
+    ("contains_miss_refuse", "Name some cities.",
+     {"type": "object",
+      "properties": {"cities": {"type": "array",
+                                "items": {"type": "string", "enum": ["paris", "lyon"]}}},
+      "contains": {"const": "nice"}},
+     lambda code, txt: code == 400 and ("contains" in txt or "keyword" in txt)),
 ]
 
 bad = 0

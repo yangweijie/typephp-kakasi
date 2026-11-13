@@ -2120,4 +2120,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 4. **四处调用点**（8645/13350/14508/14971）传入检测值；**成对门**：活体 `contains_const_ok`（值里必须出现 X）与 `contains_miss_refuse`（域不含 X ⇒ 400）；流式同形门。
 **风险提示**：豁免与保证必须同提交；只改判定不改写入器会制造新的静默违反（F537 的反面）。
 
+## F548（2026-11-12）：contains 的构造满足形态（const/enum ∩ items 域）
+**实现**：① `api_schema_contains_required`——无 `maxContains`、`minContains≤1`、单数组属性 items 为 string enum，且根 `contains` 的 `const`（或 `enum` 交集）在该域内 ⇒ 返回必需字面量；② `api_array_enum_value` 增 `$must`：非 unique 模式强制**元素 0** 为该值、`bMin` 提到 1；unique 模式把该值排到域首位；③ `api_schema_contains_ok` 在其非空时豁免（判定与保证同一次提交）；④ 四个调用点传入检测值。
+**门**：活体 `contains_const_ok`（200 且 `cities` 含 `paris`）、`contains_miss_refuse`（域不含 `nice` ⇒ 400）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f548.log`）；bounds **PASS**（`f548`：`contains_const_ok` 200 `{"cities":["paris","paris"]}`、`contains_miss_refuse` 400）；count **PASS**（`f548b`：旧期望 `contains_subset_miss_refuse` 已翻转为 `contains_const_served` 200）；required/pattern **CHECK_EXIT=0**；8000 **117/0**；8001 par/fair **0**；scaling **1.560×**；哨兵 **0**。BUILD_OK（`build_f548`）。
+**过程（翻转旧期望）**：count harness 原有一个用例把同形 schema 期望为 400（当时无写入器保证）；放宽后必须**翻转该期望**并改名 `contains_const_served`，否则会被当成回归。这正是“放宽拒绝后还要断言值”的既有规程。
+**记法**：**“contains 可判”与“contains 可发”是两件事**——静态能判交集只说明可构造，必须同时给写入器加保证（元素 0 强制）并翻转旧拒绝夹具，否则门与行为会背离。
+
 

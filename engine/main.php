@@ -1613,7 +1613,7 @@ function api_array_item_multiple_value(string $ids, string $prop, int $mult, int
 // emits each element as a whole candidate continuation (value + closing quote) and only "," / "]"
 // are reachable between elements - the same mechanism the flat enum writer and the bounded-number
 // writer use. At least one element is emitted, like the item-type writer.
-function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = "", int $unique = 0): string
+function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $maxItems, int $useCache = 1, string $bounds = "", int $unique = 0, string $must = ""): string
 {
     $commaIds = api_punct_ids(",");
     $bracketIds = api_punct_ids("]");
@@ -1668,6 +1668,22 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             return "";
         }
     }
+    // F548: a required contains literal must appear; force it into element 0 (unique mode reorders
+    // the domain so its own per-element sequence starts with it) and forbid an empty array.
+    if ($must != "" && $patMode == 0) {
+        if ($unique == 1) {
+            $nv = [$must];
+            for ($i = 0; $i < count($vals); $i++) {
+                if ($vals[$i] != $must) {
+                    $nv[] = $vals[$i];
+                }
+            }
+            $vals = $nv;
+        }
+        if ($bMin < 1) {
+            $bMin = 1;
+        }
+    }
     // F520: numeric values are bare literals - the head carries no opening quote in that mode.
     $head0 = "{\"" . $prop . "\":[";
     if ($numMode == 0) {
@@ -1704,7 +1720,9 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             }
             $s = $s . "," . $cq;
         } else {
-            if ($unique == 1) {
+            if ($must != "" && $it == 0 && $unique == 0 && $patMode == 0) {
+                $f = api_constrained_continue([$numMode == 1 ? $must : $must . "\""], 24);
+            } else if ($unique == 1) {
                 $f = api_constrained_continue([$numMode == 1 ? $vals[$it] : $vals[$it] . "\""], 24);
             } else {
                 $f = api_constrained_continue($cands, 24);
@@ -8643,7 +8661,8 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
     } else if ($scArrEnum != "") {
         $sae = explode("|", $scArrEnum);
         $scOut = api_array_enum_value($ids, $sae[0], $sae[1], 4, 1,
-            api_response_schema_array_bounds($body), api_schema_unique_true($body));
+            api_response_schema_array_bounds($body), api_schema_unique_true($body),
+            api_schema_contains_required($body));
     } else if (api_response_schema_tuple($body) != "") {
         $tup = explode("|", api_response_schema_tuple($body));
         $scOut = api_tuple_value($ids, $tup[0], $tup[1], api_schema_charset(), 4, 1);
@@ -10450,8 +10469,80 @@ function api_schema_contains_all_miss(string $schema): int
     return 0;
 }
 
+// F548: a construction-satisfied `contains` - a single string-enum array plus a root contains
+// `const` (or an `enum` that overlaps the item domain). Returns the required value; the writer
+// forces element 0 to it, so minContains (0 or 1) holds whatever follows. maxContains and
+// minContains >= 2 need evaluation and stay refused.
+function api_schema_contains_required(string $schema): string
+{
+    $s = $schema;
+    if (strpos($s, "\"json_schema\"") !== false) {
+        $s = api_json_object_after($s, "schema");
+        if ($s == "") {
+            return "";
+        }
+    }
+    if (preg_match('/"maxContains"\s*:/', $s) == 1) {
+        return "";
+    }
+    $mc = [];
+    if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1 && (int) $mc[1] > 1) {
+        return "";
+    }
+    $cp = strpos($s, "\"contains\"");
+    if ($cp === false) {
+        return "";
+    }
+    $bo = strpos($s, "{", $cp);
+    if ($bo === false) {
+        return "";
+    }
+    $sub = api_balance_block($s, $bo);
+    if ($sub == "") {
+        return "";
+    }
+    $plan = api_schema_array_enum($s);
+    if ($plan == "") {
+        return "";
+    }
+    $pp = explode("|", $plan);
+    if (count($pp) < 2 || substr($pp[1], 0, 1) == "~" || substr($pp[1], 0, 1) == "#") {
+        return "";
+    }
+    $dom = explode("~", $pp[1]);
+    $need = "";
+    $m = [];
+    if (preg_match('/^\{\s*"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $m) == 1) {
+        $need = $m[1];
+    } else if (preg_match('/^\{\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $m) == 1) {
+        $allowed = api_list($m[1]);
+        for ($i = 0; $i < count($allowed) && $need == ""; $i++) {
+            for ($j = 0; $j < count($dom); $j++) {
+                if ($allowed[$i] == $dom[$j]) {
+                    $need = $allowed[$i];
+                    break;
+                }
+            }
+        }
+    }
+    if ($need == "") {
+        return "";
+    }
+    for ($j = 0; $j < count($dom); $j++) {
+        if ($dom[$j] == $need) {
+            return $need;
+        }
+    }
+    return "";
+}
+
 function api_schema_contains_ok(string $schema): int
 {
+    // F548: a contains the writer can satisfy by construction is honoured (the required literal is
+    // forced into element 0); the vacuous forms below stay separate.
+    if (api_schema_contains_required($schema) != "") {
+        return 1;
+    }
     // F485: an explicit minContains:0 allows ZERO matching elements, so `contains` holds whatever
     // the subschema and the items are. A maxContains is an upper bound on matches and would need
     // evaluation, so its presence keeps the refusal (see api_schema_minmax_contains_ok too).
@@ -13348,7 +13439,8 @@ Connection: close
                                 } else if ($scArrEnum != "") {
                                     $sae2 = explode("|", $scArrEnum);
                                     $scOut = api_array_enum_value($ids, $sae2[0], $sae2[1], 4, 1,
-                                        api_response_schema_array_bounds($body), api_schema_unique_true($body));
+                                        api_response_schema_array_bounds($body), api_schema_unique_true($body),
+                                        api_schema_contains_required($body));
                                 } else if (api_response_schema_tuple($body) != "") {
                                     $tup2 = explode("|", api_response_schema_tuple($body));
                                     $scOut = api_tuple_value($ids, $tup2[0], $tup2[1],
@@ -14506,7 +14598,8 @@ function api_serve(int $port): void
                         } else if ($sArrEnum != "") {
                             $sae3 = explode("|", $sArrEnum);
                             $sJOut = api_array_enum_value($ids, $sae3[0], $sae3[1], 4,
-                                $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body));
+                                $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body),
+                                api_schema_contains_required($body));
                         } else if (api_response_schema_tuple($body) != "") {
                             $tup3 = explode("|", api_response_schema_tuple($body));
                             $sJOut = api_tuple_value($ids, $tup3[0], $tup3[1],
@@ -14969,7 +15062,8 @@ function api_serve(int $port): void
                     } else if ($arrEnum != "") {
                         $ae4 = explode("|", $arrEnum);
                         $enumOut = api_array_enum_value($ids, $ae4[0], $ae4[1], 4,
-                            $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body));
+                            $prefixCache, api_response_schema_array_bounds($body), api_schema_unique_true($body),
+                            api_schema_contains_required($body));
                         $jsonMode = 1;
                     } else if (api_response_schema_tuple($body) != "") {
                         $tup4 = explode("|", api_response_schema_tuple($body));
