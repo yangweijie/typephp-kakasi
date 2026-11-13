@@ -2112,4 +2112,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **改动**：`api_smoke.py` 增 `chat-stream-root-strenum`/`chat-stream-root-strconst`（`stream:true` 下值必须是带引号的 JSON 字符串），把 F545 的一次性探针落成常驻门。
 **结果**：`SMOKE: PASS=117 FAIL=0`；8001 par/fair 0；哨兵 0。**基线更新：8000 smoke 自 F547 起为 117/0。**
 
+## 下一步设计（还没开工，供下一轮直接执行）
+**contains 非真空形态（`{"contains":{"const":"X"}}` + items 字符串枚举）**：当前 `api_schema_contains_ok` 只接受真空形态（minContains:0 / 空交集），普通 minContains=1 一律 400（F538 活体）。构造满足的落点：
+1. **检测器** `api_schema_contains_required($schema)`：单数组属性、items 为 string enum/const 且域含 X、无 maxContains 且 minContains≤1 ⇒ 返回 X。
+2. **写入器** `api_array_enum_value` 增参数 `$must`：非 unique 模式下**首个元素**只约束到 `[X]`（后续元素仍走全域）；unique 模式下把 X 排到域首位即可（该模式按序强制）。
+3. **关键字豁免**：`api_schema_contains_ok` 在检测器非空时返回 1（先豁免、后保证，两者必须同一次提交，避免“豁免了但没保证”的静默违反）。
+4. **四处调用点**（8645/13350/14508/14971）传入检测值；**成对门**：活体 `contains_const_ok`（值里必须出现 X）与 `contains_miss_refuse`（域不含 X ⇒ 400）；流式同形门。
+**风险提示**：豁免与保证必须同提交；只改判定不改写入器会制造新的静默违反（F537 的反面）。
+
 
