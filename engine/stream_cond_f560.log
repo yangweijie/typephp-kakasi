@@ -1,0 +1,3 @@
+STREAM if_then_vacuous  status=200 keys=['city', 'note'] head={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fic
+STREAM if_else_vacuous  status=200 keys=['city', 'note'] head={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fic
+STREAM deps_vacuous     status=200 keys=['city', 'note'] head={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fic

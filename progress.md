@@ -2436,3 +2436,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`deps_vacuous_props` 200（键集 city/note）；`deps_emitted_key_refuse` 400；既有数组/bare-required 用例不回退。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f559.log`）；bounds/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.582×；哨兵 0；BUILD_OK（`build_f559`）。
 
+## F560（2026-11-12）：真空条件/依赖形态的流式对照
+- **结果**：if-then / if-else / dependencies 三个真空形态在 `stream:true` 下键集均为 `{city,note}`；与预处理双链一致，无新差异。
+- **证据**：`stream_cond_f560.log`。
+

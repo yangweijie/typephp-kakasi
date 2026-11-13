@@ -3730,6 +3730,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**“判定通过即可整条剥离”的充分条件**是：判定的成立性不依赖生成值的选择，只依赖已知键集——这类关键字（dependencies/if/空 dependentSchemas）都可以先判后删，生成器只见干净 schema。
 **证据**：`schema_required_f559.log`（两门）、gate_live f559。
 
+## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
+**方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
+**结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
+
 ## F556（2026-11-12）：嵌套 enum 误路由的边界核对（无新缺陷）
 **方法**：把 `contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 作为诱饵，看 `$enumFlat` 是否会把它们发成顶层值。结果（`claims_f556.log`）四例全部 **400 点名关键字**——这些关键字在拒绝链里先行被拒，生成阶段根本不会到达 `$enumFlat`。
 **结论**：误路由只发生在“关键字裁判**接受**但没有检测器认领”的缝隙（`propertyNames` enum 是唯一实例，F555 已修）。`enumFlat` 现有的守卫（数组/根数组/propertyNames）覆盖了已观察到的缝隙；若未来放宽某个关键字裁判，必须同时检查 `$enumFlat` 是否会再次吞掉其子 schema 的 enum。
