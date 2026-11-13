@@ -2212,4 +2212,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **风险**：合并改变发射键集，需复跑 bounds/required/count/pattern + gate_live；`required` 插入位置要处理“properties 之后无逗号”的边界；不得影响无 if 的请求。
 **回滚点**：F561 的回滚提交 `23854b2`。
 
+## F562（2026-11-12）：合并方案尝试 → 回滚（无不动点）
+**尝试**：选中分支 required 合入 schema 顶层（properties 之后插入）。
+**失败**：① const 叶子 + required 形状被关键字裁判拒绝；② 合并改变发射集，而条件真值由发射集决定 ⇒ 没有稳定不动点（只合分支键让条件翻转，合条件键改变 else 语义）。
+**处置**：全部回滚；重建后 required harness PASS（`schema_required_f562c.log`）。
+**新结论**：值级条件/依赖需要**显式按值计划**（发/不发/固定值），判定与写出器必须同源；schema 级 require 合并不成立。
+
 

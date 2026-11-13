@@ -2449,3 +2449,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：F561 四条用例的接受侧重启 + `if_const_true_required_merge`（输出必须含 note）。
 - **回滚点**：`23854b2`。
 
+## F562（2026-11-12）：合并方案尝试 → 回滚
+- **失败**：合并后的 const+required 形状被裁判拒绝；更根本的是合并改变发射集、发射集决定条件真值，无稳定不动点。
+- **处置**：全部回滚；required harness 恢复 PASS（`f562c`）。结论：值级条件需显式按值计划（判定与写出器同源）。
+
