@@ -3742,6 +3742,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **处置**：全部回滚，重建后 required harness PASS（`schema_required_f562c.log`）。
 **结论（入队规格）**：值级条件/依赖需要**显式按值计划**（每个键：发/不发/固定值），由写出器执行，而不是在 schema 上做 require 合并——判定层的“发射集”必须与写出器的实际计划同源。
 
+## F564（2026-11-12）：按值计划的第一次接线 → 回滚（候选层抢先）
+**尝试**：`api_top_leaves` 已把 string const 映射为 `e:` 单值枚举；给混合写入器加带引号字面量 kind `v:`，混合判定把单值 `e:` 改写为 `v:` 并放宽 enum/const 排除，让 `{city:const paris, note:string}` 走混合计划发射两个键。
+**红证**：`const_leaf_optional_ok` 仍返回 `{"city":"paris"}`——**候选层**（`api_response_schema_candidates`）在混合分支之前认领：`{"city":"paris"}` 本身是合法实例（note 可选），因此候选层先服务；`required:[city,note]` 的形状则被 required 守卫拒绝（该形状仍在守卫的证明范围之外）。v: 计划实际上被**遮蔽**，改动成了死码。
+**处置**：全部回滚（`git checkout`），重建后 required harness PASS（`schema_required_f564c.log`）。
+**结论**：按值计划要求**路由顺序与判定同源**——候选层、required 守卫、混合分支三者必须共同认可同一份“按值计划”；只改混合写入器不足以生效。入队为独立子系统（规格见 task_plan F562/F564 节）。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
