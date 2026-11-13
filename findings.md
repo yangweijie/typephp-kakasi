@@ -4770,3 +4770,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **回归**：首版 const 分支按全文匹配，抢走了根数组 `items.const`，`top_str_const_ok` 由 `["paris"]` 退化为 `"paris"`。根层判定改为 `"schema"\s*:\s*\{[^{}]*"const"`（直接子键）后恢复，并与 items/properties 的 const 分开。
 **记法**：**根层关键字的判定必须限定“直接子键”**（`[^{}]*`），全文存在性会把嵌套层的关键字误认领——“这个关键字在不在 body 里”与“这个关键字是不是根层”是两个问题。
 **证据**：`schema_bounds_f543.log`（回归红）、`schema_bounds_f543b.log`（全绿：`root_str_enum_quoted_ok`/`root_str_const_quoted_ok`=`"paris"`、`top_str_const_ok=["paris"]`）、gate_live f543b。
+
+## F544（2026-11-12）：流式路径缺根标量 enum/const 折叠（新 P0）
+**证据**（`claims_f544.log`，`stream:true`）：根级 `{"type":"string","enum":["paris","lyon"]}` 与 `{"type":"string","const":"paris"}` 都流式返回 200 自由散文（`json_ok=False`）。非流式已在 F543 修复；流式分支没有对应的 `$enumFlat` 折叠。对象形状的流式约束是好的（F534 的 200 层对象流式正常），所以缺口**只**在根标量折叠。
+**处置**：入队 P0——在流式分支镜像 F543 的 enum/const 折叠（字符串加引号、const 折叠），并加 `stream:true` 的活体门；修前红证已在此日志。
+**记法**：**同一语义在两个传输里是两份实现**——“非流式修好了”不等于“流式也修好了”；根标量的折叠逻辑在两条分支各有一份，必须成对门。

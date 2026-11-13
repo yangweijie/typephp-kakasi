@@ -2088,4 +2088,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f543b.log`）；bounds **PASS**（`f543b`：`top_str_const_ok=["paris"]`、`root_str_enum_quoted_ok`/`root_str_const_quoted_ok`=`"paris"`、`root_int_enum_ok`=2）；required/count/pattern **CHECK_EXIT=0**；8000 **115/0**；8001 par/fair **0**；scaling **1.579×**；哨兵 **0**。BUILD_OK（`build_f543b`）。
 **记法**：根层判定要用“直接子键”正则（`[^{}]*`），不要用全文存在性——否则 items/properties 里的同名关键字会被误认领。
 
+## F544（2026-11-12）：流式路径缺根标量 enum/const 折叠（P0，待修）
+**红证**：`stream:true` 时根级 string enum 与 const 都返回 200 自由散文（`claims_f544.log`）。非流式已由 F543 修复；流式分支没有对应折叠；对象形状流式正常，缺口只在根标量。
+**下一步**：在流式分支镜像 F543 的 enum/const 折叠（字符串加引号、const 折叠），加 `stream:true` 活体门；修前红证已留档。
+**队列**：D4 流式根标量折叠（P0）→ `unevaluated*` 子 schema 求值器 → FR-05/多分片。
+
 
