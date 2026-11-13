@@ -2201,4 +2201,15 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **处置**：判定/门/辅助函数全部回滚，重建后 required harness PASS（`schema_required_f561c.log`）。
 **队列修正**：值级条件/依赖需要写入器保证（发射全部声明键或按值 pin），不是纯判定问题；入队待写规格。
 
+## F562 规格（值级条件的前置：选中分支合并）
+**问题**：F561 的失败不是判定错，而是判定知道条件为真后，**写出器没有发射 then 分支要求的键**（const 叶子路径只发固定值叶子，可选键被省略）。
+**设计**：在预处理层（`api_schema_strip_vacuous_if` 所在处）做“**先合并、后剥离**”：
+1. 新增 `api_schema_if_selected_required($schema): string`——复用 `api_schema_if_ok` 的真值判定（真空条件或值定 const），返回**被选中分支**的顶层 `required` 键表（无 required 返回空；分支为 `properties`（真空）时为空）。
+2. 若键表非空：把键合并进主 schema 的顶层 `required`（不存在则插入；存在则并集去重），再校验每个键都在主 `properties` 中（否则保持 400）。
+3. 然后执行现有的 if/then/else 剥离。
+4. 判定与合并**同一次提交**；合并后由既有“required 子集”流程保证写出器发射这些键。
+**门**：F561 的四条用例原样恢复为接受侧（`if_const_true_ok`、`if_const_false_else_ok`、`if_enum_member_true_ok`）+ 缺键拒绝（`if_const_true_then_miss_refuse`）；另加 `if_const_true_required_merge`（输出键集必须含 note）。
+**风险**：合并改变发射键集，需复跑 bounds/required/count/pattern + gate_live；`required` 插入位置要处理“properties 之后无逗号”的边界；不得影响无 if 的请求。
+**回滚点**：F561 的回滚提交 `23854b2`。
+
 

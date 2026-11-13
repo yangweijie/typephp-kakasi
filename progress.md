@@ -2444,3 +2444,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **红证**：判定接受但值只有 `{"city":"paris"}`（const 叶子路径不发可选键），then 分支被违反；三条接受用例红。
 - **处置**：全部回滚；重建后 required harness PASS（`f561c`）。值级条件需写入器保证（全键/pin），入队。
 
+## F562 规格（值级条件的前置：选中分支合并）
+- **设计**：`api_schema_if_selected_required` 返回被选中分支的 required 键表；预处理把键并入主 schema 的 required（去重、校验键在 properties 中），再剥离 if/then/else；判定与合并同提交。
+- **门**：F561 四条用例的接受侧重启 + `if_const_true_required_merge`（输出必须含 note）。
+- **回滚点**：`23854b2`。
+
