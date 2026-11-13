@@ -2453,3 +2453,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **失败**：合并后的 const+required 形状被裁判拒绝；更根本的是合并改变发射集、发射集决定条件真值，无稳定不动点。
 - **处置**：全部回滚；required harness 恢复 PASS（`f562c`）。结论：值级条件需显式按值计划（判定与写出器同源）。
 
+## F563（2026-11-13）：回滚后的最终基线复核
+- 当前 HEAD 的二进制重跑完整梯子：自检 RUN_EXIT=0 / 0 FAIL；bounds/required/count/pattern 全 `CHECK_EXIT=0`；8000 **120/0**；8001 par/fair 0；scaling 1.513×；哨兵 0。
+- 证据：`selftest_f563.log`、`schema_*_f563.log`、`api_smoke_f563.log` 等。
+
