@@ -2127,4 +2127,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **过程（翻转旧期望）**：count harness 原有一个用例把同形 schema 期望为 400（当时无写入器保证）；放宽后必须**翻转该期望**并改名 `contains_const_served`，否则会被当成回归。这正是“放宽拒绝后还要断言值”的既有规程。
 **记法**：**“contains 可判”与“contains 可发”是两件事**——静态能判交集只说明可构造，必须同时给写入器加保证（元素 0 强制）并翻转旧拒绝夹具，否则门与行为会背离。
 
+## F549（2026-11-12）：流式 contains 常驻门
+**改动**：smoke 增 `chat-stream-contains-const`（`stream:true` 下数组必须含 `Paris`），把 F548 的保证在流式传输上钉住。
+**结果**：`SMOKE: PASS=118 FAIL=0`；8001 par/fair 0；哨兵 0。**基线：8000 smoke 118/0（F549 起）。**
+
 

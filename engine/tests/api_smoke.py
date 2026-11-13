@@ -1526,6 +1526,26 @@ def main():
                    for d in sse_data(sraw) if d != "[DONE]")
     check("chat-stream-root-strconst", sout == '"Paris"', sout)
 
+    # F549: the construction-satisfied contains (F548) must hold on the streaming transport too:
+    # element 0 is forced to the required literal, so the streamed array must contain it.
+    st_con = {"messages": [{"role": "user", "content": "Name some cities."}],
+              "max_tokens": 32, "temperature": 0, "stream": True,
+              "response_format": {"type": "json_schema", "json_schema": {
+                  "name": "x", "schema": {
+                      "type": "object",
+                      "properties": {"cities": {"type": "array",
+                                                "items": {"type": "string",
+                                                          "enum": ["Paris", "London"]}}},
+                      "contains": {"const": "Paris"}}}}}
+    sraw = post("/v1/chat/completions", st_con, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    try:
+        scities = json.loads(sout).get("cities") or []
+    except Exception:
+        scities = []
+    check("chat-stream-contains-const", "Paris" in scities, sout)
+
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],
                    "max_tokens": 48,

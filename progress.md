@@ -2377,3 +2377,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **期望翻转**：count harness 的 `contains_subset_miss_refuse`（曾期望 400）改为 `contains_const_served`（200 且含 paris）。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f548.log`）；bounds PASS（`f548`）；count PASS（`f548b`）；required/pattern 0；8000 117/0；8001 par/fair 0；scaling 1.560×；哨兵 0；BUILD_OK（`build_f548`）。
 
+## F549（2026-11-12）：流式 contains 常驻门
+- **改动**：smoke 增 `chat-stream-contains-const`（`stream:true` 下数组必须含 `Paris`）。
+- **结果**：SMOKE 118/0；8001 par/fair 0；哨兵 0。**基线：8000 smoke 118/0（F549 起）**。
+
