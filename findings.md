@@ -3701,6 +3701,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 ### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F546；**“支持”以活体为准，仅静态门通过不算**）
 > **F541–F546 活体更新**：本地 `$ref` **两种键序均支持**（定义容器整对删除，F541）；oneOf/anyOf 的 **const 分支折叠**为单值 enum（F540），**纯数值界分支显式 400**（F542）；**根级 string enum/const 支持**（引号 JSON 字面量；非流式 F543、流式 F545）；`stream:true` 八项成对核对仅根标量一处差异（F546）。`not`/根级 `contains` 的 const 形态仍为运行时 400（F538）。
 > **F548 补充**：`contains` 的 **const**（或与 items 域相交的 enum）形态已支持——元素 0 被强制为该值（minContains≤1、无 maxContains），域内无解仍 400。流式同形由 smoke `chat-stream-contains-const` 常驻门覆盖（F549）。
+> **F550 补充**：items 与 contains **同一 pattern 字面量**时，全部元素都匹配 ⇒ 构造满足（`contains_pattern_same_ok`）；不同 pattern 仍需一个元素同时匹配两者，仍 400。
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |

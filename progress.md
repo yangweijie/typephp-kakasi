@@ -2381,3 +2381,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：smoke 增 `chat-stream-contains-const`（`stream:true` 下数组必须含 `Paris`）。
 - **结果**：SMOKE 118/0；8001 par/fair 0；哨兵 0。**基线：8000 smoke 118/0（F549 起）**。
 
+## F550（2026-11-12）：contains 的“同 pattern”构造满足
+- **实现**：`api_schema_contains_pattern_ok`（items 与 contains 为同一 pattern 字面量、minContains≤1、无 maxContains）；`api_schema_contains_ok` 豁免；无需改写入器（全部元素同 spec）。
+- **活体**：`contains_pattern_same_ok` 200 `["CJL","CJL"]`；不同 pattern 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f550.log`）；bounds/required/count/pattern PASS；8000 118/0；8001 par/fair 0；scaling 1.571×；哨兵 0；BUILD_OK（`build_f550`）。
+

@@ -10536,11 +10536,71 @@ function api_schema_contains_required(string $schema): string
     return "";
 }
 
+// F550: contains holds by construction when the item pattern and the contains pattern are the SAME
+// literal - every emitted element matches, so minContains 1 is satisfied. maxContains or
+// minContains >= 2 still need evaluation; a different pattern needs an element that matches both.
+function api_schema_contains_pattern_ok(string $schema): int
+{
+    $s = $schema;
+    if (strpos($s, "\"json_schema\"") !== false) {
+        $s = api_json_object_after($s, "schema");
+        if ($s == "") {
+            return 0;
+        }
+    }
+    if (preg_match('/"maxContains"\s*:/', $s) == 1) {
+        return 0;
+    }
+    $mc = [];
+    if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1 && (int) $mc[1] > 1) {
+        return 0;
+    }
+    $cp = strpos($s, "\"contains\"");
+    if ($cp === false) {
+        return 0;
+    }
+    $bo = strpos($s, "{", $cp);
+    if ($bo === false) {
+        return 0;
+    }
+    $sub = api_balance_block($s, $bo);
+    if ($sub == "") {
+        return 0;
+    }
+    $m = [];
+    if (preg_match('/^\{\s*"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $m) != 1) {
+        return 0;
+    }
+    $plan = api_schema_array_enum($s);
+    if ($plan == "") {
+        return 0;
+    }
+    $pp = explode("|", $plan);
+    if (count($pp) < 2 || substr($pp[1], 0, 1) != "~") {
+        return 0;
+    }
+    $pc = preg_match_all('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $s, $pm);
+    if ($pc < 2) {
+        return 0;
+    }
+    $same = 0;
+    for ($i = 0; $i < count($pm[1]); $i++) {
+        if ($pm[1][$i] == $m[1]) {
+            $same = $same + 1;
+        }
+    }
+    return $same >= 2 ? 1 : 0;
+}
+
 function api_schema_contains_ok(string $schema): int
 {
     // F548: a contains the writer can satisfy by construction is honoured (the required literal is
     // forced into element 0); the vacuous forms below stay separate.
     if (api_schema_contains_required($schema) != "") {
+        return 1;
+    }
+    // F550: same-pattern items and contains - every element matches by construction.
+    if (api_schema_contains_pattern_ok($schema) == 1) {
         return 1;
     }
     // F485: an explicit minContains:0 allows ZERO matching elements, so `contains` holds whatever

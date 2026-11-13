@@ -1017,6 +1017,22 @@ cases = [
                                 "items": {"type": "string", "enum": ["paris", "lyon"]}}},
       "contains": {"const": "nice"}},
      lambda code, txt: code == 400 and ("contains" in txt or "keyword" in txt)),
+    # F550: the same pattern on items and contains means every element matches - construction
+    # satisfied; a different contains pattern needs an element matching both and stays refused.
+    ("contains_pattern_same_ok", "Give the codes.",
+     {"type": "object",
+      "properties": {"codes": {"type": "array",
+                               "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[A-Z]{3}$"}},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "codes"), list)
+     and len(val_of(txt, "codes")) > 0
+     and all(isinstance(x, str) and len(x) == 3 and x.isupper() for x in val_of(txt, "codes"))),
+    ("contains_pattern_diff_refuse", "Give the codes.",
+     {"type": "object",
+      "properties": {"codes": {"type": "array",
+                               "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[a-z]+$"}},
+     lambda code, txt: code == 400 and "contains" in txt),
 ]
 
 bad = 0
