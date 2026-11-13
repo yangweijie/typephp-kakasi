@@ -1509,6 +1509,23 @@ def main():
     check("chat-json-schema-root-oneof",
           rocontent in ('{"city":"Paris"}', '{"city":"London"}'), rocontent)
 
+    # F547: the root-scalar fold must hold on the streaming transport too (F544 saw prose there,
+    # F545 fixed it). A root string enum/const is a JSON string, so the streamed content must parse
+    # to one of its values - value-level, not status-level.
+    st_root = {"messages": [{"role": "user", "content": "Name a city."}],
+               "max_tokens": 16, "temperature": 0, "stream": True,
+               "response_format": {"type": "json_schema", "json_schema": {
+                   "name": "x", "schema": {"type": "string", "enum": ["Paris", "London"]}}}}
+    sraw = post("/v1/chat/completions", st_root, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    check("chat-stream-root-strenum", sout in ('"Paris"', '"London"'), sout)
+    st_root["response_format"]["json_schema"]["schema"] = {"type": "string", "const": "Paris"}
+    sraw = post("/v1/chat/completions", st_root, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    check("chat-stream-root-strconst", sout == '"Paris"', sout)
+
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],
                    "max_tokens": 48,

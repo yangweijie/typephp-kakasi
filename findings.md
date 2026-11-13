@@ -4786,3 +4786,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **方法**：对 F538/F539/F541–F545 核对过的形状在 `stream:true` 上重发一遍，按“值是否合法”判定。结果（`stream_claims_f546.log`）全部合法：`allOf`+required 与 `if`+required 发全声明键；`definitions` 在前的 plain `$ref` 在流式下同样解析（`{"city":…}`）；**const 分支 oneOf 流式返回 `{"city":"paris"}`**（F540 的折叠被两条传输共用）；纯界 anyOf 流式 400；`propertyNames`/`unevaluatedProperties` 闭包对象合法；200 层对象流式完整（1741 字符）。
 **结论**：“非流式修好的语义在流式里也成立”在这八项上成立，缺口只在根标量折叠（F544/F545 已修）。未发现第三个传输级差异。
 **记法**：成对核对要**覆盖到值**，不能只看状态码——`{"city":"paris"}` 与散文都是 200。
+
+## F547（2026-11-12）：流式根标量的永久门（smoke 115 → 117）
+**改动**：`api_smoke.py` 在 oneOf 夹具后新增 `chat-stream-root-strenum` 与 `chat-stream-root-strconst`：`stream:true` 下根级 string enum 必须流式输出 `"Paris"`/`"London"`（含引号的 JSON 字符串），root const 必须为 `"Paris"`。此前只有一次性探针（`stream_root_f545b.log`），回归无门。
+**结果**：`SMOKE: PASS=117 FAIL=0`（`api_smoke_f547.log`），两条新门 PASS；8001 par/fair 0、哨兵 0。
+**记法**：**一次性的探针不算门**——修完传输级差异后要把探针落成常驻夹具，并把基线数（115→117）写进文档，否则下一次统计会被当成回归。

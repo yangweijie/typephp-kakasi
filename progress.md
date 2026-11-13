@@ -2367,3 +2367,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：allOf/if/$ref/const-oneOf/propertyNames/uneval-closed/200 层对象在 `stream:true` 下值全部合法；纯界 anyOf 400；未发现新的传输差异。
 - **证据**：`stream_claims_f546.log`（八条原样输出）。
 
+## F547（2026-11-12）：流式根标量永久门
+- **改动**：smoke 增 `chat-stream-root-strenum`/`chat-stream-root-strconst`（引号 JSON 字符串断言）。
+- **结果**：SMOKE 117/0；8001 par/fair 0；哨兵 0。**基线：8000 smoke 117/0（F547 起）**。
+

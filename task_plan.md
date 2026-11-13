@@ -2108,4 +2108,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **结论**：传输级差异只在根标量折叠（已由 F544/F545 闭合）；未发现第三处。
 **队列**：`unevaluated*` 子 schema 求值器 → FR-05/多分片。
 
+## F547（2026-11-12）：流式根标量的永久门（smoke 115 → 117）
+**改动**：`api_smoke.py` 增 `chat-stream-root-strenum`/`chat-stream-root-strconst`（`stream:true` 下值必须是带引号的 JSON 字符串），把 F545 的一次性探针落成常驻门。
+**结果**：`SMOKE: PASS=117 FAIL=0`；8001 par/fair 0；哨兵 0。**基线更新：8000 smoke 自 F547 起为 117/0。**
+
 
