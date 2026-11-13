@@ -2134,7 +2134,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 ## F550（2026-11-12）：contains 的“同 pattern”构造满足形态
 **实现**：`api_schema_contains_pattern_ok`——无 `maxContains`、`minContains≤1`、单数组属性 items 为 pattern 模式（plan `~spec`），且 schema 内 `"pattern"` 字面量与 contains 子 schema 的字面量相同（出现≥2 次）⇒ 返回 1；`api_schema_contains_ok` 豁免。无需改写入器：pattern 模式下**每个元素**都由同一 spec 生成，contains 构造成立。
 **门**：活体 `contains_pattern_same_ok`（200，三个大写字母码）、`contains_pattern_diff_refuse`（contains 为不同 pattern ⇒ 400）。
-**梯（待填）**。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f550.log`）；bounds **PASS**（`f550`：`contains_pattern_same_ok` 200 `["CJL","CJL"]`、`contains_pattern_diff_refuse` 400）；required/count/pattern **CHECK_EXIT=0**；8000 **118/0**；8001 par/fair **0**；scaling **1.571×**；哨兵 **0**。BUILD_OK（`build_f550`）。
 **记法**：**“全部元素同 spec”是最省力的构造满足**——不需要强制某个元素，只要确认 items 与 contains 是同一 spec；不同 spec 则必须有一个元素同时匹配两者，仍拒绝。
 
 
