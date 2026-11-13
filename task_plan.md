@@ -2064,4 +2064,13 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门/活体**：`oneof_const_ok` / `anyof_const_ok` 均 200 `{"city":"paris"}`（F539 时同形为 200 自由文本）。自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f540.log`）；bounds **PASS**（`f540`）。gate_live 见 `api_smoke_f540.log` 等。
 **剩余（P0）**：D1 `$ref` 顺序依赖；D2 的 anyOf 纯界分支需 fail-closed 或折叠。
 
+## F541（2026-11-12）：本地 `$ref` 键序依赖（D1）——定义容器整对删除
+**红证（成对活体）**：plain string 定义（无 enum）时，`definitions` 在 `properties` **之后** → 200 `{"city":…}`；**之前** → 200 自由散文（`schema_bounds_f541pre2.log`，`CHECK_EXIT=1`）。enum 定义走候选路径，不做这对夹具会掩盖问题。
+**根因**：`api_schema_resolve_refs` 内联后把定义容器**清空为 `{}`** 而非删除；定义在前时 schema 以 `{"definitions":{},…` 开头，而形状检测器锚定 `^\{"type"/"properties"` ⇒ 锚点失配 ⇒ 无人认领 ⇒ 无约束生成。
+**修复**：整对删除定义容器（键+值+相邻逗号，含空白处理），使两种键序解析结果逐字节相同；新增静态门 `SCHEMA-REF-ORDER`（两种键序结果相等、无 `definitions`、无 `$ref`）。
+**门/活体**：`ref_defs_plain_first_ok`、`ref_defs_plain_last_ok`、`ref_defs_first_ok`、`ref_defs_last_ok`（含 enum 定义对照）。
+**梯（待填）**：`selftest`、bounds、其余 harness + gate_live。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f541.log`；`SCHEMA-REF-ORDER: PASS`，两序解析均为 `{"json_schema":{"schema":{"type":"object","properties":{"city":{"type":"string"}}}}}`）；bounds **PASS**（`f541`：`ref_defs_plain_first_ok` 200 `{"city":…}`，此前为散文；`ref_defs_*`/enum 对照全绿）；required/count/pattern **CHECK_EXIT=0**；8000 **115/0**；8001 par/fair **0**；scaling **1.538×**；哨兵 **0**。BUILD_OK（`build_f541`）。
+**记法**：内联后**把容器清空为 `{}` 与删除不同**——`{}` 留在键位会改变 schema 首键，锚定型检测器随即失配；修复要连键带逗号删除，并加“两序字节相等”的静态门。
+
 

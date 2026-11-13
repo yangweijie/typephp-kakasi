@@ -2337,3 +2337,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`oneof_const_ok`、`anyof_const_ok` → 200 `{"city":"paris"}`（F539 时同形为 200 自由文本）。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f540.log`）；bounds PASS（`f540`）；gate_live 见 `api_smoke_f540.log`。
 
+## F541（2026-11-12）：本地 `$ref` 键序依赖修复（D1 闭合）
+- **红证**：plain string 定义 + `definitions` 在 `properties` 之前 → 200 散文；之后 → `{"city":…}`（`f541pre2`，CHECK_EXIT=1）。
+- **根因**：内联后把定义容器清空为 `{}`，定义在前时 schema 首键是 `definitions`，形状检测器 `^{"type"/"properties"` 锚点失配 ⇒ 无约束生成。
+- **修复**：整对删除容器（键+值+相邻逗号+空白）；静态门 `SCHEMA-REF-ORDER` 断言两序解析字节相等且无 `definitions`/`$ref`。
+- **活体**：`ref_defs_plain_first_ok` 由散文变 200 `{"city":…}`；`ref_defs_plain_last_ok`、enum 定义两序全绿。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL；bounds/required/count/pattern PASS；8000 115/0；8001 par/fair 0；scaling 1.538×；哨兵 0；BUILD_OK（`build_f541`）。
+

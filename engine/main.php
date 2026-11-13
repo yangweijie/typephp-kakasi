@@ -8712,14 +8712,42 @@ function api_schema_resolve_refs(string $s): string
         }
         $s = substr($s, 0, $back) . $val . substr($s, $back + strlen($refObj));
     }
-    // Empty the definitions container so it cannot be mistaken for the schema's properties.
+    // F541: REMOVE the container (key and value) instead of emptying it to {}. An empty
+    // "definitions" left in first position keeps the schema from starting with "type"/"properties",
+    // and the shape detectors anchor at the start, so definitions-first used to fall through to
+    // unconstrained generation while definitions-last worked.
     $dk = strpos($s, $defKey);
     if ($dk !== false) {
         $bo = strpos($s, "{", $dk);
         if ($bo !== false) {
             $blk = api_balance_block($s, $bo);
             if ($blk != "") {
-                $s = substr($s, 0, $bo) . "{}" . substr($s, $bo + strlen($blk));
+                $kend = $bo + strlen($blk);
+                $cutA = $dk;
+                $j = $dk - 1;
+                while ($j >= 0) {
+                    $jc = substr($s, $j, 1);
+                    if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                        break;
+                    }
+                    $j = $j - 1;
+                }
+                if ($j >= 0 && substr($s, $j, 1) == ",") {
+                    $cutA = $j;
+                } else {
+                    $j = $kend;
+                    while ($j < strlen($s)) {
+                        $jc = substr($s, $j, 1);
+                        if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                            break;
+                        }
+                        $j = $j + 1;
+                    }
+                    if ($j < strlen($s) && substr($s, $j, 1) == ",") {
+                        $kend = $j + 1;
+                    }
+                }
+                $s = substr($s, 0, $cutA) . substr($s, $kend);
             }
         }
     }
@@ -21363,6 +21391,20 @@ function main(): void
         echo "SCHEMA-REF: PASS (local \$ref inlined)\n";
     } else {
         echo "SCHEMA-REF: FAIL\n";
+    }
+
+    // F541: the definitions container is REMOVED (key, value and one adjacent comma), not emptied
+    // to {}, so the schema starts with its own "type"/"properties" whatever order the caller used.
+    $refB1 = '{"json_schema":{"schema":{"definitions":{"c":{"type":"string"}},"type":"object","properties":{"city":{"$ref":"#/definitions/c"}}}}}';
+    $refB2 = '{"json_schema":{"schema":{"type":"object","properties":{"city":{"$ref":"#/definitions/c"}},"definitions":{"c":{"type":"string"}}}}}';
+    $refR1 = api_schema_resolve_refs($refB1);
+    $refR2 = api_schema_resolve_refs($refB2);
+    echo "SCHEMA-REF-ORDER first=[" . $refR1 . "] second=[" . $refR2 . "]\n";
+    if ($refR1 == $refR2 && strpos($refR1, '"definitions"') === false
+        && strpos($refR1, '"$ref"') === false) {
+        echo "SCHEMA-REF-ORDER: PASS (both key orders resolve to the same ref-free schema)\n";
+    } else {
+        echo "SCHEMA-REF-ORDER: FAIL\n";
     }
 
     // External $ref: resolved from a caller-supplied registry, never fetched. The ref must be gone

@@ -964,6 +964,29 @@ cases = [
          {"type": "string", "const": "paris"},
          {"type": "string", "const": "lyon"}]}}},
      lambda code, txt: code == 200 and valid_json(txt) and val_of(txt, "city") in ("paris", "lyon")),
+    # F541: local $ref must not depend on where the definitions container sits. F539 saw the
+    # definitions-first spelling return 200 free prose while definitions-last served the object;
+    # the pair is the gate for both orders.
+    ("ref_defs_last_ok", "Name a city.",
+     {"type": "object", "properties": {"city": {"$ref": "#/definitions/c"}},
+      "definitions": {"c": {"type": "string", "enum": ["paris", "lyon"]}}},
+     lambda code, txt: code == 200 and valid_json(txt) and val_of(txt, "city") in ("paris", "lyon")),
+    ("ref_defs_first_ok", "Name a city.",
+     {"definitions": {"c": {"type": "string", "enum": ["paris", "lyon"]}},
+      "type": "object", "properties": {"city": {"$ref": "#/definitions/c"}}},
+     lambda code, txt: code == 200 and valid_json(txt) and val_of(txt, "city") in ("paris", "lyon")),
+    # The F539 reproducer used a PLAIN string definition (no enum): enum definitions ride the
+    # candidate path, which bypasses the start anchor the order dependence trips over.
+    ("ref_defs_plain_last_ok", "Name a city.",
+     {"type": "object", "properties": {"city": {"$ref": "#/definitions/c"}},
+      "definitions": {"c": {"type": "string"}}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(val_of(txt, "city"), str)
+     and len(val_of(txt, "city")) > 0),
+    ("ref_defs_plain_first_ok", "Name a city.",
+     {"definitions": {"c": {"type": "string"}},
+      "type": "object", "properties": {"city": {"$ref": "#/definitions/c"}}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(val_of(txt, "city"), str)
+     and len(val_of(txt, "city")) > 0),
 ]
 
 bad = 0

@@ -4750,3 +4750,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：`oneof_const_ok` / `anyof_const_ok` 由 F539 的 200 自由文本变为 200 `{"city":"paris"}`；自检 RUN_EXIT=0、bounds PASS。
 **记法**：**有限值域的“另一种写法”优先折叠而不是新写检测器**——const 是单值 enum，折进既有并集即可复用全部下游（路由、唯一化、写入器）；只有“非有限域”的分支才需要新机制或显式 400。
 **遗留**：anyOf 的纯数值界分支、D1 `$ref` 顺序依赖仍为 P0。
+
+## F541（2026-11-12）：`$ref` 键序依赖的真因是“清空为 `{}` 改变了 schema 首键”
+**红证**：plain string 定义（无 enum）时，`definitions` 在 `properties` 之后 → 200 `{"city":…}`；之前 → 200 自由散文。**enum 定义不会复现**——它走候选路径，绕过首键锚点，所以成对夹具必须用 plain 定义。
+**根因**：`api_schema_resolve_refs` 内联引用后把定义容器**清空为 `{}`**，定义在前时 schema 形如 `{"definitions":{}, "type":"object",…}`；形状检测器锚定 `^\{"type"`/`^\{"properties"` ⇒ 失配 ⇒ 无人认领 ⇒ 无约束生成。不是解析顺序问题，是**首键**问题。
+**修复**：整对删除容器（键、值、相邻逗号及空白），两序解析结果逐字节相同。
+**记法**：**“清空”与“删除”在锚定型解析器里语义不同**——保留空容器会改变首键；凡是靠 `^` 锚定的检测链，都要用“两序结果相等”的静态门兜底。
+**证据**：`schema_bounds_f541pre2.log`（红）、`selftest_f541.log`（SCHEMA-REF-ORDER PASS）、`schema_bounds_f541.log`（两序活体全绿）、gate_live f541。
