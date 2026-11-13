@@ -1546,6 +1546,38 @@ def main():
         scities = []
     check("chat-stream-contains-const", "Paris" in scities, sout)
 
+    # F552: the same-pattern min/maxContains counts are element-count bounds; the streaming writer
+    # shares api_response_schema_array_bounds, so the streamed array length must honour them.
+    st_min = {"messages": [{"role": "user", "content": "Give the codes."}],
+              "max_tokens": 32, "temperature": 0, "stream": True,
+              "response_format": {"type": "json_schema", "json_schema": {
+                  "name": "x", "schema": {
+                      "type": "object",
+                      "properties": {"codes": {"type": "array",
+                                               "items": {"type": "string",
+                                                         "pattern": "^[A-Z]{3}$"}}},
+                      "contains": {"pattern": "^[A-Z]{3}$"}, "minContains": 3}}}}
+    sraw = post("/v1/chat/completions", st_min, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    try:
+        scodes = json.loads(sout).get("codes") or []
+    except Exception:
+        scodes = []
+    check("chat-stream-contains-min3", len(scodes) >= 3
+          and all(isinstance(x, str) and len(x) == 3 and x.isupper() for x in scodes), sout)
+    st_min["response_format"]["json_schema"]["schema"]["minContains"] = 0
+    st_min["response_format"]["json_schema"]["schema"]["maxContains"] = 1
+    sraw = post("/v1/chat/completions", st_min, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    try:
+        scodes = json.loads(sout).get("codes") or []
+    except Exception:
+        scodes = []
+    check("chat-stream-contains-max1", 1 <= len(scodes) <= 1
+          and all(isinstance(x, str) and len(x) == 3 and x.isupper() for x in scodes), sout)
+
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],
                    "max_tokens": 48,

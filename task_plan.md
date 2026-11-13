@@ -2144,4 +2144,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`contains_pattern_min3_ok`（4 元素）、`contains_pattern_max1_ok`（1 元素）、`contains_pattern_minmax_bad_refuse`（min3+max1 ⇒ 400）、`contains_pattern_diff_refuse`（不同 pattern ⇒ 400）。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f551.log`）；bounds **PASS**（`f551b`）；required/count/pattern **CHECK_EXIT=0**；8000 **118/0**；8001 par/fair **0**；scaling **1.499×**；哨兵 **0**。BUILD_OK（`build_f551b`）。
 
+## F552（2026-11-12）：流式 contains 计数常驻门
+**改动**：smoke 增 `chat-stream-contains-min3`（长度≥3）与 `chat-stream-contains-max1`（长度=1），把 F551 的计数保证钉在流式传输上。
+**过程**：首版字典花括号多一个，smoke 在 0 条即 SyntaxError；先 `python -c ast.parse` 预检再跑 gate_live 后通过。
+**结果**：`SMOKE: PASS=120 FAIL=0`；8001 par/fair 0；哨兵 0。**基线：8000 smoke 120/0（F552 起）。**
+**记法**：改 smoke 夹具后**先做语法预检**——语法错会在 0 条 PASS 时退出，看起来像空跑。
+
 

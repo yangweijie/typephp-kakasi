@@ -2392,3 +2392,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：min3 → 4 元素；max1 → 1 元素；min3+max1 → 400；不同 pattern → 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f551.log`）；bounds PASS（`f551b`）；required/count/pattern 0；8000 118/0；8001 par/fair 0；scaling 1.499×；哨兵 0；BUILD_OK（`build_f551b`）。
 
+## F552（2026-11-12）：流式 contains 计数常驻门
+- **改动**：smoke 增 `chat-stream-contains-min3`（长度≥3）与 `chat-stream-contains-max1`（长度=1）。
+- **过程**：首版花括号多一个， smoke 0 条即 SyntaxError；加 `ast.parse` 预检后通过。
+- **结果**：SMOKE 120/0；8001 par/fair 0；哨兵 0。**基线：8000 smoke 120/0（F552 起）**。
+
