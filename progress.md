@@ -2386,3 +2386,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`contains_pattern_same_ok` 200 `["CJL","CJL"]`；不同 pattern 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f550.log`）；bounds/required/count/pattern PASS；8000 118/0；8001 par/fair 0；scaling 1.571×；哨兵 0；BUILD_OK（`build_f550`）。
 
+## F551（2026-11-12）：同 pattern contains 的 min/maxContains（元素计数）
+- **实现**：放宽 `api_schema_contains_pattern_ok`（仅在不可满足时拒绝）；`api_response_schema_array_bounds` 对同 pattern 情形以 `0:0` 为基折叠计数。
+- **过程**：首轮被 `api_schema_minmax_contains_ok` 拒绝，因无 minItems 时 bounds 返回空；补基后通过。
+- **活体**：min3 → 4 元素；max1 → 1 元素；min3+max1 → 400；不同 pattern → 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f551.log`）；bounds PASS（`f551b`）；required/count/pattern 0；8000 118/0；8001 par/fair 0；scaling 1.499×；哨兵 0；BUILD_OK（`build_f551b`）。
+

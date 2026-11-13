@@ -2137,4 +2137,11 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f550.log`）；bounds **PASS**（`f550`：`contains_pattern_same_ok` 200 `["CJL","CJL"]`、`contains_pattern_diff_refuse` 400）；required/count/pattern **CHECK_EXIT=0**；8000 **118/0**；8001 par/fair **0**；scaling **1.571×**；哨兵 **0**。BUILD_OK（`build_f550`）。
 **记法**：**“全部元素同 spec”是最省力的构造满足**——不需要强制某个元素，只要确认 items 与 contains 是同一 spec；不同 spec 则必须有一个元素同时匹配两者，仍拒绝。
 
+## F551（2026-11-12）：同 pattern contains 的 minContains/maxContains（元素计数）
+**原理**：同 pattern 时**每个元素都是匹配**，所以 min/maxContains 就是元素个数下限/上限；`api_response_schema_array_bounds` 本就折叠这两个计数。
+**实现**：① 放宽 `api_schema_contains_pattern_ok`：min/maxContains 任意，仅在“max(minContains,minItems) > min(maxContains,maxItems)”时返回 0（不可满足 ⇒ 关键字裁判拒绝）；② `api_response_schema_array_bounds` 在没有 minItems/maxItems 时，对同 pattern 情形以 `0:0` 为基再折叠计数。
+**过程（两轮红）**：首轮被**另一个裁判**拒绝（“keyword not supported: minContains”）；真因是无 minItems 时 bounds 返回空 ⇒ `api_schema_minmax_contains_ok` 判 0。补 `0:0` 基后四条门全绿。
+**门**：`contains_pattern_min3_ok`（4 元素）、`contains_pattern_max1_ok`（1 元素）、`contains_pattern_minmax_bad_refuse`（min3+max1 ⇒ 400）、`contains_pattern_diff_refuse`（不同 pattern ⇒ 400）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f551.log`）；bounds **PASS**（`f551b`）；required/count/pattern **CHECK_EXIT=0**；8000 **118/0**；8001 par/fair **0**；scaling **1.499×**；哨兵 **0**。BUILD_OK（`build_f551b`）。
+
 

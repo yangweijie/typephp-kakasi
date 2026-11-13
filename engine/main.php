@@ -9792,7 +9792,13 @@ function api_response_schema_array_bounds(string $body): string
         return $b;
     }
     if ($b == "") {
-        return "";              // the counts need the counted shape; the refusal layer names it
+        // F551: the same-pattern contains makes every element a match, so minContains/maxContains
+        // are pure element counts - they need no minItems/maxItems to ride on.
+        if (($mn != "" || $mx != "") && api_schema_contains_pattern_ok($schema) == 1) {
+            $b = "0:0";
+        } else {
+            return "";          // the counts need the counted shape; the refusal layer names it
+        }
     }
     $bp = explode(":", $b);
     $bMin = (int) $bp[0];
@@ -10548,11 +10554,29 @@ function api_schema_contains_pattern_ok(string $schema): int
             return 0;
         }
     }
-    if (preg_match('/"maxContains"\s*:/', $s) == 1) {
-        return 0;
-    }
+    // F551: with the SAME pattern every emitted element matches, so minContains/maxContains are
+    // element-count bounds - api_response_schema_array_bounds already folds them into min:max.
+    // Only an unsatisfiable combination (max below min, after minItems/maxItems too) is refused.
     $mc = [];
-    if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1 && (int) $mc[1] > 1) {
+    $mnc = 0;
+    if (preg_match('/"minContains"\s*:\s*([0-9]+)/', $s, $mc) == 1) {
+        $mnc = (int) $mc[1];
+    }
+    $mxc = 0;
+    if (preg_match('/"maxContains"\s*:\s*([0-9]+)/', $s, $mc) == 1) {
+        $mxc = (int) $mc[1];
+    }
+    $lo = $mnc > 1 ? $mnc : 1;
+    $miItems = api_schema_bound_value($s, "\"minItems\"", 0);
+    if ($miItems != "" && (int) $miItems > $lo) {
+        $lo = (int) $miItems;
+    }
+    $hi = $mxc;
+    $maItems = api_schema_bound_value($s, "\"maxItems\"", 0);
+    if ($maItems != "" && (int) $maItems > 0 && ($hi == 0 || (int) $maItems < $hi)) {
+        $hi = (int) $maItems;
+    }
+    if ($hi > 0 && $lo > $hi) {
         return 0;
     }
     $cp = strpos($s, "\"contains\"");

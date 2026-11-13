@@ -1033,6 +1033,30 @@ cases = [
                                "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
       "contains": {"pattern": "^[a-z]+$"}},
      lambda code, txt: code == 400 and "contains" in txt),
+    # F551: with the same pattern every element matches, so minContains/maxContains are element
+    # counts; an unsatisfiable pair (min 3, max 1) must refuse instead of over-filling.
+    ("contains_pattern_min3_ok", "Give the codes.",
+     {"type": "object",
+      "properties": {"codes": {"type": "array",
+                               "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[A-Z]{3}$"}, "minContains": 3},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "codes"), list)
+     and len(val_of(txt, "codes")) >= 3
+     and all(isinstance(x, str) and len(x) == 3 and x.isupper() for x in val_of(txt, "codes"))),
+    ("contains_pattern_max1_ok", "Give the codes.",
+     {"type": "object",
+      "properties": {"codes": {"type": "array",
+                               "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[A-Z]{3}$"}, "maxContains": 1},
+     lambda code, txt: code == 200 and isinstance(val_of(txt, "codes"), list)
+     and 1 <= len(val_of(txt, "codes")) <= 1
+     and all(isinstance(x, str) and len(x) == 3 and x.isupper() for x in val_of(txt, "codes"))),
+    ("contains_pattern_minmax_bad_refuse", "Give the codes.",
+     {"type": "object",
+      "properties": {"codes": {"type": "array",
+                               "items": {"type": "string", "pattern": "^[A-Z]{3}$"}}},
+      "contains": {"pattern": "^[A-Z]{3}$"}, "minContains": 3, "maxContains": 1},
+     lambda code, txt: code == 400 and ("contains" in txt or "keyword" in txt)),
 ]
 
 bad = 0
