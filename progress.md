@@ -2440,3 +2440,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：if-then / if-else / dependencies 三个真空形态在 `stream:true` 下键集均为 `{city,note}`；与预处理双链一致，无新差异。
 - **证据**：`stream_cond_f560.log`。
 
+## F561（2026-11-12）：值级 if —— 尝试后回滚
+- **红证**：判定接受但值只有 `{"city":"paris"}`（const 叶子路径不发可选键），then 分支被违反；三条接受用例红。
+- **处置**：全部回滚；重建后 required harness PASS（`f561c`）。值级条件需写入器保证（全键/pin），入队。
+

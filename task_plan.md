@@ -2195,4 +2195,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`deps_vacuous_props`（200 键集 city/note）、`deps_emitted_key_refuse`（约束已发射键 ⇒ 400）。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f559.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.582×**；哨兵 **0**。BUILD_OK（`build_f559`）。
 
+## F561（2026-11-12）：值级 if 的尝试 → 回滚（写出器只发部分键）
+**尝试**：主叶子为 const 时条件真值可构造已知；判定接受后交给既有分支逻辑。
+**红证**：200 但值只有 `{"city":"paris"}`（可选 note 未发射）⇒ then 分支被违反；三条接受用例红。
+**处置**：判定/门/辅助函数全部回滚，重建后 required harness PASS（`schema_required_f561c.log`）。
+**队列修正**：值级条件/依赖需要写入器保证（发射全部声明键或按值 pin），不是纯判定问题；入队待写规格。
+
 

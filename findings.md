@@ -3730,6 +3730,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**“判定通过即可整条剥离”的充分条件**是：判定的成立性不依赖生成值的选择，只依赖已知键集——这类关键字（dependencies/if/空 dependentSchemas）都可以先判后删，生成器只见干净 schema。
 **证据**：`schema_required_f559.log`（两门）、gate_live f559。
 
+## F561（2026-11-12）：值级 if 的尝试与回滚——写出器只发部分键
+**尝试**：当主叶子自身是 `const` 时，`if:{properties:{k:{const|enum}}}` 的真值可由构造已知；判定接受后由既有分支逻辑判 then/else。
+**红证**：判定通过、返回 200，但值是 **`{"city":"paris"}`**——可选的 `note` 没有被写出器发射（`{"type":"string","const":"paris"}` 的叶子走了只发该叶子的路径），于是 `then:{required:["note"]}` 被违反。三条接受用例全部红，`if_const_true_then_miss_refuse` 仍正确 400。
+**处置**：**回滚**（判定 + 门 + 辅助函数全部撤回），重建后 required harness 恢复 PASS（`schema_required_f561c.log`）。负结果入队：值级条件/依赖需要**写入器保证**（发射全部声明键或按值 pin），而不只是判定层知道真值。
+**记法**：**“发射集 = 全部 properties”在带 const/enum 叶子的路径上不成立**——写出器可能只发固定值叶子；凡是以发射集为前提的判定，都要有对应的“全键或全略”写出器保证并逐路径验证（F557/F558 的真空形态不受影响，因为它们的前提只是“键从不被发射”）。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
