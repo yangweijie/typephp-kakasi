@@ -2457,3 +2457,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - 当前 HEAD 的二进制重跑完整梯子：自检 RUN_EXIT=0 / 0 FAIL；bounds/required/count/pattern 全 `CHECK_EXIT=0`；8000 **120/0**；8001 par/fair 0；scaling 1.513×；哨兵 0。
 - 证据：`selftest_f563.log`、`schema_*_f563.log`、`api_smoke_f563.log` 等。
 
+## F564（2026-11-12）：按值计划第一次接线 → 回滚
+- **尝试**：混合写入器加 `v:`（带引号字面量）kind；单值 `e:` 改写为 `v:`。
+- **红证**：仍 `{"city":"paris"}`——候选层先于混合分支认领；带 required 的形状被 required 守卫拒绝。v: 计划被遮蔽。
+- **处置**：全部回滚；required harness PASS（`f564c`）。结论：候选层、required 守卫、混合分支必须共用同一份计划源。
+
+## F565（2026-11-12）：unevaluatedItems/propertyNames 的流式对账
+- **结果**：`stream:true` 下根 string/number 数组的 unevaluatedItems 真空形态、propertyNames 枚举对象全部合法；无新差异。
+- **证据**：`stream_uneval_f565.log`。
+
