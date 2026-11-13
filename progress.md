@@ -2363,3 +2363,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`stream:true` → `"paris"`/`"paris"`/2（`stream_root_f545b.log`）。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f545c.log`）；bounds/required/count/pattern PASS；8000 115/0；8001 par/fair 0；scaling 1.569×；哨兵 0；BUILD_OK（`build_f545c`）。
 
+## F546（2026-11-12）：流式八项成对核对
+- **结果**：allOf/if/$ref/const-oneOf/propertyNames/uneval-closed/200 层对象在 `stream:true` 下值全部合法；纯界 anyOf 400；未发现新的传输差异。
+- **证据**：`stream_claims_f546.log`（八条原样输出）。
+

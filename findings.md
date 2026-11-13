@@ -4780,3 +4780,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **实现**：`api_root_scalar_choices` 判定根层 enum/const（直接子键 `[^{}]*`、字符串加引号、const 折叠、items 内 const 不算）；流式分支在 `$sJOut != ""` 发射判断**之前**兜底填入候选，从而覆盖所有骨架来源而不依赖某条链是否被进入。活体：`stream:true` 下 string enum/const 流式返回 `"paris"`、整数 enum 返回 `2`。
 **两次定位错误（记法）**：① 用 helper 替换锚点时吞掉了下一个函数的声明行，留下裸 `{` → tpc 报 `Unsupported statement: Stmt_Block`；**插入函数时锚点要包含被替换的声明行本身**。② 首版把分支插进看似相同的骨架链，但那一条在 `$enumFlat` 之后、属于非流式，分支成死码；**“同名分支链”不等于“正在改的传输”**——最稳是挂在统一的发射点前，而不是某条检测链中间。
 **证据**：`claims_f544.log`（修前红）、`stream_root_f545b.log`（修后绿）、`selftest_f545c.log`、`schema_bounds_f545c.log`、gate_live f545c。
+
+## F546（2026-11-12）：流式传输的八项成对核对（无新缺陷）
+**方法**：对 F538/F539/F541–F545 核对过的形状在 `stream:true` 上重发一遍，按“值是否合法”判定。结果（`stream_claims_f546.log`）全部合法：`allOf`+required 与 `if`+required 发全声明键；`definitions` 在前的 plain `$ref` 在流式下同样解析（`{"city":…}`）；**const 分支 oneOf 流式返回 `{"city":"paris"}`**（F540 的折叠被两条传输共用）；纯界 anyOf 流式 400；`propertyNames`/`unevaluatedProperties` 闭包对象合法；200 层对象流式完整（1741 字符）。
+**结论**：“非流式修好的语义在流式里也成立”在这八项上成立，缺口只在根标量折叠（F544/F545 已修）。未发现第三个传输级差异。
+**记法**：成对核对要**覆盖到值**，不能只看状态码——`{"city":"paris"}` 与散文都是 200。

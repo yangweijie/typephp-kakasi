@@ -1,0 +1,8 @@
+allof_required       status=200 len=70 head={"a":"New York City, New York, USA, is the most populous city in the"}
+ref_plain_first      status=200 len=56 head={"city":"New York City, New York, United States. 1,300"}
+oneof_const          status=200 len=16 head={"city":"paris"}
+anyof_bounds         status=400 len=160 head={"error":{"message":"oneOf/anyOf branches carrying only numeric bounds are not supported; use enum/const branc
+if_req               status=200 len=142 head={"city":"New York City, New York, United States. 1,300","note":"New York City is the most populous city in the
+pnames               status=200 len=142 head={"city":"New York City, New York, United States. 1,300","note":"New York City is the most populous city in the
+uneval_props_closed  status=200 len=70 head={"a":"New York City, New York, USA, is the most populous city in the"}
+deep200              status=200 len=1741 head={"k0":{"k1":{"k2":{"k3":{"k4":{"k5":{"k6":{"k7":{"k8":{"k9":{"k10":{"k11":{"k12":{"k13":{"k14":{"k15":{"k16":{

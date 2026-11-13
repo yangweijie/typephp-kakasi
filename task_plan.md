@@ -2103,4 +2103,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f545c.log`；`SCHEMA-ROOT-SCALAR: PASS`）；bounds **PASS**（`f545c`）；required/count/pattern **CHECK_EXIT=0**；8000 **115/0**；8001 par/fair **0**；scaling **1.569×**；哨兵 **0**。BUILD_OK（`build_f545c`）。
 **记法**：**改“另一个传输”先确认分支被谁包围**——同名分支链可能在非流式里；最稳的是把兜底放在**发射点之前**（`$sJOut != ""`），统一覆盖所有骨架来源。helper 插入时锚点要包含函数声明整行。
 
+## F546（2026-11-12）：流式八项成对核对（无新缺陷）
+**结果**（`stream_claims_f546.log`）：allOf+required、if+required、`$ref`（定义在前）、const oneOf、propertyNames、unevaluatedProperties 闭包、200 层对象——流式值全部合法；纯界 anyOf 流式 400。F540 的 const 折叠在流式同样生效（`{"city":"paris"}`）。
+**结论**：传输级差异只在根标量折叠（已由 F544/F545 闭合）；未发现第三处。
+**队列**：`unevaluated*` 子 schema 求值器 → FR-05/多分片。
+
 
