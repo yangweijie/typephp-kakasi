@@ -2344,3 +2344,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`ref_defs_plain_first_ok` 由散文变 200 `{"city":…}`；`ref_defs_plain_last_ok`、enum 定义两序全绿。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL；bounds/required/count/pattern PASS；8000 115/0；8001 par/fair 0；scaling 1.538×；哨兵 0；BUILD_OK（`build_f541`）。
 
+## F542（2026-11-12）：纯数值界 oneOf/anyOf 分支 fail-closed（D2 闭合）
+- **做法**：`api_schema_choices_pure_bounds` 扫描每个 oneOf/anyOf 数组，无任何分支含 `enum`/`const`/`properties`/`required`/`pattern` 即判 1；拒绝链 400 “branches carrying only numeric bounds are not supported”。
+- **门**：静态 `SCHEMA-CHOICES-BOUNDS pure=1/root_enum=0/const=0/enum_int=0`；活体 `anyof_bounds_refuse` 400；F540 的 `oneof_const_ok` 仍 200。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f542.log`）；bounds/required/count/pattern PASS；8000 115/0；8001 par/fair 0；scaling 1.577×；哨兵 0；BUILD_OK（`build_f542`）。
+

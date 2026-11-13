@@ -4757,3 +4757,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修复**：整对删除容器（键、值、相邻逗号及空白），两序解析结果逐字节相同。
 **记法**：**“清空”与“删除”在锚定型解析器里语义不同**——保留空容器会改变首键；凡是靠 `^` 锚定的检测链，都要用“两序结果相等”的静态门兜底。
 **证据**：`schema_bounds_f541pre2.log`（红）、`selftest_f541.log`（SCHEMA-REF-ORDER PASS）、`schema_bounds_f541.log`（两序活体全绿）、gate_live f541。
+
+## F542（2026-11-12）：纯数值界分支的 fail-closed（D2 闭合）
+**判据**：一个 oneOf/anyOf 数组里**没有任何分支**含可认领形态（`enum`/`const`/`properties`/`required`/`pattern`）⇒ 400 点名 oneOf/anyOf（F539 时同形返回 200 散文）。有任一可认领分支则不拒绝：折叠（F540）与候选/文法/属性检测器负责其余。
+**验证**：静态 `SCHEMA-CHOICES-BOUNDS`（pure=1，root_enum/const/enum_int=0）；活体 `anyof_bounds_refuse` 400、`oneof_const_ok` 仍 200 `{"city":"paris"}`；全梯子绿。
+**记法**：**兜底拒绝要按“数组内是否有可认领分支”判定，而不是按关键字本身**——oneOf 关键字本身有多个可工作形态，按关键字 blanket 拒绝会打掉 smoke 与文法分支；“无人认领”的粒度是分支集合。
+**证据**：`selftest_f542.log`、`schema_bounds_f542.log`、gate_live f542。

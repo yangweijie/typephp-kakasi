@@ -987,6 +987,13 @@ cases = [
       "type": "object", "properties": {"city": {"$ref": "#/definitions/c"}}},
      lambda code, txt: code == 200 and valid_json(txt) and isinstance(val_of(txt, "city"), str)
      and len(val_of(txt, "city")) > 0),
+    # F542: pure numeric-bound branches have no writer and no detector; F539 saw 200 free prose.
+    # They must refuse now, while the enum/const branch forms stay served.
+    ("anyof_bounds_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"anyOf": [
+         {"type": "integer", "minimum": 1, "maximum": 9},
+         {"type": "integer", "minimum": 50, "maximum": 60}]}}},
+     lambda code, txt: code == 400 and ("oneOf/anyOf" in txt or "numeric bounds" in txt)),
 ]
 
 bad = 0

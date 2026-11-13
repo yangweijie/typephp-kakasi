@@ -4489,6 +4489,69 @@ function api_nested_object_value(string $ids, string $path, string $plan, string
 // Detect {"outer":{"type":"object","properties":{"a":…,"b":…}}} (1..3 flat leaves, any order of
 // type/properties). Returns "<outer>|<plan>" or "". Runs after the array detectors, which own the
 // items-object case, and before the flat detectors.
+// F542: oneOf/anyOf branches that carry only numeric bounds cannot be served by the finite-domain
+// flattener (F540 folds enum/const, not intervals), and no detector claims them, so they used to
+// fall through to unconstrained generation (F539's D2). Refuse them explicitly unless at least one
+// branch has a claimable form (enum/const/properties/required/pattern - the shapes the candidate,
+// grammar and property detectors understand).
+function api_schema_choices_pure_bounds(string $body): int
+{
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return 0;
+        }
+    }
+    $pos = 0;
+    while ($pos < strlen($schema)) {
+        $op = strpos($schema, "\"oneOf\"", $pos);
+        $np = strpos($schema, "\"anyOf\"", $pos);
+        $ap = $op;
+        if ($np !== false && ($op === false || $np < $op)) {
+            $ap = $np;
+        }
+        if ($ap === false) {
+            break;
+        }
+        $ab = strpos($schema, "[", $ap);
+        if ($ab === false) {
+            break;
+        }
+        $arr = api_balance_square($schema, $ab);
+        if ($arr == "") {
+            break;
+        }
+        $inner = substr($arr, 1, strlen($arr) - 2);
+        $branches = 0;
+        $safe = 0;
+        $bp = 0;
+        while ($bp < strlen($inner)) {
+            $b1 = strpos($inner, "{", $bp);
+            if ($b1 === false) {
+                break;
+            }
+            $blk = api_balance_block($inner, $b1);
+            if ($blk == "") {
+                break;
+            }
+            $branches = $branches + 1;
+            if (strpos($blk, "\"enum\"") !== false || strpos($blk, "\"const\"") !== false
+                || strpos($blk, "\"properties\"") !== false
+                || strpos($blk, "\"required\"") !== false
+                || strpos($blk, "\"pattern\"") !== false) {
+                $safe = $safe + 1;
+            }
+            $bp = $b1 + strlen($blk);
+        }
+        if ($branches > 0 && $safe == 0) {
+            return 1;
+        }
+        $pos = $ab + strlen($arr);
+    }
+    return 0;
+}
+
 function api_response_schema_nested_object(string $body): string
 {
     if (preg_match('/"json_schema"/', $body) != 1) {
@@ -13703,6 +13766,12 @@ function api_serve(int $port): void
                 // refusal.
                 $payload = "{\"error\":{\"message\":\"nested object depth beyond 256 levels is not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
+            } else if (api_schema_choices_pure_bounds($schBody) == 1) {
+                // F542: enum/const branches are flattened before this chain runs; a remaining
+                // oneOf/anyOf with no claimable branch (only numeric bounds) has no writer, so it
+                // is refused instead of being answered by unconstrained generation.
+                $payload = "{\"error\":{\"message\":\"oneOf/anyOf branches carrying only numeric bounds are not supported; use enum/const branches, a branch with properties, or a single bounded leaf\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_schema_keywords_unsupported($schBody) != "") {
                 // F398: a keyword the decoder does not enforce is named in the refusal instead of
                 // being ignored. Since then minItems/maxItems, minLength/maxLength, a required
@@ -21405,6 +21474,21 @@ function main(): void
         echo "SCHEMA-REF-ORDER: PASS (both key orders resolve to the same ref-free schema)\n";
     } else {
         echo "SCHEMA-REF-ORDER: FAIL\n";
+    }
+
+    // F542: a oneOf/anyOf whose branches carry only numeric bounds has no writer; a branch with a
+    // claimable form (enum/const/properties/required/pattern) is handled elsewhere and must not be
+    // refused by this judgement.
+    $chP1 = api_schema_choices_pure_bounds('{"properties":{"n":{"anyOf":[{"type":"integer","minimum":1,"maximum":9},{"type":"integer","minimum":50,"maximum":60}]}}}');
+    $chP0a = api_schema_choices_pure_bounds('{"oneOf":[{"type":"object","properties":{"city":{"type":"string","enum":["Paris"]}}},{"type":"object","properties":{"city":{"type":"string","enum":["London"]}}}]}');
+    $chP0b = api_schema_choices_pure_bounds('{"properties":{"city":{"oneOf":[{"type":"string","const":"paris"},{"type":"string","const":"lyon"}]}}}');
+    $chP0c = api_schema_choices_pure_bounds('{"properties":{"n":{"oneOf":[{"type":"integer","minimum":1,"maximum":9,"enum":[3]}]}}}');
+    echo "SCHEMA-CHOICES-BOUNDS pure=[" . $chP1 . "] root_enum=[" . $chP0a . "] const=[" . $chP0b
+        . "] enum_int=[" . $chP0c . "]\n";
+    if ($chP1 == 1 && $chP0a == 0 && $chP0b == 0 && $chP0c == 0) {
+        echo "SCHEMA-CHOICES-BOUNDS: PASS (bounds-only branches refuse; claimable branches do not)\n";
+    } else {
+        echo "SCHEMA-CHOICES-BOUNDS: FAIL\n";
     }
 
     // External $ref: resolved from a caller-supplied registry, never fetched. The ref must be gone
