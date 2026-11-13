@@ -2169,4 +2169,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：活体 `pnames_enum_obj_ok`（对象、键集 `{city,note}`）、`pnames_maxlen_ok`。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f555.log`）；bounds **PASS**（`f555`）；required/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.574×**；哨兵 **0**。BUILD_OK（`build_f555`）。
 
+## F556（2026-11-12）：嵌套 enum 误路由边界核对（无新缺陷）
+**结果**（`claims_f556.log`）：`contains`/`if`/`dependentSchemas`/`not` 子 schema 的 enum 诱饵全部 400——拒绝链先于生成，`$enumFlat` 到不了；唯一缝隙是“裁判接受但无人认领”的 `propertyNames`（F555 已修）。
+**记法**：静默误路由的土壤是“裁判接受 + 无人认领”；审计按“哪些关键字会被接受”枚举。
+
 

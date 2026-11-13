@@ -2415,3 +2415,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`pnames_enum_obj_ok` 200 对象（键集 city/note）；`pnames_maxlen_ok` 200。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f555.log`）；bounds PASS（`f555`）；required/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.574×；哨兵 0；BUILD_OK（`build_f555`）。
 
+## F556（2026-11-12）：嵌套 enum 误路由边界核对
+- **结果**：`contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 全部 400 点名关键字（拒绝链先于生成），无误路由；`propertyNames` 是唯一缝隙（F555 已修）。
+- **证据**：`claims_f556.log`。
+

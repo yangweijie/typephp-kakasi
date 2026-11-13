@@ -3711,6 +3711,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修复**：`$enumFlat` 分支加 `propertyNames` 守卫；同批对照 `propertyNames:{maxLength:6}` 200 对象、`maxLength:3` 400、`dependentSchemas:{required}` 200 且依赖成立。
 **记法**：**“在整包上扫关键字”会命中子 schema 里的同名关键字**——顶层枚举判定要限定根层（F543 的 const 已这样做），否则嵌套的 enum/const 会被发成裸值。
 **证据**：`claims_f555.log`、`schema_bounds_f555.log`（两门 PASS）、gate_live f555。
+
+## F556（2026-11-12）：嵌套 enum 误路由的边界核对（无新缺陷）
+**方法**：把 `contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 作为诱饵，看 `$enumFlat` 是否会把它们发成顶层值。结果（`claims_f556.log`）四例全部 **400 点名关键字**——这些关键字在拒绝链里先行被拒，生成阶段根本不会到达 `$enumFlat`。
+**结论**：误路由只发生在“关键字裁判**接受**但没有检测器认领”的缝隙（`propertyNames` enum 是唯一实例，F555 已修）。`enumFlat` 现有的守卫（数组/根数组/propertyNames）覆盖了已观察到的缝隙；若未来放宽某个关键字裁判，必须同时检查 `$enumFlat` 是否会再次吞掉其子 schema 的 enum。
+**记法**：**静默误路由的土壤是“裁判接受 + 无人认领”**；审计这类问题要按“哪些关键字会被接受”枚举，而不是按关键字总数枚举。
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
