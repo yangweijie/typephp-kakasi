@@ -952,6 +952,21 @@ cases = [
       "unevaluatedProperties": False},
      lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), dict)
      and set(json.loads(txt).keys()) == {"a"} and isinstance(json.loads(txt)["a"], str)),
+    # F555: an enum inside propertyNames is a constraint on KEY NAMES, not a top-level enum; the
+    # flat-enum route used to answer the bare string "city". The object must be served, and its
+    # keys are exactly the declared ones (which the propertyNames enum allows).
+    ("pnames_enum_obj_ok", "Name a city.",
+     {"type": "object",
+      "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "propertyNames": {"enum": ["city", "note"]}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), dict)
+     and set(json.loads(txt).keys()) == {"city", "note"}),
+    ("pnames_maxlen_ok", "Name a city.",
+     {"type": "object",
+      "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "propertyNames": {"maxLength": 6}},
+     lambda code, txt: code == 200 and valid_json(txt) and isinstance(json.loads(txt), dict)
+     and set(json.loads(txt).keys()) == {"city", "note"}),
     # F540: const branches are single-value enums; oneOf/anyOf of them flattens to the same finite
     # candidate set. F539 showed these exact shapes returned 200 free prose before the fold.
     ("oneof_const_ok", "Name a city.",

@@ -2409,3 +2409,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：max1/min1max1 → 恰 1 个 paris；单值域+max2 → `["paris"]`；max0 → 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f554.log`）；bounds PASS（`f554b`）；required/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.600×；哨兵 0；BUILD_OK（`build_f554b`）。
 
+## F555（2026-11-12）：`propertyNames:{enum}` 误路由修复
+- **缺陷**：对象 schema 的 propertyNames 枚举被 `$enumFlat` 当成顶层枚举，返回 200 `"city"`。
+- **修复**：`$enumFlat` 条件加 `propertyNames` 守卫。
+- **活体**：`pnames_enum_obj_ok` 200 对象（键集 city/note）；`pnames_maxlen_ok` 200。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f555.log`）；bounds PASS（`f555`）；required/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.574×；哨兵 0；BUILD_OK（`build_f555`）。
+

@@ -2163,4 +2163,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`contains_const_max1_ok`（恰 1）、`contains_const_min1_max1_ok`（恰 1）、`contains_const_single_domain_ok`（`["paris"]`）、`contains_const_max0_refuse`（400）。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f554.log`）；bounds **PASS**（`f554b`）；required/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.600×**；哨兵 **0**。BUILD_OK（`build_f554b`）。
 
+## F555（2026-11-12）：`propertyNames:{enum}` 被扁平枚举误路由（静默违反）
+**活体证据**（`claims_f555.log`）：对象 schema `{"properties":{"city","note"},"propertyNames":{"enum":["city","note"]}}` 返回 **200 `"city"`**——`$enumFlat` 分支按整包 `"enum"` 正则把 propertyNames 的枚举当成顶层答案；正确值是对象、键集为声明集（键名都在枚举里，真空满足）。对照：`propertyNames:{maxLength:6}` 200 合法对象、`maxLength:3` 400、`dependentSchemas:{required}` 200 且依赖成立。
+**修复**：`$enumFlat` 分支加 `strpos($body,"\"propertyNames\"") === false` 守卫。
+**门**：活体 `pnames_enum_obj_ok`（对象、键集 `{city,note}`）、`pnames_maxlen_ok`。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f555.log`）；bounds **PASS**（`f555`）；required/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.574×**；哨兵 **0**。BUILD_OK（`build_f555`）。
+
 

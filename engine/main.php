@@ -14991,6 +14991,7 @@ function api_serve(int $port): void
                     }
                 } else if ($enumFlat == 1 && api_response_schema_array_enum($body) == ""
                     && api_response_schema_top_array_scalar_enum($body) == ""
+                    && strpos($body, "\"propertyNames\"") === false
                     && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', api_schema_strip_root_not($body), $em)) {
                     $evals = api_list($em[1]);
                     // F543: a root-level enum of strings is a JSON string, not bare text; quote the

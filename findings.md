@@ -3705,6 +3705,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 > **F551 补充**：同 pattern 下 `minContains`/`maxContains` 就是元素个数上下限（全部元素都是匹配），由 `api_response_schema_array_bounds` 折叠；无 `minItems` 时以 `0:0` 为基。不可满足组合（min>max）仍 400。流式同形由 smoke `chat-stream-contains-min3`/`chat-stream-contains-max1` 常驻门覆盖（F552）。
 > **F553 补充**：const 形态下 `minContains:K` 由写入器把前 K 个元素强制为必需值（`$mustCount`）；`uniqueItems`+K>1 或 `maxItems<K` 不可满足 ⇒ 400；`maxContains` 对 const 仍需求值，保持 400。
 > **F554 补充**：const 形态的 `maxContains` 现为构造界——强制前 K 个后，其余元素**从域中排除必需值**，匹配数恰为 K（K≤M 可满足，K>M 400）；单值域收缩 `bMax=maxItems=K` 恰发 K 个。
+
+## F555（2026-11-12）：`propertyNames` 的枚举被扁平枚举路由吞掉
+**症状**（`claims_f555.log`）：对象 schema `{"properties":{"city","note"},"propertyNames":{"enum":["city","note"]}}` 返回 200 **`"city"`**（裸字符串）——`$enumFlat` 在整包上扫 `"enum"`，把 propertyNames 子 schema 的枚举当作顶层答案。正确结果应是对象（键集恰为声明集，propertyNames 真空满足）。
+**修复**：`$enumFlat` 分支加 `propertyNames` 守卫；同批对照 `propertyNames:{maxLength:6}` 200 对象、`maxLength:3` 400、`dependentSchemas:{required}` 200 且依赖成立。
+**记法**：**“在整包上扫关键字”会命中子 schema 里的同名关键字**——顶层枚举判定要限定根层（F543 的 const 已这样做），否则嵌套的 enum/const 会被发成裸值。
+**证据**：`claims_f555.log`、`schema_bounds_f555.log`（两门 PASS）、gate_live f555。
 | 约束 | 状态 | 证据 |
 |---|---|---|
 | 扁平对象 ≤8 字符串属性 | **支持**（按序全输出） | `SCHEMA-PROPS5`（F394） |
