@@ -514,6 +514,29 @@ cases = [
       "dependentSchemas": {"city": {"properties": {"x": {"type": "string"}},
                                     "additionalProperties": False}}},
      lambda code, txt: code == 400 and "dependentSchemas" in txt),
+    # F558: if/then/else whose condition and selected branch only name keys the answer never emits
+    # is vacuously satisfied; conditioning on an emitted key or constraining one in the branch
+    # still needs evaluation and refuses.
+    ("if_vacuous_then_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"properties": {"x": {"const": "q"}}},
+      "then": {"properties": {"y": {"type": "string"}}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("if_vacuous_else_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"required": ["z"]},
+      "else": {"properties": {"y": {"type": "string"}}}},
+     lambda code, txt: code == 200 and keys_of(txt) == ["city", "note"]),
+    ("if_cond_emitted_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"properties": {"city": {"const": "paris"}}},
+      "then": {"type": "object"}},
+     lambda code, txt: code == 400 and "if" in txt),
+    ("if_then_emitted_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
+      "if": {"type": "string"},
+      "else": {"properties": {"note": {"const": "q"}}}},
+     lambda code, txt: code == 400 and "if" in txt),
     # F447: `dependencies` in both spellings (array, bare-required object) is judged by the emitted
     # key set; an omitted dependency and a richer subschema body stay refused.
     ("deps_arr_ok", "Say where you are.",

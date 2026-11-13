@@ -2181,4 +2181,12 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f557.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.613×**；哨兵 **0**。BUILD_OK（`build_f557c`）。
 **记法**：**放宽判定后必须验证“谁在生成”**——判定层接受不等于生成器会用对 properties 块；对会影响 plan 提取的子 schema，正确做法是**剥离**而不是只豁免。
 
+## F558（2026-11-12）：if/then/else 的真空值级条件
+**语义**：条件是 `properties`（键全未发射 ⇒ 恒真）或 `required`（含未发射键 ⇒ 恒假）；**被选中的分支**若只带 `properties` 且键全未发射 ⇒ 真空满足。
+**实现**：`api_schema_if_ok` 增加条件 `properties` 分支与分支 `properties` 接受；新增 `api_schema_strip_vacuous_if`（判定通过后删除 `if`/`then`/`else`，防止 plan 提取器命中子块——F557 同类风险），接入两条预处理链。
+**门**：`if_vacuous_then_ok`、`if_vacuous_else_ok`（200 键集 city/note）；`if_cond_emitted_refuse`（条件命名已发射键）、`if_then_emitted_refuse`（分支约束已发射键）⇒ 400。
+**过程（一轮红）**：首轮 `if_vacuous_then_ok` 仍 400——`api_top_leaves` 对 `{"const":"q"}` 叶子返回空（const 不是 plan），改用新增的**顶层键名深度扫描** `api_block_keys` 后通过。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f558.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.572×**；哨兵 **0**。BUILD_OK（`build_f558b`）。
+**记法**：**“键集判定”不能借 plan 解析**——const/enum 叶子不是 plan，键名判定要用深度感知的顶层键扫描；否则条件会被误判为空。
+
 

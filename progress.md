@@ -2425,3 +2425,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`depsch_vacuous_props` 200；约束已发射键/带 additionalProperties ⇒ 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f557.log`）；bounds/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.613×；哨兵 0；BUILD_OK（`build_f557c`）。
 
+## F558（2026-11-12）：if/then/else 的真空值级条件
+- **实现**：`api_schema_if_ok` 接受“条件 properties 键全未发射（恒真）”与“被选分支 properties 键全未发射（真空）”；`api_schema_strip_vacuous_if` 在两条预处理链删除判定通过的 if/then/else；新增 `api_block_keys` 顶层键名扫描。
+- **过程**：首轮 400 因 `api_top_leaves` 不认 const 叶子；改用键名扫描后通过。
+- **门**：`if_vacuous_then_ok`/`if_vacuous_else_ok` 200；条件/分支命中已发射键 ⇒ 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f558.log`）；bounds/count/pattern 0；8000 120/0；8001 par/fair 0；scaling 1.572×；哨兵 0；BUILD_OK（`build_f558b`）。
+

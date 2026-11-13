@@ -3718,6 +3718,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**判定层“可以放行”≠生成层“会用对”**。放宽任何“子 schema 参与 plan 提取”的关键字前，先问生成器的 properties/items 扫描会不会命中子块；需要时用剥离把约束从 body 里移除，保留判定只做安全网。
 **证据**：`schema_required_f557.log`（红值与修后值）、`schema_required_f557b.log`（全绿）、gate_live f557。
 
+## F558（2026-11-12）：if/then/else 的真空值级条件
+**语义**：条件是 properties（键全未发射 ⇒ 恒真）或 required（含未发射键 ⇒ 恒假）；被选分支只带 properties 且键全未发射 ⇒ 真空。判定通过后**剥离** if/then/else（防 plan 提取器命中子块，F557 同类风险）。
+**过程红证**：首轮 `if_vacuous_then_ok` 仍 400——`api_top_leaves` 对 `const` 叶子返回空，条件被判为空；新增 `api_block_keys`（深度感知的顶层键名扫描）后通过。
+**记法**：**键集判定不要借 plan 解析**——const/enum 叶子不是 plan；顶层键扫描必须自己感知括号深度与字符串状态。
+**证据**：`schema_required_f558.log`（红）、`schema_required_f558b.log`（全绿）、gate_live f558。
+
 ## F556（2026-11-12）：嵌套 enum 误路由的边界核对（无新缺陷）
 **方法**：把 `contains`/`if`/`dependentSchemas`/`not` 子 schema 里的 enum 作为诱饵，看 `$enumFlat` 是否会把它们发成顶层值。结果（`claims_f556.log`）四例全部 **400 点名关键字**——这些关键字在拒绝链里先行被拒，生成阶段根本不会到达 `$enumFlat`。
 **结论**：误路由只发生在“关键字裁判**接受**但没有检测器认领”的缝隙（`propertyNames` enum 是唯一实例，F555 已修）。`enumFlat` 现有的守卫（数组/根数组/propertyNames）覆盖了已观察到的缝隙；若未来放宽某个关键字裁判，必须同时检查 `$enumFlat` 是否会再次吞掉其子 schema 的 enum。

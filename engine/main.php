@@ -11676,6 +11676,75 @@ function api_schema_pattern_props_ok(string $schema): int
 // strips then/else as well, or a nested required there would be read as a root requirement.
 // F475: the condition AND a selected branch may also be a bare `required`, decided against the same
 // proven key set (the instance is guaranteed to carry exactly those keys).
+// F558: the top-level key names of an object block, whatever the leaf bodies are (const/enum
+// leaves are not plans, so api_top_leaves cannot be used for a pure key-set check).
+function api_block_keys(string $block): string
+{
+    if (strlen($block) < 2) {
+        return "";
+    }
+    $inner = substr($block, 1, strlen($block) - 2);
+    $out = "";
+    $depth = 0;
+    $n = strlen($inner);
+    $i = 0;
+    while ($i < $n) {
+        $c = substr($inner, $i, 1);
+        if ($c == "{") {
+            $depth++;
+            $i++;
+            continue;
+        }
+        if ($c == "[") {
+            $depth++;
+            $i++;
+            continue;
+        }
+        if ($c == "}" || $c == "]") {
+            $depth--;
+            $i++;
+            continue;
+        }
+        if ($c != "\"") {
+            $i++;
+            continue;
+        }
+        $j = $i + 1;
+        $s2 = "";
+        $closed = 0;
+        while ($j < $n) {
+            $cc = substr($inner, $j, 1);
+            if ($cc == "\\") {
+                $s2 = $s2 . $cc . substr($inner, $j + 1, 1);
+                $j = $j + 2;
+                continue;
+            }
+            if ($cc == "\"") {
+                $closed = 1;
+                break;
+            }
+            $s2 = $s2 . $cc;
+            $j++;
+        }
+        if ($closed == 0) {
+            break;
+        }
+        $k = $j + 1;
+        while ($k < $n) {
+            $kc = substr($inner, $k, 1);
+            if ($kc != " " && $kc != "\t" && $kc != "\n" && $kc != "\r") {
+                break;
+            }
+            $k++;
+        }
+        if ($depth == 0 && $k < $n && substr($inner, $k, 1) == ":") {
+            $out = $out == "" ? $s2 : $out . "," . $s2;
+        }
+        $i = $j + 1;
+    }
+    return $out;
+}
+
 function api_schema_if_ok(string $schema): int
 {
     if (api_schema_emitted_set($schema) == "") {
@@ -11731,6 +11800,35 @@ function api_schema_if_ok(string $schema): int
             }
         }
         $branch = $condTrue == 1 ? "then" : "else";
+    } else if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $iblk) == 1) {
+        // F558: a properties condition is TRUE when every key it names is never emitted (absent
+        // properties pass); naming an emitted key makes the outcome value-dependent and refuses.
+        $emitC = api_schema_emitted_set($schema);
+        if ($emitC == "") {
+            return 0;
+        }
+        $cbo = strpos($iblk, "{", strpos($iblk, "\"properties\""));
+        $cblk = $cbo === false ? "" : api_balance_block($iblk, $cbo);
+        if ($cblk == "") {
+            return 0;
+        }
+        $restC = substr($iblk, $cbo + strlen($cblk));
+        $restC = str_replace(" ", "", $restC);
+        $restC = str_replace("\n", "", $restC);
+        $restC = str_replace("\t", "", $restC);
+        if ($restC != "}") {
+            return 0;
+        }
+        $planC = api_block_keys($cblk);
+        if ($planC == "") {
+            return 0;
+        }
+        foreach (explode(",", $planC) as $leafC) {
+            if ($leafC == "" || strpos("," . $emitC . ",", "," . $leafC . ",") !== false) {
+                return 0;
+            }
+        }
+        $branch = "then";
     } else {
         return 0;
     }
@@ -11769,7 +11867,111 @@ function api_schema_if_ok(string $schema): int
         }
         return 1;
     }
+    // F558: the selected branch is vacuously true when it only carries properties for keys the
+    // answer never emits (any other keyword, or an emitted key, needs evaluation).
+    if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $bblk) == 1) {
+        $emit3 = api_schema_emitted_set($schema);
+        if ($emit3 == "") {
+            return 0;
+        }
+        $bbo2 = strpos($bblk, "{", strpos($bblk, "\"properties\""));
+        $bblk2 = $bbo2 === false ? "" : api_balance_block($bblk, $bbo2);
+        if ($bblk2 == "") {
+            return 0;
+        }
+        $rest3 = substr($bblk, $bbo2 + strlen($bblk2));
+        $rest3 = str_replace(" ", "", $rest3);
+        $rest3 = str_replace("\n", "", $rest3);
+        $rest3 = str_replace("\t", "", $rest3);
+        if ($rest3 != "}") {
+            return 0;
+        }
+        $plan3 = api_block_keys($bblk2);
+        if ($plan3 == "") {
+            return 0;
+        }
+        foreach (explode(",", $plan3) as $leaf3) {
+            if ($leaf3 == "" || strpos("," . $emit3 . ",", "," . $leaf3 . ",") !== false) {
+                return 0;
+            }
+        }
+        return 1;
+    }
     return 0;
+}
+
+// F558: removing the if/then/else entries is the safe half of the exemption - the selected branch
+// is known satisfied, and leaving properties subschemas in the body would let the plan extractor
+// pick them up (the F557 misroute class). Called after the judge accepts, so non-vacuous forms are
+// never stripped.
+function api_schema_strip_vacuous_if(string $body): string
+{
+    if (strpos($body, "\"if\"") === false) {
+        return $body;
+    }
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return $body;
+        }
+    }
+    if (api_schema_if_ok($schema) != 1) {
+        return $body;
+    }
+    $pp = strpos($body, "\"properties\"");
+    $pEnd = 0;
+    if ($pp !== false) {
+        $pbo = strpos($body, "{", $pp);
+        if ($pbo !== false) {
+            $pblk = api_balance_block($body, $pbo);
+            if ($pblk != "") {
+                $pEnd = $pbo + strlen($pblk);
+            }
+        }
+    }
+    foreach (explode(",", "if,then,else") as $kw) {
+        $key = "\"" . $kw . "\"";
+        $kp = strpos($body, $key);
+        if ($kp === false || $kp < $pEnd) {
+            continue;
+        }
+        $bo = strpos($body, "{", $kp);
+        if ($bo === false) {
+            continue;
+        }
+        $blk = api_balance_block($body, $bo);
+        if ($blk == "") {
+            continue;
+        }
+        $kend = $bo + strlen($blk);
+        $cutA = $kp;
+        $j = $kp - 1;
+        while ($j >= 0) {
+            $jc = substr($body, $j, 1);
+            if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                break;
+            }
+            $j = $j - 1;
+        }
+        if ($j >= 0 && substr($body, $j, 1) == ",") {
+            $cutA = $j;
+        } else {
+            $j = $kend;
+            while ($j < strlen($body)) {
+                $jc = substr($body, $j, 1);
+                if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                    break;
+                }
+                $j = $j + 1;
+            }
+            if ($j < strlen($body) && substr($body, $j, 1) == ",") {
+                $kend = $j + 1;
+            }
+        }
+        $body = substr($body, 0, $cutA) . substr($body, $kend);
+    }
+    return $body;
 }
 
 // F453: unevaluatedProperties is honoured when the answer cannot contain an unevaluated property:
@@ -13472,6 +13674,9 @@ function api_serve_par(int $port): void
                 if (strpos($body, "\"dependentSchemas\"") !== false) {
                     $body = api_schema_strip_vacuous_dep($body);
                 }
+                if (strpos($body, "\"if\"") !== false) {
+                    $body = api_schema_strip_vacuous_if($body);
+                }
             }
             if (strpos($body, '"allOf"') !== false) {
                 $body = api_schema_merge_allof($body);
@@ -14090,6 +14295,9 @@ function api_serve(int $port): void
         }
         if (strpos($body, '"dependentSchemas"') !== false) {
             $body = api_schema_strip_vacuous_dep($body);
+        }
+        if (strpos($body, "\"if\"") !== false) {
+            $body = api_schema_strip_vacuous_if($body);
         }
         if (strpos($body, '"allOf"') !== false) {
             $body = api_schema_merge_allof($body);
