@@ -3758,6 +3758,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**计划覆盖全部键的前提是叶子识别完整**；F564 与 F566 表象相同（部分对象）根因不同（前者路由顺序，后者叶子识别），排障要分别验证“计划是否非空”与“候选是否让位”。
 **证据**：`schema_required_f566b.log`（新门全绿）、`selftest_f566.log`、`schema_*_f566.log`、gate_live f566（120/0、par/fair 0、scaling 1.612×、哨兵 0）。
 
+## F567（2026-11-14）：无 type 的布尔 const
+**改动**：`api_top_leaves` 的类型分支增加 `"const":(true|false)` 备选并把 kind 置 b；值计划构建器沿用 b 路径 pin 为 `k:q:true/false`。
+**门**：`const_bool_typeless_ok` → `{"city":"paris","flag":true}`；全梯子 f567 绿（120/0、par/fair 0、scaling 1.550×、哨兵 0）。
+**记法**：三类无 type const（string/number/bool）现在都能进计划；补齐依据是“字面量本身能决定类型”，每类都要有对应门防止再次静默丢叶。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

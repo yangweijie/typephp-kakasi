@@ -4155,7 +4155,8 @@ function api_top_leaves(string $block, int $maxN): string
                 $count++;
             } else if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1
                        || preg_match('/"type"\s*:\s*\[[^\]]*"(string|integer|number|boolean)"[^\]]*\]/', $val, $m) == 1
-                       || preg_match('/"const"\s*:\s*"([^"]*)"/', $val, $m) == 1) {
+                       || preg_match('/"const"\s*:\s*"([^"]*)"/', $val, $m) == 1
+                       || preg_match('/"const"\s*:\s*(true|false)/', $val, $m) == 1) {
                 // The second form is a union type (["string","null"], ["string","integer"], …).
                 // Emitting ANY member of the union is schema-valid, so the first recognised member
                 // decides the leaf kind; without this the leaf was dropped entirely (F292).
@@ -4165,6 +4166,10 @@ function api_top_leaves(string $block, int $maxN): string
                 } else if ($m[1] == "integer") {
                     $mk = "i";
                 } else if ($m[1] == "boolean") {
+                    $mk = "b";
+                } else if ($m[1] == "true" || $m[1] == "false") {
+                    // F567: a typeless boolean const - the literal decides the kind, the value-plan
+                    // builder pins it through the q branch.
                     $mk = "b";
                 }
                 // A string enum leaf carries its allowed values in the plan (key:e:v1~v2) so the

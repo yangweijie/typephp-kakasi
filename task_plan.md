@@ -2243,3 +2243,10 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **完成（2026-11-14 接续）**：按上述 6 点落地；**关键修复**：`api_top_leaves` 对**无 `type` 的字符串 const**（`{"const":"paris"}`）此前整叶丢弃 ⇒ 按值计划为空 ⇒ 候选层仍认领（首轮 7 FAIL 的真因）；补上该识别后新门全绿。
 **结果**：required harness `f566b` 全绿（`const_leaf_optional/all_required/subset/missing`、`const_num_pin`、`if_const_true/false/enum`、`if_const_then_miss`、`if_const_required_merge`）；全梯子 `f566`：自检 RUN_EXIT=0/0 FAIL、bounds/count/pattern `CHECK_EXIT=0`、8000 **120/0**（未新增 smoke 夹具，原计划的 121 基线未采纳）、8001 par/fair 0、scaling 1.612×、哨兵 0。
 **记法**：**“计划覆盖全部键”的前提是叶子识别完整**——无 `type` 的 const 是合法 schema，`api_top_leaves` 必须按字面量推断 kind，否则计划静默缺键、候选层抢先（与 F564 表象相同、根因不同）。
+
+## F567（2026-11-14）：按值计划支持无 type 的布尔 const
+**背景**：F566 的构建器已支持 `b` 叶子的 const pin，但 `api_top_leaves` 只在 `"type":"boolean"` 时识别 b；无 type 的 `{"const":true}` 被整叶丢弃 ⇒ 计划缺键、候选层抢先（与字符串 const 同型）。
+**改动**：`api_top_leaves` 的类型分支新增 `"const":(true|false)` 备选，并把 `$mk` 置为 b；值计划构建器沿用既有 b 路径 pin 为 `k:q:true/false`。
+**门**：`const_bool_typeless_ok`（200 键集 {city,flag}，flag=true）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f567.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.550×**；哨兵 **0**。BUILD_OK（`build_f567`）。
+**记法**：**kind 识别按“字面量能决定类型”补齐**——string/number/bool 三类无 type const 现均可进计划；每补一类配一条门。

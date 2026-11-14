@@ -636,6 +636,13 @@ cases = [
      lambda code, txt: (code == 200 and keys_of(txt) == ["city", "count"]
                         and (obj_of(txt) or {}).get("city") == "paris"
                         and (obj_of(txt) or {}).get("count") == 5)),
+    # F567: a typeless boolean const is a pinned leaf too (the literal decides the kind).
+    ("const_bool_typeless_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "flag": {"const": True}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "flag"]
+                        and (obj_of(txt) or {}).get("city") == "paris"
+                        and (obj_of(txt) or {}).get("flag") is True)),
     ("if_const_true_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "note": {"type": "string"}},

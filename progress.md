@@ -2471,3 +2471,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **关键修复**：`api_top_leaves` 识别**无 `type` 的字符串 const**（此前整叶丢弃 ⇒ 计划为空 ⇒ 候选层抢先，首轮 7 FAIL）。
 - **结果**：required `f566b` 全绿；全梯子 `f566`：自检 0/0 FAIL、bounds/count/pattern 0、8000 120/0、par/fair 0、scaling 1.612×、哨兵 0。
 
+## F567（2026-11-14）：无 type 的布尔 const 进按值计划
+- **改动**：`api_top_leaves` 识别 `{"const":true|false}`（kind b），构建器 pin 为 `k:q:true`。
+- **门**：`const_bool_typeless_ok` 200 `{"city":"paris","flag":true}`。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f567.log`）；bounds/count/pattern 0；8000 120/0；par/fair 0；scaling 1.550×；哨兵 0；BUILD_OK（`build_f567`）。
+
