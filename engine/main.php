@@ -4154,7 +4154,8 @@ function api_top_leaves(string $block, int $maxN): string
                 $out = $out == "" ? $key . ":" . $arrTy : $out . "," . $key . ":" . $arrTy;
                 $count++;
             } else if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1
-                       || preg_match('/"type"\s*:\s*\[[^\]]*"(string|integer|number|boolean)"[^\]]*\]/', $val, $m) == 1) {
+                       || preg_match('/"type"\s*:\s*\[[^\]]*"(string|integer|number|boolean)"[^\]]*\]/', $val, $m) == 1
+                       || preg_match('/"const"\s*:\s*"([^"]*)"/', $val, $m) == 1) {
                 // The second form is a union type (["string","null"], ["string","integer"], …).
                 // Emitting ANY member of the union is schema-valid, so the first recognised member
                 // decides the leaf kind; without this the leaf was dropped entirely (F292).
@@ -4230,6 +4231,117 @@ function api_top_leaves(string $block, int $maxN): string
             }
         }
         $i = $k + strlen($val);
+    }
+    return $out;
+}
+
+// F566: the shared per-key VALUE PLAN - the single source the candidate tier, the required
+// guard / shape gates and the mixed writer all read, so a pinned-leaf shape is judged and served
+// from the same plan (the F561/F562/F564 lesson: a writer-only plan is shadowed by the candidate
+// tier, and a schema-level required merge has no fixed point because the merge changes the
+// emitted set that decides the condition).
+// Encodes every declared key: string pins (const / single string enum) as "k:v:<lit>" (the writer
+// emits the quoted literal), numeric / boolean pins as "k:q:<lit>" (bare literal, the writer's
+// existing q branch), and free leaves keep their plan kind (s/i/n/b/p:spec/bounded arrays).
+// A key that must never be emitted is expressed by the F401 required filter dropping it from the
+// plan - the same filter the shape gates use, so no separate encoding is needed.
+// Returns "" whenever the shape is not servable by the mixed writer: no pin at all (the shape
+// belongs to the existing candidate/mixed/all-string paths), a multi-value enum or plain array
+// leaf, a nested/object-array leaf, keywords a pinned literal cannot be checked against
+// (lengths, numeric bounds, multipleOf), or a properties block the plan does not cover.
+function api_schema_value_plan(string $schema): string
+{
+    if (preg_match('/"json_schema"/', $schema) == 1) {
+        $schema = api_json_object_after($schema, "schema");
+        if ($schema == "") {
+            return "";
+        }
+    }
+    if (preg_match('/"(minLength|maxLength|minimum|maximum|multipleOf|exclusiveMinimum|exclusiveMaximum)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    if (api_schema_is_object($schema) != 1) {
+        return "";
+    }
+    $pp = strpos($schema, "\"properties\"");
+    if ($pp === false) {
+        return "";
+    }
+    $bo = strpos($schema, "{", $pp);
+    if ($bo === false) {
+        return "";
+    }
+    $block = api_balance_block($schema, $bo);
+    if ($block == "") {
+        return "";
+    }
+    // The key-set proofs the shape gates build assume the writer emits EXACTLY the plan's keys,
+    // so the plan must cover the whole properties block - a nested/object-array leaf the plan
+    // cannot see would silently drop its key from the proof.
+    $blkKeys = api_block_keys($block);
+    if ($blkKeys == "") {
+        return "";
+    }
+    $plan = api_top_leaves($block, 8);
+    if ($plan == "") {
+        return "";
+    }
+    $items = explode(",", $plan);
+    if (count($items) < 2) {
+        return "";
+    }
+    $planKeys = "";
+    foreach ($items as $item) {
+        $ikv = explode(":", $item);
+        $planKeys = $planKeys == "" ? $ikv[0] : $planKeys . "," . $ikv[0];
+    }
+    if ($planKeys != $blkKeys) {
+        return "";
+    }
+    $out = "";
+    $pinN = 0;
+    for ($i = 0; $i < count($items); $i++) {
+        $kv = explode(":", $items[$i]);
+        $key = $kv[0];
+        $cnt = count($kv);
+        $entry = "";
+        if ($cnt == 3 && $kv[1] == "e" && strpos($kv[2], "~") === false) {
+            // A single string value (const or one-member enum): the pin.
+            $entry = $key . ":v:" . $kv[2];
+            $pinN++;
+        } else if ($cnt == 3 && $kv[1] == "en" && strpos($kv[2], "~") === false) {
+            // A single numeric value: pin through the writer's q branch.
+            $entry = $key . ":q:" . $kv[2];
+            $pinN++;
+        } else if ($cnt == 2 && $kv[1] == "b") {
+            // A boolean const is pinned too; a free boolean keeps its kind.
+            $kb = strpos($block, "\"" . $key . "\"");
+            $bo2 = $kb === false ? false : strpos($block, "{", $kb);
+            $lb = $bo2 === false ? "" : api_balance_block($block, $bo2);
+            $mc = [];
+            if ($lb != "" && preg_match('/"const"\s*:\s*(true|false)/', $lb, $mc) == 1) {
+                $entry = $key . ":q:" . $mc[1];
+                $pinN++;
+            } else {
+                $entry = $items[$i];
+            }
+        } else if (($cnt == 2 && ($kv[1] == "s" || $kv[1] == "i" || $kv[1] == "n"))
+            || ($cnt == 3 && $kv[1] == "p")
+            || ($cnt == 2 && strpos($kv[1], "~") !== false
+                && (substr($kv[1], 0, strpos($kv[1], "~")) == "a"
+                    || substr($kv[1], 0, strpos($kv[1], "~")) == "an"
+                    || substr($kv[1], 0, strpos($kv[1], "~")) == "af"
+                    || substr($kv[1], 0, strpos($kv[1], "~")) == "ab"))) {
+            $entry = $items[$i];
+        } else {
+            // Multi-value enum, unbounded/plain array, object-array or an unknown kind: the mixed
+            // writer cannot serve the shape, so no value plan.
+            return "";
+        }
+        $out = $out == "" ? $entry : $out . "," . $entry;
+    }
+    if ($pinN == 0) {
+        return "";
     }
     return $out;
 }
@@ -6154,7 +6266,7 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
     $fTy = "";
     if (count($first) == 2) {
         $fTy = $first[1];
-    } else if (count($first) == 3 && ($first[1] == "p" || $first[1] == "q")) {
+    } else if (count($first) == 3 && ($first[1] == "p" || $first[1] == "q" || $first[1] == "v")) {
         $fTy = $first[1];
     } else {
         return "";
@@ -6173,7 +6285,7 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
         $pSpec = "";
         if (count($kv) == 2) {
             $ty = $kv[1];
-        } else if (count($kv) == 3 && ($kv[1] == "p" || $kv[1] == "q")) {
+        } else if (count($kv) == 3 && ($kv[1] == "p" || $kv[1] == "q" || $kv[1] == "v")) {
             $ty = $kv[1];
             $pSpec = $kv[2];
         } else {
@@ -6470,6 +6582,15 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
                 return "";
             }
             $s = $s . "," . $qv;
+        } else if ($ty == "v") {
+            // F566: a pinned string literal from the shared value plan - the quotes travel WITH the
+            // value (the head/sep did not open one), so one continuation emits the whole quoted
+            // literal and the next key's separator (or the closing brace) follows verbatim.
+            $vl = api_constrained_continue(["\"" . $pSpec . "\""], 32);
+            if ($vl == "") {
+                return "";
+            }
+            $s = $s . "," . $vl;
         } else {
             $body = api_number_fill($ty == "n" ? 1 : 0, 6);
             if ($body != "") {
@@ -6496,6 +6617,27 @@ function api_response_schema_mixed_object(string $body): string
         if ($schema == "") {
             return "";
         }
+    }
+    // F566: the value-plan claim comes first - a pinned-leaf shape (const / single-enum / boolean
+    // const beside free siblings) is served through the shared plan, required-filtered exactly
+    // like the F401 construction below. The candidate tier defers on this same plan (see
+    // api_response_schema_candidates), so the claim and the writer agree on the key set.
+    $vp = api_schema_value_plan($schema);
+    if ($vp != "") {
+        $keep = api_schema_required_filter($schema);
+        if ($keep != "") {
+            $filtered = "";
+            foreach (explode(",", $vp) as $leaf) {
+                $kv = explode(":", $leaf);
+                if (count($kv) >= 1 && strpos("," . $keep . ",", "," . $kv[0] . ",") !== false) {
+                    $filtered = $filtered == "" ? $leaf : $filtered . "," . $leaf;
+                }
+            }
+            if ($filtered != "") {
+                $vp = $filtered;
+            }
+        }
+        return $vp;
     }
     // F404: `pattern` left the exclusion - the anchored class/count forms become p: plan kinds
     // the mixed stepper emits; enum/const leaves still disqualify.
@@ -9244,6 +9386,14 @@ function api_response_schema_candidates(string $body): array
             }
         }
     }
+    // F566: a value-plan shape (pinned leaves beside free siblings) is claimed by the mixed writer
+    // through the shared plan - this tier's partial object (the pinned keys only) would drop the
+    // free keys, violating a required/then-branch key set. Root oneOf/anyOf shapes keep the
+    // candidate-union route; the shared plan does not claim them.
+    if (api_schema_value_plan($schema) != ""
+        && strpos($schema, "\"oneOf\"") === false && strpos($schema, "\"anyOf\"") === false) {
+        return [];
+    }
     return api_schema_candidates($schema);
 }
 
@@ -9939,6 +10089,13 @@ function api_schema_mixed_omittable(string $schema): int
                 $scan = str_replace($pnblk, "", $schema);
             }
         }
+    }
+    // F566: a value-plan shape (pinned leaves beside free siblings) is served by the mixed writer
+    // through the shared plan, and its emitted key set is EXACTLY the required-filtered plan -
+    // the same key-set premise this proof carries. The pins are fixed by construction, so nothing
+    // the writer emits can violate a keyword the proof checks.
+    if (api_schema_value_plan($schema) != "") {
+        return 1;
     }
     if (preg_match('/"(enum|const|pattern|minimum|maximum|multipleOf)"\s*:/', $scan) == 1) {
         return 0;
@@ -11909,12 +12066,72 @@ function api_schema_if_ok(string $schema): int
         if ($planC == "") {
             return 0;
         }
-        foreach (explode(",", $planC) as $leafC) {
-            if ($leafC == "" || strpos("," . $emitC . ",", "," . $leafC . ",") !== false) {
-                return 0;
+        // F566: value-level condition (the F561/F564 lesson - the judgement must read the same
+        // plan the writer executes). Every named key is either never emitted (vacuous-true
+        // contribution, F558) or emitted AND pinned by the shared value plan, whose literal
+        // makes a const/enum subschema decidable by construction. Any other named key keeps the
+        // refusal. No schema-level required merge (F562's no-fixed-point): the strip below removes
+        // if/then/else, and the branch's required keys were checked against THIS emitted set,
+        // which is exactly what the writer emits.
+        $pins = [];
+        $vp = api_schema_value_plan($schema);
+        if ($vp != "") {
+            foreach (explode(",", $vp) as $vleaf) {
+                $vkv = explode(":", $vleaf);
+                if (count($vkv) == 3 && $vkv[1] == "v") {
+                    $pins[$vkv[0]] = $vkv[2];
+                }
             }
         }
-        $branch = "then";
+        $allUnemitted = 1;
+        foreach (explode(",", $planC) as $leafC) {
+            if ($leafC == "") {
+                return 0;
+            }
+            if (strpos("," . $emitC . ",", "," . $leafC . ",") !== false) {
+                // Emitted: decidable only when the shared plan pins it.
+                $allUnemitted = 0;
+                if (!isset($pins[$leafC])) {
+                    return 0;
+                }
+            }
+        }
+        if ($allUnemitted == 1) {
+            $branch = "then";
+        } else {
+            $condTrue = 1;
+            foreach (explode(",", $planC) as $leafC) {
+                if (strpos("," . $emitC . ",", "," . $leafC . ",") === false) {
+                    continue;   // never emitted: the condition's entry for it is a pass
+                }
+                $kq = strpos($cblk, "\"" . $leafC . "\"");
+                $kbo = $kq === false ? false : strpos($cblk, "{", $kq);
+                $kblk = $kbo === false ? "" : api_balance_block($cblk, $kbo);
+                if ($kblk == "") {
+                    return 0;
+                }
+                $mc = [];
+                if (preg_match('/^\{\s*"const"\s*:\s*"([^"]*)"\s*\}$/', $kblk, $mc) == 1) {
+                    if ($mc[1] != $pins[$leafC]) {
+                        $condTrue = 0;
+                    }
+                } else if (preg_match('/^\{\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $kblk, $mc) == 1) {
+                    $ev = api_list($mc[1]);
+                    $in = 0;
+                    for ($ei = 0; $ei < count($ev); $ei++) {
+                        if ($ev[$ei] == $pins[$leafC]) {
+                            $in = 1;
+                        }
+                    }
+                    if ($in == 0) {
+                        $condTrue = 0;
+                    }
+                } else {
+                    return 0;   // a const/enum-free subschema needs value evaluation
+                }
+            }
+            $branch = $condTrue == 1 ? "then" : "else";
+        }
     } else {
         return 0;
     }
@@ -12452,7 +12669,9 @@ function api_schema_keywords_unsupported(string $body): string
             foreach (explode(",", $mixPlan) as $ml) {
                 $mk = explode(":", $ml);
                 if (count($mk) == 3) {
-                    if ($mk[1] != "p" && $mk[1] != "q") {
+                    // F566: v carries a pinned string literal from the shared value plan; the
+                    // writer emits it verbatim, so it counts toward the key-set proof like p/q.
+                    if ($mk[1] != "p" && $mk[1] != "q" && $mk[1] != "v") {
                         $mixOk = 0;
                         break;
                     }

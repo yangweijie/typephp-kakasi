@@ -3752,6 +3752,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **方法**：三个代表性形状在 `stream:true` 下重发并判值——根 string 数组 + `unevaluatedItems:{type:integer}`（真空）、根 number 数组 + `unevaluatedItems:false`、对象 + `propertyNames:{enum:[city,note]}`。结果（`stream_uneval_f565.log`）：分别流式返回 `["New York City,"]`（字符串数组）、`[192]`（数字数组）、`{"city":…,"note":…}` 对象——全部合法。
 **结论**：F530/F531/F555 的能力在流式传输上同样成立，未发现新的传输级差异。
 
+## F566（2026-11-14）：按值计划子系统——判定/计划/路由同源
+**实现**：`api_schema_value_plan` 作为唯一计划源（字符串 pin `v:`、数值/布尔 pin `q:`、自由叶子原 kind、required 子集由 F401 过滤器裁剪）；候选层在存在按值计划时让位；`mixed_omittable`/`required_filter`/`if_ok` 读同一计划；`api_object_mixed` 新增 `v:` kind（引号随字面量走）。
+**关键红证**：首轮 7 FAIL 且字符串 pin 仍返回部分对象——真因不是接线，而是 `api_top_leaves` 对**无 `type` 的字符串 const**（`{"const":"paris"}`）整叶丢弃，计划为空 ⇒ 候选层照旧认领。补上“按字面量推断 kind”后全绿。
+**记法**：**计划覆盖全部键的前提是叶子识别完整**；F564 与 F566 表象相同（部分对象）根因不同（前者路由顺序，后者叶子识别），排障要分别验证“计划是否非空”与“候选是否让位”。
+**证据**：`schema_required_f566b.log`（新门全绿）、`selftest_f566.log`、`schema_*_f566.log`、gate_live f566（120/0、par/fair 0、scaling 1.612×、哨兵 0）。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

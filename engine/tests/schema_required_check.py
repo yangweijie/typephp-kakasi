@@ -604,6 +604,81 @@ cases = [
      {"type": "object", "properties": {"cities": {"type": "array", "items": {"type": "string"}}},
       "contains": {"type": "integer"}},
      lambda code, txt: code == 400 and "contains" in txt),
+    # F566: the per-key value plan - one shared source read by the candidate tier (which defers),
+    # the required guard and the mixed writer: a pinned const leaf beside a free sibling is served
+    # with EVERY declared key (the pinned literal plus a free value), and a required subset or
+    # full set filters that same plan. Value-level if/then/else is judged against the pin values,
+    # never merged into the schema (F562's no-fixed-point result).
+    ("const_leaf_optional_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") == "paris")),
+    ("const_leaf_all_required_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "required": ["city", "note"]},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") == "paris")),
+    ("const_leaf_subset_required_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "required": ["note"]},
+     lambda code, txt: keys_of(txt) == ["note"]),
+    ("const_leaf_missing_required_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "required": ["note", "zzz"]},
+     lambda code, txt: code == 400 and "required" in txt),
+    ("const_num_pin_ok", "Give the code and the count.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "count": {"const": 5}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "count"]
+                        and (obj_of(txt) or {}).get("city") == "paris"
+                        and (obj_of(txt) or {}).get("count") == 5)),
+    ("if_const_true_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "if": {"properties": {"city": {"const": "paris"}}},
+      "then": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") == "paris")),
+    ("if_const_false_else_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "if": {"properties": {"city": {"const": "london"}}},
+      "else": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") == "paris")),
+    ("if_enum_member_true_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "if": {"properties": {"city": {"enum": ["paris", "london"]}}},
+      "then": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") == "paris")),
+    ("if_const_true_then_miss_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "if": {"properties": {"city": {"const": "paris"}}},
+      "then": {"required": ["missing"]}},
+     lambda code, txt: code == 400 and ("if" in txt or "required" in txt)),
+    ("if_const_true_required_merge", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "paris"},
+                                        "note": {"type": "string"}},
+      "required": ["city", "note"],
+      "if": {"properties": {"city": {"const": "paris"}}},
+      "then": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") == "paris")),
+    # The condition key emitted but NOT pinned (a free string): the truth is value-dependent, so
+    # the value-level judge must keep the refusal (the F558 vacuous rule does not cover it).
+    ("if_free_key_cond_refuse", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string"},
+                                        "note": {"type": "string"}},
+      "if": {"properties": {"city": {"const": "paris"}}},
+      "then": {"required": ["note"]}},
+     lambda code, txt: code == 400 and "if" in txt),
 ]
 
 bad = 0

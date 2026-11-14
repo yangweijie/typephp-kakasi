@@ -2466,3 +2466,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：`stream:true` 下根 string/number 数组的 unevaluatedItems 真空形态、propertyNames 枚举对象全部合法；无新差异。
 - **证据**：`stream_uneval_f565.log`。
 
+## F566（2026-11-14）：按值计划子系统落地（并行会话开工，本轮接续收口）
+- **实现**：`api_schema_value_plan` 单一构建器（`k:v:<lit>` 字符串 pin / `k:q:<lit>` 数值·布尔 pin / 自由叶子原 kind）；候选层让位、`mixed_omittable`/`required_filter`/`if_ok` 同源、`api_object_mixed` 的 `v:` kind。
+- **关键修复**：`api_top_leaves` 识别**无 `type` 的字符串 const**（此前整叶丢弃 ⇒ 计划为空 ⇒ 候选层抢先，首轮 7 FAIL）。
+- **结果**：required `f566b` 全绿；全梯子 `f566`：自检 0/0 FAIL、bounds/count/pattern 0、8000 120/0、par/fair 0、scaling 1.612×、哨兵 0。
+
