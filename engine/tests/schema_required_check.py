@@ -765,6 +765,21 @@ cases = [
       "if": {"properties": {"count": {"const": 5}}},
       "then": {"required": ["z"]}},
      lambda code, txt: code == 400 and "if" in txt),
+    # F575: boolean const conditions close the value-type dimension for if (string/number/bool).
+    ("if_bool_const_true_ok", "Give the flag.",
+     {"type": "object",
+      "properties": {"flag": {"const": True}, "note": {"type": "string"}},
+      "if": {"properties": {"flag": {"const": True}}},
+      "then": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["flag", "note"]
+                        and (obj_of(txt) or {}).get("flag") is True)),
+    ("if_bool_const_false_else_ok", "Give the flag.",
+     {"type": "object",
+      "properties": {"flag": {"const": True}, "note": {"type": "string"}},
+      "if": {"properties": {"flag": {"const": False}}},
+      "else": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["flag", "note"]
+                        and (obj_of(txt) or {}).get("flag") is True)),
     ("if_const_true_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "note": {"type": "string"}},

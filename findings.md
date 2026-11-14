@@ -3803,6 +3803,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：`if_num_const_true_ok`/`if_num_const_false_else_ok` → 200 `{"count":5,"note":…}`；then 缺键 400；全梯子 f574 绿（121/0、par/fair 0、scaling 1.590×、哨兵 0）。
 **记法**：pin 有两种编码（`v`/`q`）；任何读 pin 的判定必须同时认两种，并按值类型补门。
 
+## F575（2026-11-14）：布尔 const 的 `if` 验收
+**改动**：`if_bool_const_true_ok`（条件 const true ⇒ then）与 `if_bool_const_false_else_ok`（条件 const false ⇒ else），均断言 200 `{"flag":true,"note":…}`；代码由 F567（布尔 pin）与 F574（q pin + 布尔 const 比较）支持，本轮只补覆盖。
+**记法**：至此 `if` 的 string/number/bool × const/enum 六个值维度均有门；值维度补齐是防止路径回退的最小成本手段。
+**证据**：`schema_required_f575.log`。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

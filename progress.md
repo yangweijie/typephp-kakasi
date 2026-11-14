@@ -2515,3 +2515,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`if_num_const_true_ok`/`if_num_const_false_else_ok` 200、`if_num_const_true_miss_refuse` 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f574.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.590×；哨兵 0；BUILD_OK（`build_f574`）。
 
+## F575（2026-11-14）：布尔 const 的 if 验收门
+- **改动**：`if_bool_const_true_ok` / `if_bool_const_false_else_ok`（仅测试；代码由 F567+F574 支持）。
+- **结果**：required harness PASS（`f575`）；引擎无改动；`if` 的 string/number/bool × const/enum 维度均已覆盖。
+
