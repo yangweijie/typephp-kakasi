@@ -3698,7 +3698,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F546；**“支持”以活体为准，仅静态门通过不算**）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F566；**“支持”以活体为准，仅静态门通过不算**）
 > **F541–F546 活体更新**：本地 `$ref` **两种键序均支持**（定义容器整对删除，F541）；oneOf/anyOf 的 **const 分支折叠**为单值 enum（F540），**纯数值界分支显式 400**（F542）；**根级 string enum/const 支持**（引号 JSON 字面量；非流式 F543、流式 F545）；`stream:true` 八项成对核对仅根标量一处差异（F546）。`not`/根级 `contains` 的 const 形态仍为运行时 400（F538）。
 > **F548 补充**：`contains` 的 **const**（或与 items 域相交的 enum）形态已支持——元素 0 被强制为该值（minContains≤1、无 maxContains），域内无解仍 400。流式同形由 smoke `chat-stream-contains-const` 常驻门覆盖（F549）。
 > **F550 补充**：items 与 contains **同一 pattern 字面量**时，全部元素都匹配 ⇒ 构造满足（`contains_pattern_same_ok`）；不同 pattern 仍需一个元素同时匹配两者，仍 400。
@@ -3753,7 +3753,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结论**：F530/F531/F555 的能力在流式传输上同样成立，未发现新的传输级差异。
 
 ## F566（2026-11-14）：按值计划子系统——判定/计划/路由同源
-**实现**：`api_schema_value_plan` 作为唯一计划源（字符串 pin `v:`、数值/布尔 pin `q:`、自由叶子原 kind、required 子集由 F401 过滤器裁剪）；候选层在存在按值计划时让位；`mixed_omittable`/`required_filter`/`if_ok` 读同一计划；`api_object_mixed` 新增 `v:` kind（引号随字面量走）。
+**实现**：`api_schema_value_plan` 作为唯一计划源（字符串 pin `v:`、数值/布尔 pin `q:`、自由叶子原 kind、required 子集由 F401 过滤器裁剪）；候选层在存在按值计划时让位；混合可省略判定、required 过滤与 if 判定读同一计划；`api_object_mixed` 新增 `v:` kind（引号随字面量走）。
 **关键红证**：首轮 7 FAIL 且字符串 pin 仍返回部分对象——真因不是接线，而是 `api_top_leaves` 对**无 `type` 的字符串 const**（`{"const":"paris"}`）整叶丢弃，计划为空 ⇒ 候选层照旧认领。补上“按字面量推断 kind”后全绿。
 **记法**：**计划覆盖全部键的前提是叶子识别完整**；F564 与 F566 表象相同（部分对象）根因不同（前者路由顺序，后者叶子识别），排障要分别验证“计划是否非空”与“候选是否让位”。
 **证据**：`schema_required_f566b.log`（新门全绿）、`selftest_f566.log`、`schema_*_f566.log`、gate_live f566（120/0、par/fair 0、scaling 1.612×、哨兵 0）。
