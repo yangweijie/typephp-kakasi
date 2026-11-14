@@ -2250,3 +2250,9 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`const_bool_typeless_ok`（200 键集 {city,flag}，flag=true）。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f567.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.550×**；哨兵 **0**。BUILD_OK（`build_f567`）。
 **记法**：**kind 识别按“字面量能决定类型”补齐**——string/number/bool 三类无 type const 现均可进计划；每补一类配一条门。
+
+## F568（2026-11-14）：多值 enum 取首值 pin；`$enumFlat` 根级守卫（修静默违反）
+**改动**：① 按值计划把 `e:`/`en:` 的**首成员**作为 pin（字符串 `v:`、数值 `q:`），使 enum+自由叶子的对象发全键；② `$enumFlat` 分支加 `strpos(body,"\"properties\"") === false` 守卫——它此前会把**对象 schema 里**的多值 enum 当成顶层答案（F566 让候选层让位后暴露：返回裸 `"lyon"`/`5`，是既存静默违反）。
+**门**：`enum_leaf_pin_ok`（200 对象，键集 {city,note}，city∈{paris,lyon}）、`numenum_leaf_pin_ok`（键集 {count,note}，count∈{2,5}）。
+**梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f568.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.609×**；哨兵 **0**。BUILD_OK（`build_f568b`）。
+**记法**：**让位会把认领权交给下一层**——候选层让位后必须逐一核对“下一个认领者”是否也满足值级要求；整包关键字扫描的根级判定一律用“无 properties/无 propertyNames”守卫（F543/F555/F568 同族）。

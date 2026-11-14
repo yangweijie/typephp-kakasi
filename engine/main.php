@@ -4310,13 +4310,31 @@ function api_schema_value_plan(string $schema): string
         $key = $kv[0];
         $cnt = count($kv);
         $entry = "";
-        if ($cnt == 3 && $kv[1] == "e" && strpos($kv[2], "~") === false) {
-            // A single string value (const or one-member enum): the pin.
-            $entry = $key . ":v:" . $kv[2];
+        if ($cnt == 3 && $kv[1] == "e") {
+            // F568: a single string value (const / one-member enum) is the pin; a multi-value enum
+            // pins its FIRST member - any member is a legal value, so the plan stays deterministic
+            // and every declared key is emitted.
+            $one = $kv[2];
+            $tp = strpos($one, "~");
+            if ($tp !== false) {
+                $one = substr($one, 0, $tp);
+            }
+            if ($one == "") {
+                return "";
+            }
+            $entry = $key . ":v:" . $one;
             $pinN++;
-        } else if ($cnt == 3 && $kv[1] == "en" && strpos($kv[2], "~") === false) {
-            // A single numeric value: pin through the writer's q branch.
-            $entry = $key . ":q:" . $kv[2];
+        } else if ($cnt == 3 && $kv[1] == "en") {
+            // F568: same rule for a numeric enum - the first member rides the q branch.
+            $one = $kv[2];
+            $tp = strpos($one, "~");
+            if ($tp !== false) {
+                $one = substr($one, 0, $tp);
+            }
+            if ($one == "") {
+                return "";
+            }
+            $entry = $key . ":q:" . $one;
             $pinN++;
         } else if ($cnt == 2 && $kv[1] == "b") {
             // A boolean const is pinned too; a free boolean keeps its kind.
@@ -15698,6 +15716,7 @@ function api_serve(int $port): void
                 } else if ($enumFlat == 1 && api_response_schema_array_enum($body) == ""
                     && api_response_schema_top_array_scalar_enum($body) == ""
                     && strpos($body, "\"propertyNames\"") === false
+                    && strpos($body, "\"properties\"") === false
                     && preg_match('/"enum"\s*:\s*\[(.*?)\]/s', api_schema_strip_root_not($body), $em)) {
                     $evals = api_list($em[1]);
                     // F543: a root-level enum of strings is a JSON string, not bare text; quote the

@@ -3763,6 +3763,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`const_bool_typeless_ok` → `{"city":"paris","flag":true}`；全梯子 f567 绿（120/0、par/fair 0、scaling 1.550×、哨兵 0）。
 **记法**：三类无 type const（string/number/bool）现在都能进计划；补齐依据是“字面量本身能决定类型”，每类都要有对应门防止再次静默丢叶。
 
+## F568（2026-11-14）：多值 enum 首值 pin；`$enumFlat` 的根级守卫
+**背景**：F566 让候选层对按值计划形状让位，enum+自由叶子的对象因此落到下一层 `$enumFlat`——它按整包 `"enum"` 正则匹配，把**对象 schema 里**的枚举当顶层答案，返回裸 `"lyon"`/`5`。这是既存静默违反（对象 schema 应返回对象），只是此前被候选层遮蔽。
+**修复**：① 值计划把 `e:`/`en:` 的**首成员**作 pin（任一成员合法，计划确定性），enum+自由叶子发全键对象；② `$enumFlat` 只服务**无 properties** 的根级 enum（与 F543 的 const 分支、F555 的 propertyNames 守卫同族）。
+**验证**：`enum_leaf_pin_ok` → `{"city":"paris","note":…}`；`numenum_leaf_pin_ok` → `{"count":2,"note":…}`；全梯子 f568 绿（120/0、par/fair 0、scaling 1.609×、哨兵 0）。
+**记法**：**让位会把认领权交给下一层**——让位后必须逐一核对下一认领者；根级关键字扫描一律加“无 properties”守卫。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

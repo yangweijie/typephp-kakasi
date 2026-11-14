@@ -2476,3 +2476,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`const_bool_typeless_ok` 200 `{"city":"paris","flag":true}`。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f567.log`）；bounds/count/pattern 0；8000 120/0；par/fair 0；scaling 1.550×；哨兵 0；BUILD_OK（`build_f567`）。
 
+## F568（2026-11-14）：多值 enum 首值 pin + `$enumFlat` 根级守卫
+- **改动**：值计划把 `e:`/`en:` 首成员作为 pin；`$enumFlat` 仅服务无 properties 的根级 enum（修既存静默违反：对象枚举叶曾被答成裸值）。
+- **门**：`enum_leaf_pin_ok`、`numenum_leaf_pin_ok`（全键对象，值 ∈ 枚举）。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f568.log`）；bounds/count/pattern 0；8000 120/0；par/fair 0；scaling 1.609×；哨兵 0；BUILD_OK（`build_f568b`）。
+

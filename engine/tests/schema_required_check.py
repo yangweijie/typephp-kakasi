@@ -643,6 +643,18 @@ cases = [
      lambda code, txt: (code == 200 and keys_of(txt) == ["city", "flag"]
                         and (obj_of(txt) or {}).get("city") == "paris"
                         and (obj_of(txt) or {}).get("flag") is True)),
+    # F568: a multi-value enum pins its first member, so enum+free shapes emit every key.
+    ("enum_leaf_pin_ok", "Say where you are.",
+     {"type": "object", "properties": {"city": {"type": "string",
+                                                 "enum": ["paris", "lyon"]},
+                                        "note": {"type": "string"}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["city", "note"]
+                        and (obj_of(txt) or {}).get("city") in ("paris", "lyon"))),
+    ("numenum_leaf_pin_ok", "Say where you are.",
+     {"type": "object", "properties": {"count": {"type": "integer", "enum": [2, 5]},
+                                        "note": {"type": "string"}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["count", "note"]
+                        and (obj_of(txt) or {}).get("count") in (2, 5))),
     ("if_const_true_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "note": {"type": "string"}},
