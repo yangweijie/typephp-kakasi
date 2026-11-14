@@ -2485,3 +2485,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：smoke 增 `chat-stream-value-plan`（`stream:true` 下全键对象、city=paris）。
 - **结果**：SMOKE 121/0；par/fair 0；哨兵 0。**基线：8000 smoke 121/0（F569 起）**。
 
+## F570 规格（dependentSchemas/dependencies 值级子 schema）
+- 发射集取“required 过滤后的按值计划键集”；pin 匹配 ⇒ 子 schema 满足并剥离，pin 不匹配 ⇒ 400 不可满足；自由叶子保持 400。
+- 判定与两处剥离共用 `api_schema_dep_sub_satisfied`（同源，F557 教训）；门 6 条（含 required 子集真空对照）。
+
