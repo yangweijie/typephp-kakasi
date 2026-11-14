@@ -10526,31 +10526,13 @@ function api_schema_dependencies_ok(string $schema): int
                 }
                 continue;
             }
-            // F559: a subschema carrying only properties for keys the answer never emits is
-            // vacuously true; anything else (an emitted key, other keywords) needs evaluation.
+            // F559/F570: a properties-only subschema is satisfied by construction when every key
+            // is vacuous or pinned by the shared value plan to an accepted literal.
             if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) == 1) {
-                $pbo3 = strpos($sub, "{", strpos($sub, "\"properties\""));
-                $pblk3 = $pbo3 === false ? "" : api_balance_block($sub, $pbo3);
-                if ($pblk3 == "") {
-                    return 0;
+                if (api_schema_dep_sub_satisfied($schema, $sub) == 1) {
+                    continue;
                 }
-                $rest4 = substr($sub, $pbo3 + strlen($pblk3));
-                $rest4 = str_replace(" ", "", $rest4);
-                $rest4 = str_replace("\n", "", $rest4);
-                $rest4 = str_replace("\t", "", $rest4);
-                if ($rest4 != "}") {
-                    return 0;
-                }
-                $keys4 = api_block_keys($pblk3);
-                if ($keys4 == "") {
-                    return 0;
-                }
-                foreach (explode(",", $keys4) as $k4) {
-                    if ($k4 == "" || strpos("," . $emit . ",", "," . $k4 . ",") !== false) {
-                        return 0;
-                    }
-                }
-                continue;
+                return 0;
             }
             return 0;
         } else {
@@ -11081,6 +11063,101 @@ function api_schema_minmax_contains_ok(string $schema): int
 // exactly {"required":[...]}, which is the same key-set judgement dependentRequired makes - and
 // refused for every other subschema body (properties, nested schemas, ...). Same shape restriction:
 // only the flat all-string object, whose emitted key set is known before generation.
+// F570: a dependent subschema of the form {"properties":{k:{const|enum},...}} is satisfied by
+// construction when, for every constrained key, the key is never emitted (vacuous) or the shared
+// value plan pins it to a literal the const/enum accepts. The emitted set is the same
+// required-filtered plan the writer uses, so judgement and emission cannot diverge (F562).
+function api_schema_dep_sub_satisfied(string $schema, string $sub): int
+{
+    if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) != 1) {
+        return 0;
+    }
+    $pbo = strpos($sub, "{", strpos($sub, "\"properties\""));
+    if ($pbo === false) {
+        return 0;
+    }
+    $pblk = api_balance_block($sub, $pbo);
+    if ($pblk == "") {
+        return 0;
+    }
+    $rest = substr($sub, $pbo + strlen($pblk));
+    $rest = str_replace(" ", "", $rest);
+    $rest = str_replace("\n", "", $rest);
+    $rest = str_replace("\t", "", $rest);
+    if ($rest != "}") {
+        return 0;
+    }
+    $keys = api_block_keys($pblk);
+    if ($keys == "") {
+        return 0;
+    }
+    $emit = api_schema_emitted_set($schema);
+    if ($emit == "") {
+        return 0;
+    }
+    $vp = api_schema_value_plan($schema);
+    foreach (explode(",", $keys) as $k) {
+        if ($k == "") {
+            return 0;
+        }
+        if (strpos("," . $emit . ",", "," . $k . ",") === false) {
+            continue;   // never emitted: the properties constraint is vacuous
+        }
+        if ($vp == "") {
+            return 0;   // an emitted key without a pin needs value evaluation
+        }
+        $lit = "";
+        foreach (explode(",", $vp) as $entry) {
+            $ek = explode(":", $entry);
+            if (count($ek) == 3 && $ek[0] == $k && ($ek[1] == "v" || $ek[1] == "q")) {
+                $lit = $ek[2];
+            }
+        }
+        if ($lit == "") {
+            return 0;   // emitted but free
+        }
+        $kp2 = strpos($pblk, "\"" . $k . "\"");
+        if ($kp2 === false) {
+            return 0;
+        }
+        $bo2 = strpos($pblk, "{", $kp2);
+        if ($bo2 === false) {
+            return 0;
+        }
+        $one = api_balance_block($pblk, $bo2);
+        if ($one == "") {
+            return 0;
+        }
+        $mm = [];
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false)\s*\}$/',
+            $one, $mm) == 1) {
+            $lit2 = $mm[1];
+            if (substr($lit2, 0, 1) == "\"") {
+                $lit2 = substr($lit2, 1, strlen($lit2) - 2);
+            }
+            if ($lit2 != $lit) {
+                return 0;
+            }
+            continue;
+        }
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"enum"\s*:\s*\[([^\]]*)\]\s*\}$/',
+            $one, $mm) == 1) {
+            $okv = 0;
+            foreach (api_list($mm[1]) as $ev) {
+                if ($ev == $lit) {
+                    $okv = 1;
+                }
+            }
+            if ($okv == 0) {
+                return 0;
+            }
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
 function api_schema_dependent_schemas_ok(string $schema): int
 {
     // F490: same exact-key-set premise as F489 - the mixed generator emits exactly the plan's keys.
@@ -11162,42 +11239,17 @@ function api_schema_dependent_schemas_ok(string $schema): int
             }
             continue;
         }
-        // F557: a subschema that only carries `properties` for keys the answer NEVER emits is
-        // vacuously true; the moment it constrains an emitted key (or carries any other keyword
-        // such as additionalProperties:false) it needs evaluation and stays refused.
+        // F557/F570: a properties-only subschema is satisfied by construction when every key it
+        // names is either never emitted (vacuous) or pinned by the shared value plan to a literal
+        // its const/enum accepts; anything else needs evaluation and stays refused.
         if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) == 1) {
             if (strpos("," . $emit . ",", "," . $key . ",") === false) {
                 continue;
             }
-            $pbo = strpos($sub, "{", strpos($sub, "\"properties\""));
-            if ($pbo === false) {
-                return 0;
+            if (api_schema_dep_sub_satisfied($schema, $sub) == 1) {
+                continue;
             }
-            $pblk = api_balance_block($sub, $pbo);
-            if ($pblk == "") {
-                return 0;
-            }
-            $rest = substr($sub, $pbo + strlen($pblk));
-            $rest = str_replace(" ", "", $rest);
-            $rest = str_replace("\n", "", $rest);
-            $rest = str_replace("\t", "", $rest);
-            if ($rest != "}") {
-                return 0;
-            }
-            $plan2 = api_top_leaves($pblk, 64);
-            if ($plan2 == "") {
-                return 0;
-            }
-            foreach (explode(",", $plan2) as $leaf) {
-                $kv2 = explode(":", $leaf);
-                if ($kv2[0] == "") {
-                    return 0;
-                }
-                if (strpos("," . $emit . ",", "," . $kv2[0] . ",") !== false) {
-                    return 0;
-                }
-            }
-            continue;
+            return 0;
         }
         return 0;                       // any other subschema body
     }
@@ -11282,30 +11334,13 @@ function api_schema_strip_vacuous_dep(string $body): string
         }
         $off = $ob + strlen($sub);
         $vac = 0;
+        // F570: the same satisfaction predicate the judge uses - vacuous keys or a pinned literal
+        // the const/enum accepts.
         if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) == 1) {
             if (strpos("," . $emit . ",", "," . $key . ",") === false) {
                 $vac = 1;
-            } else {
-                $pbo2 = strpos($sub, "{", strpos($sub, "\"properties\""));
-                $pblk2 = $pbo2 === false ? "" : api_balance_block($sub, $pbo2);
-                if ($pblk2 != "") {
-                    $rest = str_replace(" ", "", substr($sub, $pbo2 + strlen($pblk2)));
-                    $rest = str_replace("\n", "", $rest);
-                    $rest = str_replace("\t", "", $rest);
-                    if ($rest == "}") {
-                        $plan2 = api_top_leaves($pblk2, 64);
-                        if ($plan2 != "") {
-                            $vac = 1;
-                            foreach (explode(",", $plan2) as $leaf) {
-                                $kv2 = explode(":", $leaf);
-                                if ($kv2[0] == ""
-                                    || strpos("," . $emit . ",", "," . $kv2[0] . ",") !== false) {
-                                    $vac = 0;
-                                }
-                            }
-                        }
-                    }
-                }
+            } else if (api_schema_dep_sub_satisfied($schema, $sub) == 1) {
+                $vac = 1;
             }
         }
         if ($vac == 0) {

@@ -3774,6 +3774,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：SMOKE **121/0**；par/fair 0；哨兵 0。流式链与混合 `v:` 写入器一致，无需额外接线。
 **记法**：按值计划的消费面覆盖两条传输后，用常驻 smoke 门钉住，避免只靠 required harness 的非流式证据。
 
+## F570（2026-11-14）：值级 dependentSchemas / dependencies
+**实现**：`api_schema_dep_sub_satisfied($schema,$sub)`——子 schema 恰为 properties 时，对每个受限键：未被发射（真空）或按值计划 pin 为字面量且 const/enum 接受 ⇒ 满足；否则 0。`dependentSchemas` 判定与剥离、`dependencies` 判定共用该谓词（同源，F557 教训）；失配即不可满足 ⇒ 400。
+**验证**：`dep_pin_match_ok` 200 全键；`dep_pin_mismatch_refuse`/`dep_free_key_refuse` 400；`deps_*` 镜像；`dep_pin_dropped_vacuous_ok`（required 子集丢弃 pin 键 ⇒ 真空）200 `{note}`。全梯子 f570 绿（121/0、par/fair 0、scaling 1.558×、哨兵 0）。
+**记法**：F562 缺的“不动点”由按值计划提供——发射集取**过滤后的计划**，判定与写入器读同一事实源，依赖约束才能在缺失值与 pin 值之间稳定决断。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
