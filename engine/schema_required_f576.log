@@ -1,0 +1,132 @@
+subset_two_of_three    status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+all_three_required     status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","zip":"10029,10029,1002","note":"You are in the heart of the city, surrounded by 
+undeclared_name        status=400 ok=True text={"error":{"message":"schema keyword not supported: required (minItems/maxItems are honoured on a single scalar-array property, also together
+mixed_shape_subset     status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA"}
+subset_with_length     status=200 ok=True text={"city":"New York","note":"I am "}
+mixed_len_ok           status=200 ok=True text={"city":"New York","count":100000}
+mixed_len_pattern_ok   status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","code":"NYU"}
+pattern_len_ok         status=200 ok=True text={"code":"CJL"}
+pattern_len_bad_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: minLength (minItems/maxItems are honoured on a single scalar-array property, also togethe
+pattern_len_range_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: minLength (minItems/maxItems are honoured on a single scalar-array property, also togethe
+mixed_len_p_ok         status=200 ok=True text={"city":"New York","code":"NYN","count":100000}
+mixed_len_p_bad_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: minLength (minItems/maxItems are honoured on a single scalar-array property, also togethe
+addprops_all_string    status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+addprops_mixed_served  status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","count":100000}
+addprops_enum_refuse   status=400 ok=True text={"error":{"message":"schema keyword not supported: additionalProperties (minItems/maxItems are honoured on a single scalar-array property, a
+addprops_with_arr_bounds status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov"]}
+addprops_schema_served status=200 ok=True text={"cities":["Lyon, France, Prov"]}
+mixed_all_required     status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","count":100000}
+bool_all_required      status=200 ok=True text={"flag":false,"count":100000}
+arr_leaf_required_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: required (minItems/maxItems are honoured on a single scalar-array property, also together
+array_leaf_subset      status=200 ok=True text={"note":"I am currently in a coffee shop in the heart of downtown. The atmosphere is"}
+minproperties_ok       status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+minproperties_bad      status=400 ok=True text={"error":{"message":"schema keyword not supported: minProperties (minItems/maxItems are honoured on a single scalar-array property, also tog
+maxproperties_bad      status=400 ok=True text={"error":{"message":"schema keyword not supported: maxProperties (minItems/maxItems are honoured on a single scalar-array property, also tog
+format_refuse          status=400 ok=True text={"error":{"message":"schema keyword not supported: format (minItems/maxItems are honoured on a single scalar-array property, also together w
+patternprops_refuse    status=400 ok=True text={"error":{"message":"schema keyword not supported: patternProperties (minItems/maxItems are honoured on a single scalar-array property, also
+patternprops_vacuous_ok status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+patternprops_match_ok  status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+patternprops_enum_ok   status=200 ok=True text={"city":"paris"}
+patternprops_enum_sub_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: patternProperties (minItems/maxItems are honoured on a single scalar-array property, also
+patternprops_num_type_ok status=200 ok=True text={"count":1}
+patternprops_num_enum_ok status=200 ok=True text={"count":1}
+patternprops_num_miss_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: patternProperties (minItems/maxItems are honoured on a single scalar-array property, also
+patternprops_pattern_same_ok status=200 ok=True text={"code":"EYX"}
+patternprops_pattern_diff_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: patternProperties (minItems/maxItems are honoured on a single scalar-array property, also
+patternprops_ao_type_ok status=200 ok=True text={"rows":[{"n":"100000"}]}
+patternprops_ao_str_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: patternProperties (minItems/maxItems are honoured on a single scalar-array property, also
+items_enum_ok          status=200 ok=True text={"cities":["paris","paris"]}
+items_const_ok         status=200 ok=True text={"cities":["paris","paris"]}
+items_pattern_ok       status=200 ok=True text={"codes":["CJL","CJL"]}
+items_pattern_alt_ok   status=200 ok=True text={"cities":["paris","paris"]}
+items_pattern_metachar_refuse status=400 ok=True text={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals","type":"invalid
+items_bounded_ok       status=200 ok=True text={"nums":[5,6,7,8]}
+items_one_sided_min_ok status=200 ok=True text={"nums":[5,6,7,8]}
+items_one_sided_max_ok status=200 ok=True text={"nums":[1,2,3,4]}
+items_int_negmax_ok    status=200 ok=True text={"nums":[-3,-4,-5,-6]}
+items_int_negmin_ok    status=200 ok=True text={"nums":[-1,-2,-3,-4]}
+items_plain_ok         status=200 ok=True text={"cities":["Lyon, France, Prov"]}
+if_true_ok             status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_false_ok            status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_rich_served         status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_req_true_ok         status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_req_then_ok         status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_req_then_miss_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also together with 
+uneval_props_ok        status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+uneval_props_schema_ok status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+uneval_items_ok        status=200 ok=True text={"cities":["Lyon, France, Prov"]}
+uneval_items_wrong_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: unevaluatedItems (minItems/maxItems are honoured on a single scalar-array property, also 
+cont_min_ok            status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov","Lyon, France, Prov"]}
+cont_max_ok            status=200 ok=True text={"cities":["Lyon, France, Prov"]}
+cont_min_big_refuse    status=400 ok=True text={"error":{"message":"schema keyword not supported: minContains (minItems/maxItems are honoured on a single scalar-array property, also toget
+cont_min_over_refuse   status=400 ok=True text={"error":{"message":"schema keyword not supported: minContains (minItems/maxItems are honoured on a single scalar-array property, also toget
+contentenc_refuse      status=400 ok=True text={"error":{"message":"schema keyword not supported: contentEncoding (minItems/maxItems are honoured on a single scalar-array property, also t
+pnames_pattern_ok      status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+pnames_pattern_bad     status=400 ok=True text={"error":{"message":"schema keyword not supported: propertyNames (minItems/maxItems are honoured on a single scalar-array property, also tog
+pnames_len_bad         status=400 ok=True text={"error":{"message":"schema keyword not supported: propertyNames (minItems/maxItems are honoured on a single scalar-array property, also tog
+dep_ok                 status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+dep_bad_subset         status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentRequired (minItems/maxItems are honoured on a single scalar-array property, also
+dep_undeclared         status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentRequired (minItems/maxItems are honoured on a single scalar-array property, also
+depsch_ok              status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+depsch_bad_subset      status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array property, also 
+depsch_vacuous_props   status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+depsch_emitted_key_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array property, also 
+depsch_addprops_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array property, also 
+if_vacuous_then_ok     status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_vacuous_else_ok     status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+if_cond_emitted_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also together with 
+if_then_emitted_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also together with 
+deps_vacuous_props     status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+deps_emitted_key_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependencies (minItems/maxItems are honoured on a single scalar-array property, also toge
+deps_arr_ok            status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+deps_obj_ok            status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+deps_bad_subset        status=400 ok=True text={"error":{"message":"schema keyword not supported: dependencies (minItems/maxItems are honoured on a single scalar-array property, also toge
+tuple_served           status=200 ok=True text={"pair":["1000",2000]}
+prefixitems_refuse     status=400 ok=True text={"error":{"message":"schema keyword not supported: prefixItems (minItems/maxItems are honoured on a single scalar-array property, also toget
+not_type_ok            status=200 ok=True text={"city":"New York City, New York, USA, USA, USA, USA, USA","note":"This is a fictional city, not a real one. It's just for the"}
+not_pattern_refuse     status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+not_mixed_refuse       status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+contains_type_ok       status=200 ok=True text={"cities":["Lyon, France, Prov"]}
+contains_mismatch_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array property, also together
+const_leaf_optional_ok status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+const_leaf_all_required_ok status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+const_leaf_subset_required_ok status=200 ok=True text={"note":"I am currently in a coffee shop in the heart of downtown. The atmosphere is"}
+const_leaf_missing_required_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: required (minItems/maxItems are honoured on a single scalar-array property, also together
+const_num_pin_ok       status=200 ok=True text={"city":"paris","count":5}
+const_bool_typeless_ok status=200 ok=True text={"city":"paris","flag":true}
+enum_leaf_pin_ok       status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+numenum_leaf_pin_ok    status=200 ok=True text={"count":2,"note":"I am in a coffee shop in the city center. The aroma of coffee and"}
+dep_pin_match_ok       status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+dep_pin_mismatch_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array property, also 
+dep_free_key_refuse    status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array property, also 
+deps_pin_match_ok      status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+deps_pin_mismatch_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependencies (minItems/maxItems are honoured on a single scalar-array property, also toge
+dep_pin_dropped_vacuous_ok status=200 ok=True text={"note":"I am currently in a coffee shop in the heart of downtown. The atmosphere is"}
+not_pin_mismatch_ok    status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+not_pin_enum_mismatch_ok status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+not_pin_match_refuse   status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+not_pin_absent_refuse  status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+not_pin_free_refuse    status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+not_num_pin_mismatch_ok status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+not_num_pin_match_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+not_numenum_mismatch_ok status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+not_numenum_match_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+if_num_const_true_ok   status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+if_num_const_false_else_ok status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+if_num_const_true_miss_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also together with 
+if_bool_const_true_ok  status=200 ok=True text={"flag":true,"note":"The flag of the United States is a flat, rectangular, red, seven-point"}
+if_bool_const_false_else_ok status=200 ok=True text={"flag":true,"note":"The flag of the United States is a flat, rectangular, red, seven-point"}
+if_num_enum_true_ok    status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+if_num_enum_false_else_ok status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+not_bool_pin_mismatch_ok status=200 ok=True text={"flag":true,"note":"The flag of the United States is a flat, rectangular, red, seven-point"}
+not_bool_pin_match_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also together with
+dep_num_pin_match_ok   status=200 ok=True text={"count":5,"note":"The question is asking for the number of questions in a set of questions. The"}
+dep_num_pin_mismatch_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array property, also 
+if_const_true_ok       status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+if_const_false_else_ok status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+if_enum_member_true_ok status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+if_const_true_then_miss_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also together with 
+if_const_true_required_merge status=200 ok=True text={"city":"paris","note":"Paris is the capital city of France and is known for its rich history, beautiful"}
+if_free_key_cond_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also together with 
+VERDICT: PASS - served key set equals the required subset; other shapes still refused
+CHECK_EXIT=0

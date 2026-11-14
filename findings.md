@@ -3808,6 +3808,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：至此 `if` 的 string/number/bool × const/enum 六个值维度均有门；值维度补齐是防止路径回退的最小成本手段。
 **证据**：`schema_required_f575.log`。
 
+## F576（2026-11-14）：值类型 × 值级判定的批量门
+**改动**：`if_num_enum_true_ok`/`if_num_enum_false_else_ok`、`not_bool_pin_mismatch_ok`/`not_bool_pin_match_refuse`、`dep_num_pin_match_ok`/`dep_num_pin_mismatch_refuse` 六条门；代码路径 F570–F575 已支持，本轮补齐验收矩阵。
+**结果**：required harness `f576` PASS；引擎无改动，基线 121/0。
+**记法**：四族判定（if / dependentSchemas / dependencies / not）× 三类值（string/number/bool）× 两种约束（const/enum）的矩阵至此全部有门；后续新增值类型时应按同一矩阵补齐。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

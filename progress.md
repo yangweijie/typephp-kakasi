@@ -2519,3 +2519,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：`if_bool_const_true_ok` / `if_bool_const_false_else_ok`（仅测试；代码由 F567+F574 支持）。
 - **结果**：required harness PASS（`f575`）；引擎无改动；`if` 的 string/number/bool × const/enum 维度均已覆盖。
 
+## F576（2026-11-14）：值类型 × 值级判定批量门
+- **改动**：数值 enum 的 if（真/假）、布尔 not（接受/拒绝）、数值 dependent（匹配/失配）六条门；代码已支持。
+- **结果**：required harness PASS（`f576`）；引擎无改动。
+
