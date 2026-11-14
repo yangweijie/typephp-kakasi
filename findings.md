@@ -3817,6 +3817,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **方法**：数值 pin 的 `if`、数值 pin 的 `not`、字符串 pin 的 `dependentSchemas` 三例在 `stream:true` 下重发。结果（`stream_cond2_f577.log`）：分别流出 `{"count":5,"note":…}`、`{"count":5,"note":…}`、`{"city":"paris","note":…}`——全键且值正确。
 **结论**：值级条件族在两种传输上一致（剥离与判定都在共用 body 预处理里）；未发现新的传输级差异。
 
+## F578（2026-11-14）：patternProperties 的 pin 匹配
+**语义**：单条 pattern 匹配到已发射且被 pin 的键时，const/enum 子 schema 由 pin 字面量决定（匹配继续、失配即违反 ⇒ 400）；未匹配任何键 ⇒ 真空（F451）；匹配到自由键 ⇒ 400。
+**实现**：`api_schema_pattern_props_ok` 的逐键循环先取共享值计划的 `v`/`q` pin，命中 const/enum 后短路判定；无需剥离——该 subschema 不含 `properties` 键，plan 提取不受影响。
+**验证**：`pp_pin_match_ok` 200 `{"city":"paris","note":…}`；失配/自由键 400；全梯子 f578 绿（121/0、par/fair 0、scaling 1.578×、哨兵 0）。
+**记法**：值级判定的第三类关键字（patternProperties）复用了同一“pin 字面量”事实源；判据仍是“该关键字作用到的每个已发射键都可由 pin 决定”。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

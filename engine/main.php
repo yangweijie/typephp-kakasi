@@ -12119,6 +12119,7 @@ function api_schema_pattern_props_ok(string $schema): int
         }
     }
     $plan = $prblk == "" ? "" : api_top_leaves($prblk, 64);
+    $vpPP = api_schema_value_plan($schema);
     $re = "#" . str_replace("#", "\\#", $mp[1]) . "#";
     foreach (explode(",", $emit) as $name) {
         $r = preg_match($re, $name);
@@ -12126,6 +12127,45 @@ function api_schema_pattern_props_ok(string $schema): int
             return 0;       // unreadable pattern: refuse rather than read the error as "no match"
         }
         if ($r == 1) {
+            // F578: a matching key pinned by the shared value plan decides a const/enum subschema
+            // by construction (match continues, mismatch is a violation ⇒ refuse).
+            $pinPP = "";
+            if ($vpPP != "") {
+                foreach (explode(",", $vpPP) as $entry) {
+                    $ek = explode(":", $entry);
+                    if (count($ek) == 3 && $ek[0] == $name
+                        && ($ek[1] == "v" || $ek[1] == "q")) {
+                        $pinPP = $ek[2];
+                    }
+                }
+            }
+            if ($pinPP != "") {
+                $mm = [];
+                if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9][0-9.eE+-]*|true|false)\s*\}$/',
+                    $vblk, $mm) == 1) {
+                    $litPP = $mm[1];
+                    if (substr($litPP, 0, 1) == "\"") {
+                        $litPP = substr($litPP, 1, strlen($litPP) - 2);
+                    }
+                    if ($litPP != $pinPP) {
+                        return 0;
+                    }
+                    continue;
+                }
+                if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"enum"\s*:\s*\[([^\]]*)\]\s*\}$/',
+                    $vblk, $mm) == 1) {
+                    $okPP = 0;
+                    foreach (api_list($mm[1]) as $evPP) {
+                        if ($evPP == $pinPP) {
+                            $okPP = 1;
+                        }
+                    }
+                    if ($okPP == 0) {
+                        return 0;
+                    }
+                    continue;
+                }
+            }
             $kind = $plan == "" ? "" : api_schema_leaf_kind($plan, $name);
             if ($vtype != "") {
                 if (api_schema_kind_is_type($kind, $vtype) != 1) {

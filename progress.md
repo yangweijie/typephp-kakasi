@@ -2527,3 +2527,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：数值 pin 的 if/not、字符串 pin 的 dependentSchemas 在 `stream:true` 下均全键且值正确；无新传输差异。
 - **证据**：`stream_cond2_f577.log`。
 
+## F578（2026-11-14）：patternProperties 的 pin 匹配判定
+- **实现**：逐键循环先查值计划 pin；const/enum 由 pin 判定（匹配继续、失配 400、自由键 400、未匹配真空）。
+- **门**：`pp_pin_match_ok` 200；`pp_pin_mismatch_refuse`/`pp_pin_free_refuse` 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f578.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.578×；哨兵 0；BUILD_OK（`build_f578`）。
+
