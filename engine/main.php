@@ -4156,7 +4156,8 @@ function api_top_leaves(string $block, int $maxN): string
             } else if (preg_match('/"type"\s*:\s*"(string|integer|number|boolean)"/', $val, $m) == 1
                        || preg_match('/"type"\s*:\s*\[[^\]]*"(string|integer|number|boolean)"[^\]]*\]/', $val, $m) == 1
                        || preg_match('/"const"\s*:\s*"([^"]*)"/', $val, $m) == 1
-                       || preg_match('/"const"\s*:\s*(true|false)/', $val, $m) == 1) {
+                       || preg_match('/"const"\s*:\s*(true|false)/', $val, $m) == 1
+                       || preg_match('/"const"\s*:\s*(-?[0-9][0-9.eE+-]*)/', $val, $m) == 1) {
                 // The second form is a union type (["string","null"], ["string","integer"], …).
                 // Emitting ANY member of the union is schema-valid, so the first recognised member
                 // decides the leaf kind; without this the leaf was dropped entirely (F292).
@@ -4171,6 +4172,10 @@ function api_top_leaves(string $block, int $maxN): string
                     // F567: a typeless boolean const - the literal decides the kind, the value-plan
                     // builder pins it through the q branch.
                     $mk = "b";
+                } else if (preg_match('/^-?[0-9]/', $m[1]) == 1) {
+                    // F572: a typeless numeric const - integer-like kind; the const mapping below
+                    // produces en:<lit> and the value plan pins it through the q branch.
+                    $mk = "i";
                 }
                 // A string enum leaf carries its allowed values in the plan (key:e:v1~v2) so the
                 // builder can decode from the finite set instead of a free-form charset. Numeric

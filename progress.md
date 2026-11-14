@@ -2499,3 +2499,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`not_pin_mismatch_ok`/`not_pin_enum_mismatch_ok` 200；`not_pin_match_refuse`/`not_pin_absent_refuse`/`not_pin_free_refuse` 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f571.log`）；bounds/required/count/pattern 0；8000 121/0；par/fair 0；scaling 1.583×；哨兵 0；BUILD_OK（`build_f571b`）。
 
+## F572（2026-11-14）：无 type 数值 const 进计划；数值 pin 的 not
+- **发现**：`{"const":5}` 叶子被 top_leaves 丢弃；F566 的 const_num_pin 实际由候选层偶然通过。
+- **改动**：top_leaves 识别无 type 数值 const（kind i → en:<lit>），值计划 pin 为 q:<lit>。
+- **门**：`not_num_pin_mismatch_ok` 200、`not_num_pin_match_refuse` 400；既有门不回退。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f572.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.575×；哨兵 0；BUILD_OK（`build_f572`）。
+

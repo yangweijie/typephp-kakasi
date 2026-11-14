@@ -3786,6 +3786,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：五条门（两接受、三拒绝）；全梯子 f571 绿（121/0、par/fair 0、scaling 1.583×、哨兵 0）。
 **记法**：**`not` 是合取取反**——判定循环里“某个键匹配”不能提前下结论，只有“某个键确定失配”可以提前成立。
 
+## F572（2026-11-14）：无 type 数值 const；门绿的“路径假象”
+**发现**：为数值 `not` 补门时暴露 `{"const":5}`（无 type）叶子仍被 `api_top_leaves` 丢弃——F566 的 `const_num_pin_ok` 其实是**候选层**用两个固定值组成完整候选而偶然通过，按值计划并未覆盖该形状。
+**修复**：`api_top_leaves` 增加无 type 数值 const 备选（kind i → 既有 const 映射产出 `en:<lit>`，值计划 pin 为 `q:<lit>`）。门：`not_num_pin_mismatch_ok` 200 `{"count":5,…}`、`not_num_pin_match_refuse` 400。
+**记法**：**门绿不代表走的是目标路径**——固定值形状可能被候选层偶然答对；验证按值计划必须同时确认“计划非空”与“候选让位”（F564 的镜像教训：只改写入器被候选遮蔽；这里是没有计划而候选兜底）。
+**证据**：`schema_required_f572b.log`、`selftest_f572.log`、gate_live f572（121/0、par/fair 0、scaling 1.575×、哨兵 0）。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

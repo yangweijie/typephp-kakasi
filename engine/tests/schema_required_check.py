@@ -719,6 +719,18 @@ cases = [
       "properties": {"city": {"type": "string"}, "note": {"type": "string"}},
       "not": {"properties": {"city": {"const": "lyon"}}}},
      lambda code, txt: code == 400 and "not" in txt),
+    # F572: numeric pins ride the same q kind - the not decision reads the literal, not its type.
+    ("not_num_pin_mismatch_ok", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "not": {"properties": {"count": {"const": 6}}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["count", "note"]
+                        and (obj_of(txt) or {}).get("count") == 5)),
+    ("not_num_pin_match_refuse", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "not": {"properties": {"count": {"const": 5}}}},
+     lambda code, txt: code == 400 and "not" in txt),
     ("if_const_true_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "note": {"type": "string"}},
