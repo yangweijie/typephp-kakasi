@@ -2532,3 +2532,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`pp_pin_match_ok` 200；`pp_pin_mismatch_refuse`/`pp_pin_free_refuse` 400。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f578.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.578×；哨兵 0；BUILD_OK（`build_f578`）。
 
+## F579（2026-11-14）：12 位小数（marker −988，窗口 [−999,−988]）
+- **改动**：全部宽度站点 +1 位（scaled/分支/分子/正则/探测/marker 表/mixed q/窗口/写入器）；自检加 num_dec12/fm_d12/win_twelve + dec12_text/arr12_text；活体加三项精确门。
+- **活体**：`{"n":1.511111111111}`、`{"n":0.000246913578}`、max −988 ⇒ 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f579.log`）；bounds/required/count/pattern 0；8000 121/0；par/fair 0；scaling 1.566×；哨兵 0；BUILD_OK（`build_f579`）。
+- **代价**：整数上界 −988…−999 显式 400；13 位需先评估 double 有效位。
+

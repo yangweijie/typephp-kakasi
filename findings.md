@@ -3823,6 +3823,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：`pp_pin_match_ok` 200 `{"city":"paris","note":…}`；失配/自由键 400；全梯子 f578 绿（121/0、par/fair 0、scaling 1.578×、哨兵 0）。
 **记法**：值级判定的第三类关键字（patternProperties）复用了同一“pin 字面量”事实源；判据仍是“该关键字作用到的每个已发射键都可由 pin 决定”。
 
+## F579（2026-11-14）：12 位小数（marker −988）
+**实现**：网格再进一位——scaled 正则与 `digits==12` 分支（scale 1e12）、分子上限、两分支字面量正则、`{12}` 宽度探测、两处 marker 表、mixed q 范围、窗口守卫、decimal element d=12/scale 1e12；窗口变为 [−999,−988]。
+**文本判据**：自检同时断言 `dec12_text={"n":1.511111111111}` 与 `arr12_text`（三个元素）——F532 的截断只能被文本判据发现，本次预算按字面长度自动适配、无需另改。
+**验证**：自检 RUN_EXIT=0（`num_dec12`/`fm_d12`/`win_twelve`、SCHEMA-NUM-FRAC PASS）；bounds 精确文本两例 + 窗口拒绝；smoke 121/0；par/fair 0；scaling 1.566×；哨兵 0。
+**边界**：整数上界 −988…−999 显式 400；13 位需先评估 double 有效位（约 15–16）与消费端舍入，入队。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
