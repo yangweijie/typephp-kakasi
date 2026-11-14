@@ -10551,9 +10551,171 @@ function api_schema_dependencies_ok(string $schema): int
 // F474: a NON-STRING scalar const/enum extends the same argument (a string value never equals 5 /
 // true / null). A string const, a string enum member or a pattern could match an emitted value and
 // keeps the refusal.
+// F571: `not` over a properties-only subschema is decided by the shared value plan. The subschema
+// passes (so `not` FAILS) when a constrained key is absent from the emitted set or its pinned value
+// matches the const/enum; one decidable mismatch makes the conjunction fail, so `not` holds.
+// A constrained key that is emitted but free (no pin) needs evaluation and returns 0.
+function api_schema_not_props_ok(string $schema, string $sub, string $vp): int
+{
+    if (preg_match('/^\{\s*"properties"\s*:\s*\{/', $sub) != 1) {
+        return 0;
+    }
+    $pbo = strpos($sub, "{", strpos($sub, "\"properties\""));
+    if ($pbo === false) {
+        return 0;
+    }
+    $pblk = api_balance_block($sub, $pbo);
+    if ($pblk == "") {
+        return 0;
+    }
+    $rest = substr($sub, $pbo + strlen($pblk));
+    $rest = str_replace(" ", "", $rest);
+    $rest = str_replace("\n", "", $rest);
+    $rest = str_replace("\t", "", $rest);
+    if ($rest != "}") {
+        return 0;
+    }
+    $keys = api_block_keys($pblk);
+    if ($keys == "") {
+        return 0;
+    }
+    $emit = api_schema_emitted_set($schema);
+    if ($emit == "") {
+        return 0;
+    }
+    foreach (explode(",", $keys) as $k) {
+        if ($k == "") {
+            return 0;
+        }
+        if (strpos("," . $emit . ",", "," . $k . ",") === false) {
+            return 0;   // absent key: the properties subschema passes, so `not` fails
+        }
+        $lit = "";
+        foreach (explode(",", $vp) as $entry) {
+            $ek = explode(":", $entry);
+            if (count($ek) == 3 && $ek[0] == $k && ($ek[1] == "v" || $ek[1] == "q")) {
+                $lit = $ek[2];
+            }
+        }
+        if ($lit == "") {
+            return 0;   // emitted but free: needs value evaluation
+        }
+        $kp2 = strpos($pblk, "\"" . $k . "\"");
+        if ($kp2 === false) {
+            return 0;
+        }
+        $bo2 = strpos($pblk, "{", $kp2);
+        if ($bo2 === false) {
+            return 0;
+        }
+        $one = api_balance_block($pblk, $bo2);
+        if ($one == "") {
+            return 0;
+        }
+        $mm = [];
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false)\s*\}$/',
+            $one, $mm) == 1) {
+            $lit2 = $mm[1];
+            if (substr($lit2, 0, 1) == "\"") {
+                $lit2 = substr($lit2, 1, strlen($lit2) - 2);
+            }
+            if ($lit2 == $lit) {
+                continue;   // this conjunct passes; the conjunction may still fail on another key
+            }
+            return 1;       // a decidable mismatch makes the subschema fail, so `not` holds
+        }
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"enum"\s*:\s*\[([^\]]*)\]\s*\}$/',
+            $one, $mm) == 1) {
+            $okv = 0;
+            foreach (api_list($mm[1]) as $ev) {
+                if ($ev == $lit) {
+                    $okv = 1;
+                }
+            }
+            if ($okv == 1) {
+                continue;   // this conjunct passes; the conjunction may still fail elsewhere
+            }
+            return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+// F571: when api_schema_not_ok accepts, the root `not` entry is removed before the plan extractors
+// run - the judgement-then-strip rule (F557/F558). Only a root-level `not` (after the properties
+// block) is touched; a property literally named "not" stays.
+function api_schema_strip_vacuous_not(string $body): string
+{
+    if (strpos($body, "\"not\"") === false) {
+        return $body;
+    }
+    $schema = $body;
+    if (strpos($body, "\"json_schema\"") !== false) {
+        $schema = api_json_object_after($body, "schema");
+        if ($schema == "") {
+            return $body;
+        }
+    }
+    if (api_schema_not_ok($schema) != 1) {
+        return $body;
+    }
+    $pp = strpos($body, "\"properties\"");
+    $pEnd = 0;
+    if ($pp !== false) {
+        $pbo = strpos($body, "{", $pp);
+        if ($pbo !== false) {
+            $pblk = api_balance_block($body, $pbo);
+            if ($pblk != "") {
+                $pEnd = $pbo + strlen($pblk);
+            }
+        }
+    }
+    $kp = strpos($body, "\"not\"");
+    if ($kp === false || $kp < $pEnd) {
+        return $body;
+    }
+    $bo = strpos($body, "{", $kp);
+    if ($bo === false) {
+        return $body;
+    }
+    $blk = api_balance_block($body, $bo);
+    if ($blk == "") {
+        return $body;
+    }
+    $kend = $bo + strlen($blk);
+    $cutA = $kp;
+    $j = $kp - 1;
+    while ($j >= 0) {
+        $jc = substr($body, $j, 1);
+        if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+            break;
+        }
+        $j = $j - 1;
+    }
+    if ($j >= 0 && substr($body, $j, 1) == ",") {
+        $cutA = $j;
+    } else {
+        $j = $kend;
+        while ($j < strlen($body)) {
+            $jc = substr($body, $j, 1);
+            if ($jc != " " && $jc != "\t" && $jc != "\n" && $jc != "\r") {
+                break;
+            }
+            $j = $j + 1;
+        }
+        if ($j < strlen($body) && substr($body, $j, 1) == ",") {
+            $kend = $j + 1;
+        }
+    }
+    return substr($body, 0, $cutA) . substr($body, $kend);
+}
+
 function api_schema_not_ok(string $schema): int
 {
-    if (api_schema_flat_all_string($schema) != 1) {
+    // F571: a value-plan shape (pinned leaves beside free siblings) is decided on the pin side too.
+    $vp = api_schema_value_plan($schema);
+    if (api_schema_flat_all_string($schema) != 1 && $vp == "") {
         return 0;
     }
     $np = strpos($schema, "\"not\"");
@@ -10600,6 +10762,10 @@ function api_schema_not_ok(string $schema): int
     }
     $me = [];
     if (preg_match('/^\{\s*"enum"\s*:\s*\[\s*' . $sc . '(?:\s*,\s*' . $sc . ')*\s*\]\s*\}$/', $sub, $me) == 1) {
+        return 1;
+    }
+    // F571: a properties-only `not` on a value-plan shape is decided by the shared plan.
+    if ($vp != "" && api_schema_not_props_ok($schema, $sub, $vp) == 1) {
         return 1;
     }
     // F479: an escape-free string const carrying an out-of-charset character is never emitted.
@@ -14043,6 +14209,9 @@ function api_serve_par(int $port): void
                 if (strpos($body, "\"dependencies\"") !== false) {
                     $body = api_schema_strip_vacuous_dependencies($body);
                 }
+                if (strpos($body, "\"not\"") !== false) {
+                    $body = api_schema_strip_vacuous_not($body);
+                }
             }
             if (strpos($body, '"allOf"') !== false) {
                 $body = api_schema_merge_allof($body);
@@ -14667,6 +14836,9 @@ function api_serve(int $port): void
         }
         if (strpos($body, "\"dependencies\"") !== false) {
             $body = api_schema_strip_vacuous_dependencies($body);
+        }
+        if (strpos($body, "\"not\"") !== false) {
+            $body = api_schema_strip_vacuous_not($body);
         }
         if (strpos($body, '"allOf"') !== false) {
             $body = api_schema_merge_allof($body);

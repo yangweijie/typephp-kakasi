@@ -3779,6 +3779,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：`dep_pin_match_ok` 200 全键；`dep_pin_mismatch_refuse`/`dep_free_key_refuse` 400；`deps_*` 镜像；`dep_pin_dropped_vacuous_ok`（required 子集丢弃 pin 键 ⇒ 真空）200 `{note}`。全梯子 f570 绿（121/0、par/fair 0、scaling 1.558×、哨兵 0）。
 **记法**：F562 缺的“不动点”由按值计划提供——发射集取**过滤后的计划**，判定与写入器读同一事实源，依赖约束才能在缺失值与 pin 值之间稳定决断。
 
+## F571（2026-11-14）：`not` 的值级 properties 形态
+**语义**：`not:{properties:{k:{const|enum}}}` 成功 ⇔ 子 schema 失败。缺席键 ⇒ 子真空通过 ⇒ 400；已发射键 pin 匹配 ⇒ 子通过 ⇒ 400；失配 ⇒ 子失败 ⇒ 接受；自由键 ⇒ 400；多键为合取（任一可判失配即成立）。
+**实现**：`not_ok` 入口放宽到按值计划；`api_schema_not_props_ok` 负责判定；`api_schema_strip_vacuous_not` 在两条预处理链剥离 root `not`（判定/剥离同源）。
+**过程**：首版单键匹配即 `return 0`——多键合取会误拒；改为“匹配继续、失配返回 1、全匹配 0”。
+**验证**：五条门（两接受、三拒绝）；全梯子 f571 绿（121/0、par/fair 0、scaling 1.583×、哨兵 0）。
+**记法**：**`not` 是合取取反**——判定循环里“某个键匹配”不能提前下结论，只有“某个键确定失配”可以提前成立。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

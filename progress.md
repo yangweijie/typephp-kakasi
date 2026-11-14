@@ -2494,3 +2494,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：六条全绿（匹配/失配/自由键/镜像/被过滤键真空）。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f570.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.558×；哨兵 0；BUILD_OK（`build_f570`）。
 
+## F571（2026-11-14）：`not` 的值级 properties 形态
+- **实现**：`not_ok` 入口放宽到按值计划；`api_schema_not_props_ok`（匹配⇒子通过⇒400；失配⇒接受；缺席⇒400；自由⇒400；多键合取）；`api_schema_strip_vacuous_not` 剥离 root not。
+- **门**：`not_pin_mismatch_ok`/`not_pin_enum_mismatch_ok` 200；`not_pin_match_refuse`/`not_pin_absent_refuse`/`not_pin_free_refuse` 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f571.log`）；bounds/required/count/pattern 0；8000 121/0；par/fair 0；scaling 1.583×；哨兵 0；BUILD_OK（`build_f571b`）。
+
