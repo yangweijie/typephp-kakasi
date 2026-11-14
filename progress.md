@@ -2509,3 +2509,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：`not_numenum_mismatch_ok` / `not_numenum_match_refuse`（仅测试；代码已在 F571/F572 支持）。
 - **结果**：required harness PASS（`f573`）；引擎无改动，基线不变。
 
+## F574（2026-11-14）：数值/布尔 pin 的 if 条件
+- **缺陷**：if_ok 只收集 v pin、条件 const 只认字符串 ⇒ 数值 const 条件 400。
+- **修复**：pin 表收 v/q；条件 const 正则接受字符串/数字/布尔。
+- **门**：`if_num_const_true_ok`/`if_num_const_false_else_ok` 200、`if_num_const_true_miss_refuse` 400。
+- **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f574.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.590×；哨兵 0；BUILD_OK（`build_f574`）。
+

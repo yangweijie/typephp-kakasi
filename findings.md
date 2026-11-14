@@ -3797,6 +3797,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：路径支持后要补**值类型维度的门**（字符串/数值/布尔 × const/enum），否则回退时无人发现。
 **证据**：`schema_required_f573.log`。
 
+## F574（2026-11-14）：数值/布尔 pin 的 `if` 条件
+**缺陷**：`api_schema_if_ok` 的 pin 表只收集字符串 `v` pin，数值/布尔 `q` pin 被忽略；条件 const 正则也只认字符串——数值 const 条件因此一律 400（F573 的“值类型维度”门暴露）。
+**修复**：pin 表同时收 `v`/`q`；条件 const 正则接受 `"lit"` / 数字 / true|false，字符串去引号后与 pin 比较；enum 沿 `api_list` 裸值比较。
+**验证**：`if_num_const_true_ok`/`if_num_const_false_else_ok` → 200 `{"count":5,"note":…}`；then 缺键 400；全梯子 f574 绿（121/0、par/fair 0、scaling 1.590×、哨兵 0）。
+**记法**：pin 有两种编码（`v`/`q`）；任何读 pin 的判定必须同时认两种，并按值类型补门。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

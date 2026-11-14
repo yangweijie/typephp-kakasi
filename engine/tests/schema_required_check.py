@@ -743,6 +743,28 @@ cases = [
       "properties": {"count": {"const": 5}, "note": {"type": "string"}},
       "not": {"properties": {"count": {"enum": [5, 7]}}}},
      lambda code, txt: code == 400 and "not" in txt),
+    # F574: numeric const conditions take the same if branch as string consts (the decision reads
+    # the leaf's pinned value; the emitted object must carry the then/else key set).
+    ("if_num_const_true_ok", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "if": {"properties": {"count": {"const": 5}}},
+      "then": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["count", "note"]
+                        and (obj_of(txt) or {}).get("count") == 5)),
+    ("if_num_const_false_else_ok", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "if": {"properties": {"count": {"const": 6}}},
+      "else": {"required": ["note"]}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["count", "note"]
+                        and (obj_of(txt) or {}).get("count") == 5)),
+    ("if_num_const_true_miss_refuse", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "if": {"properties": {"count": {"const": 5}}},
+      "then": {"required": ["z"]}},
+     lambda code, txt: code == 400 and "if" in txt),
     ("if_const_true_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "note": {"type": "string"}},

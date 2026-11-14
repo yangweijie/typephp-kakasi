@@ -12307,7 +12307,7 @@ function api_schema_if_ok(string $schema): int
         if ($vp != "") {
             foreach (explode(",", $vp) as $vleaf) {
                 $vkv = explode(":", $vleaf);
-                if (count($vkv) == 3 && $vkv[1] == "v") {
+                if (count($vkv) == 3 && ($vkv[1] == "v" || $vkv[1] == "q")) {
                     $pins[$vkv[0]] = $vkv[2];
                 }
             }
@@ -12340,8 +12340,13 @@ function api_schema_if_ok(string $schema): int
                     return 0;
                 }
                 $mc = [];
-                if (preg_match('/^\{\s*"const"\s*:\s*"([^"]*)"\s*\}$/', $kblk, $mc) == 1) {
-                    if ($mc[1] != $pins[$leafC]) {
+                if (preg_match('/^\{\s*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9][0-9.eE+-]*|true|false)\s*\}$/',
+                    $kblk, $mc) == 1) {
+                    $litC = $mc[1];
+                    if (substr($litC, 0, 1) == "\"") {
+                        $litC = substr($litC, 1, strlen($litC) - 2);
+                    }
+                    if ($litC != $pins[$leafC]) {
                         $condTrue = 0;
                     }
                 } else if (preg_match('/^\{\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $kblk, $mc) == 1) {
