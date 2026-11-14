@@ -3813,6 +3813,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：required harness `f576` PASS；引擎无改动，基线 121/0。
 **记法**：四族判定（if / dependentSchemas / dependencies / not）× 三类值（string/number/bool）× 两种约束（const/enum）的矩阵至此全部有门；后续新增值类型时应按同一矩阵补齐。
 
+## F577（2026-11-14）：值级条件族的流式对账（无新缺陷）
+**方法**：数值 pin 的 `if`、数值 pin 的 `not`、字符串 pin 的 `dependentSchemas` 三例在 `stream:true` 下重发。结果（`stream_cond2_f577.log`）：分别流出 `{"count":5,"note":…}`、`{"count":5,"note":…}`、`{"city":"paris","note":…}`——全键且值正确。
+**结论**：值级条件族在两种传输上一致（剥离与判定都在共用 body 预处理里）；未发现新的传输级差异。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

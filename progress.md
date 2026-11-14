@@ -2523,3 +2523,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：数值 enum 的 if（真/假）、布尔 not（接受/拒绝）、数值 dependent（匹配/失配）六条门；代码已支持。
 - **结果**：required harness PASS（`f576`）；引擎无改动。
 
+## F577（2026-11-14）：值级条件族的流式对账
+- **结果**：数值 pin 的 if/not、字符串 pin 的 dependentSchemas 在 `stream:true` 下均全键且值正确；无新传输差异。
+- **证据**：`stream_cond2_f577.log`。
+

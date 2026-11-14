@@ -1,0 +1,3 @@
+STREAM if_num_pin   status=200 keys=['count', 'note'] head={"count":5,"note":"The question is asking for the number of questions in a set o
+STREAM not_num_pin  status=200 keys=['count', 'note'] head={"count":5,"note":"The question is asking for the number of questions in a set o
+STREAM dep_pin      status=200 keys=['city', 'note'] head={"city":"paris","note":"The city of Paris is home to the Eiffel Tower, a UNESCO 
