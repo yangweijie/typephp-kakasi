@@ -731,6 +731,18 @@ cases = [
       "properties": {"count": {"const": 5}, "note": {"type": "string"}},
       "not": {"properties": {"count": {"const": 5}}}},
      lambda code, txt: code == 400 and "not" in txt),
+    # F573: numeric ENUM pins take the same branch - membership decides the not outcome.
+    ("not_numenum_mismatch_ok", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "not": {"properties": {"count": {"enum": [6, 7]}}}},
+     lambda code, txt: (code == 200 and keys_of(txt) == ["count", "note"]
+                        and (obj_of(txt) or {}).get("count") == 5)),
+    ("not_numenum_match_refuse", "Give the count.",
+     {"type": "object",
+      "properties": {"count": {"const": 5}, "note": {"type": "string"}},
+      "not": {"properties": {"count": {"enum": [5, 7]}}}},
+     lambda code, txt: code == 400 and "not" in txt),
     ("if_const_true_ok", "Say where you are.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "note": {"type": "string"}},

@@ -2505,3 +2505,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`not_num_pin_mismatch_ok` 200、`not_num_pin_match_refuse` 400；既有门不回退。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f572.log`）；bounds/count/pattern 0；8000 121/0；par/fair 0；scaling 1.575×；哨兵 0；BUILD_OK（`build_f572`）。
 
+## F573（2026-11-14）：数值 enum 的 not 验收门
+- **改动**：`not_numenum_mismatch_ok` / `not_numenum_match_refuse`（仅测试；代码已在 F571/F572 支持）。
+- **结果**：required harness PASS（`f573`）；引擎无改动，基线不变。
+

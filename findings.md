@@ -3792,6 +3792,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**门绿不代表走的是目标路径**——固定值形状可能被候选层偶然答对；验证按值计划必须同时确认“计划非空”与“候选让位”（F564 的镜像教训：只改写入器被候选遮蔽；这里是没有计划而候选兜底）。
 **证据**：`schema_required_f572b.log`、`selftest_f572.log`、gate_live f572（121/0、par/fair 0、scaling 1.575×、哨兵 0）。
 
+## F573（2026-11-14）：数值 enum 的 `not` 验收
+**改动**：新增 `not_numenum_mismatch_ok`（pin 5、enum [6,7] ⇒ 200）与 `not_numenum_match_refuse`（pin 5 ∈ [5,7] ⇒ 400）；代码路径 F571/F572 已具备，本轮只补覆盖。
+**记法**：路径支持后要补**值类型维度的门**（字符串/数值/布尔 × const/enum），否则回退时无人发现。
+**证据**：`schema_required_f573.log`。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。
