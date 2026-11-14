@@ -3769,6 +3769,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **验证**：`enum_leaf_pin_ok` → `{"city":"paris","note":…}`；`numenum_leaf_pin_ok` → `{"count":2,"note":…}`；全梯子 f568 绿（120/0、par/fair 0、scaling 1.609×、哨兵 0）。
 **记法**：**让位会把认领权交给下一层**——让位后必须逐一核对下一认领者；根级关键字扫描一律加“无 properties”守卫。
 
+## F569（2026-11-14）：按值计划的流式常驻门
+**改动**：smoke 增 `chat-stream-value-plan`（`stream:true` 下 const+自由叶子必须流出全键对象、city=paris）。
+**结果**：SMOKE **121/0**；par/fair 0；哨兵 0。流式链与混合 `v:` 写入器一致，无需额外接线。
+**记法**：按值计划的消费面覆盖两条传输后，用常驻 smoke 门钉住，避免只靠 required harness 的非流式证据。
+
 ## F560（2026-11-12）：真空条件/依赖形态的流式对照（无新缺陷）
 **方法**：`if`-then 真空、`if`-else 真空、`dependencies` 真空三例在 `stream:true` 下重发。结果（`stream_cond_f560.log`）全部 200，流式内容解析后键集均为 `{city,note}`——剥离发生在两条预处理链（流式与非流式共用同一 body 预处理），故行为一致。
 **结论**：F557/F558/F559 的判空+剥离在两种传输上一致；未发现新的传输差异。

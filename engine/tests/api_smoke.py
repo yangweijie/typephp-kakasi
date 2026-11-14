@@ -1578,6 +1578,25 @@ def main():
     check("chat-stream-contains-max1", 1 <= len(scodes) <= 1
           and all(isinstance(x, str) and len(x) == 3 and x.isupper() for x in scodes), sout)
 
+    # F569: the shared value plan must hold on the streaming transport too - a pinned const leaf
+    # beside a free sibling streams the FULL key set with the pinned literal.
+    st_vp = {"messages": [{"role": "user", "content": "Say where you are."}],
+             "max_tokens": 32, "temperature": 0, "stream": True,
+             "response_format": {"type": "json_schema", "json_schema": {
+                 "name": "x", "schema": {
+                     "type": "object",
+                     "properties": {"city": {"const": "paris"},
+                                    "note": {"type": "string"}}}}}}
+    sraw = post("/v1/chat/completions", st_vp, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    try:
+        svp = json.loads(sout)
+    except Exception:
+        svp = {}
+    check("chat-stream-value-plan", sorted(svp.keys()) == ["city", "note"]
+          and svp.get("city") == "paris", sout)
+
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],
                    "max_tokens": 48,

@@ -2481,3 +2481,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`enum_leaf_pin_ok`、`numenum_leaf_pin_ok`（全键对象，值 ∈ 枚举）。
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f568.log`）；bounds/count/pattern 0；8000 120/0；par/fair 0；scaling 1.609×；哨兵 0；BUILD_OK（`build_f568b`）。
 
+## F569（2026-11-14）：按值计划的流式常驻门
+- **改动**：smoke 增 `chat-stream-value-plan`（`stream:true` 下全键对象、city=paris）。
+- **结果**：SMOKE 121/0；par/fair 0；哨兵 0。**基线：8000 smoke 121/0（F569 起）**。
+

@@ -2256,3 +2256,8 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **门**：`enum_leaf_pin_ok`（200 对象，键集 {city,note}，city∈{paris,lyon}）、`numenum_leaf_pin_ok`（键集 {count,note}，count∈{2,5}）。
 **梯**：自检 **RUN_EXIT=0 / 0 FAIL**（`selftest_f568.log`）；bounds/count/pattern **CHECK_EXIT=0**；8000 **120/0**；8001 par/fair **0**；scaling **1.609×**；哨兵 **0**。BUILD_OK（`build_f568b`）。
 **记法**：**让位会把认领权交给下一层**——候选层让位后必须逐一核对“下一个认领者”是否也满足值级要求；整包关键字扫描的根级判定一律用“无 properties/无 propertyNames”守卫（F543/F555/F568 同族）。
+
+## F569（2026-11-14）：按值计划的流式常驻门
+**改动**：smoke 增 `chat-stream-value-plan`——`stream:true` 下 `{city:{const:"paris"}, note:{type:"string"}}` 必须流出**全键**对象且 city=paris。
+**结果**：`SMOKE: PASS=121 FAIL=0`；8001 par/fair 0；哨兵 0。**基线：8000 smoke 121/0（F569 起）。**
+**结论**：流式链同样消费按值计划（无需额外接线）；混合 `v:` 写入器在两种传输上一致。
