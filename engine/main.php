@@ -11697,6 +11697,68 @@ function api_schema_expand_exponents(string $schema): string
     return $work;
 }
 
+// F589: compare two plain decimal literals without floating point. Fractions are padded to the
+// same length and integer parts compared by length then lexicographically; a negative result flips
+// the ordering. "-0" and "0" compare equal.
+function api_decimal_cmp(string $a, string $b): int
+{
+    $na = 0;
+    if (substr($a, 0, 1) == "-") {
+        $na = 1;
+        $a = substr($a, 1);
+    }
+    $nb = 0;
+    if (substr($b, 0, 1) == "-") {
+        $nb = 1;
+        $b = substr($b, 1);
+    }
+    $da = strpos($a, ".");
+    $ia = $da === false ? $a : substr($a, 0, $da);
+    $fa = $da === false ? "" : substr($a, $da + 1);
+    $db = strpos($b, ".");
+    $ib = $db === false ? $b : substr($b, 0, $db);
+    $fb = $db === false ? "" : substr($b, $db + 1);
+    while (strlen($ia) > 1 && substr($ia, 0, 1) == "0") {
+        $ia = substr($ia, 1);
+    }
+    while (strlen($ib) > 1 && substr($ib, 0, 1) == "0") {
+        $ib = substr($ib, 1);
+    }
+    $zeroA = ($ia == "0" || $ia == "") && preg_match('/^0*$/', $fa) == 1;
+    $zeroB = ($ib == "0" || $ib == "") && preg_match('/^0*$/', $fb) == 1;
+    if ($zeroA) {
+        $na = 0;
+    }
+    if ($zeroB) {
+        $nb = 0;
+    }
+    if ($na != $nb) {
+        return $na == 1 ? -1 : 1;
+    }
+    $L = strlen($fa) > strlen($fb) ? strlen($fa) : strlen($fb);
+    while (strlen($fa) < $L) {
+        $fa = $fa . "0";
+    }
+    while (strlen($fb) < $L) {
+        $fb = $fb . "0";
+    }
+    if ($ia == "") {
+        $ia = "0";
+    }
+    if ($ib == "") {
+        $ib = "0";
+    }
+    $c = 0;
+    if (strlen($ia) != strlen($ib)) {
+        $c = strlen($ia) < strlen($ib) ? -1 : 1;
+    } else if ($ia != $ib) {
+        $c = $ia < $ib ? -1 : 1;
+    } else if ($fa != $fb) {
+        $c = $fa < $fb ? -1 : 1;
+    }
+    return $na == 1 ? -$c : $c;
+}
+
 // F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
 // the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
 // the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
@@ -11737,30 +11799,80 @@ function api_schema_strip_pinned_interval(string $body): string
         }
         $mn = [];
         $mx = [];
-        if (preg_match('/"minimum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mn) != 1
-            || preg_match('/"maximum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mx) != 1
-            || $mn[1] != $mx[1]
+        $hasMin = preg_match('/"minimum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mn);
+        $hasMax = preg_match('/"maximum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mx);
+        if (($hasMin != 1 && $hasMax != 1)
             || preg_match('/"type"\s*:\s*"number"/', $sub) != 1
-            || strpos($sub, "\"multipleOf\"") !== false
             || strpos($sub, "\"exclusiveMinimum\"") !== false
             || strpos($sub, "\"exclusiveMaximum\"") !== false
             || strpos($sub, "\"const\"") !== false
             || strpos($sub, "\"enum\"") !== false) {
             continue;
         }
-        $dots = strpos($mn[1], ".");
-        $d = $dots === false ? 0 : strlen(substr($mn[1], $dots + 1));
-        $sig = str_replace(".", "", str_replace("-", "", $mn[1]));
-        while (strlen($sig) > 1 && substr($sig, 0, 1) == "0") {
-            $sig = substr($sig, 1);
+        $minLit = $hasMin == 1 ? $mn[1] : "";
+        $maxLit = $hasMax == 1 ? $mx[1] : "";
+        $pick = "";
+        if (strpos($sub, "\"multipleOf\"") === false) {
+            // F589: a closed interval contains its smaller endpoint, and a one-sided bound contains
+            // the endpoint itself, so that literal is legal with no arithmetic at all.
+            if ($hasMin == 1 && $hasMax == 1) {
+                if (api_decimal_cmp($minLit, $maxLit) <= 0) {
+                    $pick = $minLit;
+                }
+            } else if ($hasMin == 1) {
+                $pick = $minLit;
+            } else {
+                $pick = $maxLit;
+            }
+        } else {
+            // Zero is a multiple of every positive multiplier, so it serves any bounds containing it.
+            $ok0 = 1;
+            if ($hasMin == 1 && api_decimal_cmp($minLit, "0") > 0) {
+                $ok0 = 0;
+            }
+            if ($hasMax == 1 && api_decimal_cmp($maxLit, "0") < 0) {
+                $ok0 = 0;
+            }
+            if ($ok0 == 1) {
+                $pick = "0";
+            }
         }
-        if ($sig == "0") {
-            $sig = "";
+        if ($pick == "") {
+            continue;                 // real decimal arithmetic is still required
         }
-        if ($d <= 18 && strlen($sig) <= 18) {
+        $wLits = [];
+        if ($minLit != "") {
+            $wLits[] = $minLit;
+        }
+        if ($maxLit != "") {
+            $wLits[] = $maxLit;
+        }
+        if (strpos($sub, "\"multipleOf\"") !== false) {
+            $mo = [];
+            if (preg_match('/"multipleOf"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mo) == 1) {
+                $wLits[] = $mo[1];
+            }
+        }
+        $wide = 0;
+        for ($wi = 0; $wi < count($wLits); $wi++) {
+            $wl = $wLits[$wi];
+            $wdot = strpos($wl, ".");
+            $wd = $wdot === false ? 0 : strlen(substr($wl, $wdot + 1));
+            $ws = str_replace(".", "", str_replace("-", "", $wl));
+            while (strlen($ws) > 1 && substr($ws, 0, 1) == "0") {
+                $ws = substr($ws, 1);
+            }
+            if ($ws == "0") {
+                $ws = "";
+            }
+            if ($wd > 18 || strlen($ws) > 18) {
+                $wide = 1;
+            }
+        }
+        if ($wide == 0) {
             continue;                 // the grid already serves it; leave the route untouched
         }
-        $rep = "{\"type\":\"number\",\"const\":" . $mn[1] . "}";
+        $rep = "{\"type\":\"number\",\"const\":" . $pick . "}";
         $newProps = substr($newProps, 0, $sb) . $rep . substr($newProps, $sb + strlen($sub));
         $changed = 1;
     }
@@ -20457,6 +20569,11 @@ function main(): void
     $piPlan = api_schema_value_plan($piBody);
     $piKeep = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.000123456789012345,"maximum":0.000123456789012345},"note":{"type":"string"}}}');
     $piSpan = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459},"note":{"type":"string"}}}');
+    // F589: closed spans and one-sided bounds serve their smallest legal endpoint; exclusive bounds
+    // and inverted spans stay untouched; a span containing zero serves it under any multipleOf.
+    $piExcl = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMinimum":0.0001234567890123456},"note":{"type":"string"}}}');
+    $piBad = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123459,"maximum":0.0001234567890123456},"note":{"type":"string"}}}');
+    $piZero = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"multipleOf":0.0000000000000000001},"note":{"type":"string"}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -20537,7 +20654,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20558,7 +20675,10 @@ function main(): void
         && $expBounds == "n|1|-995|0"
         && $piPlan == "n:q:0.0001234567890123456,note:s"
         && strpos($piKeep, "\"const\"") === false
-        && strpos($piSpan, "\"const\"") === false
+        && strpos($piSpan, "\"const\":0.0001234567890123456}") !== false
+        && strpos($piExcl, "\"const\"") === false
+        && strpos($piBad, "\"const\"") === false
+        && strpos($piZero, "\"const\":0}") !== false
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"

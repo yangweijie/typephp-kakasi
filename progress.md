@@ -2609,3 +2609,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f588c`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 122/0；par/fair 0；scaling 1.552×；哨兵 0。
 - **边界**：>18 位且 min<max 的**真跨度**仍需十进制串算术（F582 规格），本轮只闭合了单点区间。
 
+## F589（2026-11-15）：>18 位闭区间（取最小合法端点）+ 含 0 的 multipleOf
+- **关键观察**：闭区间一定包含其较小端点，单边界一定包含端点本身——所以不需要任何乘除，只需**十进制串比较**判断端点合法（`api_decimal_cmp`：补零后逐位比较，±0 视为相等）。
+- **实现**：F588 的改写从“min == max”泛化为：无 multipleOf 时取 min（或单侧端点）；有 multipleOf 且区间含 0 时取 0（0 是任意正乘数的倍数）；exclusive 边界与倒置区间保持不改写（继续 400）。
+- **自检**：`pi_span=[const]`、`pi_zero=[zero]`、`pi_excl=[kept]`、`pi_bad=[kept]`、`pi_keep=[grid]`。
+- **活体**（原始 JSON 文本）：`pinned_interval_span19_ok` 200 `{"n":0.0001234567890123456,...}`；`pinned_interval_zero_mult_ok` 200 `{"n":0,...}`；`pinned_interval_excl_refuse`/`pinned_interval_bad_refuse` 400。
+- **梯**：BUILD_OK（`build_f589`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 122/0；par/fair 0；scaling 1.561×；哨兵 0。
+- **边界**：正 min 且带 multipleOf、或排他边界的 >18 位情况仍需真正的十进制串算术（F582）。
+

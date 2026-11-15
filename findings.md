@@ -4987,4 +4987,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：自检 `pi_plan`/`pi_keep`/`pi_span`；活体 `pinned_interval_dec19_ok`（200 精确 `{"n":0.0001234567890123456...}`）与 `pinned_interval_span_refuse`（400）。
 **边界**：真跨度（min<max）在 >18 位仍需十进制串算术（F582 规格）。
 **证据**：`build_f588c.log`、`selftest_f588c.log`（0 FAIL）、四个 `*_f588c` harness（0）、`gate_live_f588c.log`（122/0、par/fair 0、1.552×、哨兵 0）。
+
+## F589（2026-11-15）：>18 位闭区间与含 0 的 multipleOf
+**推理**：闭区间 `[min,max]` 的最小端点总是合法值；单边界同理。因此不需要乘除，只需**字符串比较**决定取哪个端点——`api_decimal_cmp` 补零后比较整数位长度与字典序，±0 等价。multipleOf 的存在让端点一般不再合法，但 **0 是任意正乘数的倍数**，只要区间含 0 就可发 0。
+**实现**：F588 的常量改写扩展为（仅当网格会拒绝时）：无 multipleOf → 取 min/单侧端点；有 multipleOf 且含 0 → 取 0；exclusive 或倒置 → 不改写。宽度守卫同时看 min/max/multipleOf 三个字面量。
+**门**：自检 `pi_span`/`pi_zero`/`pi_excl`/`pi_bad`；活体五个 `pinned_interval_*`（原始 JSON 文本）。
+**记法**：约束面里有很多“取一个合法值”的问题，先问“端点/零点是否天然合法”，能绕开算术的就不写算术；真正需要算术的（正 min + multipleOf、排他边界）留到十进制串实现。
+**证据**：`build_f589.log`、`selftest_f589.log`（0 FAIL）、四个 `*_f589` harness（0）、`gate_live_f589.log`（122/0、par/fair 0、1.561×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

@@ -1244,10 +1244,42 @@ if not good:
 print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_dec19_ok", code, good, txt[:140]))
 
 code, txt = post_raw(raw_body("0.0001234567890123456", "0.0001234567890123459"))
+good = code == 200 and '"n":0.0001234567890123456' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_span19_ok", code, good, txt[:140]))
+
+
+def raw_leaf(leaf):
+    return ('{"messages":[{"role":"user","content":"Give the number."}],'
+            '"response_format":{"type":"json_schema","json_schema":{"name":"bnd","schema":'
+            '{"type":"object","properties":{'
+            '"n":' + leaf + ',"note":{"type":"string"}}}}},'
+            '"max_tokens":64,"temperature":0}')
+
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123456,'
+                              '"maximum":0.0001234567890123459,'
+                              '"exclusiveMinimum":0.0001234567890123456}'))
 good = code == 400 and "numeric bounds" in txt
 if not good:
     bad += 1
-print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_span_refuse", code, good, txt[:140]))
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_excl_refuse", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123459,'
+                              '"maximum":0.0001234567890123456}'))
+good = code == 400 and "numeric bounds" in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_bad_refuse", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":-0.0001234567890123456,'
+                              '"maximum":0.0001234567890123456,'
+                              '"multipleOf":0.0000000000000000001}'))
+good = code == 200 and '"n":0,' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_zero_mult_ok", code, good, txt[:140]))
 
 for case in cases:
     label, prompt, schema, ok = case[:4]
