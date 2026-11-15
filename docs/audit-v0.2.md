@@ -732,4 +732,8 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 
 **增补（F627–F631，同日）**：`n` 越界与 `best_of`（F627）、`n>1`×约束解码（F630）、未知 `response_format`/`text.format` 类型与 `tool_choice` 字符串、越界 `temperature`/`top_p`（F628）全部具名 400；`count_tokens` 覆盖 8000/8001（F626/F629）；FR-05 以**声明式厂商档案**落地（F631：`plugins/vendor_profiles.txt` → attn_mode/kv_f16，启动应用、`PLUGINS` 横幅、`GET /plugins` 只读报告，双服务有门）——动态代码加载在单二进制/禁 FFI 约束下不做。
 
+**增补（F632–F641，同日）**：参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `thinking`/`modalities`/`min_p`（F632）；错误信封按出口成形——非流式（F633）与流式（F634，`event: error`，Anthropic 不带 `[DONE]`），8001 的五个写点同步（F640）；F634 的门顺带抓出 Anthropic 流式 `json_schema` **未认领仍落自由文本**的 fail-open（与 F600/F601 同类）；F635 把五组参数谓词挂到 stream 分流前、F637/F638 把 schema 形状守卫（关键字/pattern/bounds/纯界 oneOf/深对象数组/工具形状/嵌套上限）同样前移（外层先做 pinned-interval 重写，避免误拒工具精确字面量）；8001 同步（F636）。单元层：`PARAM-GUARDS`（20 谓词用例 + 4 schema 用例，含 F637 回归的单元版，F639）与 `PROFILES`（厂商档案首匹配/通配回落/跳行，F641）。
+
+**回归口径（F641）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE/SMOKE-PRETTY 各 **191/0**；8001 par/fair 0（含 `par-sampling/param/schema-keyword/error-shape` 与 `par-count-tokens`、`par-plugins`）；哨兵 0；`check_gates 199/0`。
+
 **仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包（**已做**：F623 的 `VERSION` + `scripts/package.sh` + manifest 哈希自校验，`/health` 返回同源版本，门 `health-version`；F624 追加 zip 安装包 + `7z t` 自检）。
