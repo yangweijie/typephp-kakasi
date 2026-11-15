@@ -338,10 +338,21 @@ cases = [
     ("marker_window_fourteen_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -986}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
-    # F581: the ceiling is a tested behaviour - fifteen fraction places exceed the decimal grid,
-    # so the request must be refused as named numeric bounds, never served by a fallback.
-    ("dec_over15_refuse", "Give the number.",
+    # F583: fifteen places is the last shelf a double round-trips (16 significant digits); the
+    # sixteen-place request below cannot be read back exactly, so it stays refused.
+    ("float_dec15_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511111111111111, "maximum": 1.511111111111119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.511111111111111}'),
+    ("num_mult_frac_d15_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.000123456789012}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.000246913578024}'),
+    ("marker_window_fifteen_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -985}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F583: the ceiling is a tested behaviour - sixteen fraction places exceed the decimal grid,
+    # so the request must be refused as named numeric bounds, never served approximately.
+    ("dec_over16_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.1511111111111111, "maximum": 0.1511111111111119}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
     # (the self-test decodes its token continuation, not the HTTP body).

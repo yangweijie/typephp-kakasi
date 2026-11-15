@@ -1,0 +1,13 @@
+HEALTH_OK port=8000 polls=1
+SMOKE: PASS=121 FAIL=0
+SERVED-SPEC plain:   concurrent : chunks=122 wall=2.23s rate=54.73 tok/s errors=0
+SERVED-SPEC spec :   concurrent : chunks=122 wall=2.24s rate=54.37 tok/s errors=0
+SERVED-SPEC stats: {"stats":"drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off"}
+SPEC-PROBE greedy  :   speedup k=8        vs plain: 1.618x | SPEC-GREEDY: PASS measured
+SPEC-PROBE sampled :   speedup tree(1,6)  vs plain: 1.397x | SPEC-GREEDY: PASS measured
+HEALTH_OK port=8001 polls=1
+PAR: PAR_EXIT=0
+FAIR: FAIR_EXIT=0
+THRU:   scaling    : 1.610x (1.000 = no parallel gain, 2.000 = perfect) THROUGHPUT: PASS measured 
+SENTINELS_LEFT=0
+GATE_LIVE_DONE tag=f583

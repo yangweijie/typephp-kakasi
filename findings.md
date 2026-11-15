@@ -4952,4 +4952,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **数组枚举写入器的同类违反（F581 修复）**：单成员 300 字符 enum 的数组最初返回 `{"cities":["ppp…,ppp…"]}`——固定 24 步预算把成员截断并在同一字符串内重复，元素不再属于 enum（静默违反）。`$must`/`$vals[$it]`/`$cands` 三处改为按字面量长度（候选取最大长度+4）后逐字发射。教训：**枚举/常量类写入器必须逐元素做“输出 ∈ 允许集合”的断言**，只检查整体 200 会漏掉截断后仍合法 JSON 的情况。
 **数值表对照**：30 位整数枚举成员逐字往返（`long_num_enum_item_exact`），说明数值表写入器没有固定预算；截断面集中在字符串 continuation 的固定步数处。
 **对象数组边界**：AO 元素内的 `const` 不被任何写入器认领，显式 400 并点名 `items`（`long_const_in_ao_refuse`）——这是明确的未实现面，而非静默违反；顶层与标量数组内的长 const 均已逐字覆盖。
+
+## F583（2026-11-15）：15 位小数（marker −985），并更正“15 位需换表示”的假设
+**有效位证据**：`repr(1.511111111111111)="1.511111111111111"`（16 位有效数字，round-trip 精确）；`repr(1.5111111111111111)` 退化为同一个 15 位小数字面量（17 位有效数字不可往返）。因此**双精度的真实墙是 16 位小数**，15 位可以沿用缩放 int64 网格：1×10^15 + 14 位小数 = 16 位，整数位最多 3 位（F581 的 18 位守卫）。F582 规格“15 位需换表示”的判断据此更正；需要换表示的是 16 位。
+**实现/门**：与 F580/F581 同构（scaled/分子/正则/探测/marker 表/mixed q/窗口 [−999,−985]/decimal element/写入器白名单）；自检 `num_dec15`、`fm_d15`、`win_fifteen`、`dec15_text`，上限门翻为 `over16`（16 位必须拒绝）；活体 `float_dec15_served`、`num_mult_frac_d15_ok`、`marker_window_fifteen_refuse`、`dec_over16_refuse`。
+**记法**：对“消费端能否表示”的断言必须用**实测 repr/文本**取证，不能按有效位数估算——15 与 16 的边界就是这样被前一轮规格写错的。
+**证据**：`build_f583.log`、`selftest_f583.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f583.log`（`CHECK_EXIT=0`）、`gate_live_f583.log`（smoke 121/0、par/fair 0、scaling 1.610×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

@@ -2565,3 +2565,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **数组枚举写入器修复（f581i）**：`long_enum_item_exact`（单成员 300 字符 enum 的数组）先失败——`{"cities":["ppp…,ppp…"]}`：固定 24 步预算把成员截断并在字符串内重复，属于**静默违反**。`$must`/`$vals[$it]`/`$cands` 三处改为按字面量长度给预算（`$candSteps` 取候选最大长度+4）后逐字发射。梯：自检 0 FAIL；四 harness 0；8000 121/0；par/fair 0；scaling 1.598×；哨兵 0（`selftest_f581i.log`/`gate_live_f581i.log`）。
 - **数值表压力门（f581j）**：30 位整数枚举成员逐字通过（`long_num_enum_item_exact`），数值表写入器同为文本路径、无固定预算截断；保留为常驻门。
 
+## F583（2026-11-15）：15 位小数（marker −985）——修正“15 位需换表示”的假设
+- **有效位复核**：1.511111111111111（16 位有效数字）可精确 round-trip；1.5111111111111111（17 位）会退化成同一 double。**真实墙在 16 位小数，不在 15**，F582 规格的前提据此更正。
+- **实现**：同构再进一档（scaled `*1e15`、分子上限 15、正则 `{1,15}`、`{15}` 探测、两张 marker 表、mixed q、窗口 [−999,−985]、decimal element −985/scale 1e15、写入器白名单）；int64 守卫不变（整数位 + 15 ≤ 18 ⇒ 整数位最多 3 位）。
+- **自检**：`num_dec15=[n|1511111111111111|-985|0]`、`fm_d15=[n|246913578024|-985|0]`、`win_fifteen=[]`、`dec15_text={"n":1.511111111111111}`；上限门翻到 `over16`（16 位小数必须拒绝）。
+- **活体**：`float_dec15_served` 200 精确；`num_mult_frac_d15_ok` 200 `{"n":0.000246913578024}`；`marker_window_fifteen_refuse`/`dec_over16_refuse` 400。
+- **梯**：BUILD_OK（`build_f583`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.610×；哨兵 0。
+
