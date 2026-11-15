@@ -2717,4 +2717,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **发现**：`output_format.schema` 翻译只追加 `json_schema`（无 `response_format`），守卫原条件不会触发；工具 schema 用 `input_schema` 而非 `parameters`，两个工具守卫扫不到。
 - **修复**：两条传输的守卫改为只看 `"json_schema"` 存在；`api_tools_deep_array_object`/`api_tools_required_unservable` 同时扫描 `parameters` 与 `input_schema`。
 - **门**：`anth-unclaimed-refuse`、`anth-tool-required-refuse`、`anth-deep3-refuse` 双模式 PASS（均 400）；**SMOKE/SMOKE-PRETTY 136/0**；四 harness 0、自检 0 FAIL、哨兵 0。
+- **Responses 传输（f604b）**：`resp-unclaimed-refuse`、`resp-deep3-refuse`、`resp-tool-required-refuse` 双模式 PASS（`text.format` 的 `json_schema` 记号与函数 `parameters` 同样命中守卫）；**双模式 smoke 139/0**。
 

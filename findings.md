@@ -5099,4 +5099,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`anth-unclaimed-refuse`、`anth-tool-required-refuse`、`anth-deep3-refuse` 双模式 PASS（400），既有 133 项全绿 ⇒ **双模式 136/0**。
 **记法**：同一语义在**每条传输**都要有等价入口（OpenAI response_format / Anthropic output_format / 工具 parameters vs input_schema）；检测器的“键名假设”是最常见的传输级缺口。
 **证据**：`build_f604.log`、`selftest_f604.log`（0 FAIL）、四个 `*_f604` harness（0）、`gate_live_f604.log`（136/0 双模式）。
+**Responses 传输**：`text.format` 的 `json_schema` 记号与函数 `parameters` 同样命中守卫——`resp-unclaimed-refuse`/`resp-deep3-refuse`/`resp-tool-required-refuse` 双模式 PASS（`gate_live_f604b.log`，**139/0**）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

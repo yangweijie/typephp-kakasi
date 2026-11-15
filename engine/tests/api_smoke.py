@@ -1895,6 +1895,37 @@ def main():
         a3 = e.code == 400
     check("anth-deep3-refuse", a3)
 
+    # F604: Responses transport parity - text.format carries "type":"json_schema" with a schema,
+    # and functions declare parameters; the same fail-closed paths must apply.
+    resp_unc = {"input": "Give the data.", "max_output_tokens": 48,
+                "text": {"format": {"type": "json_schema", "name": "x", "schema": unc_schema}}}
+    r1 = False
+    try:
+        post("/v1/responses", resp_unc)
+    except urllib.error.HTTPError as e:
+        r1 = e.code == 400
+    check("resp-unclaimed-refuse", r1)
+
+    resp_deep = {"input": "Give the data.", "max_output_tokens": 48,
+                 "text": {"format": {"type": "json_schema", "name": "x", "schema": probe_schema}}}
+    r2 = False
+    try:
+        post("/v1/responses", resp_deep)
+    except urllib.error.HTTPError as e:
+        r2 = e.code == 400
+    check("resp-deep3-refuse", r2)
+
+    resp_tool = {"input": "Put the note.", "max_output_tokens": 32, "tool_choice": "required",
+                 "tools": [{"type": "function", "name": "put", "parameters": {
+                     "type": "object", "properties": {"q": {"type": "string"}},
+                     "required": ["q"]}}]}
+    r3 = False
+    try:
+        post("/v1/responses", resp_tool)
+    except urllib.error.HTTPError as e:
+        r3 = e.code == 400
+    check("resp-tool-required-refuse", r3)
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.
