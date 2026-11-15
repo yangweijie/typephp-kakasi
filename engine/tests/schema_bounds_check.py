@@ -38,6 +38,18 @@ def ask(prompt, schema, max_tokens=64):
         return e.code, e.read().decode()[:900]
 
 
+def post_raw(body_text):
+    # F588: a nineteen-place literal cannot survive a Python float, so the request is sent as raw
+    # JSON text - the same bytes any arbitrary-precision client would send.
+    req = urllib.request.Request(URL, data=body_text.encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as f:
+            return f.getcode(), json.loads(f.read().decode())["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()[:900]
+
+
 def valid_json(text):
     try:
         json.loads(text)
@@ -1213,6 +1225,30 @@ cases = [
 ]
 
 bad = 0
+# F588: minimum == maximum beyond the grid is a const - the only legal value is that literal, so
+# it must be served verbatim. The same width with a real span has no decimal-string arithmetic yet
+# and must stay refused; both cases are sent as raw JSON text.
+def raw_body(minlit, maxlit):
+    return ('{"messages":[{"role":"user","content":"Give the number."}],'
+            '"response_format":{"type":"json_schema","json_schema":{"name":"bnd","schema":'
+            '{"type":"object","properties":{'
+            '"n":{"type":"number","minimum":' + minlit + ',"maximum":' + maxlit + '},'
+            '"note":{"type":"string"}}}}},'
+            '"max_tokens":64,"temperature":0}')
+
+
+code, txt = post_raw(raw_body("0.0001234567890123456", "0.0001234567890123456"))
+good = code == 200 and '"n":0.0001234567890123456' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_dec19_ok", code, good, txt[:140]))
+
+code, txt = post_raw(raw_body("0.0001234567890123456", "0.0001234567890123459"))
+good = code == 400 and "numeric bounds" in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_span_refuse", code, good, txt[:140]))
+
 for case in cases:
     label, prompt, schema, ok = case[:4]
     mt = case[4] if len(case) > 4 else 64

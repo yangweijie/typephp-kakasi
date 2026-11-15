@@ -4979,4 +4979,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **教训**：① 构建失败但 `build_check.log` 为空 ⇒ 先查 `serve.on` 与在跑引擎（本轮正是上一轮 gate_live 的残留），不是源码错误；② 支持化语义翻转要同轮翻旧期望——`frac_exp` 就是被新门抓出来的。
 **证据**：`build_f587c.log`、`selftest_f587c.log`（0 FAIL）、四个 `*_f587c` harness（0）、`gate_live_f587c.log`（121/0、par/fair 0、1.589×、哨兵 0）。
 **流式对账**：`chat-stream-exp-bounds` 在 `stream:true` 下流出 `{"n":0.00001}`（`gate_live_f587d.log`，smoke **122/0**，基线 121→122）。
+
+## F588（2026-11-15）：>18 位单点区间改写为 const
+**语义**：`[x,x]` 的唯一合法值就是 x，因此不经过任何数值算术，直接把叶子改写为 `const`，由值计划的文本 pin 精确发射（任意长度）。触发条件严格限定为“网格会拒绝”的宽度（小数位或有效位数 >18），18 位及以下仍走原路径，避免既有门大规模翻转。
+**接线教训**：校验链在 `$schBody`（取自 `$body`）上做 pattern/bounds/keywords 判定，**早于**两处预处理 strip；首版把改写放在旧 strip 链导致活体仍 400。正确位置是 `$schBody` 计算之前。
+**活体取证手法**：19 位字面量无法用 Python float 表达（<1e-4 会变科学计数法），harness 新增 `post_raw` 直接发送原始 JSON 文本——这也是任意精度客户端的真实形态。
+**门**：自检 `pi_plan`/`pi_keep`/`pi_span`；活体 `pinned_interval_dec19_ok`（200 精确 `{"n":0.0001234567890123456...}`）与 `pinned_interval_span_refuse`（400）。
+**边界**：真跨度（min<max）在 >18 位仍需十进制串算术（F582 规格）。
+**证据**：`build_f588c.log`、`selftest_f588c.log`（0 FAIL）、四个 `*_f588c` harness（0）、`gate_live_f588c.log`（122/0、par/fair 0、1.552×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

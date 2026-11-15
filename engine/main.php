@@ -11697,6 +11697,83 @@ function api_schema_expand_exponents(string $schema): string
     return $work;
 }
 
+// F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
+// the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
+// the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
+function api_schema_strip_pinned_interval(string $body): string
+{
+    $pp = strpos($body, "\"properties\"");
+    if ($pp === false) {
+        return $body;
+    }
+    $bo = strpos($body, "{", $pp);
+    if ($bo === false) {
+        return $body;
+    }
+    $props = api_balance_block($body, $bo);
+    if ($props == "") {
+        return $body;
+    }
+    $keys = api_block_keys($props);
+    if ($keys == "") {
+        return $body;
+    }
+    $newProps = $props;
+    $changed = 0;
+    $keyList = explode(",", $keys);
+    for ($ki = 0; $ki < count($keyList); $ki++) {
+        $key = $keyList[$ki];
+        $kp = strpos($newProps, "\"" . $key . "\"");
+        if ($kp === false) {
+            continue;
+        }
+        $sb = strpos($newProps, "{", $kp);
+        if ($sb === false) {
+            continue;
+        }
+        $sub = api_balance_block($newProps, $sb);
+        if ($sub == "") {
+            continue;
+        }
+        $mn = [];
+        $mx = [];
+        if (preg_match('/"minimum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mn) != 1
+            || preg_match('/"maximum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mx) != 1
+            || $mn[1] != $mx[1]
+            || preg_match('/"type"\s*:\s*"number"/', $sub) != 1
+            || strpos($sub, "\"multipleOf\"") !== false
+            || strpos($sub, "\"exclusiveMinimum\"") !== false
+            || strpos($sub, "\"exclusiveMaximum\"") !== false
+            || strpos($sub, "\"const\"") !== false
+            || strpos($sub, "\"enum\"") !== false) {
+            continue;
+        }
+        $dots = strpos($mn[1], ".");
+        $d = $dots === false ? 0 : strlen(substr($mn[1], $dots + 1));
+        $sig = str_replace(".", "", str_replace("-", "", $mn[1]));
+        while (strlen($sig) > 1 && substr($sig, 0, 1) == "0") {
+            $sig = substr($sig, 1);
+        }
+        if ($sig == "0") {
+            $sig = "";
+        }
+        if ($d <= 18 && strlen($sig) <= 18) {
+            continue;                 // the grid already serves it; leave the route untouched
+        }
+        $rep = "{\"type\":\"number\",\"const\":" . $mn[1] . "}";
+        $newProps = substr($newProps, 0, $sb) . $rep . substr($newProps, $sb + strlen($sub));
+        $changed = 1;
+    }
+    if ($changed == 0) {
+        return $body;
+    }
+    $abs = strpos($body, $props, $bo);
+    if ($abs === false) {
+        return $body;
+    }
+    return substr($body, 0, $abs) . $newProps . substr($body, $abs + strlen($props));
+}
+
 function api_schema_strip_vacuous_dep(string $body): string
 {
     $dp = strpos($body, "\"dependentSchemas\"");
@@ -14514,6 +14591,7 @@ function api_serve_par(int $port): void
                 $body = api_schema_resolve_refs($body);
                 if (strpos($body, "\"dependentSchemas\"") !== false) {
                     $body = api_schema_expand_exponents($body);
+                    $body = api_schema_strip_pinned_interval($body);
                     $body = api_schema_strip_vacuous_dep($body);
                 }
                 if (strpos($body, "\"if\"") !== false) {
@@ -15143,6 +15221,7 @@ function api_serve(int $port): void
         }
         if (strpos($body, '"dependentSchemas"') !== false) {
             $body = api_schema_expand_exponents($body);
+                    $body = api_schema_strip_pinned_interval($body);
                     $body = api_schema_strip_vacuous_dep($body);
         }
         if (strpos($body, "\"if\"") !== false) {
@@ -15254,6 +15333,10 @@ function api_serve(int $port): void
             // F398: the constraint checks below apply to the RESPONSE schema only. Scanning the whole
             // body also matched tool parameter schemas, where `required` naming a subset is normal
             // and is handled by the tool path - that refused 53 working smoke cases. Scope first.
+            // F588: the validation chain reads the response schema directly from $body, so the
+            // pinned-interval rewrite must happen here - the earlier preprocessing sites sit in
+            // other branches and never touch this path.
+            $body = api_schema_strip_pinned_interval($body);
             $schBody = strpos($body, "\"json_schema\"") !== false
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
@@ -20368,6 +20451,12 @@ function main(): void
     $expC = api_number_expand_literal("-1.25e-2");
     $expBig = api_number_expand_literal("1e-19");
     $expBounds = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1e-5,"maximum":2e-5}}}');
+    // F588: a single-point interval beyond the grid becomes a const pin; a smaller width and a
+    // real span keep their old routes.
+    $piBody = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123456},"note":{"type":"string"}}}');
+    $piPlan = api_schema_value_plan($piBody);
+    $piKeep = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.000123456789012345,"maximum":0.000123456789012345},"note":{"type":"string"}}}');
+    $piSpan = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459},"note":{"type":"string"}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -20448,7 +20537,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20467,6 +20556,9 @@ function main(): void
         && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0" && $bdWinNine == "" && $bdWinTen == "" && $bdWinEleven == "" && $bdWinTwelve == "" && $bdWinThirteen == "" && $bdWinFourteen == "" && $bdWinFifteen == "" && $bdWinSixteen == "" && $bdWinSeventeen == "" && $bdWinEighteen == "" && $bdOver19 == ""
         && $expA == "0.00001" && $expB == "2500" && $expC == "-0.0125" && $expBig == ""
         && $expBounds == "n|1|-995|0"
+        && $piPlan == "n:q:0.0001234567890123456,note:s"
+        && strpos($piKeep, "\"const\"") === false
+        && strpos($piSpan, "\"const\"") === false
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"

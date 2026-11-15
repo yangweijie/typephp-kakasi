@@ -2600,3 +2600,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **过程坑**：第二次构建 `BUILD_FAILED rc=1` 且 `build_check.log` 为空——是上一轮 gate_live 残留的 `engine/serve.on`/引擎进程；清哨兵后重跑通过（构建前必须确认无 serve 哨兵与在跑引擎）。
 - **流式对账（f587d）**：smoke 新增 `chat-stream-exp-bounds`——`stream:true` 下 `1e-5/2e-5` 的 bounds 必须流出 `{"n":0.00001}`，PASS；**基线 smoke 121→122**；par/fair 0、scaling 1.589×、哨兵 0。
 
+## F588（2026-11-15）：>18 位单点区间（minimum == maximum）改写为 const
+- **动机**：18 位是缩放 int64 的末端；但 `[x,x]` 的唯一合法值就是 x，不需要算术——直接把它变成 `const` 文本 pin 即可精确发射任意长度。
+- **实现**：`api_schema_strip_pinned_interval` 在 properties 块内逐键检查（min/max 字面量**文本相同**、type number、无 multipleOf/exclusive/const/enum）；仅当**网格会拒绝**（小数位或有效位数 >18）才把叶子改写为 `{"type":"number","const":<lit>}`，其余宽度保持原路径（不动点、零回归）。
+- **接线坑（重要）**：校验链的 `$schBody` 直接取自 `$body`（约 15336 行），早于两处预处理 strip——所以改写必须发生在 `$schBody` 计算之前；首版放在旧接线点导致活体仍 400，补在 `$schBody` 前通过。
+- **自检**：`pi_plan=[n:q:0.0001234567890123456,note:s]`、`pi_keep=[grid]`（18 位不触发）、`pi_span=[kept]`（真跨度不触发）。
+- **活体**：`pinned_interval_dec19_ok` 200 精确 `{"n":0.0001234567890123456,...}`（原始 JSON 文本发送，Python float 无法表达 19 位）；`pinned_interval_span_refuse` 400。
+- **梯**：BUILD_OK（`build_f588c`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 122/0；par/fair 0；scaling 1.552×；哨兵 0。
+- **边界**：>18 位且 min<max 的**真跨度**仍需十进制串算术（F582 规格），本轮只闭合了单点区间。
+
