@@ -1,0 +1,62 @@
+HEALTH_OK port=8000 polls=1
+str_min3_max4          status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+int_min2_max2          status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+obj_items_count        status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+outer_bound_refuse     status=400 ok=True text={"error":{"message":"schema keyword not supported: maxItems (minItems/maxItems are honoured on a single scalar-array pro
+str_min2_max3_stream   status=200 ok=True text={"cities":["Lyon, France, Prov","Lyon, France, Prov"]}
+str_min6_max7_raise    status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+str_min9_refuse        status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+str_bounds_before_items status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+top_min2_max2          status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+top_min6_max7_raise    status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+top_max0_refuse        status=400 ok=True text={"error":{"message":"schema keyword not supported: maxItems (minItems/maxItems are honoured on a single scalar-array pro
+multi_leaf_min2_max2   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+multi_leaf_min6_raise  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+multi_leaf_bad_refuse  status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+ao_min2_max2           status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+ao_bad_refuse          status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+ao_multi_count         status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+ao_multi_req_refuse    status=400 ok=True text={"error":{"message":"schema keyword not supported: required (minItems/maxItems are honoured on a single scalar-array pro
+nested_min2_max2       status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+nested_bad_refuse      status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+nested_two_count       status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+nested_stray_refuse    status=400 ok=True text={"error":{"message":"schema keyword not supported: minItems (minItems/maxItems are honoured on a single scalar-array pro
+unique_true_refuse     status=400 ok=True text={"error":{"message":"schema keyword not supported: uniqueItems (minItems/maxItems are honoured on a single scalar-array 
+unique_false_served    status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_type_served   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_pattern_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array pro
+contains_const_served  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_enum_served   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_const_served  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_pattern_items_same_ok status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_pattern_items_diff_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array pro
+contains_min0_served   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_min0_max_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array pro
+contains_max0_served   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_max0_type_ok  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+contains_max0_overlap_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array pro
+not_type_served        status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+not_pattern_refuse     status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property
+not_const_num_served   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+not_const_str_refuse   status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property
+not_const_bang_served  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+not_enum_bang_served   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+not_enum_charset_miss_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property
+not_pattern_bang_served status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+not_pattern_charset_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property
+propertynames_refuse   status=400 ok=True text={"error":{"message":"schema keyword not supported: propertyNames (minItems/maxItems are honoured on a single scalar-arra
+propertynames_mixed_ok status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+propertynames_mixed_bad_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: propertyNames (minItems/maxItems are honoured on a single scalar-arra
+dependent_required_mixed_ok status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+dependent_required_mixed_bad_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentRequired (minItems/maxItems are honoured on a single scalar-
+dependent_schemas_mixed_ok status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+dependent_schemas_mixed_bad_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-a
+dependencies_mixed_ok  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+dependencies_mixed_bad_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: dependencies (minItems/maxItems are honoured on a single scalar-array
+props_mixed_min_ok     status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"
+props_mixed_min_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: minProperties (minItems/maxItems are honoured on a single scalar-arra
+props_mixed_max_refuse status=400 ok=True text={"error":{"message":"schema keyword not supported: maxProperties (minItems/maxItems are honoured on a single scalar-arra
+VERDICT: FAIL cases=32
+CHECK_EXIT=1
+SENTINELS_LEFT=0
+SCHEMA_COUNT_RUN_DONE tag=f600

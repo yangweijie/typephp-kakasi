@@ -1,0 +1,5 @@
+THROUGHPUT port=8000 tokens=60 streams=2 spec=off temp=0.9
+  serial     : chunks=61 wall=1.15s rate=53.13 tok/s 
+  concurrent : chunks=122 wall=2.27s rate=53.81 tok/s errors=0
+  scaling    : 1.013x (1.000 = no parallel gain, 2.000 = perfect)
+THROUGHPUT: PASS measured

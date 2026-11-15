@@ -1,0 +1,24 @@
+code_upper3              status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+sku_digits               status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+x_then_two_lower         status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+multi_leaf_pattern       status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+multi_leaf_all_required  status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+range_sku_served         status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+star_served              status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+unanchored_served        status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+negated_class_served     status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+neg_underscore_served    status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+neg_caret_served         status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+neg_empty_refuse         status=400 ok=True text={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals","type":"invalid
+escape_served            status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+escape_w_served          status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+escape_upper_D_served    status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+escape_backslash_refuse  status=400 ok=True text={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals","type":"invalid
+range_last_served        status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+plus_digits_served       status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+nonlast_star_served      status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+nonlast_range_served     status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+nonlast_star0_served     status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+literal_alt_regression   status=400 ok=False text={"error":{"message":"response schema is not supported by any constrained writer; refuse instead of ignoring it","type":"invalid_request_erro
+VERDICT: FAIL cases=20
+CHECK_EXIT=1

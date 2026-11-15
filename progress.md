@@ -2691,3 +2691,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **自检**：`dt=[1|0]`；**活体**：`tool-deep3-ao` 双模式 PASS（400）。
 - **梯**：BUILD_OK（`build_f599`）；自检 0 FAIL；四 harness 0；SMOKE 与 SMOKE-PRETTY **131/0**；par/fair 0；哨兵 0。
 
+## F600（2026-11-15，负结果，已回滚）：统一失败关闭的首次尝试
+- **尝试**：在两条传输的“schema 产物为空”处加 400 守卫。
+- **失败**：成功路由同样经过空产物中间态 ⇒ smoke 16 项即崩、四 harness 全红；回滚后基线恢复（131/0 双模式）。
+- **结论**：需要**显式 claim 信号**或把分发重构为“返回 claim 的函数”；不能用中间变量为空推断无人认领。已写入 findings，作为队列 #1 的前置条件。
+

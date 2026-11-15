@@ -5065,4 +5065,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修复**：`api_tools_deep_array_object` 逐个 `parameters` 块调用 F598 检测器，命中即具名 400；自检 `dt=[1|0]`。
 **记法**：同一“不可服务形态”要在**每条入口**都拒绝（响应 schema、流式、工具参数）；一处修好不代表面闭合——工具路径的默认值（空参）会把静默违反伪装成成功。
 **证据**：`gate_live_f598b.log`（红：`{}`）、`gate_live_f599.log`（131/0 双模式）、`api_smoke_f599.log`（`PASS tool-deep3-ao`）。
+
+## F600（2026-11-15，负结果，已回滚）：分发末尾的“产物为空 ⇒ 400”守卫
+**尝试**：在非流式 `$decodeFail` 之后、流式 `$sJOut != ""` 块之后各加一处：`response_format`+`json_schema` 存在但产物为空 ⇒ 400（意图是统一失败关闭）。
+**结果**：**误伤全部受支持路径**——smoke 仅 16 项即崩溃、四个 harness 全红。原因：成功的 schema 路由**并不会在这些点之前 early-continue**，它们同样经过“产物为空”的中间态（产物在更晚处生成/赋值），所以“变量为空”不等于“无人认领”。
+**回滚**：两处守卫移除，重建后自检 0 FAIL、四 harness 0、双模式 smoke **131/0** 恢复。
+**结论**：失败关闭必须依赖**显式 claim 信号**（每条 schema 路由命中时置一个标志，或把分发重构为返回 claim 的函数），不能用中间变量是否为空来推断。这是 F561/F562/F564 同一类教训的又一次复现：**“可判定”与“会被认领”是两件事**。
+**证据**：`gate_live_f600.log`（SMOKE 16 即崩、CHECK_EXIT=1×4）、`gate_live_f600b.log`（回滚后 131/0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
