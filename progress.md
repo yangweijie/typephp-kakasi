@@ -2865,3 +2865,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **交付**：`api_stream_error($req,$msg)`；四处流式错误按出口成形（Anthropic `event: error`、无 `[DONE]`）。
 - **修复**：Anthropic 流式 `json_schema` 未认领时不再落自由文本，先按 `api_response_schema_claim` 拒绝。
 - **门**：`chat-stream-error-shape`/`anth-stream-error-shape` 双模式 PASS；**smoke 183→185/0**；自检/四 harness/par/fair/哨兵 全绿。
+
+## F635（2026-11-15）：参数拒绝覆盖流式
+- **修**：`api_param_unsupported` 挂到外层链（stream 分流前），流式不再绕过 form/choice/semantic/state/sampling 五组拒绝。
+- **门**：`chat-stream-param-refuse`/`anth-stream-param-refuse` 双模式 PASS；**smoke 185→187/0**。
+- **梯**：BUILD_OK（`build_f635`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

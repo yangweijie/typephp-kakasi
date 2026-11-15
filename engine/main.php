@@ -12419,6 +12419,30 @@ function api_choice_params_unsupported(string $body): string
     return "";
 }
 
+// F635: the refusal predicates were wired into the non-stream branch only, so a STREAMED request
+// with logit_bias/top_k/thinking/store slipped through untouched. One combined probe runs on the
+// outer chain, before the stream split, so every shape sees the same rule.
+function api_param_unsupported(string $body): string
+{
+    $r = api_request_form_unsupported($body);
+    if ($r != "") {
+        return $r;
+    }
+    $r = api_choice_params_unsupported($body);
+    if ($r != "") {
+        return $r;
+    }
+    $r = api_semantic_params_unsupported($body);
+    if ($r != "") {
+        return $r;
+    }
+    $r = api_state_params_unsupported($body);
+    if ($r != "") {
+        return $r;
+    }
+    return api_sampling_params_unsupported($body);
+}
+
 // F634: streamed refusals follow the same outlet rule as bodies - Anthropic expects a named
 // "error" event carrying {"type":"error","error":{...}}; OpenAI expects data: {"error":{...}}.
 function api_stream_error(string $req, string $message): string
@@ -16527,6 +16551,15 @@ function api_serve(int $port): void
                 $ctIds = $ctIds . "," . tok_chat_open("assistant");
                 $payload = "{\"input_tokens\":" . count(explode(",", $ctIds)) . "}";
             }
+        } else if (api_param_unsupported($body) != "") {
+            // F635: same rule on both transports; this branch sits before the stream split.
+            $payload = "{\"error\":{\"message\":\"request parameter not supported: "
+                . api_param_unsupported($body)
+                . " (it would change the sampled distribution, ask for an output mode this engine "
+                . "does not implement, or exceed a single-shot constrained decode; neutral "
+                . "spellings like logprobs:false, penalties 0, top_k 0 and store:false pass)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "400 Bad Request";
         } else if (strpos($req, "/v1/completions") !== false
                    && preg_match('/"stream"\s*:\s*true/', $body) == 1) {
             $payload = "{\"error\":{\"message\":\"completions streaming is not supported\",\"type\":\"invalid_request_error\"}}";

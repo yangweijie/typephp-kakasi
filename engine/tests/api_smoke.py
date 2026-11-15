@@ -2759,6 +2759,23 @@ def main():
     check("anth-stream-error-shape", "event: error" in raw and '"type":"error"' in raw
           and "[DONE]" not in raw and "error" in events(raw), raw[:200])
 
+    # F635: the parameter refusals must cover streaming too - they used to sit only on the non-stream
+    # branch, so a streamed logit_bias/top_k was accepted silently.
+    def stream_param_refusal(path, extra):
+        body = {"messages": [{"role": "user", "content": "The capital of France is"}],
+                "max_tokens": 8, "stream": True}
+        body.update(extra)
+        try:
+            post(path, body, stream=True)
+            return "", "accepted"
+        except urllib.error.HTTPError as e:
+            return e.read().decode(), str(e.code)
+
+    pmsg, pdet = stream_param_refusal("/v1/chat/completions", {"logit_bias": {"50256": -100}})
+    check("chat-stream-param-refuse", pmsg.find("logit_bias") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = stream_param_refusal("/v1/messages", {"top_k": 5})
+    check("anth-stream-param-refuse", pmsg.find("top_k") >= 0, pdet + " " + pmsg[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

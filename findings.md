@@ -5283,3 +5283,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-stream-error-shape`、`anth-stream-error-shape` 双模式 PASS（后者断言 `event: error`、`"type":"error"`、无 `[DONE]`）；**双模式 smoke 183→185/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：两套出口各有**独立**的流式分支，守卫写在其中一条上不等于覆盖另一条；“信封测试”顺带就是 fail-open 探针——先断言错误事件存在，才能发现本该出错却没出错。
 **证据**：`build_f634.log`、`selftest_f634.log`、`{req,cnt,pat,bnd}_run_f634.log`、`gate_live_f634.log`（首跑红：`anth-stream-error-shape` → `event: message_start`）、`gate_live_f634b.log`（修复后 185/0）。
+
+## F635（2026-11-15）：参数拒绝覆盖流式（此前只挂非流式分支）
+**缺陷**：F620–F632 的拒绝谓词都写在**最终 else（非流式）**里；流式请求在更早的分支就 `continue`，于是**流式**带 `logit_bias`/`top_k`/`thinking`/`store` 等仍被静默接受——与 F634 的 Anthropic fail-open 同一类“一条路径写了守卫、另一条没写”。
+**改动**：新增 `api_param_unsupported`（按 form→choice→semantic→state→sampling 取首个命中），在**外层链**、`stream` 分流之前挂一个 `else if`；非流式仍走原分支（谓词相同，行为不变）。
+**结果**：`chat-stream-param-refuse`（流式 logit_bias）、`anth-stream-param-refuse`（流式 top_k）双模式 PASS；**双模式 smoke 185→187/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：守卫要挂在**所有形状都必经**的那一层（本文件里是 stream 分流之前的外层链）；继承 F634 的教训——每次新增守卫，都要回答“流式/Anthropic/Responses 各自走哪条链、是否经过这里”。
+**证据**：`build_f635.log`、`selftest_f635.log`、`{req,cnt,pat,bnd}_run_f635.log`、`gate_live_f635.log`。
