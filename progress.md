@@ -2816,3 +2816,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F624（2026-11-15）：安装包 zip（FR-17 收尾）
 - **交付**：`package.sh` 追加 zip（全路径 7z + `7z t` 自检 + 归档哈希）。
 - **结果**：`ARCHIVE_OK sha256=7a015d3f…`（exe 5,894,656 B + manifest 180 B）。引擎未改，基线不变（双模式 164/0）。
+
+## F625（2026-11-15）：状态/异步参数具名 400
+- **修**：`api_state_params_unsupported` 拒绝 `previous_response_id`/`background:true`/`store:true`/`truncation:auto`/`reasoning`；中性值放行。
+- **门**：`responses-previous-refuse`/`responses-background-refuse`/`responses-neutral-state-ok` 双模式 PASS；**smoke 164→167/0**。
+- **梯**：BUILD_OK（`build_f625`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

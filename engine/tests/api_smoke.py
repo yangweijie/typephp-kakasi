@@ -2614,6 +2614,27 @@ def main():
     check("chat-neutral-sampling-ok", "Paris" in r["choices"][0]["message"]["content"],
           str(r)[:120])
 
+    # F625: this server is stateless and synchronous, so the response-level knobs that ask for the
+    # opposite must refuse instead of answering one turn; neutral spellings stay accepted.
+    def responses_refusal(extra):
+        body = {"input": "The capital of France is", "max_output_tokens": 8}
+        body.update(extra)
+        try:
+            r = post("/v1/responses", body)
+            return "", "answered " + str(r)[:100]
+        except urllib.error.HTTPError as e:
+            return e.read().decode(), str(e.code)
+
+    pmsg, pdet = responses_refusal({"previous_response_id": "resp_123"})
+    check("responses-previous-refuse", pmsg.find("previous_response_id") >= 0,
+          pdet + " " + pmsg[:120])
+    pmsg, pdet = responses_refusal({"background": True})
+    check("responses-background-refuse", pmsg.find("background") >= 0, pdet + " " + pmsg[:120])
+    r = post("/v1/responses", {"input": "The capital of France is", "max_output_tokens": 8,
+                               "store": False, "truncation": "disabled", "metadata": {"k": "v"}})
+    check("responses-neutral-state-ok", "Paris" in r["output"][0]["content"][0]["text"],
+          str(r)[:160])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

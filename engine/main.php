@@ -12261,6 +12261,30 @@ function api_tools_required_unservable(string $body): int
     }
 }
 
+// F625: response-level state/async knobs that the server does not implement. Accepting them would
+// answer a single stateless turn while the caller asked for stored state, a background job or a
+// continuation - a semantic lie that a 200 hides. Neutral spellings (store:false, truncation
+// "disabled", absent metadata) pass; metadata itself is annotation and stays accepted.
+function api_state_params_unsupported(string $body): string
+{
+    if (preg_match('/"previous_response_id"\s*:\s*"[^"]/', $body) == 1) {
+        return "previous_response_id";
+    }
+    if (preg_match('/"background"\s*:\s*true/', $body) == 1) {
+        return "background";
+    }
+    if (preg_match('/"store"\s*:\s*true/', $body) == 1) {
+        return "store";
+    }
+    if (preg_match('/"truncation"\s*:\s*"auto"/', $body) == 1) {
+        return "truncation=auto";
+    }
+    if (preg_match('/"reasoning"\s*:\s*\{/', $body) == 1) {
+        return "reasoning";
+    }
+    return "";
+}
+
 // F620: sampling knobs with no implementation in the decoder are refused by name. Ignoring them
 // answers 200 with a distribution the caller did not ask for - the same rule schema keywords
 // follow. Neutral spellings (logprobs:false, penalties 0, top_k 0, repetition_penalty 1) pass, so
@@ -16303,6 +16327,13 @@ function api_serve(int $port): void
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+            } else if (api_state_params_unsupported($body) != "") {
+                $payload = "{\"error\":{\"message\":\"request parameter not supported: "
+                    . api_state_params_unsupported($body)
+                    . " (this server is stateless and synchronous; stored responses, background jobs, "
+                    . "response chaining and truncation policies are refused rather than ignored)\","
+                    . "\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_sampling_params_unsupported($body) != "") {
                 $payload = "{\"error\":{\"message\":\"sampling parameter not supported: "
                     . api_sampling_params_unsupported($body)
