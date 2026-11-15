@@ -2763,3 +2763,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **处理**：回滚代码与探针；重建后基线恢复（自检 0 FAIL、四 harness 0、双模式 **147/0**、哨兵 0）。根级 tuple 仍为**具名 400**（`items`）。
 - **下一步**：在自检里对**完整直播 body**打印各 top-level 检测器的 claim 位，找出抢先的认领者，再决定“让它让位”还是把 tuple 分支前移。
 
+## F613（2026-11-15）：根级 tuple 收口（F612 负结果的修复）
+- **诊断**：claim 图（直播 body）显示 `claim=1` 由 tuple 检测器提供，但 TT-BR1/2/3 均未命中——**存在第四条分发链**（`$enumOut` 非流式主链，缺 tuple 分支）。加 BR4 后回声命中。
+- **结果**：根 tuple 活体返回 `["Alice and Bob are discussing the ethics of",1000]`（合法 `[string,int]`）；临时回声已移除，补自检门 `SCHEMA-TOP-TUPLE`。
+- **梯**：BUILD_OK（`build_f612j`）；自检 0 FAIL；四 harness 0；SMOKE/SMOKE-PRETTY **148/0**；哨兵 0。
+- **记法**：同一语义的分支可能散落在**多条分发链**（本文件已见 4 条 top-level 链）；改动必须用“claim 图 + 分支回声”确认命中哪条，而不是只改 grep 到的前几处。
+

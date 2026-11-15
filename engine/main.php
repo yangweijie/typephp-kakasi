@@ -2565,6 +2565,130 @@ function api_response_schema_top_array_number(string $body): int
 
 // A top-level string array schema: ["a","b"]. No object wrapper, so the closing brace is not
 // forced; elements use the charset grammar and ","/"\]" decide when the list ends.
+// F612b: root-level tuple detector (schema-level) + writer, with temporary branch echoes.
+function api_schema_top_tuple_kinds(string $schema): string
+{
+    if ($schema == "") {
+        return "";
+    }
+    if (preg_match('/^\{\s*"type"\s*:\s*"array"\s*,\s*"items"\s*:\s*\[/', $schema) != 1) {
+        return "";
+    }
+    if (preg_match('/"(enum|const|pattern|minimum|maximum|exclusiveMinimum|exclusiveMaximum|multipleOf|prefixItems|unevaluatedItems)"\s*:/', $schema) == 1) {
+        return "";
+    }
+    $ao = strpos($schema, "[");
+    if ($ao === false) {
+        return "";
+    }
+    $arr = api_balance_square($schema, $ao);
+    if ($arr == "") {
+        return "";
+    }
+    $tail = trim(substr($schema, $ao + strlen($arr)));
+    if ($tail != "}") {
+        return "";
+    }
+    $inner = substr($arr, 1, strlen($arr) - 2);
+    $kinds = "";
+    $n = 0;
+    $pos = 0;
+    while ($pos < strlen($inner)) {
+        $bo = strpos($inner, "{", $pos);
+        if ($bo === false) {
+            break;
+        }
+        $blk = api_balance_block($inner, $bo);
+        if ($blk == "") {
+            return "";
+        }
+        $mm = [];
+        if (preg_match('/^\{\s*"type"\s*:\s*"(string|integer)"\s*\}$/', $blk, $mm) != 1) {
+            return "";
+        }
+        $k = $mm[1] == "string" ? "s" : "i";
+        $kinds = $kinds == "" ? $k : $kinds . "," . $k;
+        $n++;
+        $pos = $bo + strlen($blk) + 1;
+    }
+    if ($n < 1 || $n > 4) {
+        return "";
+    }
+    return "t:" . $kinds;
+}
+
+function api_response_schema_top_tuple(string $body): string
+{
+    if (preg_match('/"json_schema"/', $body) != 1) {
+        return "";
+    }
+    return api_schema_top_tuple_kinds(api_json_object_after($body, "schema"));
+}
+
+function api_top_tuple_value(string $ids, string $kinds, string $charset, int $useCache = 1): string
+{
+    $charsetIds = gguf_charset_ids($charset);
+    $quoteIds = gguf_charset_ids("\"");
+    $commaIds = api_punct_ids(",");
+    $bracketIds = api_punct_ids("]");
+    if ($charsetIds == "" || $quoteIds == "" || $commaIds == "" || $bracketIds == "") {
+        return "";
+    }
+    $specs = explode(",", $kinds);
+    $s = api_constrained($ids, ["["], 16, $useCache);
+    if ($s == "") {
+        return "";
+    }
+    $stepIds = $charsetIds . "," . $quoteIds;
+    $q = "," . $quoteIds . ",";
+    for ($i = 0; $i < count($specs); $i++) {
+        if ($i > 0) {
+            $cm = api_constrained_continue([","], 4);
+            if ($cm == "") {
+                return "";
+            }
+            $s = $s . "," . $cm;
+        }
+        if ($specs[$i] == "s") {
+            $op = api_constrained_continue(["\""], 4);
+            if ($op == "") {
+                return "";
+            }
+            $s = $s . "," . $op;
+            $closed = 0;
+            for ($d = 0; $d < 8; $d++) {
+                $nx = model_session_next_allowed(0, $stepIds);
+                if ($nx < 0) {
+                    break;
+                }
+                $s = $s . "," . $nx;
+                if (strpos($q, "," . $nx . ",") !== false) {
+                    $closed = 1;
+                    break;
+                }
+            }
+            if ($closed == 0) {
+                $cq = api_constrained_continue(["\""], 4);
+                if ($cq == "") {
+                    return "";
+                }
+                $s = $s . "," . $cq;
+            }
+        } else {
+            $body = api_number_fill(0, 4);
+            if ($body == "") {
+                return "";
+            }
+            $s = $s . "," . $body;
+        }
+    }
+    $rb = api_constrained_continue(["]"], 4);
+    if ($rb == "") {
+        return "";
+    }
+    return $s . "," . $rb;
+}
+
 function api_top_array_string_value(string $ids, string $charset, int $maxItems, int $maxSteps, int $useCache = 1, string $bounds = ""): string
 {
     $charsetIds = gguf_charset_ids($charset);
@@ -9077,6 +9201,9 @@ function api_schema_token_value(string $ids, string $body, int $useCache): strin
     } else if (api_response_schema_top_array_string($body) == 1) {
         $scOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4, 1,
             api_response_schema_array_bounds($body));
+    } else if (api_response_schema_top_tuple($body) != "") {
+        $scOut = api_top_tuple_value($ids,
+            substr(api_response_schema_top_tuple($body), 2), api_schema_charset(), 1);
     } else if (api_response_schema_top_array_number($body) >= 0) {
         $scOut = api_top_array_number_value($ids,
             api_response_schema_top_array_number($body), 3, 3, 1);
@@ -12065,6 +12192,9 @@ function api_response_schema_claim(string $body): int
     if ($claim == 0 && api_response_schema_top_array_number($body) >= 0) { $claim = 1; }
     if ($claim == 0 && api_response_schema_top_array_bool($body) == 1) { $claim = 1; }
     if ($claim == 0 && api_response_schema_top_array_string($body) == 1) { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_tuple($body) != "") {
+        $claim = 1;
+    }
     if ($claim == 0 && api_response_schema_top_array_scalar_enum($body) != "") { $claim = 1; }
     if ($claim == 0 && api_response_schema_string_bounds($body) != "") { $claim = 1; }
     if ($claim == 0 && count(api_response_schema_string_props_required($body)) > 0) { $claim = 1; }
@@ -12865,6 +12995,9 @@ function api_schema_items_constrained(string $schema): int
 // inside an item schema and be ignored.
 function api_schema_structural_unsupported(string $schema): string
 {
+    if (api_schema_top_tuple_kinds($schema) != "") {
+        return "";
+    }
     $mk = [];
     // F434: tuple validation - `items` as an ARRAY of schemas, or prefixItems - is a shape no
     // generator claims; the live probe answered prose for both, so each is refused by name.
@@ -15656,6 +15789,10 @@ Connection: close
                                 } else if (api_response_schema_top_array_string($body) == 1) {
                                     $scOut = api_top_array_string_value($ids, api_schema_charset(),
                                         4, 4, 1, api_response_schema_array_bounds($body));
+                                } else if (api_response_schema_top_tuple($body) != "") {
+                                    $scOut = api_top_tuple_value($ids,
+                                        substr(api_response_schema_top_tuple($body), 2),
+                                        api_schema_charset(), 1);
                                 } else if (api_response_schema_top_array_number($body) >= 0) {
                                     $scOut = api_top_array_number_value($ids,
                                         api_response_schema_top_array_number($body), 3, 3, 1);
@@ -16856,6 +16993,10 @@ function api_serve(int $port): void
                         } else if (api_response_schema_top_array_string($body) == 1) {
                             $sJOut = api_top_array_string_value($ids, api_schema_charset(), 4, 4,
                                 $prefixCache, api_response_schema_array_bounds($body));
+                        } else if (api_response_schema_top_tuple($body) != "") {
+                            $sJOut = api_top_tuple_value($ids,
+                                substr(api_response_schema_top_tuple($body), 2),
+                                api_schema_charset(), $prefixCache);
                         } else if (api_response_schema_top_array_number($body) >= 0) {
                             $sJOut = api_top_array_number_value($ids,
                                 api_response_schema_top_array_number($body), 3, 3, $prefixCache);
@@ -17350,6 +17491,11 @@ function api_serve(int $port): void
                         $tonp = explode("|", api_response_schema_top_array_nested_object($body));
                         $enumOut = api_top_array_nested_object_value($ids, $tonp[0], $tonp[1],
                             api_schema_charset(), 2, 6, $prefixCache);
+                        $jsonMode = 1;
+                    } else if (api_response_schema_top_tuple($body) != "") {
+                        $enumOut = api_top_tuple_value($ids,
+                            substr(api_response_schema_top_tuple($body), 2),
+                            api_schema_charset(), $prefixCache);
                         $jsonMode = 1;
                     } else if (api_response_schema_top_array_object($body) != "") {
                         $enumOut = api_top_array_object_value($ids,
@@ -21277,6 +21423,39 @@ function main(): void
     $uvC = api_schema_strip_vacuous_unevalitems('{"messages":[{"role":"user","content":"Give the pair."}],"max_tokens":32,"temperature":0,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","properties":{"pair":{"type":"array","prefixItems":[{"type":"string"},{"type":"integer"}],"unevaluatedItems":false}}}}}}');
     echo "UV-DIAG has=" . (strpos($uvC, "\"unevaluatedItems\"") !== false ? 1 : 0)
         . " items=" . (strpos($uvC, "\"items\"") !== false ? 1 : 0) . "\n";
+    // F612b: which detector claims the live root-tuple body (messages + response_format)?
+    $ttLive = '{"messages":[{"role":"user","content":"Give the pair."}],"max_tokens":32,"temperature":0,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"array","items":[{"type":"string"},{"type":"integer"}]}}}}';
+    $ttMap = "";
+    $ttMap = $ttMap . (api_response_schema_top_array_string($ttLive) == 1 ? "ts," : "");
+    $ttMap = $ttMap . (api_response_schema_top_array_number($ttLive) >= 0 ? "tn," : "");
+    $ttMap = $ttMap . (api_response_schema_top_array_bool($ttLive) == 1 ? "tb," : "");
+    $ttMap = $ttMap . (api_response_schema_top_array_scalar_enum($ttLive) != "" ? "te," : "");
+    $ttMap = $ttMap . (api_response_schema_top_array_object($ttLive) != "" ? "to," : "");
+    $ttMap = $ttMap . (api_response_schema_top_array_nested_object($ttLive) != "" ? "tnest," : "");
+    $ttMap = $ttMap . (api_response_schema_nested_object($ttLive) != "" ? "nest," : "");
+    $ttMap = $ttMap . (api_response_schema_mixed_object($ttLive) != "" ? "mix," : "");
+    $ttMap = $ttMap . (api_response_schema_array_object($ttLive) != "" ? "ao," : "");
+    $ttMap = $ttMap . (api_response_schema_string_bounds($ttLive) != "" ? "sb," : "");
+    echo "TT-CLAIM [" . $ttMap . "] cands=" . count(api_response_schema_candidates($ttLive))
+        . " claim=" . api_response_schema_claim($ttLive) . "\n";
+    // F612 gate: root tuple detection + writer.
+    $ttG = '{"json_schema":{"name":"x","schema":{"type":"array","items":[{"type":"string"},{"type":"integer"}]}}}';
+    $ttGDet = api_response_schema_top_tuple($ttG);
+    $ttGIds = tok_chat("user", "Give the pair.") . "," . tok_chat_open("assistant");
+    $ttGOut = api_top_tuple_value($ttGIds, "s,i", api_schema_charset(), 0);
+    $ttGParts = explode(",", $ttGOut);
+    $ttGBase = count(explode(",", $ttGIds));
+    $ttGText = "";
+    for ($i = $ttGBase; $i < count($ttGParts); $i++) {
+        $ttGText = $ttGText . gguf_token_str((int) $ttGParts[$i]);
+    }
+    $ttGText = str_replace("Ġ", " ", $ttGText);
+    echo "TT-GATE det=[" . $ttGDet . "] text=[" . $ttGText . "]\n";
+    if ($ttGDet == "t:s,i" && preg_match('/^\[".*",-?[0-9]+\]$/', $ttGText) == 1) {
+        echo "SCHEMA-TOP-TUPLE: PASS (root tuple detected and emitted)\n";
+    } else {
+        echo "SCHEMA-TOP-TUPLE: FAIL\n";
+    }
     // F601 DIAG (temporary): which nested detector claims the object-property / 2-deep object
     // array shape that the live probe answered as {"m":{"items":...}}.
     $ucD = '{"json_schema":{"name":"x","schema":{"type":"object","properties":{"m":{"type":"object","properties":{"x":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"y":{"type":"string"}}}}}}}}}}}';

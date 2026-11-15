@@ -2092,6 +2092,28 @@ def main():
     print("  DIAG top-mixed-enum %s %s" % ("ok" if tm_ok else "bad", tm_txt[:120]))
     check("top-mixed-enum-array-ok", tm_ok, tm_txt[:160])
 
+    # F612c: root-level tuple with the new writer (trace echoes TT-BR* name the live branch).
+    tt_schema = {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]}
+    tt_body = {"messages": [{"role": "user", "content": "Give the pair."}],
+               "max_tokens": 32, "temperature": 0,
+               "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": tt_schema}}}
+    tt_ok = False
+    tt_txt = ""
+    try:
+        r = post("/v1/chat/completions", tt_body)
+        tt_txt = r["choices"][0]["message"]["content"]
+        try:
+            ttv = json.loads(tt_txt)
+        except Exception:
+            ttv = None
+        tt_ok = (isinstance(ttv, list) and len(ttv) == 2
+                 and isinstance(ttv[0], str) and isinstance(ttv[1], int))
+    except urllib.error.HTTPError as e:
+        tt_txt = e.read().decode()[:300]
+        tt_ok = False
+    print("  DIAG top-tuple %s %s" % ("ok" if tt_ok else "bad", tt_txt[:150]))
+    check("top-tuple-ok", tt_ok, tt_txt[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

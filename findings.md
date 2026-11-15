@@ -5148,4 +5148,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **回滚**：代码与探针复原，基线重建为双模式 **147/0**、四 harness 0、自检 0 FAIL；根级 tuple 维持具名 400。
 **下一步**：在自检里对**完整直播 body**打印每个 top-level 检测器的输出（claim 图），找出抢先者；要么让其让位，要么把 tuple 分支前移。**不要在没画 claim 图之前再写新写入器**。
 **证据**：`selftest_f612d.log`（TT-DIAG）、`gate_live_f612c.log`（散文）、`gate_live_f612e.log`（回滚后 147/0）。
+
+## F613（2026-11-15）：根级 tuple 收口——第四条分发链
+**诊断链**：直播 body 的 claim 图（`TT-CLAIM [] cands=0 claim=0`，回滚态）→ 重放后 `TT-CLAIM1`/`TT-STRUCT1` 命中但 `TT-BR1/2/3` 无回声 ⇒ 分支不在被改的三处；补 **BR4**（`$enumOut` 非流式主链）后回声与响应同时出现。
+**结果**：`["…",1000]` 合法服务；自检 `SCHEMA-TOP-TUPLE` PASS；双模式 **148/0**、四 harness 0、自检 0 FAIL。
+**记法**：grep 到的分支数量 ≠ 分发链数量；用**分支回声**（临时代码，验证后移除）确认实际链路。claim 谓词只能保证“有认领”，定位“谁认领/哪条链写入”仍需回声。
+**证据**：`gate_live_f612h.log`（仅 CLAIM/STRUCT，无 BR）、`gate_live_f612i.log`（BR4 命中+148/0）、`gate_live_f612j.log`（最终 148/0）、`selftest_f612j.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
