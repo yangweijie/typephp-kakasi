@@ -2598,4 +2598,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`exp_bounds_served` 200 `{"n":0.00001}`；`exp_mult_ok` 200 `{"n":0.0002}`；`exp_huge_refuse` 400。
 - **梯**：BUILD_OK（`build_f587c`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.589×；哨兵 0。
 - **过程坑**：第二次构建 `BUILD_FAILED rc=1` 且 `build_check.log` 为空——是上一轮 gate_live 残留的 `engine/serve.on`/引擎进程；清哨兵后重跑通过（构建前必须确认无 serve 哨兵与在跑引擎）。
+- **流式对账（f587d）**：smoke 新增 `chat-stream-exp-bounds`——`stream:true` 下 `1e-5/2e-5` 的 bounds 必须流出 `{"n":0.00001}`，PASS；**基线 smoke 121→122**；par/fair 0、scaling 1.589×、哨兵 0。
 

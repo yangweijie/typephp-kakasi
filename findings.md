@@ -4978,4 +4978,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **语义翻转**：`frac_exp` 1→0（指数形式的分数 bounds 现可服务）；新门 `exp_lit`（0.00001 / 2500 / -0.0125 / 空）、`exp_bounds=[n|1|-995|0]`，活体 `exp_bounds_served`、`exp_mult_ok`、`exp_huge_refuse`。
 **教训**：① 构建失败但 `build_check.log` 为空 ⇒ 先查 `serve.on` 与在跑引擎（本轮正是上一轮 gate_live 的残留），不是源码错误；② 支持化语义翻转要同轮翻旧期望——`frac_exp` 就是被新门抓出来的。
 **证据**：`build_f587c.log`、`selftest_f587c.log`（0 FAIL）、四个 `*_f587c` harness（0）、`gate_live_f587c.log`（121/0、par/fair 0、1.589×、哨兵 0）。
+**流式对账**：`chat-stream-exp-bounds` 在 `stream:true` 下流出 `{"n":0.00001}`（`gate_live_f587d.log`，smoke **122/0**，基线 121→122）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

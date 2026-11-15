@@ -1597,6 +1597,20 @@ def main():
     check("chat-stream-value-plan", sorted(svp.keys()) == ["city", "note"]
           and svp.get("city") == "paris", sout)
 
+    # F587: exponent-form bounds expand on the streaming transport too - the same schema the
+    # non-streaming harness serves must stream the expanded literal.
+    st_exp = {"messages": [{"role": "user", "content": "Give the number."}],
+              "max_tokens": 24, "temperature": 0, "stream": True,
+              "response_format": {"type": "json_schema", "json_schema": {
+                  "name": "x", "schema": {
+                      "type": "object",
+                      "properties": {"n": {"type": "number",
+                                           "minimum": 1e-05, "maximum": 2e-05}}}}}}
+    sraw = post("/v1/chat/completions", st_exp, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    check("chat-stream-exp-bounds", '"n":0.00001' in sout, sout)
+
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],
                    "max_tokens": 48,
