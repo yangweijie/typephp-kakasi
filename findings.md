@@ -5219,3 +5219,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`responses-previous-refuse`、`responses-background-refuse`、`responses-neutral-state-ok` 双模式 PASS；**双模式 smoke 164→167/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：与采样参数同一原则——**语义参数**（改变“回答什么”）比**性能提示**（`service_tier` 等）更该拒绝；前者静默忽略会让客户端以为状态已保存/续接，后者的影响只是慢一点。
 **证据**：`build_f625.log`、`selftest_f625.log`、`{req,cnt,pat,bnd}_run_f625.log`、`gate_live_f625.log`。
+
+## F626（2026-11-15）：Anthropic `/v1/messages/count_tokens`
+**缺口**：Anthropic SDK/客户端在发送前会调用该端点估算输入长度；此前只回落成 404/无意义响应。
+**实现**：与消息轮**同一**历史构建器 `api_history`（含 system、工具目录、Anthropic 内容块），再补同一个 assistant 开头轮后取 token 数，返回 `{"input_tokens":N}`；空内容 400。
+**结果**：`anth-count-tokens`（system+user）与 `anth-count-tokens-tools`（带 `input_schema` 工具目录）都断言 **count == 同轮响应的 `usage.input_tokens`**，双模式 PASS；**双模式 smoke 167→169/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：计费/长度类端点**不要另写计数器**——必须复用真正构造 prompt 的那条路径（连 assistant 开头轮一起算），否则“预估”与“实报”迟早分叉；门直接拿两者相等作判据。
+**证据**：`build_f626.log`、`selftest_f626.log`、`{req,cnt,pat,bnd}_run_f626.log`、`gate_live_f626.log`。

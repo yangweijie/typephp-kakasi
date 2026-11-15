@@ -16277,6 +16277,18 @@ function api_serve(int $port): void
             } else {
                 $payload = api_models_json();
             }
+        } else if (strpos($req, "/v1/messages/count_tokens") !== false) {
+            // F626: Anthropic clients size a prompt before sending it. The number must be the same
+            // one the Messages turn reports as input_tokens, so the same history builder - including
+            // the assistant open turn - is used instead of a second, drifting counter.
+            $ctIds = api_history($body);
+            if ($ctIds == "") {
+                $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else {
+                $ctIds = $ctIds . "," . tok_chat_open("assistant");
+                $payload = "{\"input_tokens\":" . count(explode(",", $ctIds)) . "}";
+            }
         } else if (strpos($req, "/v1/completions") !== false
                    && preg_match('/"stream"\s*:\s*true/', $body) == 1) {
             $payload = "{\"error\":{\"message\":\"completions streaming is not supported\",\"type\":\"invalid_request_error\"}}";

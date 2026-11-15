@@ -2635,6 +2635,24 @@ def main():
     check("responses-neutral-state-ok", "Paris" in r["output"][0]["content"][0]["text"],
           str(r)[:160])
 
+    # F626: Anthropic count_tokens must agree with the input_tokens the same turn reports, both for
+    # a plain system+user prompt and for a prompt carrying the tool catalog.
+    ct_body = {"model": "claude", "max_tokens": 16,
+               "system": "Answer with one word.",
+               "messages": [{"role": "user", "content": "The capital of France is"}]}
+    ct = post("/v1/messages/count_tokens", ct_body)
+    r = post("/v1/messages", ct_body)
+    check("anth-count-tokens", isinstance(ct.get("input_tokens"), int)
+          and ct.get("input_tokens") == (r.get("usage") or {}).get("input_tokens"),
+          "count=%r usage=%r" % (ct, r.get("usage")))
+    ct2 = dict(ct_body, tools=[{"name": "get_weather", "input_schema": {
+        "type": "object", "properties": {"city": {"type": "string"}}}}])
+    c2 = post("/v1/messages/count_tokens", ct2)
+    r2 = post("/v1/messages", ct2)
+    check("anth-count-tokens-tools", isinstance(c2.get("input_tokens"), int)
+          and c2.get("input_tokens") == (r2.get("usage") or {}).get("input_tokens"),
+          "count=%r usage=%r" % (c2, r2.get("usage")))
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

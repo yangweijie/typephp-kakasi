@@ -728,4 +728,6 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 
 **回归口径（当前基线，F621）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 各 **163/0**；8001 par/fair 0；scaling ~1.6×；哨兵 0；`check_gates 199/0`。证据：`engine/selftest_f621.log`、`engine/gate_live_f621.log`、`engine/api_smoke_{,pretty_}f621.log`、`engine/par_smoke_f621.log`。
 
+**增补（F622–F626，同日）**：响应级语义/状态参数具名拒绝（F620/F621 采样参数；F625 `previous_response_id`/`background`/`store:true`/`truncation:auto`/`reasoning`）；FR-17 版本化产物与 zip 安装包（F623/F624，`/health` 同源版本、`health-version` 门）；Anthropic `POST /v1/messages/count_tokens` 上线且与同轮 `usage.input_tokens` 相等（F626，门 `anth-count-tokens`/`-tools`）。
+
 **仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包（**已做**：F623 的 `VERSION` + `scripts/package.sh` + manifest 哈希自校验，`/health` 返回同源版本，门 `health-version`；F624 追加 zip 安装包 + `7z t` 自检）。
