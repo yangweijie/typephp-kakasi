@@ -15881,6 +15881,7 @@ Connection: close
                 $ctIds = api_history($body);
                 if ($ctIds == "") {
                     $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+                    $payload = api_error_for_path($req, $payload);
                     fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                 } else {
@@ -15941,6 +15942,7 @@ Connection: close
                         : "{\"error\":{\"message\":\"parallel mode: " . $nslots
                           . " streams at a time\",\"type\":\"server_error\"}}");
                     $code = ($bad == 1 || $bad == 2) ? "400 Bad Request" : "503 Service Unavailable";
+                    $payload = api_error_for_path($req, $payload);
                     fwrite($c, "HTTP/1.1 " . $code . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                     fclose($c);
@@ -15948,6 +15950,7 @@ Connection: close
                     $ids = api_history($body);
                     if ($ids == "") {
                         $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+                        $payload = api_error_for_path($req, $payload);
                         fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
                                  . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                         fclose($c);
@@ -15967,11 +15970,13 @@ Connection: close
                         // deliberately leaves free, and the batch owns its own two regions.
                         if ($pn + $mxv > $cap) {
                             $payload = "{\"error\":{\"message\":\"parallel mode: prompt plus max_tokens exceeds the slot capacity\",\"type\":\"invalid_request_error\"}}";
+                            $payload = api_error_for_path($req, $payload);
                             fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
                                      . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                             fclose($c);
                         } else if (model_batch_add(0, $slot, $ids, $tev, $tpv, $sdv) != 0) {
                             $payload = "{\"error\":{\"message\":\"parallel mode: the slot could not take this prompt\",\"type\":\"server_error\"}}";
+                            $payload = api_error_for_path($req, $payload);
                             fwrite($c, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n"
                                      . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                             fclose($c);

@@ -178,6 +178,27 @@ def main():
                                                    "uniqueItems": True}}}}}})
     check("par-schema-keyword-refuse", pmsg.find("uniqueItems") >= 0, pdet + " " + pmsg[:120])
 
+    # F640: par errors follow the outlet envelope too - its own writers bypassed F633's transform,
+    # so /v1/messages got the OpenAI-shaped body here.
+    def par_err_shape(path, extra):
+        body = {"messages": [{"role": "user", "content": "Hi"}], "max_tokens": 4}
+        body.update(extra)
+        try:
+            raw = post(path, body)
+            return None, "accepted " + raw[:80]
+        except urllib.error.HTTPError as e:
+            try:
+                return json.loads(e.read().decode()), str(e.code)
+            except Exception:
+                return {}, "unparsed"
+
+    aerr, adet = par_err_shape("/v1/messages", {"stream": True, "top_k": 5})
+    check("par-anth-error-shape", isinstance(aerr, dict) and aerr.get("type") == "error"
+          and isinstance(aerr.get("error"), dict), adet + " " + str(aerr)[:100])
+    oerr, odet = par_err_shape("/v1/chat/completions", {"stream": True, "logit_bias": {"1": -100}})
+    check("par-json-error-shape", isinstance(oerr, dict) and oerr.get("type") != "error"
+          and isinstance(oerr.get("error"), dict), odet + " " + str(oerr)[:100])
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

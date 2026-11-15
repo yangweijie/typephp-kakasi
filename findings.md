@@ -5320,3 +5320,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`PARAM-GUARDS: PASS`（20/20 + tool/kw/fmt/deep 全 1）；自检 0 FAIL；四 harness 0；smoke 双模式 **191/0**；par/fair 0；哨兵 0；`check_gates 199/0`。
 **记法**：单元夹具必须复刻**真实调用上下文**（这里是 json_schema 标记），否则测的是另一条分支；断言前先确认被拒原因属于“结构关键字”还是“请求参数”，两类消息不同。
 **证据**：`build_f639c.log`、`selftest_f639c.log`（第 791–792 行）、`{req,cnt,pat,bnd}_run_f639c.log`、`gate_live_f639c.log`；失败轮 `gate_live_f639.log`（kw/deep）、`gate_live_f639b.log`（fmt）。
+
+## F640（2026-11-15）：8001 错误信封跟随出口
+**缺口**：F633 的信封变换只接在 8000 的写出点；`api_serve_par` 有自己的五个错误写点（count_tokens 空内容、`$bad` 块、no-user-content、容量、batch 失败），`/v1/messages` 打到 8001 仍得到 OpenAI 形态。
+**改动**：五个写点逐一加 `api_error_for_path($req,$payload)`（同一函数，不新增逻辑）。
+**结果**：`par-anth-error-shape`（`type=error` 且 `error` 为对象）、`par-json-error-shape`（无顶层 `type:error`）PASS；8000 双模式仍 **191/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：信封是**写点属性**，不是函数属性——每新增一个 `fwrite(...error...)` 写点都要问“它属于哪套出口”；共享客户端库不会替服务器兜底。
+**证据**：`build_f640.log`、`selftest_f640.log`、`{req,cnt,pat,bnd}_run_f640.log`、`gate_live_f640.log`、`par_smoke_f640.log`。
