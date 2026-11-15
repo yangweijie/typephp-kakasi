@@ -1,0 +1,42 @@
+#!/bin/bash
+# package.sh - turn the built engine into a versioned artifact with a manifest.
+# The version comes from the repo VERSION file, the same one /health reports, so the artifact, the
+# manifest and the served answer cannot drift apart. The manifest records the git commit and the
+# sha256 of the packed binary; rebuild the binary and the hash no longer matches.
+#
+#   bash scripts/package.sh
+set -u
+R=$(cd "$(dirname "$0")/.." && pwd) || exit 2
+cd "$R" || exit 2
+VER=$(tr -d ' \r\n' < VERSION 2>/dev/null)
+if [ -z "$VER" ]; then
+  echo "NO_VERSION"
+  exit 2
+fi
+EXE=engine/build/kakasi_engine_sycl.exe
+if [ ! -f "$EXE" ]; then
+  echo "NO_BINARY $EXE"
+  exit 2
+fi
+OUT=dist/typephp-kakasi-$VER-win64
+mkdir -p "$OUT" || exit 2
+cp "$EXE" "$OUT/kakasi_engine_sycl.exe" || exit 2
+HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+SUM=$(sha256sum "$EXE" | cut -d' ' -f1)
+SIZE=$(stat -c %s "$EXE" 2>/dev/null)
+{
+  echo "name=typephp-kakasi"
+  echo "version=$VER"
+  echo "platform=win64"
+  echo "commit=$HEAD"
+  echo "built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "sha256=$SUM"
+  echo "size=$SIZE"
+} > "$OUT/manifest.txt" || exit 2
+# The packed copy must be the binary the manifest describes.
+PACKED=$(sha256sum "$OUT/kakasi_engine_sycl.exe" | cut -d' ' -f1)
+if [ "$PACKED" != "$SUM" ]; then
+  echo "PACKAGE_HASH_MISMATCH packed=$PACKED built=$SUM"
+  exit 1
+fi
+echo "PACKAGE_OK dir=$OUT version=$VER sha256=$SUM size=$SIZE"

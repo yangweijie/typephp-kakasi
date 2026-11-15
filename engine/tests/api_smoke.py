@@ -66,6 +66,18 @@ def main():
         health = json.loads(r.read().decode())
     check("health", health.get("status") == "ok" and health.get("model") == "qwen2", str(health))
 
+    # F623: the binary must report the version recorded in VERSION - the packaging script names its
+    # artifact from the same file, so a mismatch here means the artifact and the answer diverged.
+    verfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "VERSION")
+    want_ver = ""
+    try:
+        with open(verfile) as vf:
+            want_ver = vf.read().strip()
+    except Exception:
+        want_ver = ""
+    check("health-version", want_ver != "" and health.get("version") == want_ver,
+          "served=%r file=%r" % (health.get("version"), want_ver))
+
     with urllib.request.urlopen(BASE + "/v1/models", timeout=60) as r:
         models = json.loads(r.read().decode())
     check("models", models.get("object") == "list" and len(models.get("data", [])) > 0)

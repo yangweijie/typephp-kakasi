@@ -728,4 +728,4 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 
 **回归口径（当前基线，F621）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 各 **163/0**；8001 par/fair 0；scaling ~1.6×；哨兵 0；`check_gates 199/0`。证据：`engine/selftest_f621.log`、`engine/gate_live_f621.log`、`engine/api_smoke_{,pretty_}f621.log`、`engine/par_smoke_f621.log`。
 
-**仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包/版本化产物。
+**仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包（**版本化产物已做**：F623 的 `VERSION` + `scripts/package.sh` + manifest 哈希自校验，`/health` 返回同源版本，门 `health-version`）。

@@ -5199,3 +5199,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`par-sampling-refuse` PASS（`top_k:5` 得 400 且正文含 `top_k`）；8001 其余 par/fair 仍 0；8000 双模式 **163/0**；自检 0 FAIL、四 harness 0、哨兵 0、`check_gates` 199/0。
 **记法**：同一策略落两个服务器时，先看错误通道是否共用；8001 用的是 `$bad` 标志而不是 `$payload/$status` 链——新增一类拒绝要增加标志取值，而不是复制一份 400 写出逻辑（那份逻辑还夹着 `fclose` 与槽位记账）。
 **证据**：`build_f621.log`、`selftest_f621.log`、`{req,cnt,pat,bnd}_run_f621.log`、`gate_live_f621.log`、`par_smoke_f621.log`。
+
+## F623（2026-11-15）：版本化产物与 manifest（FR-17 首步）
+**交付**：新增 `VERSION`（`0.1.0`）与 `scripts/package.sh`——把当前构建复制到 `dist/typephp-kakasi-<ver>-win64/`，生成 `manifest.txt`（version / platform / git commit / 构建时刻 / 打包前二进制 sha256 / 字节数），并在脚本内**复核打包副本的 sha256**（不一致即 `PACKAGE_HASH_MISMATCH` 退出 1）。`dist/` 已加入 `.gitignore`。
+**服务面**：`/health`（8000 与 8001 两处）新增 `"version"`，取 `VERSION` 文件内容（读不到则 `0.0.0`）；同轮 `health-version` 门断言服务返回与文件逐字相等，artifact 命名与运行时报号同源，不可能漂移。
+**结果**：`PACKAGE_OK dir=dist/typephp-kakasi-0.1.0-win64 version=0.1.0 sha256=134d796d… size=5894656`；`health-version` 双模式 PASS；**双模式 smoke 163→164/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：manifest 的价值在于**可证伪**——哈希由打包脚本自己对副本重算并比对，而不是抄一遍；版本号只放在一个文件里，脚本与运行时都读它。
+**证据**：`build_f623.log`、`package_f623.log`、`selftest_f623.log`、`{req,cnt,pat,bnd}_run_f623.log`、`gate_live_f623.log`。

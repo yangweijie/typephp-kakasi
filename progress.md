@@ -2807,3 +2807,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **文档**：`docs/audit-v0.2.md` 新增“审计增补（F610–F621）”节：根 tuple（F613–F615）、属性 tuple 两种闭包拼写（F616/F617）、Anthropic 流式工具三格（F618/F619）、采样参数具名 400（F620/F621）；基线改为 163/0。
 - **更正**：F208/F209 冷启动缺陷已由 F226/F238 闭合；前缀缓存新近度已由 F342/F343 收口（`CACHE-EVICT` 为判据）；FR-06 多样草稿器是**决策题**（独立草稿模型 vs 单二进制约束），不是再调策略能拿到的。
 - **队列同步**：`task_plan.md` 当前头部补入剩余队列（FR-05 / FR-06 决策 / KV 吞吐·多卡·分片 / FR-02·FR-17）。
+
+## F623（2026-11-15）：版本化产物 + `/health` 版本
+- **交付**：`VERSION=0.1.0`；`scripts/package.sh` 产出 `dist/typephp-kakasi-0.1.0-win64/`（二进制 + manifest：commit/sha256/size），脚本自校验副本哈希。
+- **服务**：`/health` 两服务返回 `version`；`health-version` 门与 VERSION 文件比对。
+- **梯**：BUILD_OK+Y。`PACKAGE_OK`；**smoke 163→164/0**；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

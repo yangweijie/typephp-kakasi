@@ -216,6 +216,20 @@ function api_list(string $inner): array
 // so a forbidden answer is not merely discouraged - it cannot be emitted. This is the real
 // counterpart to the json_object validator in F44.
 // "count|bytes" from a "name|bytes" listing (prefix-cache buckets).
+// F623: the served binary reports the version recorded in the repo's VERSION file, so a client can
+// tell which build answered and scripts/package.sh can name its artifact from the same source.
+function api_engine_version(): string
+{
+    $p = "C:/git/c/typephp-kakasi/VERSION";
+    if (file_exists($p)) {
+        $v = trim(file_get_contents($p));
+        if ($v != "") {
+            return $v;
+        }
+    }
+    return "0.0.0";
+}
+
 function api_cache_stats(string $listing): string
 {
     $lines = explode("\n", $listing);
@@ -15543,7 +15557,7 @@ function api_serve_par(int $port): void
             api_par_trace("ACCEPT path=" . (strpos($req, "/v1/messages") !== false ? "anth" : "oai")
                 . " len=" . strlen($body));
             if (strpos($req, "GET /health") !== false) {
-                $payload = "{\"status\":\"ok\",\"model\":\"" . api_esc(gguf_meta_str("general.architecture")) . "\"}";
+                $payload = "{\"status\":\"ok\",\"model\":\"" . api_esc(gguf_meta_str("general.architecture")) . "\",\"version\":\"" . api_esc(api_engine_version()) . "\"}";
                 fwrite($c, "HTTP/1.1 200 OK
 Content-Type: application/json
 Connection: close
@@ -16207,7 +16221,7 @@ function api_serve(int $port): void
                 . "</script>";
         } else if (strpos($req, "GET /health") !== false) {
             // Liveness/readiness probe: cheap, no model work.
-            $payload = "{\"status\":\"ok\",\"model\":\"" . api_esc(gguf_meta_str("general.architecture")) . "\"}";
+            $payload = "{\"status\":\"ok\",\"model\":\"" . api_esc(gguf_meta_str("general.architecture")) . "\",\"version\":\"" . api_esc(api_engine_version()) . "\"}";
         } else if (strpos($req, "GET /spec_stats") !== false) {
             // F349: the speculative counters are process-global and reset at the start of every
             // generation call, so this reports the LAST request's drafts/accepted/verifies. Read it
