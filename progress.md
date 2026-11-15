@@ -2770,3 +2770,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **记法**：同一语义的分支可能散落在**多条分发链**（本文件已见 4 条 top-level 链）；改动必须用“claim 图 + 分支回声”确认命中哪条，而不是只改 grep 到的前几处。
 - **跨传输（f614）**：根 tuple 经 Anthropic `output_format` 与 Responses `text.format` 也返回合法 `[string,int]`（`anth-top-tuple-ok`、`resp-top-tuple-ok` 双模式 PASS）；**双模式 smoke 148→150/0**。
 
+## F615（2026-11-15）：根 tuple 形态扩展与闭包
+- **门**：4 元素（s,i,s,i）、单元素（s）、全字符串（s,s）、以及 **closed**（`unevaluatedItems:false`，经真空剥离）——四者在双模式下均返回合法元组（`["10000000",2000,"10000000",2000]` 等）。
+- **结果**：根 tuple 的接受面覆盖 1..4 元素、闭包与任意 s/i 组合；**双模式 smoke 150→154/0**。
+

@@ -2151,6 +2151,50 @@ def main():
         rtt_txt = e.read().decode()[:200]
     check("resp-top-tuple-ok", rtt_ok, rtt_txt[:160])
 
+    # F615: more root-tuple shapes, including the closed form (unevaluatedItems:false is stripped
+    # because the writer emits exactly the prefix items).
+    def pjson(txt):
+        try:
+            return json.loads(txt)
+        except Exception:
+            return None
+
+    def probe_root(name, schema, ok_fn):
+        pb = {"messages": [{"role": "user", "content": "Give the values."}],
+              "max_tokens": 40, "temperature": 0,
+              "response_format": {"type": "json_schema",
+                                  "json_schema": {"name": "x", "schema": schema}}}
+        ok = False
+        txt = ""
+        try:
+            r = post("/v1/chat/completions", pb)
+            txt = r["choices"][0]["message"]["content"]
+            ok = bool(ok_fn(txt))
+        except urllib.error.HTTPError as e:
+            txt = e.read().decode()[:200]
+        print("  DIAG %s %s %s" % (name, "ok" if ok else "bad", txt[:120]))
+        check(name, ok, txt[:160])
+
+    probe_root("top-tuple-four-ok",
+               {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"},
+                                                 {"type": "string"}, {"type": "integer"}]},
+               lambda t: (lambda v: isinstance(v, list) and len(v) == 4
+                          and isinstance(v[0], str) and isinstance(v[1], int)
+                          and isinstance(v[2], str) and isinstance(v[3], int))(pjson(t)))
+    probe_root("top-tuple-one-ok",
+               {"type": "array", "prefixItems": [{"type": "string"}]},
+               lambda t: (lambda v: isinstance(v, list) and len(v) == 1
+                          and isinstance(v[0], str))(pjson(t)))
+    probe_root("top-tuple-closed-ok",
+               {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}],
+                "unevaluatedItems": False},
+               lambda t: (lambda v: isinstance(v, list) and len(v) == 2
+                          and isinstance(v[0], str) and isinstance(v[1], int))(pjson(t)))
+    probe_root("top-tuple-str-str-ok",
+               {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}]},
+               lambda t: (lambda v: isinstance(v, list) and len(v) == 2
+                          and isinstance(v[0], str) and isinstance(v[1], str))(pjson(t)))
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

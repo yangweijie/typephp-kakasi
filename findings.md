@@ -5155,4 +5155,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：grep 到的分支数量 ≠ 分发链数量；用**分支回声**（临时代码，验证后移除）确认实际链路。claim 谓词只能保证“有认领”，定位“谁认领/哪条链写入”仍需回声。
 **证据**：`gate_live_f612h.log`（仅 CLAIM/STRUCT，无 BR）、`gate_live_f612i.log`（BR4 命中+148/0）、`gate_live_f612j.log`（最终 148/0）、`selftest_f612j.log`。
 **跨传输**：`anth-top-tuple-ok`、`resp-top-tuple-ok` 双模式 PASS（`gate_live_f614.log`，**150/0**）——重命名与 tuple 路由对三形状一致。
+
+## F615（2026-11-15）：根 tuple 的形态矩阵
+**门**：4 元素 / 1 元素 / 全字符串 / 闭包（`unevaluatedItems:false` 先剥离）均返回合法元组且类型逐位匹配（`gate_live_f615.log`，双模式 **154/0**）。
+**记法**：元组写入器与 kinds 串已覆盖 1..4 元素和任意 s/i 组合；闭包依赖 F608 的真空剥离，两处改动必须同时在位。
+**证据**：`api_smoke_f615.log`、`api_smoke_pretty_f615.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
