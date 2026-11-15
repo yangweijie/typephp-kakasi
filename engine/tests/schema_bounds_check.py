@@ -1278,10 +1278,10 @@ code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123456,
                               '"maximum":0.0001234567890123459,'
                               '"exclusiveMinimum":0.0001234567890123456,'
                               '"exclusiveMaximum":0.0001234567890123459}'))
-good = code == 400 and "numeric bounds" in txt
+good = code == 200 and '"n":0.0001234567890123457' in txt
 if not good:
     bad += 1
-print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_both_excl_refuse", code, good, txt[:140]))
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_both_excl_interior_ok", code, good, txt[:140]))
 
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":-0.0001234567890123456,'
                               '"maximum":0.0001234567890123456,'
@@ -1313,10 +1313,24 @@ print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_mult_ok", code, good, 
 
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.6000000000000000001,'
                               '"maximum":1,"multipleOf":0.5}'))
+good = code == 200 and '"n":1,' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_mult_walk_ok", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":2,"maximum":2,'
+                              '"multipleOf":0.0000000000000000001}'))
 good = code == 400 and "numeric bounds" in txt
 if not good:
     bad += 1
-print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_mult_miss_refuse", code, good, txt[:140]))
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_walk_cap_refuse", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.5,"maximum":0.5,'
+                              '"exclusiveMinimum":0.5,"exclusiveMaximum":0.5}'))
+good = code == 400 and "numeric bounds" in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_excl_empty_refuse", code, good, txt[:140]))
 
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123459,'
                               '"maximum":0.0001234567890123456}'))

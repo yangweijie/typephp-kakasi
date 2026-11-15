@@ -5014,4 +5014,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：自检 `pi_mul`/`pi_mul_miss`；活体 `pinned_interval_mult_ok`（200 `{"n":0.5,...}`）与 `pinned_interval_mult_miss_refuse`（400）。
 **记法**：multipleOf 的可用值按代价排序：0（任意区间含 0）→ 端点（无 multipleOf）→ m 本身（1 倍）→ 其余倍数（需要加法/取整）。
 **证据**：`build_f592.log`、`selftest_f592.log`（0 FAIL）、四个 `*_f592` harness（0）、`gate_live_f592.log`（122/0、par/fair 0、1.583×、哨兵 0）。
+
+## F593（2026-11-15）：十进制串加法与最后两类
+**实现**：符号分离 + 小数对齐 + 逐位进位/借位的精确加法（`api_decimal_add` 及四个辅助），配合两个消费者——排他侧取最小单位（`min+ulp`，双排他须 `< max`）、multipleOf 从 0 反复加 m 的倍数行走（上限 4096 步）。
+**结果**：双排他 19 位发 `0.0001234567890123457`；0.6…1 与 multipleOf 0.5 发 1；4096 步到不了的（2 与 1e-19）与 min==max 双排他保持 400。
+**记法**：先穷尽零算术的合法值（端点/0/1×m），剩余才上算术；算术只需**加法**就能覆盖取整搜索，不必实现乘除。上限要显式（4096 步）并成门，避免病态循环。
+**证据**：`build_f593.log`、`selftest_f593.log`（0 FAIL）、四个 `*_f593` harness（0）、`gate_live_f593.log`（122/0、par/fair 0、1.570×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

@@ -11759,6 +11759,182 @@ function api_decimal_cmp(string $a, string $b): int
     return $na == 1 ? -$c : $c;
 }
 
+// F593: exact signed decimal addition on plain literals ("0.0001234567890123456" style). Digits are
+// added/subtracted with explicit carries, so nothing passes through a float.
+function api_decimal_split(string $lit): string
+{
+    $s = 0;
+    if (substr($lit, 0, 1) == "-") {
+        $s = 1;
+        $lit = substr($lit, 1);
+    }
+    $d = strpos($lit, ".");
+    $ip = $d === false ? $lit : substr($lit, 0, $d);
+    $fp = $d === false ? "" : substr($lit, $d + 1);
+    if ($ip == "") {
+        $ip = "0";
+    }
+    while (strlen($ip) > 1 && substr($ip, 0, 1) == "0") {
+        $ip = substr($ip, 1);
+    }
+    return $s . "|" . $ip . "|" . $fp;
+}
+
+function api_decimal_canon(int $sign, string $ip, string $fp): string
+{
+    while (strlen($fp) > 0 && substr($fp, strlen($fp) - 1, 1) == "0") {
+        $fp = substr($fp, 0, strlen($fp) - 1);
+    }
+    while (strlen($ip) > 1 && substr($ip, 0, 1) == "0") {
+        $ip = substr($ip, 1);
+    }
+    if ($ip == "") {
+        $ip = "0";
+    }
+    if ($ip == "0" && $fp == "") {
+        return "0";
+    }
+    return ($sign == 1 ? "-" : "") . $ip . ($fp == "" ? "" : "." . $fp);
+}
+
+function api_decimal_cmp_abs(string $ia, string $fa, string $ib, string $fb): int
+{
+    if (strlen($ia) != strlen($ib)) {
+        return strlen($ia) < strlen($ib) ? -1 : 1;
+    }
+    if ($ia != $ib) {
+        return $ia < $ib ? -1 : 1;
+    }
+    $L = strlen($fa) > strlen($fb) ? strlen($fa) : strlen($fb);
+    while (strlen($fa) < $L) {
+        $fa = $fa . "0";
+    }
+    while (strlen($fb) < $L) {
+        $fb = $fb . "0";
+    }
+    if ($fa == $fb) {
+        return 0;
+    }
+    return $fa < $fb ? -1 : 1;
+}
+
+function api_decimal_add_abs(string $ia, string $fa, string $ib, string $fb, int $L): string
+{
+    $carry = 0;
+    $fr = "";
+    for ($i = $L - 1; $i >= 0; $i--) {
+        $t = (int) substr($fa, $i, 1) + (int) substr($fb, $i, 1) + $carry;
+        $carry = $t >= 10 ? 1 : 0;
+        $fr = "" . ($t % 10) . $fr;
+    }
+    $ir = "";
+    $li = strlen($ia);
+    $lj = strlen($ib);
+    $n = $li > $lj ? $li : $lj;
+    for ($i = 0; $i < $n; $i++) {
+        $x = 0;
+        $y = 0;
+        if ($i < $li) {
+            $x = (int) substr($ia, $li - 1 - $i, 1);
+        }
+        if ($i < $lj) {
+            $y = (int) substr($ib, $lj - 1 - $i, 1);
+        }
+        $t = $x + $y + $carry;
+        $carry = $t >= 10 ? 1 : 0;
+        $ir = "" . ($t % 10) . $ir;
+    }
+    if ($carry == 1) {
+        $ir = "1" . $ir;
+    }
+    while (strlen($ir) > 1 && substr($ir, 0, 1) == "0") {
+        $ir = substr($ir, 1);
+    }
+    return $ir . "|" . $fr;
+}
+
+function api_decimal_sub_abs(string $ia, string $fa, string $ib, string $fb, int $L): string
+{
+    $borrow = 0;
+    $fr = "";
+    for ($i = $L - 1; $i >= 0; $i--) {
+        $x = (int) substr($fa, $i, 1) - $borrow;
+        $y = (int) substr($fb, $i, 1);
+        if ($x < $y) {
+            $x = $x + 10;
+            $borrow = 1;
+        } else {
+            $borrow = 0;
+        }
+        $fr = "" . ($x - $y) . $fr;
+    }
+    $ir = "";
+    $n = strlen($ia);
+    $lj = strlen($ib);
+    for ($i = 0; $i < $n; $i++) {
+        $x = (int) substr($ia, $n - 1 - $i, 1) - $borrow;
+        $y = 0;
+        if ($i < $lj) {
+            $y = (int) substr($ib, $lj - 1 - $i, 1);
+        }
+        if ($x < $y) {
+            $x = $x + 10;
+            $borrow = 1;
+        } else {
+            $borrow = 0;
+        }
+        $ir = "" . ($x - $y) . $ir;
+    }
+    while (strlen($ir) > 1 && substr($ir, 0, 1) == "0") {
+        $ir = substr($ir, 1);
+    }
+    return $ir . "|" . $fr;
+}
+
+function api_decimal_add(string $a, string $b): string
+{
+    $pa = explode("|", api_decimal_split($a));
+    $pb = explode("|", api_decimal_split($b));
+    $sa = (int) $pa[0];
+    $ia = $pa[1];
+    $fa = $pa[2];
+    $sb = (int) $pb[0];
+    $ib = $pb[1];
+    $fb = $pb[2];
+    $L = strlen($fa) > strlen($fb) ? strlen($fa) : strlen($fb);
+    while (strlen($fa) < $L) {
+        $fa = $fa . "0";
+    }
+    while (strlen($fb) < $L) {
+        $fb = $fb . "0";
+    }
+    $za = preg_match('/^0+$/', $ia . $fa) == 1;
+    $zb = preg_match('/^0+$/', $ib . $fb) == 1;
+    if ($za && $zb) {
+        return "0";
+    }
+    if ($za) {
+        return api_decimal_canon($sb, $ib, $fb);
+    }
+    if ($zb) {
+        return api_decimal_canon($sa, $ia, $fa);
+    }
+    if ($sa == $sb) {
+        $r = explode("|", api_decimal_add_abs($ia, $fa, $ib, $fb, $L));
+        return api_decimal_canon($sa, $r[0], $r[1]);
+    }
+    $cmp = api_decimal_cmp_abs($ia, $fa, $ib, $fb);
+    if ($cmp == 0) {
+        return "0";
+    }
+    if ($cmp > 0) {
+        $r = explode("|", api_decimal_sub_abs($ia, $fa, $ib, $fb, $L));
+        return api_decimal_canon($sa, $r[0], $r[1]);
+    }
+    $r = explode("|", api_decimal_sub_abs($ib, $fb, $ia, $fa, $L));
+    return api_decimal_canon($sb, $r[0], $r[1]);
+}
+
 // F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
 // the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
 // the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
@@ -11925,6 +12101,68 @@ function api_schema_strip_pinned_interval(string $body): string
                 }
                 if ($okm == 1) {
                     $pick = $mv;
+                }
+            }
+        }
+        if ($pick == "") {
+            // F593: one unit at the finest scale is strictly inside a one-sided exclusive bound,
+            // and between two exclusive bounds whenever it still compares below the maximum.
+            $D = 0;
+            if ($minLit != "") {
+                $mdot = strpos($minLit, ".");
+                if ($mdot !== false && strlen(substr($minLit, $mdot + 1)) > $D) {
+                    $D = strlen(substr($minLit, $mdot + 1));
+                }
+            }
+            if ($maxLit != "") {
+                $xdot = strpos($maxLit, ".");
+                if ($xdot !== false && strlen(substr($maxLit, $xdot + 1)) > $D) {
+                    $D = strlen(substr($maxLit, $xdot + 1));
+                }
+            }
+            if ($D > 0) {
+                $ulp = "0.";
+                for ($ui = 1; $ui < $D; $ui++) {
+                    $ulp = $ulp . "0";
+                }
+                $ulp = $ulp . "1";
+                if ($exMin == true && $exMax == true && $hasMin == 1 && $hasMax == 1) {
+                    $cand = api_decimal_add($minLit, $ulp);
+                    if (api_decimal_cmp($cand, $maxLit) < 0) {
+                        $pick = $cand;
+                    }
+                } else if ($exMin == true && $hasMin == 1 && $hasMax != 1) {
+                    $pick = api_decimal_add($minLit, $ulp);
+                } else if ($exMax == true && $hasMax == 1 && $hasMin != 1) {
+                    $pick = api_decimal_add($maxLit, "-" . $ulp);
+                }
+            }
+        }
+        if ($pick == "") {
+            // F593: walk the multiples of m by repeated addition (capped at 4096 steps), then check
+            // the bounds; a walk that does not reach the interval refuses rather than guessing.
+            $mo = [];
+            if ($hasMin == 1 && strpos($sub, "\"multipleOf\"") !== false
+                && preg_match('/"multipleOf"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mo) == 1
+                && api_decimal_cmp($mo[1], "0") > 0) {
+                $v = "0";
+                $steps = 0;
+                while (api_decimal_cmp($v, $minLit) < 0 && $steps < 4096) {
+                    $v = api_decimal_add($v, $mo[1]);
+                    $steps = $steps + 1;
+                }
+                $okv = $steps < 4096 ? 1 : 0;
+                if ($okv == 1 && api_decimal_cmp($v, $minLit) == 0 && $exMin == true) {
+                    $v = api_decimal_add($v, $mo[1]);
+                }
+                if ($okv == 1 && $hasMax == 1) {
+                    $c = api_decimal_cmp($v, $maxLit);
+                    if ($c > 0 || ($c == 0 && $exMax == true)) {
+                        $okv = 0;
+                    }
+                }
+                if ($okv == 1) {
+                    $pick = $v;
                 }
             }
         }
@@ -20673,6 +20911,15 @@ function main(): void
     // F592: the multiplier literal is 1 x m and serves an interval containing it; a miss stays.
     $piMul = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":1,"multipleOf":0.5},"note":{"type":"string"}}}');
     $piMulMiss = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.6000000000000000001,"maximum":1,"multipleOf":0.5},"note":{"type":"string"}}}');
+    // F593: exact decimal addition (digit carries) and its two new consumers - one ulp inside an
+    // exclusive side, and the multiple walk.
+    $dA = api_decimal_add("1", "2");
+    $dB = api_decimal_add("0.5", "0.5");
+    $dC = api_decimal_add("1.5", "-2");
+    $dD = api_decimal_add("0.0001234567890123456", "0.0000000000000000001");
+    $dE = api_decimal_add("-0.5", "0.5");
+    $piWalkCap = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":2,"maximum":2,"multipleOf":0.0000000000000000001},"note":{"type":"string"}}}');
+    $piExEmpty = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.5,"maximum":0.5,"exclusiveMinimum":0.5,"exclusiveMaximum":0.5},"note":{"type":"string"}}}');
     $piBad = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123459,"maximum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piZero = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"multipleOf":0.0000000000000000001},"note":{"type":"string"}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
@@ -20755,7 +21002,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20779,12 +21026,16 @@ function main(): void
         && strpos($piSpan, "\"const\":0.0001234567890123456}") !== false
         && strpos($piExcl, "\"const\":0.0001234567890123459}") !== false
         && strpos($piExMax, "\"const\":0.0001234567890123456}") !== false
-        && strpos($piBoth, "\"const\"") === false
+        && strpos($piBoth, "\"const\":0.0001234567890123457}") !== false
         && strpos($piZeroEx, "\"const\":0}") !== false
         && strpos($piZeroMinOnly, "\"const\":0}") !== false
         && strpos($piZeroMaxOnly, "\"const\":0}") !== false
         && strpos($piMul, "\"const\":0.5}") !== false
-        && strpos($piMulMiss, "\"const\"") === false
+        && strpos($piMulMiss, "\"const\":1}") !== false
+        && $dA == "3" && $dB == "1" && $dC == "-0.5"
+        && $dD == "0.0001234567890123457" && $dE == "0"
+        && strpos($piWalkCap, "\"const\"") === false
+        && strpos($piExEmpty, "\"const\"") === false
         && strpos($piBad, "\"const\"") === false
         && strpos($piZero, "\"const\":0}") !== false
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"

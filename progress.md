@@ -2640,3 +2640,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f592`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.583×；哨兵 0。
 - **剩余**：区间不含 1×m 且 0 也不在区间内的 multipleOf、以及 0 不在区间内的双排他——这两类才真正需要十进制加法/取整改。
 
+## F593（2026-11-15）：十进制串算术（加法）——>18 位剩余两类收口
+- **加法器**：`api_decimal_split/canon/cmp_abs/add_abs/sub_abs/add`——符号分离、按小数位对齐、逐位进位/借位，全程不经浮点。自检 `dec_add=[3|1|-0.5|0.0001234567890123457|0]`。
+- **两个新消费者**：① 排他侧取“最小单位”：双排他发 `min+ulp`（须 `< max`），单侧排他发 `bound±ulp`；② multipleOf 倍数行走：从 0 反复加 m（**上限 4096 步**），落入区间即发，超限或越过上界则拒绝。
+- **自检**：`pi_both=[const]`（双排他 19 位发 0.0001234567890123457）、`pi_mul_miss=[walk]`（发 1）、`pi_walk_cap=[kept]`（2 与 1e-19 需 2e19 步，拒）、`pi_ex_empty=[kept]`（min==max 双排他不可满足）。
+- **活体**：`pinned_interval_both_excl_interior_ok` 200 `{"n":0.0001234567890123457,...}`；`pinned_interval_mult_walk_ok` 200 `{"n":1,...}`；`walk_cap_refuse`/`excl_empty_refuse` 400。
+- **梯**：BUILD_OK（`build_f593`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.570×；哨兵 0。
+- **结论**：>18 位数值面已收口——能取端点/0/1×m/内部单位/≤4096 步倍数的一律精确服务，其余显式 400；不再需要“十进制串表示”大改（F582 的动机已被这条路径覆盖）。
+
