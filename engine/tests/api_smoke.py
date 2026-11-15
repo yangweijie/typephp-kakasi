@@ -742,6 +742,24 @@ def main():
           and all(pains.get(i, {}).get("city") in ("Paris", "London") for i in pains),
           "%s %s" % (pstart, pains))
 
+    # F619: the named stream ({"type":"any","name":...}) has the same pair rule - one function
+    # called with two argument values must arrive as two tool_use blocks with index 0 and 1.
+    r = post("/v1/messages", {"messages": [{"role": "user",
+                                            "content": "Weather in Paris and London, "
+                                                       "two calls in one turn."}],
+                              "max_tokens": 192, "stream": True, "seed": 5,
+                              "parallel_tool_calls": True,
+                              "tool_choice": {"type": "any", "name": "get_weather"},
+                              "tools": [{"name": "get_weather", "input_schema": {
+                                  "type": "object", "properties": {
+                                      "city": {"type": "string",
+                                               "enum": ["Paris", "London"]}}}}]}, stream=True)
+    nstart, nains = anth_blocks(r)
+    ncity = sorted(str(nains.get(i, {}).get("city")) for i in nains)
+    check("anth-stream-named-parallel", sorted(nstart.keys()) == [0, 1]
+          and all(nstart[i] == "get_weather" for i in nstart) and ncity == ["London", "Paris"],
+          "%s %s" % (nstart, nains))
+
     # F205: the same parallel turn must survive streaming. OpenAI deltas carry one entry per call
     # with its own index and id; Responses streams one output item per call and completes once.
     stream_par = {"messages": [{"role": "user",

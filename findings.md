@@ -5178,3 +5178,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`anth-stream-any-args`（单调用且 `input.city ∈ {Paris,London}`）、`anth-stream-any-parallel`（两块，index 0/1，各自实参合法）双模式 PASS；**双模式 smoke 156→158/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：骨架里的字面量就是答案——把 `arguments` 写成 `{}` 等于承诺“没有参数”，而白名单/约束都拦不住它；门必须解析 `partial_json` 的**内容**，只看事件序列会漏掉这一整类退化。
 **证据**：`build_f618.log`、`selftest_f618.log`、`{req,cnt,pat,bnd}_run_f618.log`、`gate_live_f618.log`（smoke 双模式 158/0）。
+
+## F619（2026-11-15）：Anthropic 流式点名工具的并行扇出
+**缺陷**：流式 `tool_choice:{type:"any",name:X}` 已带实参，但带 `parallel_tool_calls:true` 时仍只发一个块——非流式同名路径（F201）能发两个。
+**改动**：骨架统一改走 `api_tool_wire`；并行标志下用“两块串联”候选（≤24）；解析改 `api_tool_calls_json` 复数形式并逐调用递增 `index`/`toolu_N`；约束步数 96→192。
+**结果**：`anth-stream-named-parallel` 双模式 PASS（index 0/1、两城市 London/Paris）；**双模式 smoke 158→159/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：同一出口的三条路径（无 choice / any / 点名 × 单发/并行）必须逐格成门；`tool_choice` 的三种拼写各走各的骨架构造，只测其中一种会留下整格空缺。
+**证据**：`build_f619.log`、`selftest_f619.log`、`{req,cnt,pat,bnd}_run_f619.log`、`gate_live_f619.log`。

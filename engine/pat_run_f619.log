@@ -1,0 +1,27 @@
+HEALTH_OK port=8000 polls=1
+code_upper3              status=200 ok=True text={"code":"EYX"}
+sku_digits               status=200 ok=True text={"sku":"SKU-1234"}
+x_then_two_lower         status=200 ok=True text={"tag":"Xaa"}
+multi_leaf_pattern       status=200 ok=True text={"code":"QXZ","city":"New York"}
+multi_leaf_all_required  status=200 ok=True text={"code":"QXZ","city":"New York"}
+range_sku_served         status=200 ok=True text={"sku":"SKU-123456"}
+star_served              status=200 ok=True text={"tag":"m"}
+unanchored_served        status=200 ok=True text={"num":"123"}
+negated_class_served     status=200 ok=True text={"tag":"LW"}
+neg_underscore_served    status=200 ok=True text={"tag":"_^"}
+neg_caret_served         status=200 ok=True text={"tag":"_^"}
+neg_empty_refuse         status=400 ok=True text={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals","type":"invalid
+escape_served            status=200 ok=True text={"num":"123"}
+escape_w_served          status=200 ok=True text={"tag":"LWJ00101234567890"}
+escape_upper_D_served    status=200 ok=True text={"num":"-x^"}
+escape_backslash_refuse  status=400 ok=True text={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals","type":"invalid
+range_last_served        status=200 ok=True text={"tag":"Xaaaa"}
+plus_digits_served       status=200 ok=True text={"num":"12345678901234567"}
+nonlast_star_served      status=200 ok=True text={"tag":"m45"}
+nonlast_range_served     status=200 ok=True text={"tag":"mz123"}
+nonlast_star0_served     status=200 ok=True text={"tag":"10"}
+literal_alt_regression   status=200 ok=True text={"city":"Paris"}
+VERDICT: PASS - counted-class values match the pattern; other forms still refused
+CHECK_EXIT=0
+SENTINELS_LEFT=0
+SCHEMA_PATTERN_RUN_DONE tag=f619

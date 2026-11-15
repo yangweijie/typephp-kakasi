@@ -2787,3 +2787,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：流式 `any` 的骨架原为 `arguments:{}`（参数恒空），改为按 `input_schema` 候选构造 `api_tool_wire`；`parallel_tool_calls` 时用两块候选，逐调用递增 `index`/`toolu_N`。
 - **门**：`anth-stream-any-args`、`anth-stream-any-parallel` 双模式 PASS；**smoke 156→158/0**。
 - **梯**：BUILD_OK（`build_f618`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F619（2026-11-15）：Anthropic 流式点名工具的并行
+- **修**：点名流式路径的骨架改 `api_tool_wire`；`parallel_tool_calls` 时放两块候选，复数解析后逐个发 `content_block_start/delta/stop`，`index`/`toolu_N` 递增。
+- **门**：`anth-stream-named-parallel` 双模式 PASS；**smoke 158→159/0**。
+- **梯**：BUILD_OK（`build_f619`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；par/fair 0；哨兵 0；`check_gates` 199/0。
