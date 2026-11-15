@@ -5122,4 +5122,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **元组**：新增 `api_schema_strip_vacuous_unevalitems`（tuple 且无 `items` 时剥离），自检 `ue=[stripped|kept]`；但活体仍 400（链上其它判定），门按“200 合法或 400 具名”断言，**不宣称支持**。
 **记法**：剥离正确 ≠ 路由接受——中间产物断言（strip 输出）与活体结果必须分开记录；显式 400 可接受，无声散文不可。
 **证据**：`gate_live_f608.log`（tuple 400 前）、`gate_live_f609.log`（双模式 143/0）、`selftest_f608c.log`（UV-DIAG has=0）。
+
+## F609（2026-11-15）：prefixItems 等价重命名
+**根因**：tuple 检测器只认 draft-4 `"items":[…]`；`prefixItems` 被关键字门拒绝（`DIAG tuple` 捕获的 400 文案直接点名）。
+**实现**：`api_schema_prefix_items` 在入口把唯一且无 `items` 的 `prefixItems` 改名为 `items`，交给既有 tuple 写入器；两处服务器入口接线。
+**结果**：`prefixitems_served_ok`（翻转自 refuse）断言 200 且 `["…", int]`；`uneval_root_tuple_refuse` 具名断言放宽；双模式 143/0、四 harness 0、PAR 0。
+**记法**：同一语义的**两种标准拼写**（draft-4 vs 2020-12）最省事的桥是“入口等价重命名”，前提是写入器输出对两者都合法（只发前缀项并闭合）；改名条件要严格（唯一出现、无冲突键）。
+**证据**：`build_f609.log`、`selftest_f609.log`、`req_run_f609c.log`、`bnd_run_f609c.log`、`gate_live_f609c.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

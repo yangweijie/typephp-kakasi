@@ -2740,3 +2740,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f608`）；自检 0 FAIL；四 harness 0；双模式 smoke **143/0**（141+2）；哨兵 0。
 - **仍缺**：tuple+`unevaluatedItems:false` 的**接受态**（剥离已就绪，拒绝来自链上其它关键字判定；下一轮定位）。
 
+## F609（2026-11-15）：`prefixItems`（draft 2020）→ 元组接受态
+- **根因**：`api_schema_tuple` 只认 draft-4 的 `"items":[…]` 元组拼写，`prefixItems` 被关键字门点名拒绝。
+- **实现**：`api_schema_prefix_items`——当全包**恰有一处** `prefixItems` 且无 `items` 时等价重命名为 `items`（写入器只发前缀项并闭合，对两种拼写都合法）；接在两处服务器入口（压缩之后）。
+- **门**：`prefixitems_served_ok`（required harness，翻转自 `prefixitems_refuse`）断言 200 且 pair 为 `[string, integer]`；`uneval_root_tuple_refuse` 的具名断言放宽为 `items`/`prefixItems`/`unevaluatedItems` 任一（拒绝仍显式）。活体 `uneval-items-closed-ok` 现返回 `{"pair":["1, 2",2000]}`。
+- **梯**：BUILD_OK（`build_f609`）；自检 0 FAIL；四 harness 0（`f609c`）；双模式 smoke **143/0**；PAR 0；哨兵 0。
+

@@ -2003,6 +2003,7 @@ def main():
         tu_txt = e.read().decode()[:300]
         # A named refusal is acceptable; silence (free text) is not.
         tu_ok = e.code == 400 and ("unevaluatedItems" in tu_txt or "not supported" in tu_txt)
+    print("  DIAG tuple %s %s" % ("ok" if tu_ok else "bad", tu_txt[:150]))
     check("uneval-items-closed-ok", tu_ok, tu_txt[:160])
 
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),

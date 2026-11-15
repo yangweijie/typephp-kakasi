@@ -12193,6 +12193,17 @@ function api_tools_deep_array_object(string $body): int
     }
 }
 
+// F609: draft 2020-12 spells a fixed tuple as prefixItems; the tuple writer speaks the draft-4
+// items-array spelling. Renaming is sound only when the body has exactly one prefixItems and no
+// items key - the writer emits exactly the prefix items and closes, which satisfies both.
+function api_schema_prefix_items(string $body): string
+{
+    if (substr_count($body, "\"prefixItems\"") != 1 || strpos($body, "\"items\"") !== false) {
+        return $body;
+    }
+    return str_replace("\"prefixItems\":", "\"items\":", $body);
+}
+
 // F608: a tuple schema (prefixItems) with no "items" key is emitted exactly as its prefix items,
 // so unevaluatedItems is vacuously satisfied and can be stripped before the keyword gate sees it.
 function api_schema_strip_vacuous_unevalitems(string $body): string
@@ -15322,6 +15333,7 @@ function api_serve_par(int $port): void
             }
             $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
             $body = api_json_compact($body);
+            $body = api_schema_prefix_items($body);
             if ($body != "" && strpos($req, "/v1/messages") !== false) {
                 $body = api_anthropic_output_format($body);
             }
@@ -15954,6 +15966,7 @@ function api_serve(int $port): void
         $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
         $body = api_json_compact($body);
         $body = api_schema_strip_vacuous_unevalitems($body);
+        $body = api_schema_prefix_items($body);
         if ($body != "" && strpos($req, "/v1/messages") !== false) {
             $body = api_anthropic_output_format($body);
         }

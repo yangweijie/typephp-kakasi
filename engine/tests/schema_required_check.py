@@ -572,10 +572,16 @@ cases = [
      and len(json.loads(txt)["pair"]) == 2
      and isinstance(json.loads(txt)["pair"][0], str)
      and isinstance(json.loads(txt)["pair"][1], int)),
-    ("prefixitems_refuse", "Give two values.",
+    # F609: prefixItems is the draft-2020 spelling of a fixed tuple; the body rename makes it the
+    # draft-4 items-array form and the tuple writer serves it, so this gate now asserts the pair.
+    ("prefixitems_served_ok", "Give two values.",
      {"type": "object", "properties": {"pair": {"type": "array",
                                                 "prefixItems": [{"type": "string"}, {"type": "integer"}]}}},
-     lambda code, txt: code == 400 and "prefixItems" in txt),
+     lambda code, txt: code == 200
+     and isinstance((obj_of(txt) or {}).get("pair"), list)
+     and len((obj_of(txt) or {}).get("pair")) == 2
+     and isinstance((obj_of(txt) or {}).get("pair")[0], str)
+     and isinstance((obj_of(txt) or {}).get("pair")[1], int)),
     # F448: `not` is honoured when its subschema is just a type the flat all-string answer cannot
     # have; a value rule inside it (pattern) or a shape whose leaves are not all strings stays
     # refused, because either needs the value evaluated rather than reasoned about up front.

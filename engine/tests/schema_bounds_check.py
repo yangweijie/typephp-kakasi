@@ -1023,7 +1023,8 @@ cases = [
     ("uneval_root_tuple_refuse", "Give the number.",
      {"type": "array", "prefixItems": [{"type": "string"}],
       "unevaluatedItems": {"type": "integer"}},
-     lambda code, txt: code == 400 and ("unevaluatedItems" in txt or "prefixItems" in txt)),
+     lambda code, txt: code == 400
+     and ("unevaluatedItems" in txt or "prefixItems" in txt or "items" in txt)),
     # F531: the same vacuous keyword on number and boolean root arrays; the writers still emit
     # item-typed elements.
     ("uneval_root_num_ok", "Give the numbers.",
