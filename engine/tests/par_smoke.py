@@ -111,6 +111,23 @@ def main():
     for t in ts:
         t.join()
 
+    # F607: the cooperative server needs the same fail-closed guard - an unclaimed response
+    # schema must refuse instead of streaming free text.
+    unc = {"messages": [{"role": "user", "content": "Give the data."}], "max_tokens": 48,
+           "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": {
+               "type": "object", "properties": {"m": {"type": "object", "properties": {
+                   "x": {"type": "array", "items": {"type": "array", "items": {
+                       "type": "object", "properties": {"y": {"type": "string"}}}}}}}}}}}}
+    unc_ok = False
+    unc_detail = ""
+    try:
+        unc_raw = post("/v1/chat/completions", unc)
+        unc_detail = unc_raw[:160]
+    except urllib.error.HTTPError as e:
+        unc_ok = e.code == 400
+        unc_detail = str(e.code)
+    check("par-unclaimed-refuse", unc_ok, unc_detail)
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

@@ -5111,4 +5111,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`anth-exp-bounds-served`、`resp-exp-bounds-served`——同一 `1e-5/2e-5` schema 经 `output_format` 与 `text.format` 到达时，正文均精确含 `"n":0.00001`；双模式 **141/0**。
 **记法**：数值/展开类能力要按“入口形状 × 序列化形态”做二维核对；本轮把指数类补到与失败关闭同等覆盖。
 **证据**：`gate_live_f606.log`、`api_smoke_f606.log`、`api_smoke_pretty_f606.log`。
+
+## F607（2026-11-15）：并发服务器的同一失败关闭
+**门**：`par-unclaimed-refuse` 在 8001 上返回 400（未认领 schema 不再自由流式）；`PAR SMOKE: PASS`，主服务双模式仍 **141/0**。
+**记法**：验收矩阵是“入口形状 × 服务实例”；两台服务器有各自分发，任何失败关闭/拒绝要分别有活体门。
+**证据**：`gate_live_f607.log`、`par_smoke_f607.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
