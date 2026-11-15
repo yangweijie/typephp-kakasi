@@ -269,11 +269,12 @@ function api_plugins_count(string $text): int
 }
 
 // Applies the first matching profile; returns "name|match|attn|kv16|applied|profiles".
-function api_plugins_apply(): string
+// F641: selection separated from the setters, so the matching rules (first match wins, wildcard
+// fallback, comment/blank/field-count skipping) are unit-testable without touching engine state.
+function api_plugins_select(string $text, string $fp): string
 {
-    $text = api_plugins_text();
-    $fp = model_device_fingerprint(0);
-    $lines = explode("\n", $text);
+    $lines = explode("
+", $text);
     $total = api_plugins_count($text);
     for ($i = 0; $i < count($lines); $i++) {
         $ln = trim($lines[$i]);
@@ -285,45 +286,32 @@ function api_plugins_apply(): string
             continue;
         }
         if ($f[1] == "*" || strpos($fp, $f[1]) !== false) {
-            model_set_attn_mode((int) $f[2]);
-            model_set_kv_f16((int) $f[3]);
-            return $f[0] . "|" . $f[1] . "|" . model_attn_mode() . "|" . $f[3] . "|1|" . $total;
+            return $f[0] . "|" . $f[1] . "|" . $f[2] . "|" . $f[3] . "|" . $total;
         }
     }
-    return "none||" . model_attn_mode() . "|0|0|" . $total;
+    return "none||2|0|" . $total;
+}
+
+function api_plugins_apply(): string
+{
+    $st = explode("|", api_plugins_select(api_plugins_text(), model_device_fingerprint(0)));
+    if ($st[0] != "none") {
+        model_set_attn_mode((int) $st[2]);
+        model_set_kv_f16((int) $st[3]);
+    }
+    return $st[0] . "|" . $st[1] . "|" . model_attn_mode() . "|" . $st[3] . "|"
+        . ($st[0] == "none" ? 0 : 1) . "|" . $st[4];
 }
 
 function api_plugins_json(): string
 {
     // Reporting only: the knobs were applied once at server start, so this must not touch a live
     // session's KV. attn_mode is read back from the engine; kv_f16 is the profile's intent.
-    $text = api_plugins_text();
-    $fp = model_device_fingerprint(0);
-    $lines = explode("\n", $text);
-    $total = api_plugins_count($text);
-    $name = "none";
-    $match = "";
-    $kv = 0;
-    for ($i = 0; $i < count($lines); $i++) {
-        $ln = trim($lines[$i]);
-        if ($ln == "" || substr($ln, 0, 1) == "#") {
-            continue;
-        }
-        $f = explode("|", $ln);
-        if (count($f) < 4) {
-            continue;
-        }
-        if ($f[1] == "*" || strpos($fp, $f[1]) !== false) {
-            $name = $f[0];
-            $match = $f[1];
-            $kv = (int) $f[3];
-            break;
-        }
-    }
-    $applied = $name == "none" ? 0 : 1;
-    return "{\"profiles\":" . $total . ",\"active\":\"" . api_esc($name) . "\",\"match\":\""
-        . api_esc($match) . "\",\"device\":\"" . api_esc($fp)
-        . "\",\"attn_mode\":" . model_attn_mode() . ",\"kv_f16\":" . $kv
+    $st = explode("|", api_plugins_select(api_plugins_text(), model_device_fingerprint(0)));
+    $applied = $st[0] == "none" ? 0 : 1;
+    return "{\"profiles\":" . $st[4] . ",\"active\":\"" . api_esc($st[0]) . "\",\"match\":\""
+        . api_esc($st[1]) . "\",\"device\":\"" . api_esc(model_device_fingerprint(0))
+        . "\",\"attn_mode\":" . model_attn_mode() . ",\"kv_f16\":" . $st[3]
         . ",\"applied\":" . $applied . "}";
 }
 
@@ -22902,6 +22890,23 @@ function main(): void
     } else {
         echo "PARAM-GUARDS: FAIL ok=" . $pgOk . "/" . $pgN . " tool=" . $pgToolOk
             . " kw=" . $pgKwOk . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " bad=" . $pgBad . "\n";
+    }
+
+    // PROFILES (F641): profile selection on synthetic text - first match wins, a non-matching line
+    // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
+    $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
+    $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
+    $plB = api_plugins_select($plText, "some cpu");
+    $plC = api_plugins_select("bad|line\n", "Arc");
+    $plOk1 = $plA == "arc|Arc|1|1|3" ? 1 : 0;
+    $plOk2 = $plB == "last|*|2|0|3" ? 1 : 0;
+    $plOk3 = $plC == "none||2|0|1" ? 1 : 0;
+    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . "\n";
+    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1) {
+        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped)\n";
+    } else {
+        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . " sel=" . $plA
+            . " fb=" . $plB . " empty=" . $plC . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour

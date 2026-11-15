@@ -5327,3 +5327,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`par-anth-error-shape`（`type=error` 且 `error` 为对象）、`par-json-error-shape`（无顶层 `type:error`）PASS；8000 双模式仍 **191/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：信封是**写点属性**，不是函数属性——每新增一个 `fwrite(...error...)` 写点都要问“它属于哪套出口”；共享客户端库不会替服务器兜底。
 **证据**：`build_f640.log`、`selftest_f640.log`、`{req,cnt,pat,bnd}_run_f640.log`、`gate_live_f640.log`、`par_smoke_f640.log`。
+
+## F641（2026-11-15）：厂商档案的选择逻辑可单测（PROFILES 门）
+**动机**：F631 的 `/plugins` 只能证明“匹配到了某行”，而随船档案的旋钮值恰好等于出厂默认（attn=2、kv=0），无法区分“应用了档案”与“什么都没做”。
+**改动**：把匹配从应用里拆出——`api_plugins_select($text,$fp)` 纯函数返回 `name|match|attn|kv|profiles`，不再触碰引擎；`api_plugins_apply` 与 `api_plugins_json` 都改为消费它（行为不变）。
+**新门**：自检 `PROFILES` 用合成文本断言三条规则——首条命中优先（`arc|Arc|1|1|3`）、不匹配回落到通配行（`last|*|2|0|3`）、注释/空行/字段不足行被跳过（`none||2|0|1`）。
+**结果**：`PROFILES: PASS`；自检 0 FAIL；四 harness 0；smoke 双模式 **191/0**；par/fair 0；哨兵 0；`check_gates 199/0`。
+**记法**：机制类功能的门要落在**决策函数**上（选择/匹配/排序），而不是落在“最终状态恰好等于默认值”的表面输出上；把纯决策从副作用里拆出来是最小代价。
+**证据**：`build_f641.log`、`selftest_f641.log`（793–794 行）、`{req,cnt,pat,bnd}_run_f641.log`、`gate_live_f641.log`。

@@ -2894,3 +2894,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F640（2026-11-15）：8001 错误信封
 - **修**：`api_serve_par` 五个错误写点接 `api_error_for_path`。
 - **门**：`par-anth-error-shape`/`par-json-error-shape` PASS；8000 双模式 191/0 不变；自检/四 harness/par/fair/哨兵 全绿。
+
+## F641（2026-11-15）：PROFILES 选择逻辑单测
+- **重构**：`api_plugins_select`（纯选择）+ `api_plugins_apply`/`api_plugins_json` 消费之。
+- **门**：自检 `PROFILES: PASS`（首匹配/通配回落/跳行三规则）；自检 0 FAIL；smoke 双模式 191/0；par/fair 0；哨兵 0；`check_gates` 199/0。
