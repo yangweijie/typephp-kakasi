@@ -1,7 +1,4 @@
-deep200_cold_first_ok statuscat: /c/git/c/typephp-kakasi/engine/schema_bounds_f581.log: input file is output file
-SENTINELS_LEFT=0
-SCHEMA_BOUNDS_RUN_DONE tag=f581
-"k18":{"k19":{"k20":{"k
+deep200_cold_first_ok status=200 ok=True text={"k0":{"k1":{"k2":{"k3":{"k4":{"k5":{"k6":{"k7":{"k8":{"k9":{"k10":{"k11":{"k12":{"k13":{"k14":{"k15":{"k16":{"k17":{"k18":{"k19":{"k20":{"k
 deep260_refuse       status=400 ok=True text={"error":{"message":"nested object depth beyond 256 levels is not supported","type":"invalid_request_error"}}
 wide_0_100000        status=200 ok=True text={"n":100000}
 wide_1000_999999     status=200 ok=True text={"n":234567}
@@ -53,6 +50,7 @@ marker_window_thirteen_refuse status=400 ok=True text={"error":{"message":"numer
 float_dec14_served   status=200 ok=True text={"n":1.51111111111111}
 num_mult_frac_d14_ok status=200 ok=True text={"n":0.00024691357802}
 marker_window_fourteen_refuse status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
+dec_over15_refuse    status=400 ok=True text={"error":{"message":"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of a
 items_num_dec11_ok   status=200 ok=True text={"nums":[1.51111111111,1.51111111111,1.51111111111,1.51111111111]}
 num_mult_frac_d8_ok  status=200 ok=True text={"n":0.00024690}
 items_num_dec8_ok    status=200 ok=True text={"nums":[1.51111111,1.51111111,1.51111111,1.51111111]}
