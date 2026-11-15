@@ -5001,4 +5001,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：自检 `pi_excl`/`pi_exmax`/`pi_both`；活体 `pinned_interval_exmin_ok`/`exmax_ok`/`both_excl_refuse`/`bad_refuse`。
 **记法**：排他边界不是“一律拒绝”——先看另一侧是否闭端点；只有双排他才真正需要区间内部值（算术）。
 **证据**：`build_f590.log`、`selftest_f590.log`（0 FAIL）、四个 `*_f590` harness（0）、`gate_live_f590.log`（122/0、par/fair 0、1.622×、哨兵 0）。
+
+## F591（2026-11-15）：零点规则与数值排他形式
+**推理**：0 在区间内部 ⇒ 合法。覆盖双排他（min<0<max）、排他下界为负、排他上界为正，以及 multipleOf 的 0 特例——全部只需符号比较。
+**解析**：数值排他（无 minimum/maximum）并入边界；两侧同时出现时用 `api_decimal_cmp` 取更严者，排他标记归获胜的一侧（相等=排他；闭侧更严则取消）。
+**门**：自检 `pi_zero_ex`/`pi_zero_min_only`/`pi_zero_max_only`/`pi_both`/`pi_bad`；活体四个 `pinned_interval_zero_*` 200 与同正双排他 400。
+**记法**：把“合法值”问题不断化简为“端点/零点是否合法”，能消掉算术诉求的大部分；剩余的是 0 不在区间内的双排他与正 min + multipleOf。
+**证据**：`build_f591.log`、`selftest_f591.log`（0 FAIL）、四个 `*_f591` harness（0）、`gate_live_f591.log`（122/0、par/fair 0、1.567×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

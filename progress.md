@@ -2625,3 +2625,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f590`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.622×；哨兵 0。
 - **边界**：双侧排他、或同时带 multipleOf 的正 min，仍需十进制串算术。
 
+## F591（2026-11-15）：>18 位“零点”规则（含数值排他形式）
+- **观察**：0 位于区间内部时无需任何算术即可发 0——双排他（min<0<max）、单边排他（排他下界为负 / 排他上界为正）都成立；multipleOf 的 0 规则并入同一判定。
+- **解析补强**：数值排他形式（只写 `exclusiveMinimum`/`exclusiveMaximum`、无 `minimum`/`maximum`）此前未被当作边界；现在把排他值并入 min/max，并用严格比较决定哪一侧更严、排他标记归谁（相等视为排他，闭侧更严则取消标记）。
+- **自检**：`pi_zero_ex=[zero]`、`pi_zero_min_only=[zero]`、`pi_zero_max_only=[zero]`、`pi_both=[kept]`、`pi_bad=[kept]`（同正双排他仍不改写）。
+- **活体**：`pinned_interval_zero_excl_ok`/`zero_exmin_only_ok`/`zero_exmax_only_ok` 200 `{"n":0,...}`；`pinned_interval_both_excl_refuse`（同正）400。
+- **梯**：BUILD_OK（`build_f591`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.567×；哨兵 0。
+- **剩余**：双排他但 0 不在区间内、以及正 min + multipleOf，仍需真正的十进制串算术。
+

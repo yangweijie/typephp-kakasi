@@ -11801,8 +11801,7 @@ function api_schema_strip_pinned_interval(string $body): string
         $mx = [];
         $hasMin = preg_match('/"minimum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mn);
         $hasMax = preg_match('/"maximum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mx);
-        if (($hasMin != 1 && $hasMax != 1)
-            || preg_match('/"type"\s*:\s*"number"/', $sub) != 1
+        if (preg_match('/"type"\s*:\s*"number"/', $sub) != 1
             || strpos($sub, "\"const\"") !== false
             || strpos($sub, "\"enum\"") !== false) {
             continue;
@@ -11811,6 +11810,49 @@ function api_schema_strip_pinned_interval(string $body): string
         $exMax = strpos($sub, "\"exclusiveMaximum\"") !== false;
         $minLit = $hasMin == 1 ? $mn[1] : "";
         $maxLit = $hasMax == 1 ? $mx[1] : "";
+        // F591: the numeric exclusive form carries the bound itself; when both spellings appear,
+        // the stricter side governs and the exclusive flag belongs to whichever bound won.
+        $exMinLit = "";
+        $exMaxLit = "";
+        if ($exMin == true) {
+            $em = [];
+            if (preg_match('/"exclusiveMinimum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $em) == 1) {
+                $exMinLit = $em[1];
+            } else {
+                $exMin = false;           // the draft-4 boolean form is refused elsewhere
+            }
+        }
+        if ($exMax == true) {
+            $en = [];
+            if (preg_match('/"exclusiveMaximum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $en) == 1) {
+                $exMaxLit = $en[1];
+            } else {
+                $exMax = false;
+            }
+        }
+        if ($exMinLit != "") {
+            if ($minLit == "") {
+                $minLit = $exMinLit;
+            } else if (api_decimal_cmp($exMinLit, $minLit) > 0) {
+                $minLit = $exMinLit;
+            } else if (api_decimal_cmp($exMinLit, $minLit) < 0) {
+                $exMin = false;           // the inclusive minimum is the stricter side
+            }
+            $hasMin = 1;
+        }
+        if ($exMaxLit != "") {
+            if ($maxLit == "") {
+                $maxLit = $exMaxLit;
+            } else if (api_decimal_cmp($exMaxLit, $maxLit) < 0) {
+                $maxLit = $exMaxLit;
+            } else if (api_decimal_cmp($exMaxLit, $maxLit) > 0) {
+                $exMax = false;
+            }
+            $hasMax = 1;
+        }
+        if ($hasMin != 1 && $hasMax != 1) {
+            continue;
+        }
         $pick = "";
         if (strpos($sub, "\"multipleOf\"") === false) {
             // F589/F590: an inclusive endpoint is a legal value; with one exclusive side the OTHER
@@ -11838,8 +11880,12 @@ function api_schema_strip_pinned_interval(string $body): string
                 }
             }
         } else {
-            // Zero is a multiple of every positive multiplier; an exclusive side that sits exactly
-            // on zero excludes it.
+            // F591: zero serves any multipleOf; the unified zero check below covers it together
+            // with the exclusive cases.
+        }
+        if ($pick == "") {
+            // F591: zero is strictly inside any interval whose lower side is negative-or-exclusive
+            // and whose upper side is positive-or-exclusive, so it needs no arithmetic either.
             $ok0 = 1;
             if ($hasMin == 1) {
                 $c = api_decimal_cmp($minLit, "0");
@@ -20594,6 +20640,11 @@ function main(): void
     $piExcl = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMinimum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piExMax = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMaximum":0.0001234567890123459},"note":{"type":"string"}}}');
     $piBoth = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMinimum":0.0001234567890123456,"exclusiveMaximum":0.0001234567890123459},"note":{"type":"string"}}}');
+    // F591: zero strictly inside the interval is always legal, including double-exclusive and
+    // single-sided exclusive forms.
+    $piZeroEx = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"exclusiveMinimum":-0.0001234567890123456,"exclusiveMaximum":0.0001234567890123456},"note":{"type":"string"}}}');
+    $piZeroMinOnly = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","exclusiveMinimum":-0.0001234567890123456},"note":{"type":"string"}}}');
+    $piZeroMaxOnly = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","exclusiveMaximum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piBad = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123459,"maximum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piZero = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"multipleOf":0.0000000000000000001},"note":{"type":"string"}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
@@ -20676,7 +20727,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20701,6 +20752,9 @@ function main(): void
         && strpos($piExcl, "\"const\":0.0001234567890123459}") !== false
         && strpos($piExMax, "\"const\":0.0001234567890123456}") !== false
         && strpos($piBoth, "\"const\"") === false
+        && strpos($piZeroEx, "\"const\":0}") !== false
+        && strpos($piZeroMinOnly, "\"const\":0}") !== false
+        && strpos($piZeroMaxOnly, "\"const\":0}") !== false
         && strpos($piBad, "\"const\"") === false
         && strpos($piZero, "\"const\":0}") !== false
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
