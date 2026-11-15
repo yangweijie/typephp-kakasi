@@ -2734,3 +2734,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`par-unclaimed-refuse`——未认领的响应 schema 在协作服务器上同样 **400**（不再流出自由文本）；`PAR SMOKE: PASS`。
 - **结果**：三形状 × 两服务（8000/8001）的失败关闭均有活体门；SMOKE/SMOKE-PRETTY 保持 **141/0**。
 
+## F608（2026-11-15）：`unevaluated*` 的构造真空门
+- **属性闭包**：`uneval-props-closed-ok`——`unevaluatedProperties:false` + 全声明键 ⇒ 200 且键集精确（写出器只发声明键，构造满足）。
+- **元组前缀项**：新增 `api_schema_strip_vacuous_unevalitems`（tuple 且无 `items` 键时剥离 `unevaluatedItems`；有自检 `ue=[stripped|kept]`），但该请求**路由仍拒绝**为具名 400；门按“合法或具名拒绝”断言（`uneval-items-closed-ok` 双模式 PASS），**不把 400 当支持**。
+- **梯**：BUILD_OK（`build_f608`）；自检 0 FAIL；四 harness 0；双模式 smoke **143/0**（141+2）；哨兵 0。
+- **仍缺**：tuple+`unevaluatedItems:false` 的**接受态**（剥离已就绪，拒绝来自链上其它关键字判定；下一轮定位）。
+

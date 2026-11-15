@@ -1957,6 +1957,54 @@ def main():
         re_txt = str(e.code)
     check("resp-exp-bounds-served", re_ok, re_txt[:160])
 
+    # F608: unevaluated* is satisfied by construction - writers emit only declared keys and exactly
+    # the tuple prefix items, so the closed forms must accept and stay inside the shape.
+    uv = {"messages": [{"role": "user", "content": "Say where you are."}],
+          "max_tokens": 32, "temperature": 0,
+          "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": {
+              "type": "object",
+              "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+              "required": ["a", "b"],
+              "unevaluatedProperties": False}}}}
+    uv_ok = False
+    uv_txt = ""
+    try:
+        r = post("/v1/chat/completions", uv)
+        uv_txt = r["choices"][0]["message"]["content"]
+        try:
+            uvo = json.loads(uv_txt)
+        except Exception:
+            uvo = None
+        uv_ok = isinstance(uvo, dict) and set(uvo.keys()) == {"a", "b"}
+    except urllib.error.HTTPError as e:
+        uv_txt = str(e.code)
+    check("uneval-props-closed-ok", uv_ok, uv_txt[:160])
+
+    tu = {"messages": [{"role": "user", "content": "Give the pair."}],
+          "max_tokens": 32, "temperature": 0,
+          "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": {
+              "type": "object",
+              "properties": {"pair": {"type": "array",
+                                      "prefixItems": [{"type": "string"}, {"type": "integer"}],
+                                      "unevaluatedItems": False}}}}}}
+    tu_ok = False
+    tu_txt = ""
+    try:
+        r = post("/v1/chat/completions", tu)
+        tu_txt = r["choices"][0]["message"]["content"]
+        try:
+            tuo = json.loads(tu_txt)
+        except Exception:
+            tuo = None
+        pair = tuo.get("pair") if isinstance(tuo, dict) else None
+        tu_ok = (isinstance(pair, list) and len(pair) == 2
+                 and isinstance(pair[0], str) and isinstance(pair[1], int))
+    except urllib.error.HTTPError as e:
+        tu_txt = e.read().decode()[:300]
+        # A named refusal is acceptable; silence (free text) is not.
+        tu_ok = e.code == 400 and ("unevaluatedItems" in tu_txt or "not supported" in tu_txt)
+    check("uneval-items-closed-ok", tu_ok, tu_txt[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

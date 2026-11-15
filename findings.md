@@ -5116,4 +5116,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`par-unclaimed-refuse` 在 8001 上返回 400（未认领 schema 不再自由流式）；`PAR SMOKE: PASS`，主服务双模式仍 **141/0**。
 **记法**：验收矩阵是“入口形状 × 服务实例”；两台服务器有各自分发，任何失败关闭/拒绝要分别有活体门。
 **证据**：`gate_live_f607.log`、`par_smoke_f607.log`。
+
+## F608（2026-11-15）：`unevaluated*` 门——属性闭包接受、元组具名拒绝
+**属性**：`unevaluatedProperties:false` 在全声明键下 200 且键集精确（构造满足）——活体 `uneval-props-closed-ok`。
+**元组**：新增 `api_schema_strip_vacuous_unevalitems`（tuple 且无 `items` 时剥离），自检 `ue=[stripped|kept]`；但活体仍 400（链上其它判定），门按“200 合法或 400 具名”断言，**不宣称支持**。
+**记法**：剥离正确 ≠ 路由接受——中间产物断言（strip 输出）与活体结果必须分开记录；显式 400 可接受，无声散文不可。
+**证据**：`gate_live_f608.log`（tuple 400 前）、`gate_live_f609.log`（双模式 143/0）、`selftest_f608c.log`（UV-DIAG has=0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

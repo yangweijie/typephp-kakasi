@@ -12193,6 +12193,22 @@ function api_tools_deep_array_object(string $body): int
     }
 }
 
+// F608: a tuple schema (prefixItems) with no "items" key is emitted exactly as its prefix items,
+// so unevaluatedItems is vacuously satisfied and can be stripped before the keyword gate sees it.
+function api_schema_strip_vacuous_unevalitems(string $body): string
+{
+    if (strpos($body, "\"unevaluatedItems\"") === false
+        || strpos($body, "\"prefixItems\"") === false
+        || strpos($body, "\"items\"") !== false) {
+        return $body;
+    }
+    $out = str_replace(",\"unevaluatedItems\":false", "", $body);
+    $out = str_replace(",\"unevaluatedItems\":true", "", $out);
+    $out = str_replace("\"unevaluatedItems\":false,", "", $out);
+    $out = str_replace("\"unevaluatedItems\":true,", "", $out);
+    return $out;
+}
+
 // F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
 // the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
 // the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
@@ -15314,6 +15330,7 @@ function api_serve_par(int $port): void
                 if (strpos($body, "\"dependentSchemas\"") !== false) {
                     $body = api_schema_expand_exponents($body);
                     $body = api_schema_strip_pinned_interval($body);
+                    $body = api_schema_strip_vacuous_unevalitems($body);
                     $body = api_schema_strip_vacuous_dep($body);
                 }
                 if (strpos($body, "\"if\"") !== false) {
@@ -15936,6 +15953,7 @@ function api_serve(int $port): void
         }
         $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
         $body = api_json_compact($body);
+        $body = api_schema_strip_vacuous_unevalitems($body);
         if ($body != "" && strpos($req, "/v1/messages") !== false) {
             $body = api_anthropic_output_format($body);
         }
@@ -15945,6 +15963,7 @@ function api_serve(int $port): void
         if (strpos($body, '"dependentSchemas"') !== false) {
             $body = api_schema_expand_exponents($body);
                     $body = api_schema_strip_pinned_interval($body);
+                    $body = api_schema_strip_vacuous_unevalitems($body);
                     $body = api_schema_strip_vacuous_dep($body);
         }
         if (strpos($body, "\"if\"") !== false) {
@@ -16060,6 +16079,7 @@ function api_serve(int $port): void
             // pinned-interval rewrite must happen here - the earlier preprocessing sites sit in
             // other branches and never touch this path.
             $body = api_schema_strip_pinned_interval($body);
+            $body = api_schema_strip_vacuous_unevalitems($body);
             $schBody = strpos($body, "\"json_schema\"") !== false
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
@@ -21237,6 +21257,13 @@ function main(): void
     $daoScalar = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"string"}}}}}}}');
     $dtDeep = api_tools_deep_array_object('{"tools":[{"function":{"name":"put","parameters":{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}},"required":["a"]}}}]}');
     $dtFlat = api_tools_deep_array_object('{"tools":[{"function":{"name":"put","parameters":{"type":"object","properties":{"n":{"type":"integer"}}}}}]}');
+    // F608: a tuple without an items key emits exactly its prefix items, so unevaluatedItems is
+    // vacuous and stripped; an items-bearing array keeps it.
+    $uvA = api_schema_strip_vacuous_unevalitems('{"properties":{"pair":{"type":"array","prefixItems":[{"type":"string"}],"unevaluatedItems":false}}}');
+    $uvB = api_schema_strip_vacuous_unevalitems('{"properties":{"a":{"type":"array","items":{"type":"string"},"unevaluatedItems":false}}}');
+    $uvC = api_schema_strip_vacuous_unevalitems('{"messages":[{"role":"user","content":"Give the pair."}],"max_tokens":32,"temperature":0,"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":{"type":"object","properties":{"pair":{"type":"array","prefixItems":[{"type":"string"},{"type":"integer"}],"unevaluatedItems":false}}}}}}');
+    echo "UV-DIAG has=" . (strpos($uvC, "\"unevaluatedItems\"") !== false ? 1 : 0)
+        . " items=" . (strpos($uvC, "\"items\"") !== false ? 1 : 0) . "\n";
     // F601 DIAG (temporary): which nested detector claims the object-property / 2-deep object
     // array shape that the live probe answered as {"m":{"items":...}}.
     $ucD = '{"json_schema":{"name":"x","schema":{"type":"object","properties":{"m":{"type":"object","properties":{"x":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"y":{"type":"string"}}}}}}}}}}}';
@@ -21362,7 +21389,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_pow=[" . (strpos($piPow, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "] dao=[" . $daoDeep . "|" . $daoTwo . "|" . $daoScalar . "] dt=[" . $dtDeep . "|" . $dtFlat . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_pow=[" . (strpos($piPow, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "] dao=[" . $daoDeep . "|" . $daoTwo . "|" . $daoScalar . "] dt=[" . $dtDeep . "|" . $dtFlat . "] ue=[" . (strpos($uvA, "\"unevaluatedItems\"") === false ? "stripped" : "kept") . "|" . (strpos($uvB, "\"unevaluatedItems\"") !== false ? "kept" : "stripped") . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -21396,6 +21423,8 @@ function main(): void
         && $jcB == '{"s":"q\"  t"}'
         && $daoDeep == 1 && $daoTwo == 0 && $daoScalar == 0
         && $dtDeep == 1 && $dtFlat == 0
+        && strpos($uvA, "\"unevaluatedItems\"") === false
+        && strpos($uvB, "\"unevaluatedItems\"") !== false
         && $dA == "3" && $dB == "1" && $dC == "-0.5"
         && $dD == "0.0001234567890123457" && $dE == "0"
         && strpos($piWalkCap, "\"const\"") === false
