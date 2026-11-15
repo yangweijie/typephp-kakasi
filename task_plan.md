@@ -2368,7 +2368,7 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 4. `bash scripts/gate_live.sh <tag>`（compact+pretty 双 smoke、8001 par/fair；smoke 非零即 exit 1；约 15–18 分钟）
 5. `bash scripts/check_gates.sh`（`unresolved=0`；最新自检含 FAIL 行则 exit 1）
 
-**当前基线**：自检 0 FAIL、四 harness 0、SMOKE 与 SMOKE-PRETTY 各 **143/0**、par/fair 0、scaling ~1.6×、哨兵 0、`check_gates 199/0`。HEAD `2704832`（engine 最后改动 `67d091b` 的二进制）。
+**当前基线（F603 留档，已被文末 F617–F631 交接取代）**：自检 0 FAIL、四 harness 0、SMOKE 与 SMOKE-PRETTY 各 **143/0**、par/fair 0、scaling ~1.6×、哨兵 0、`check_gates 199/0`。
 
 **本轮新增的关键不可倒退项**：
 - 入口紧凑化（`api_json_compact`）与两处服务器接线；**美化/紧凑 JSON 必须行为一致**。
@@ -2377,3 +2377,19 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 - >18 位数值：端点/0/1×m/±1ulp/10 幂/≤4096 步行走；病态形态保持具名 400。F582 规格已结项（非开工依据）。
 
 **下一步候选**：① `unevaluatedItems` 根级复合形态的接受态（当前具名 400）；② FR-06 多样草稿器收益（`model_sycl.cc` 草稿源，非本轮范围）；③ per-session KV 并行吞吐/多卡/GGUF 分片（需第二设备或新写合并器）；④ 129 层嵌套冷启动首调缺陷（F208/F209 线索）。
+
+## F617–F631 会话交接（2026-11-15）
+
+**基线（HEAD `42f1b18`）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 均 **177/0**；8001 par/fair 0（含 `par-count-tokens`、`par-plugins`）；scaling ~1.6×；哨兵 0；`check_gates 199/0`；`scripts/package.sh` 产出 `PACKAGE_OK` + `ARCHIVE_OK`。
+
+**本轮落地（按提交顺序）**：F617 draft-4 闭包 tuple；F618/F619 Anthropic 流式工具三格（实参 + 并行 + index）；F620/F621/F623/F625/F627/F628/F630 请求参数具名 400 矩阵（采样/状态/选择数/形状与范围/n×约束解码）；F622 审计增补与三条旧陈述更正；F623/F624 `VERSION`+`package.sh`（manifest 哈希自校验 + zip + `7z t`）+ `/health` 同源版本；F626/F629 `POST /v1/messages/count_tokens`（8000/8001，复用 `api_history`+assistant 开头轮）；F631 FR-05 声明式厂商档案（`plugins/vendor_profiles.txt` → attn_mode/kv_f16，`PLUGINS` 横幅 + `GET /plugins` 只读报告）。
+
+**不可倒退项**：
+- 参数拒绝必须**具名且带可接受集合**，且只匹配整数/精确拼写（`"n":5` 形态），避免误伤 schema 里同名属性；中性值（`logprobs:false`、penalty 0、`top_k` 0、`store:false`、`truncation:"disabled"`）必须放行。
+- `count_tokens` 与消息轮共用 `api_history` + assistant 开头轮；改任一侧都要同时看 `usage.input_tokens`。
+- `GET /plugins` 只读（不得再调 setter）；档案首条命中生效，`*` 兜底；文件丢失 = 出厂默认。
+- 双模式 smoke 是常驻门；`gate_live` 的 smoke 非零会 exit 1。
+
+**操作坑（本轮实测）**：`scripts/par_content_check.sh` 会**自起服务**，别在构建前跑——它留下的孤儿进程会让链接报 `LNK1104 build\kakasi_engine_sycl.exe permission denied`（用 `Get-Process kakasi_engine_sycl` 定位、`Stop-Process -Force`，再重建）。
+
+**剩余队列**：① FR-05 新旋钮/新厂商需 C++ setter 与档案字段同步（机制已通）；② FR-06 独立草稿模型（产品决策：额外权重 vs 单二进制）；③ per-session KV 并行吞吐 / 多卡 split（无第二设备）/ GGUF 分片合并；④ FR-02 式计算图调度。
