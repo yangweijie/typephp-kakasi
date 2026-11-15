@@ -12261,6 +12261,47 @@ function api_tools_required_unservable(string $body): int
     }
 }
 
+// F628: shape selectors and ranges. An unknown response_format type fell through to free text,
+// an unknown tool_choice string behaved like auto, and out-of-range temperature/top_p reached the
+// sampler - each answers a request nobody made. Only the exact spellings are matched, so schema
+// keywords such as {"type":"string","format":"date"} inside json_schema are untouched.
+function api_request_form_unsupported(string $body): string
+{
+    $m = [];
+    if (preg_match('/"response_format"\s*:\s*\{\s*"type"\s*:\s*"([A-Za-z_]+)"/', $body, $m) == 1) {
+        if ($m[1] != "json_object" && $m[1] != "json_schema" && $m[1] != "text") {
+            return "response_format";
+        }
+    }
+    if (preg_match('/"text"\s*:\s*\{\s*"format"\s*:\s*\{\s*"type"\s*:\s*"([A-Za-z_]+)"/',
+                   $body, $m) == 1) {
+        if ($m[1] != "json_object" && $m[1] != "json_schema" && $m[1] != "text") {
+            return "text.format";
+        }
+    }
+    if (preg_match('/"tool_choice"\s*:\s*"([A-Za-z_\-]+)"/', $body, $m) == 1) {
+        $tc = $m[1];
+        if ($tc != "auto" && $tc != "none" && $tc != "required" && $tc != "any") {
+            return "tool_choice";
+        }
+    }
+    if (preg_match('/"temperature"\s*:\s*-?[0-9]+\.[0-9]+/', $body) == 1
+        || preg_match('/"temperature"\s*:\s*-?[0-9]+\s*[,}]/', $body) == 1) {
+        $t = api_float($body, "temperature", 0.0);
+        if ($t < 0.0 || $t > 2.0) {
+            return "temperature";
+        }
+    }
+    if (preg_match('/"top_p"\s*:\s*-?[0-9]+\.[0-9]+/', $body) == 1
+        || preg_match('/"top_p"\s*:\s*-?[0-9]+\s*[,}]/', $body) == 1) {
+        $p = api_float($body, "top_p", 1.0);
+        if ($p <= 0.0 || $p > 1.0) {
+            return "top_p";
+        }
+    }
+    return "";
+}
+
 // F627: choice-count knobs. n outside 1..4 used to be clamped to one choice with a 200, which hides
 // that the caller asked for five samples and got one; best_of (legacy infill sampling) is not
 // implemented at all. Only integer-valued top-level spellings are matched, so a schema property
@@ -16359,6 +16400,14 @@ function api_serve(int $port): void
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+            } else if (api_request_form_unsupported($body) != "") {
+                $payload = "{\"error\":{\"message\":\"request parameter not supported: "
+                    . api_request_form_unsupported($body)
+                    . " (response_format/text.format accept json_object|json_schema|text, tool_choice "
+                    . "accepts auto|none|required, temperature is 0..2 and top_p is (0,1]; anything "
+                    . "else is refused instead of being answered as an unconstrained turn)\","
+                    . "\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_choice_params_unsupported($body) != "") {
                 $payload = "{\"error\":{\"message\":\"request parameter not supported: "
                     . api_choice_params_unsupported($body)

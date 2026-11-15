@@ -5233,3 +5233,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-n-too-large-refuse`、`completions-best-of-refuse` 双模式 PASS（`n:2` 的既有 `chat-n` 仍绿）；**双模式 smoke 169→171/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **过程说明（构建失败一次）**：首轮 `SYCL_LINK_FAILED … LNK1104 cannot open build\kakasi_engine_sycl.exe / permission denied`——上一轮误跑 `scripts/par_content_check.sh`（会自行起服务并等待）留下孤儿进程（StartTime 1:19:44），`Get-Process` 定位后 `Stop-Process -Force`，重建即过。**教训**：`par_content_check.sh` 不是离线检查，别在构建前跑；`LNK1104` 先查同名进程而不是怀疑代码。
 **证据**：`build_f627.log`（首轮失败）、`selftest_f627.log`、`{req,cnt,pat,bnd}_run_f627.log`、`gate_live_f627.log`。
+
+## F628（2026-11-15）：形状选择器与数值范围具名拒绝
+**缺陷**：`response_format`/`text.format` 的未知 type 会**回落成自由文本**；未知 `tool_choice` 字符串等同 auto；`temperature`/`top_p` 越界直接进采样器——三种都是“答了没人要的请求”。
+**改动**：`api_request_form_unsupported`——`response_format.type ∈ {json_object,json_schema,text}`、`text.format.type` 同集合、`tool_choice` 字符串 ∈ {auto,none,required,any}、`temperature ∈ [0,2]`、`top_p ∈ (0,1]`，其余 400 点名并列出可接受集合。匹配只认精确拼写：`text` 只匹配 `"text":{"format":{"type":…}}`，schema 内的 `{"type":"string","format":"date"}` 不受影响。
+**结果**：`chat-response-format-unknown-refuse`、`chat-tool-choice-unknown-refuse`、`chat-temperature-range-refuse` 双模式 PASS；**双模式 smoke 171→174/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：枚举型参数的“未知值”比缺省更危险——缺省有明确默认，未知值说明客户端期待一种服务端没有的行为；拒绝消息要带**可接受集合**，否则调用方只能猜。范围校验要与 schema 关键字区分（`format` 在 JSON Schema 里是注释关键字）。
+**证据**：`build_f628.log`、`selftest_f628.log`、`{req,cnt,pat,bnd}_run_f628.log`、`gate_live_f628.log`。

@@ -2674,6 +2674,20 @@ def main():
     check("completions-best-of-refuse", pmsg.find("not supported: best_of") >= 0,
           pdet + " " + pmsg[:120])
 
+    # F628: shape selectors and numeric ranges - an unknown response_format type, an unknown
+    # tool_choice string and an out-of-range temperature must refuse instead of answering a turn
+    # nobody asked for (free text, auto selection, or a sampler fed 9.0).
+    pmsg, pdet = choice_refusal("/v1/chat/completions",
+                                {"response_format": {"type": "bogus"}})
+    check("chat-response-format-unknown-refuse", pmsg.find("response_format") >= 0,
+          pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {"tool_choice": "sometimes"})
+    check("chat-tool-choice-unknown-refuse", pmsg.find("tool_choice") >= 0,
+          pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {"temperature": 9})
+    check("chat-temperature-range-refuse", pmsg.find("temperature") >= 0,
+          pdet + " " + pmsg[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

@@ -2831,3 +2831,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_choice_params_unsupported`：`n<1||n>4`、`best_of>1` ⇒ 400 点名；整数取值正则避免误伤 schema 中的 `n` 属性。
 - **门**：`chat-n-too-large-refuse`/`completions-best-of-refuse` 双模式 PASS；**smoke 169→171/0**。
 - **梯**：首轮 LNK1104（误跑 par_content_check 留下的孤儿进程）→ 清理后 BUILD_OK；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F628（2026-11-15）：形状/范围参数具名 400
+- **修**：`api_request_form_unsupported`：未知 `response_format`/`text.format` type、未知 `tool_choice` 字符串、`temperature∉[0,2]`、`top_p∉(0,1]` ⇒ 400 并列出可接受集合。
+- **门**：`chat-response-format-unknown-refuse`/`chat-tool-choice-unknown-refuse`/`chat-temperature-range-refuse` 双模式 PASS；**smoke 171→174/0**。
+- **梯**：BUILD_OK（`build_f628`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
