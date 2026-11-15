@@ -2669,3 +2669,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门强化**：`gate_live.sh` 现在把美化 smoke 作为常驻门，并且**smoke 退出非零会让 gate_live 退出非零**（此前只打印 FAIL 计数却仍 exit 0，曾让红梯子看起来是绿的）。
 - **梯**：BUILD_OK（`build_f596`）；自检 0 FAIL；四 harness 0；SMOKE 127/0；SMOKE-PRETTY 127/0；par/fair 0；哨兵 0。
 
+## F597（2026-11-15）：oneOf 分支键序不敏感
+- **探针**：分支写成 `{"properties":{…},"type":"object"}`（合法 JSON）时，两处 grammar 检测器的锚点 `^{"type"…,"properties"…` 失效 ⇒ 回落到散文（静默违反）。
+- **修复**：检测器要求分支含 `"type":"object"` 与 `"properties"`，并按 **properties 键**定位块（不再依赖先后顺序）。
+- **门**：smoke 新增 `chat-oneof-reordered-branches`（合法对象或 400；修复后为合法对象）——SMOKE 与 SMOKE-PRETTY 均 **128/0**。
+- **梯**：BUILD_OK（`build_f597`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0。
+- **仍缺（记入队列）**：**无人认领兜底 400**——键序/形态不在任何检测器覆盖内时，引擎目前仍回散文而非显式拒绝；这是比逐个补锚点更根本的保证，需要单独一轮在分发末尾加“schema 存在但无 claimer ⇒ 400”。
+

@@ -5862,10 +5862,13 @@ function api_response_schema_oneof_grammar(string $body): string
     $hasGrammar = 0;
     $consts = [];
     for ($bi = 0; $bi < count($branches); $bi++) {
-        if (preg_match('/^\{"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{/', $branches[$bi]) != 1) {
+        if (preg_match('/"type"\s*:\s*"object"/', $branches[$bi]) != 1
+            || strpos($branches[$bi], "\"properties\"") === false) {
             return "";
         }
-        $pb2 = strpos($branches[$bi], "{", 1);
+        // F597: branch key order is legal JSON - locate the properties block by its key instead
+        // of an anchor that demanded type-then-properties.
+        $pb2 = strpos($branches[$bi], "{", strpos($branches[$bi], "\"properties\""));
         if ($pb2 === false) {
             return "";
         }
@@ -6104,10 +6107,12 @@ function api_response_schema_root_oneof_grammar(string $body): string
     $hasGrammar = 0;
     $consts = [];
     for ($bi = 0; $bi < count($branches); $bi++) {
-        if (preg_match('/^\{"type"\s*:\s*"object"\s*,\s*"properties"\s*:\s*\{/', $branches[$bi]) != 1) {
+        if (preg_match('/"type"\s*:\s*"object"/', $branches[$bi]) != 1
+            || strpos($branches[$bi], "\"properties\"") === false) {
             return "";
         }
-        $pb = strpos($branches[$bi], "{", 1);
+        // F597: branch key order is legal JSON - locate the properties block by its key.
+        $pb = strpos($branches[$bi], "{", strpos($branches[$bi], "\"properties\""));
         if ($pb === false) {
             return "";
         }

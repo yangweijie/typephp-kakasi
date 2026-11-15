@@ -5046,4 +5046,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门强化**：`gate_live.sh` 在末尾检查两个 smoke 退出码，非零即 `GATE_FAIL` + exit 1——此前 smoke FAIL 只打印不致病，红梯子可以假装绿（F594d/e 就发生过）。
 **记法**：**路由/检测器的输入形态是一等公民**。要么所有检测器对空白健壮，要么入口统一规范化；后者一次解决一整族问题，且比逐处修补更可验证（双模式 smoke 就是断言）。
 **证据**：`gate_live_f595e.log`（红）、`gate_live_f596p.log`/`gate_live_f596b.log`（绿）、`selftest_f596.log`、`api_smoke_pretty_f596p.log`。
+
+## F597（2026-11-15）：分支键序不敏感 + 发现“无人认领仍回散文”
+**探针**：`{"properties":{…},"type":"object"}` 分支（合法 JSON）让 grammar 检测器的 `^{"type"…` 锚点失效，整包回落散文——又一类“输入形态改变路由”。
+**修复**：要求分支含 type/properties 两键（顺序无关），按 properties 键定位块；smoke `chat-oneof-reordered-branches` 断言“合法对象或 400”，修复后返回合法对象。
+**未闭**：引擎没有“schema 存在但无 claimer ⇒ 400”的统一兜底，所以任何未覆盖形态仍是散文（200）。这是**保证“接受即合法”的最后一块**；比逐个补检测器更根本，应作为专门一轮：在分发链终点判断 `json_schema` 存在且所有 schema 路由为空 ⇒ 具名 400。
+**证据**：`gate_live_f596c.log`（红：`chat-oneof-reordered-branches` 散文）、`gate_live_f597.log`（SMOKE/SMOKE-PRETTY 128/0）、`api_smoke_f597.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

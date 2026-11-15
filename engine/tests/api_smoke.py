@@ -1716,6 +1716,39 @@ def main():
               or (orc_obj.get("kind") == "cd" and orc_keys <= {"kind", "tracks"}))
     check("chat-root-oneof-const-grammar", orc_ok, orc_content[:160])
 
+    # F596 probe: branch key order is legal JSON too. The schema surface may refuse it, but it must
+    # never answer prose or an object outside both branches - silence is the failure mode.
+    reorder_body = {"messages": [{"role": "user", "content": "Pick one item and describe it."}],
+                    "max_tokens": 32, "temperature": 0,
+                    "response_format": {"type": "json_schema", "json_schema": {
+                        "name": "x", "schema": {
+                            "type": "object", "properties": {"item": {"oneOf": [
+                                {"properties": {"kind": {"const": "book"},
+                                                "title": {"type": "string"}},
+                                 "type": "object"},
+                                {"properties": {"kind": {"const": "cd"},
+                                                "tracks": {"type": "integer"}},
+                                 "type": "object"}]}}}}}}
+    ro_ok = False
+    ro_content = ""
+    try:
+        r = post("/v1/chat/completions", reorder_body)
+        ro_content = r["choices"][0]["message"]["content"]
+        try:
+            ro_obj = json.loads(ro_content)
+        except Exception:
+            ro_obj = {}
+        ro_item = ro_obj.get("item") if isinstance(ro_obj, dict) else {}
+        if not isinstance(ro_item, dict):
+            ro_item = {}
+        ro_keys = set(ro_item.keys())
+        ro_ok = ((ro_item.get("kind") == "book" and ro_keys <= {"kind", "title"})
+                 or (ro_item.get("kind") == "cd" and ro_keys <= {"kind", "tracks"}))
+    except urllib.error.HTTPError as e:
+        ro_ok = e.code == 400
+        ro_content = e.read().decode()[:160]
+    check("chat-oneof-reordered-branches", ro_ok, ro_content[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.
