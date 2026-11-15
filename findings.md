@@ -4928,3 +4928,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **改动**：`api_smoke.py` 在 oneOf 夹具后新增 `chat-stream-root-strenum` 与 `chat-stream-root-strconst`：`stream:true` 下根级 string enum 必须流式输出 `"Paris"`/`"London"`（含引号的 JSON 字符串），root const 必须为 `"Paris"`。此前只有一次性探针（`stream_root_f545b.log`），回归无门。
 **结果**：`SMOKE: PASS=117 FAIL=0`（`api_smoke_f547.log`），两条新门 PASS；8001 par/fair 0、哨兵 0。
 **记法**：**一次性的探针不算门**——修完传输级差异后要把探针落成常驻夹具，并把基线数（115→117）写进文档，否则下一次统计会被当成回归。
+
+## F580（2026-11-15）：13 位小数（marker −987）+ 红基线修复
+**13 位实现**：与 F579 同构再进一位——`api_schema_scaled` 的 `digits == 13` 分支（`*1e13`）、分子上限 13、边界/形状正则 `{1,13}`、宽度探测 `\.[0-9]{13}`、两张 marker 表（−987）、mixed q 范围、窗口守卫 [−999,−987]、`api_number_decimal_element`（−987 ⇒ d=13、scale 1e13）、数组元素与写入器 marker 白名单。有效位：14 位有效数字的缩放值在 int64 内精确，消费端 double 仍在 15–16 位内。自检门 `num_dec13`/`fm_d13`/`win_thirteen`/`dec13_text`/`arr13_text`；活体 `float_dec13_served`、`num_mult_frac_d13_ok`、`marker_window_thirteen_refuse`。整数上界 −987…−999 显式 400。
+
+**红基线更正**：复核已提交日志发现 `selftest_f548.log`/`f566.log` 各 1 处 FAIL（`SCHEMA-STRUCT`），`f568…f579` 各 4 处（`api[response-schema]`、`SCHEMA-KEYWORDS`、`SCHEMA-STRUCT`）。此前提交声称“0 FAIL”是**错的**：只核了 `RUN_EXIT=0`，而引擎自检失败不影响退出码。修复三处：
+1. **候选让位过宽**（F568 起）：`api_response_schema_candidates` 对“值计划非空”一律返回空，但计划全为 pin/有限叶子（`v:`/`q:`/`e:`/`en:`/`b`）时形状本可枚举（enum×bool = 4 个完整候选）。改为**仅含自由叶子**（`:s`/`:i`/`:n`/`:p:`）才让位；F566 要保护的自由叶子场景不变。
+2. **STRUCT 期望漏翻**（F548/F570/F578）：`depsch_other`/`deps_other` 的 properties-only 子 schema 无 required ⇒ 真空满足；`cv_miss` 的 enum 元素域含 const ⇒ 可强制首元素；`pp_enum_sub` 的 pin 命中且键名与模式匹配 ⇒ 满足。各自更严对照仍 400（`depsch_bad`、`deps_bad`、`cv_pat_spec_diff`、`pp_pat_diff`、`pp_num_miss`），拒绝对照未被削弱。
+3. **KEYWORDS 双因**：`req_enum_all` 属期望漏翻——enum pin + 自由整数由同源计划满足 `required`（数组叶子的 `req_arr_sub`/`req_arr_all` 仍拒）；另发现 tpc 在该巨型函数里对存储的字符串比较不稳：诊断打印显示所有值符合期望、逐项布尔全 1，chunk 仍为假，且 `req_enum_all` 的变量值在两条不写它的语句之间从 `required` 变为 `""`。把 chunk 改为**逐项 `!=` 单语句累加**后稳定通过。
+
+**记法**：① 自检的 `RUN_EXIT` 不是判据，必须 `grep FAIL`；② 大函数里长 `&&` 链与跨语句的字符串比较在 tpc 下不可靠，断言应短、逐项；③ 语义翻转（支持化）必须同时翻转旧期望并保留更严对照——本次三处都是“旧期望没翻”，不是引擎回归。
+**证据**：`build_f580e.log`、`selftest_f580e.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f580e.log`（`CHECK_EXIT=0`）、`gate_live_f580e.log`（smoke 121/0、par/fair 0、scaling 1.571×、哨兵 0）。

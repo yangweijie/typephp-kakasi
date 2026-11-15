@@ -317,6 +317,16 @@ cases = [
     ("marker_window_twelve_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -988}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F580: thirteen fraction places (-987 marker) and the window's new lower edge.
+    ("float_dec13_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.5111111111111, "maximum": 1.5111111111119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.5111111111111}'),
+    ("num_mult_frac_d13_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.0001234567891}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.0002469135782}'),
+    ("marker_window_thirteen_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -987}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
     # (the self-test decodes its token continuation, not the HTTP body).
     ("items_num_dec11_ok", "Give the numbers.",

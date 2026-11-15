@@ -2538,3 +2538,15 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：自检 RUN_EXIT=0 / 0 FAIL（`selftest_f579.log`）；bounds/required/count/pattern 0；8000 121/0；par/fair 0；scaling 1.566×；哨兵 0；BUILD_OK（`build_f579`）。
 - **代价**：整数上界 −988…−999 显式 400；13 位需先评估 double 有效位。
 
+## F580（2026-11-15）：13 位小数（marker −987，窗口 [−999,−987]）+ 三处红基线修复
+- **有效位评估**：1.5111111111111 为 14 位有效数字，缩放 int64 精确；消费端 double 仍在 15–16 位内。
+- **实现**：全部宽度站点再 +1（scaled 分支 `*1e13`、分子上限 13、四个边界正则、`{13}` 探测、两张 marker 表、mixed q、窗口守卫、`api_number_decimal_element` 的 −987/scale 1e13）。
+- **自检**：`num_dec13=[n|15111111111111|-987|0]`、`fm_d13=[n|2469135782|-987|0]`、`win_thirteen=[]`、`dec13_text={"n":1.5111111111111}`、`arr13_text` 三元素精确。
+- **活体**：`float_dec13_served` 200 精确 `{"n":1.5111111111111}`；`num_mult_frac_d13_ok` 200 `{"n":0.0002469135782}`；`marker_window_thirteen_refuse` 400。
+- **红基线更正（重要）**：复核已提交的 `selftest_f548…f579.log` 发现 1–4 行 FAIL 一直存在（`selftest_f548`/`f566` 为 `SCHEMA-STRUCT: FAIL` 1 处；`f568…f579` 为 `api[response-schema]` + `SCHEMA-KEYWORDS` + `SCHEMA-STRUCT` 共 4 处）。此前各提交里“0 FAIL”的表述不实——当时只以 `RUN_EXIT=0` 为据，而该退出码不反映自检断言。本轮全部修掉并留下诊断：
+  1. `api_response_schema_candidates` 的 F566 让位条件过宽：无自由叶子的有限形状（enum+bool）被让位后返回 0 候选。改为**仅当计划含自由叶子**（`:s`/`:i`/`:n`/`:p:`）才让位。
+  2. `SCHEMA-STRUCT` 四处期望是 F548/F570/F578 合法语义翻转未同步：`depsch_other`/`deps_other`（properties-only 子 schema 真空满足）、`cv_miss`（enum 域含 const，可强制首元素）、`pp_enum_sub`（pin 命中且不与模式冲突）；各自更严的拒绝对照（`depsch_bad`、`cv_pat_spec_diff`、`pp_pat_diff` 等）仍为 400。
+  3. `SCHEMA-KEYWORDS` 双因：`req_enum_all` 期望漏翻（enum pin + 自由整数混合计划使 `required` 由同源计划满足，现为可服务 `""`，数组叶子的 `req_arr_sub`/`req_arr_all` 仍拒）；另有 tpc 在该巨型函数里的存储不稳——同一值在两次不写它的语句间被改写、全部逐项比较为真而 chunk 为假。chunk 断言改为**逐项 `!=` 单语句**后稳定。
+- **梯**：BUILD_OK（`build_f580e`）；自检 RUN_EXIT=0 **0 FAIL**（`selftest_f580e.log`：API-UNIT/KEYWORDS/STRUCT 全 PASS）；bounds/required/count/pattern `CHECK_EXIT=0`（`*_f580e.log`）；8000 **121/0**；8001 `PAR_EXIT=0`/`FAIR_EXIT=0`；scaling 1.571×；`SENTINELS_LEFT=0`。
+- **代价**：整数上界 −987…−999 显式 400；14 位起需先改数值表示（double 有效位耗尽）。
+

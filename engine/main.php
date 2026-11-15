@@ -1477,7 +1477,7 @@ function api_array_item_number_value(string $ids, string $prop, int $lo, int $hi
     $dec = "";
     $decMode = 0;
     if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994
-        || $hi == -993 || $hi == -992 || $hi == -991 || $hi == -990 || $hi == -989 || $hi == -988) {
+        || $hi == -993 || $hi == -992 || $hi == -991 || $hi == -990 || $hi == -989 || $hi == -988 || $hi == -987) {
         $dec = api_number_decimal_element($lo, $hi);
         if ($dec == "") {
             return "";
@@ -6743,7 +6743,7 @@ function api_response_schema_mixed_object(string $body): string
                     // value scaled with a marker in hi - reconstruct the literal the marker writer
                     // would emit and carry THAT in the plan, so the same q branch serves it.
                     $mk = (int) $sg[2];
-                    if ($mk >= -999 && $mk <= -988) {
+                    if ($mk >= -999 && $mk <= -987) {
                         if ((int) $sg[3] != 0) {
                             return "";
                         }
@@ -7005,7 +7005,7 @@ function api_response_schema_number_prop(string $body): string
 function api_schema_scaled(string $lit, int $digits): int
 {
     $m = [];
-    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,12}))?$/', $lit, $m) != 1) {
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]{1,13}))?$/', $lit, $m) != 1) {
         return -2000000000;
     }
     $ip = (int) $m[2];
@@ -7044,6 +7044,8 @@ function api_schema_scaled(string $lit, int $digits): int
         $v = $ip * 100000000000 + (int) $fp;
     } else if ($digits == 12) {
         $v = $ip * 1000000000000 + (int) $fp;
+    } else if ($digits == 13) {
+        $v = $ip * 10000000000000 + (int) $fp;
     }
     if ($m[1] == "-") {
         $v = -$v;
@@ -7130,7 +7132,7 @@ function api_schema_multiplier_numerator(string $lit): int
         return (int) $lit;
     }
     $frac = substr($lit, $dot + 1);
-    if (strlen($frac) < 1 || strlen($frac) > 12 || preg_match('/^[0-9]+$/', $frac) != 1) {
+    if (strlen($frac) < 1 || strlen($frac) > 13 || preg_match('/^[0-9]+$/', $frac) != 1) {
         return 0;
     }
     $num = (int) str_replace(".", "", $lit);
@@ -7300,13 +7302,13 @@ function api_schema_number_bounded_shape(string $schema): string
             // F532: eleven fraction places are supported (markers -999..-989), so the literal
             // width check is 1..11.
             if ($kv[1] != "n" || (!$hasLo && !$hasHi && !$hasExLo && !$hasExHi)
-                || preg_match('/^[0-9]+(\.[0-9]{1,12})?$/', $mo[1]) != 1) {
+                || preg_match('/^[0-9]+(\.[0-9]{1,13})?$/', $mo[1]) != 1) {
                 return "";
             }
-            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,12})?$/', $mn[1]) != 1)
-                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,12})?$/', $mx[1]) != 1)
-                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,12})?$/', $exn[1]) != 1)
-                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,12})?$/', $exm[1]) != 1)) {
+            if (($hasLo && preg_match('/^-?[0-9]+(\.[0-9]{1,13})?$/', $mn[1]) != 1)
+                || ($hasHi && preg_match('/^-?[0-9]+(\.[0-9]{1,13})?$/', $mx[1]) != 1)
+                || ($hasExLo && preg_match('/^-?[0-9]+(\.[0-9]{1,13})?$/', $exn[1]) != 1)
+                || ($hasExHi && preg_match('/^-?[0-9]+(\.[0-9]{1,13})?$/', $exm[1]) != 1)) {
                 return "";
             }
             $lits = [$mo[1]];
@@ -7451,6 +7453,9 @@ function api_schema_number_bounded_shape(string $schema): string
             if ($d == 12) {
                 $mark = "-988";
             }
+            if ($d == 13) {
+                $mark = "-987";
+            }
             return $kv[0] . "|" . $start . "|" . $mark . "|0";
             }
         } else {
@@ -7472,8 +7477,8 @@ function api_schema_number_bounded_shape(string $schema): string
         // grid at this width and stay refused.
         $k = 0;
         if ($kv[1] == "n" && $hasLo && $hasHi && strpos($schema, "\"multipleOf\"") === false
-            && preg_match('/^-?[0-9]+(\.[0-9]{1,12})?$/', $mn[1]) == 1
-            && preg_match('/^-?[0-9]+(\.[0-9]{1,12})?$/', $mx[1]) == 1) {
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,13})?$/', $mn[1]) == 1
+            && preg_match('/^-?[0-9]+(\.[0-9]{1,13})?$/', $mx[1]) == 1) {
             $d = 1;
             if (preg_match('/\.[0-9]{2}/', $mn[1]) == 1 || preg_match('/\.[0-9]{2}/', $mx[1]) == 1) {
                 $d = 2;
@@ -7507,6 +7512,9 @@ function api_schema_number_bounded_shape(string $schema): string
             }
             if (preg_match('/\.[0-9]{12}/', $mn[1]) == 1 || preg_match('/\.[0-9]{12}/', $mx[1]) == 1) {
                 $d = 12;
+            }
+            if (preg_match('/\.[0-9]{13}/', $mn[1]) == 1 || preg_match('/\.[0-9]{13}/', $mx[1]) == 1) {
+                $d = 13;
             }
             $tLo = api_schema_scaled($mn[1], $d);
             $tHi = api_schema_scaled($mx[1], $d);
@@ -7544,6 +7552,9 @@ function api_schema_number_bounded_shape(string $schema): string
                 }
                 if ($d == 12) {
                     $mark = "-988";
+                }
+                if ($d == 13) {
+                    $mark = "-987";
                 }
                 return $kv[0] . "|" . $tLo . "|" . $mark . "|0";
             }
@@ -7593,7 +7604,7 @@ function api_schema_number_bounded_shape(string $schema): string
     // contain integers, bounds at -1000 and below keep the magnitude walk, and a future width
     // extension must extend this window with its marker. Only the integer return is guarded - the
     // decimal branches above return earlier with an INTENDED marker in hi.
-    if ($hi >= -999 && $hi <= -988) {
+    if ($hi >= -999 && $hi <= -987) {
         return "";
     }
     return $kv[0] . "|" . $lo . "|" . $hi . "|" . $mult;
@@ -7725,6 +7736,9 @@ function api_number_decimal_element(int $lo, int $hi): string
     } elseif ($hi == -988) {
         $d = 12;
         $scale = 1000000000000;
+    } elseif ($hi == -987) {
+        $d = 13;
+        $scale = 10000000000000;
     } else {
         return "";
     }
@@ -7751,7 +7765,7 @@ function api_number_bounded_value(string $ids, string $prop, int $lo, int $hi, i
     // "int.frac" (zero-padded to d digits) as one continuation, which is a legal `number` inside the
     // interval.
     if ($hi == -999 || $hi == -998 || $hi == -997 || $hi == -996 || $hi == -995 || $hi == -994
-        || $hi == -993 || $hi == -992 || $hi == -991 || $hi == -990 || $hi == -989 || $hi == -988) {
+        || $hi == -993 || $hi == -992 || $hi == -991 || $hi == -990 || $hi == -989 || $hi == -988 || $hi == -987) {
         $dec = api_number_decimal_element($lo, $hi);
         if ($dec == "") {
             return "";
@@ -9432,9 +9446,23 @@ function api_response_schema_candidates(string $body): array
     // through the shared plan - this tier's partial object (the pinned keys only) would drop the
     // free keys, violating a required/then-branch key set. Root oneOf/anyOf shapes keep the
     // candidate-union route; the shared plan does not claim them.
-    if (api_schema_value_plan($schema) != ""
+    // F580: only a FREE leaf forces the yield. A plan whose every leaf is pinned or finite
+    // (v:/q:/e:/en:/b) is still fully enumerable here - yielding it answered nothing at all.
+    $vpBody = api_schema_value_plan($schema);
+    if ($vpBody != ""
         && strpos($schema, "\"oneOf\"") === false && strpos($schema, "\"anyOf\"") === false) {
-        return [];
+        $vpFree = 0;
+        $vpSegs = explode(",", $vpBody);
+        for ($vi = 0; $vi < count($vpSegs); $vi++) {
+            $vseg = $vpSegs[$vi];
+            if (substr($vseg, -2) == ":s" || substr($vseg, -2) == ":i" || substr($vseg, -2) == ":n"
+                || strpos($vseg, ":p:") !== false) {
+                $vpFree = 1;
+            }
+        }
+        if ($vpFree == 1) {
+            return [];
+        }
     }
     return api_schema_candidates($schema);
 }
@@ -20097,6 +20125,8 @@ function main(): void
     $bdWinEleven = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-989}}}');
     // F579: twelve fraction places move it to -988.
     $bdWinTwelve = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-988}}}');
+    // F580: thirteen fraction places move it to -987.
+    $bdWinThirteen = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-987}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -20177,7 +20207,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20193,7 +20223,7 @@ function main(): void
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdWinWide == "" && $bdWinOne == "" && $bdWinMult == ""
-        && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0" && $bdWinNine == "" && $bdWinTen == "" && $bdWinEleven == "" && $bdWinTwelve == ""
+        && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0" && $bdWinNine == "" && $bdWinTen == "" && $bdWinEleven == "" && $bdWinTwelve == "" && $bdWinThirteen == ""
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"
@@ -20372,6 +20402,8 @@ function main(): void
     $nfW = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.51111111111,"maximum":1.51111111119}}}}}');
     // F579: twelve fraction places (-988 marker).
     $nfX = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.511111111111,"maximum":1.511111111119}}}}}');
+    // F580: thirteen fraction places (-987 marker).
+    $nfY = api_response_schema_number_bounded('{"json_schema":{"schema":{"properties":{"n":{"type":"number","minimum":1.5111111111111,"maximum":1.5111111111119}}}}}');
     $nfOut8 = api_number_bounded_value($nbIds, "n", 1511111, -994, 0);
     $nfP8 = explode(",", $nfOut8);
     $nfText8 = "";
@@ -20470,6 +20502,26 @@ function main(): void
         $nfText15 = $nfText15 . gguf_token_str((int) $nfP15[$i]);
     }
     $nfText15 = str_replace("Ġ", " ", $nfText15);
+    // F580: thirteen-place object text and array element.
+    $nfOut16 = api_number_bounded_value($nbIds, "n", 15111111111111, -987, 0);
+    $nfP16 = explode(",", $nfOut16);
+    $nfText16 = "";
+    for ($i = $nbBase; $i < count($nfP16); $i++) {
+        $nfText16 = $nfText16 . gguf_token_str((int) $nfP16[$i]);
+    }
+    $nfText16 = str_replace("Ġ", " ", $nfText16);
+    $aiOut13 = api_array_item_number_value($nbIds, "nums", 15111111111111, -987, 3, 0);
+    $aiP13 = explode(",", $aiOut13);
+    $aiText13 = "";
+    for ($i = 0; $i < count($aiP13); $i++) {
+        $aiText13 = $aiText13 . gguf_token_str((int) $aiP13[$i]);
+    }
+    $aiText13 = str_replace("Ġ", " ", $aiText13);
+    $aiTail13 = $aiText13;
+    $aiCut13 = strrpos($aiTail13, "{");
+    if ($aiCut13 !== false) {
+        $aiTail13 = substr($aiTail13, $aiCut13);
+    }
     $aiOut12 = api_array_item_number_value($nbIds, "nums", 1511111111111, -988, 3, 0);
     $aiP12 = explode(",", $aiOut12);
     $aiText12 = "";
@@ -20513,13 +20565,14 @@ function main(): void
         . "] num_dec=[" . $nfI . "] num_dec_fine=[" . $nfJ . "] num_dec3=[" . $nfK
         . "] num_dec_neg=[" . $nfL . "] num_dec4=[" . $nfN
         . "] num_dec5=[" . $nfO . "] num_dec6=[" . $nfQ . "] num_dec7=[" . $nfR
-        . "] num_dec8=[" . $nfS . "] num_dec9=[" . $nfT . "] num_dec10=[" . $nfU . "] num_dec11=[" . $nfW . "] num_dec12=[" . $nfX
+        . "] num_dec8=[" . $nfS . "] num_dec9=[" . $nfT . "] num_dec10=[" . $nfU . "] num_dec11=[" . $nfW . "] num_dec12=[" . $nfX . "] num_dec13=[" . $nfY
         . "] dec_text=[" . $nfText2 . "] dec2_text=[" . $nfText3
         . "] dec3_text=[" . $nfText5 . "] dec4_text=[" . $nfText6
         . "] dec5_text=[" . $nfText7 . "] dec6_text=[" . $nfText8 . "] neg_text=[" . $nfText4
         . "] dec7_text=[" . $nfText9 . "] dec8_text=[" . $nfText10 . "] dec9_text=[" . $nfText11
         . "] dec10_text=[" . $nfText12 . "] dec11_text=[" . $nfText13 . "] neg11_text=[" . $nfText14
-        . "] arr11_text=[" . $aiTail11 . "] dec12_text=[" . $nfText15 . "] arr12_text=[" . $aiTail12 . "]\n";
+        . "] arr11_text=[" . $aiTail11 . "] dec12_text=[" . $nfText15 . "] arr12_text=[" . $aiTail12
+        . "] dec13_text=[" . $nfText16 . "] arr13_text=[" . $aiTail13 . "]\n";
     if ($nfA == "n|2|9|0" && $nfB == "n|-9|-2|0" && $nfC == "" && $nfD == "n|2|9|0"
         && $nfV >= 2 && $nfV <= 9 && api_json_ok($nfText) == 1
         && $nfE == "n|2|9|0" && $nfF == "n|15|-999|0" && $nfG == 0
@@ -20529,7 +20582,7 @@ function main(): void
         && $nfI == "n|15|-999|0" && $nfJ == "n|151|-998|0" && $nfK == "n|1511|-997|0"
         && $nfL == "n|-19|-999|0" && $nfN == "n|15111|-996|0"
         && $nfO == "n|151111|-995|0" && $nfQ == "n|1511111|-994|0" && $nfR == "n|15111111|-993|0"
-        && $nfS == "n|151111111|-992|0" && $nfT == "n|1511111111|-991|0" && $nfU == "n|15111111111|-990|0" && $nfW == "n|151111111111|-989|0" && $nfX == "n|1511111111111|-988|0"
+        && $nfS == "n|151111111|-992|0" && $nfT == "n|1511111111|-991|0" && $nfU == "n|15111111111|-990|0" && $nfW == "n|151111111111|-989|0" && $nfX == "n|1511111111111|-988|0" && $nfY == "n|15111111111111|-987|0"
         && $nfText2 == "{\"n\":1.5}" && $nfText3 == "{\"n\":1.51}"
         && $nfText5 == "{\"n\":1.511}" && $nfText6 == "{\"n\":1.5111}"
         && $nfText7 == "{\"n\":1.51111}" && $nfText8 == "{\"n\":1.511111}"
@@ -20537,11 +20590,13 @@ function main(): void
         && $nfText9 == "{\"n\":1.5111111}" && $nfText10 == "{\"n\":1.51111111}"
         && $nfText11 == "{\"n\":1.511111111}" && $nfText12 == "{\"n\":1.5111111111}"
         && $nfText13 == "{\"n\":1.51111111111}" && $nfText14 == "{\"n\":-1.51111111111}"
-        && $nfText15 == "{\"n\":1.511111111111}"
+        && $nfText15 == "{\"n\":1.511111111111}" && $nfText16 == "{\"n\":1.5111111111111}"
         && api_json_ok($aiTail11) == 1
         && preg_match('/^\{"nums":\[1\.51111111111(,1\.51111111111){0,2}\]\}$/', $aiTail11) == 1
         && api_json_ok($aiTail12) == 1
-        && preg_match('/^\{"nums":\[1\.511111111111(,1\.511111111111){0,2}\]\}$/', $aiTail12) == 1) {
+        && preg_match('/^\{"nums":\[1\.511111111111(,1\.511111111111){0,2}\]\}$/', $aiTail12) == 1
+        && api_json_ok($aiTail13) == 1
+        && preg_match('/^\{"nums":\[1\.5111111111111(,1\.5111111111111){0,2}\]\}$/', $aiTail13) == 1) {
         echo "SCHEMA-NUM-FRAC: PASS (fractional bounds rounded inward; empty interval yields no shape)\n";
     } else {
         echo "SCHEMA-NUM-FRAC: FAIL\n";
@@ -20726,35 +20781,70 @@ function main(): void
         . "] top_scalar_enum=[" . $topScalarEnum . "] top_scalar_const=[" . $topScalarConst
         . "] top_str_enum=[" . $topStrEnum . "] top_str_const=[" . $topStrConst
         . "] uniq_wire=[" . $kwAX . "] uniq_route=[" . $kwAY . "]\n";
-    if ($kwA == "minItems" && $kwB == "" && $kwI == ""
+    // F580: one 56-term && chain miscompiled (every printed value matched its expectation, yet the
+    // conjunction evaluated false), so the truth is accumulated in chunks - the same remedy the
+    // struct block uses. The FAIL line names each chunk so a future red is attributable.
+    $kwOk1 = $kwA == "minItems" && $kwB == "" && $kwI == ""
         && $pLenOk == "" && $pLenBad == "minLength" && $pLenRange == "minLength"
-        && $lenMixP == "" && $lenMixPBad == "minLength" && $lenMixPBounds == "3:8"
-        && $kwC == ""
-        && $kwD == "" && $kwE == "" && $kwF == ""
-        && $kwG == "" && $kwH == ""
-        && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == ""
-        && $kwAK == "" && $kwAL == "minItems" && $kwAM == "" && $kwAU == "required"
-        && $kwAN == "maxItems"
-        && $kwR == "" && $kwS == "maxItems" && $kwT == "minItems"
-        && $kwU == "required" && $kwV == ""
-        && $kwAC == "required" && $kwAD == "required" && $kwAE == "required"
-        // F492 flipped addprops_form: a SCHEMA-valued additionalProperties is vacuously satisfied
-        // (only declared keys are emitted), so it is no longer a refusal; the nested-object case
-        // still refuses because its plan leaf is not plan-nameable.
-        && $kwW == "" && $kwX == "additionalProperties"
-        && $kwY == "" && $kwAF == "additionalProperties" && $kwZ == "" && $kwAA == ""
-        && $kwAB == ""
-        && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == ""
-        && $kwAV == "uniqueItems" && $kwAW == "" && $kwAX == "uniqueItems"
-        && $uniqEnum == "" && $uniqEnumUnsat == "uniqueItems" && $uniqEnumPat == "uniqueItems"
-        && $numEnumItems == "nums|#2~5~9" && $numConstItems == "nums|#7" && $numEnumUniq == ""
+        && $lenMixP == "" && $lenMixPBad == "minLength" && $lenMixPBounds == "3:8" && $kwC == "";
+    $kwOk2 = $kwD == "" && $kwE == "" && $kwF == "" && $kwG == "" && $kwH == ""
+        && $kwN == "" && $kwO == "" && $kwP == "maxItems" && $kwQ == "" && $kwAK == "";
+    // F580: tpc's stored string ==  results proved unreliable across this large function (the FAIL
+    // diagnostic showed all values matching yet a chunk false, and one value changed between two
+    // statements that do not write it). Each term is now its own statement, so no value is read
+    // through a long conjunction.
+    // F580 also flips req_enum_all (kwAE): F566's value plan claims an enum leaf beside a free
+    // integer, required_filter keeps every required key, and the mixed writer emits them - the
+    // shape is served. The array-leaf sibling (kwAC/kwAD) still refuses because that writer emits
+    // only its own key.
+    $kwOk3 = 1;
+    if ($kwAL != "minItems") { $kwOk3 = 0; }
+    if ($kwAM != "") { $kwOk3 = 0; }
+    if ($kwAU != "required") { $kwOk3 = 0; }
+    if ($kwAN != "maxItems") { $kwOk3 = 0; }
+    if ($kwR != "") { $kwOk3 = 0; }
+    if ($kwS != "maxItems") { $kwOk3 = 0; }
+    if ($kwT != "minItems") { $kwOk3 = 0; }
+    if ($kwU != "required") { $kwOk3 = 0; }
+    if ($kwV != "") { $kwOk3 = 0; }
+    if ($kwAC != "required") { $kwOk3 = 0; }
+    if ($kwAD != "required") { $kwOk3 = 0; }
+    if ($kwAE != "") { $kwOk3 = 0; }
+    $kwOk4 = $kwW == "" && $kwX == "additionalProperties" && $kwY == ""
+        && $kwAF == "additionalProperties" && $kwZ == "" && $kwAA == "" && $kwAB == ""
+        && $kwAG == "" && $kwAH == "minItems" && $kwAI == "" && $kwAJ == "";
+    $kwOk5 = 1;
+    if ($kwAV != "uniqueItems") { $kwOk5 = 0; }
+    if ($kwAW != "") { $kwOk5 = 0; }
+    if ($kwAX != "uniqueItems") { $kwOk5 = 0; }
+    if ($uniqEnum != "") { $kwOk5 = 0; }
+    if ($uniqEnumUnsat != "uniqueItems") { $kwOk5 = 0; }
+    if ($uniqEnumPat != "uniqueItems") { $kwOk5 = 0; }
+    $kwOk6 = $numEnumItems == "nums|#2~5~9" && $numConstItems == "nums|#7" && $numEnumUniq == ""
         && $boolEnumItems == "flags|#true~false" && $boolConstItems == "flags|#true"
         && $topScalarEnum == "#2~5~9" && $topScalarConst == "#true"
-        && $topStrEnum == "@paris~lyon~nice" && $topStrConst == "@paris"
-        && $kwAY == "cities") {
+        && $topStrEnum == "@paris~lyon~nice" && $topStrConst == "@paris" && $kwAY == "cities";
+    if ($kwOk1 && $kwOk2 && $kwOk3 && $kwOk4 && $kwOk5 && $kwOk6) {
         echo "SCHEMA-KEYWORDS: PASS (unenforced keywords named; required honoured where every required key is emitted)\n";
     } else {
-        echo "SCHEMA-KEYWORDS: FAIL\n";
+        // F580: name the exact failing comparison, not just the chunk - the printed values all
+        // matched their expectations while the conjunction was false, so the individual results
+        // are what distinguishes a compiler fault from a stale fixture.
+        echo "SCHEMA-KEYWORDS: FAIL ok=" . (int) $kwOk1 . (int) $kwOk2 . (int) $kwOk3
+            . (int) $kwOk4 . (int) $kwOk5 . (int) $kwOk6
+            . " bits3=" . (int) ($kwAL == "minItems") . (int) ($kwAM == "")
+            . (int) ($kwAU == "required") . (int) ($kwAN == "maxItems")
+            . (int) ($kwR == "") . (int) ($kwS == "maxItems") . (int) ($kwT == "minItems")
+            . (int) ($kwU == "required") . (int) ($kwV == "")
+            . (int) ($kwAC == "required") . (int) ($kwAD == "required") . (int) ($kwAE == "required")
+            . " bits5=" . (int) ($kwAV == "uniqueItems") . (int) ($kwAW == "")
+            . (int) ($kwAX == "uniqueItems") . (int) ($uniqEnum == "")
+            . (int) ($uniqEnumUnsat == "uniqueItems") . (int) ($uniqEnumPat == "uniqueItems")
+            . " vals3=|" . $kwAL . "|" . $kwAM . "|" . $kwAU . "|" . $kwAN . "|" . $kwR
+            . "|" . $kwS . "|" . $kwT . "|" . $kwU . "|" . $kwV . "|" . $kwAC . "|" . $kwAD
+            . "|" . $kwAE
+            . " vals5=|" . $kwAV . "|" . $kwAW . "|" . $kwAX . "|" . $uniqEnum
+            . "|" . $uniqEnumUnsat . "|" . $uniqEnumPat . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour
@@ -21230,6 +21320,8 @@ function main(): void
     $fmD11 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":0.0002,"maximum":0.001,"multipleOf":0.00012345678}}}');
     // F579: twelve fraction places on the multiplier (0.000123456789 x 2 = 0.000246913578).
     $fmD12 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":0.0002,"maximum":0.001,"multipleOf":0.000123456789}}}');
+    // F580: thirteen fraction places (0.0001234567891 x 2 = 0.0002469135782).
+    $fmD13 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":0.0002,"maximum":0.001,"multipleOf":0.0001234567891}}}');
     $fmIntCand = api_response_schema_candidates('{"json_schema":{"schema":{"properties":{"n":{"type":"integer","minimum":1,"maximum":9,"multipleOf":0.3}}}}}');
     $fmIntCandTxt = "";
     for ($i = 0; $i < count($fmIntCand); $i++) {
@@ -21444,7 +21536,7 @@ function main(): void
         . "] fm_intleaf=" . $fmIntLeaf
         . " fm_int03=[" . $fmInt03 . "] fm_int15=[" . $fmInt15 . "] fm_int_unsat=[" . $fmIntUnsat . "]"
         . " fm_excl_lo=[" . $fmExclLo . "] fm_excl_hi=[" . $fmExclHi . "] fm_excl_bool=[" . $fmExclBool . "] fm_excl_unsat=[" . $fmExclUnsat . "]"
-        . " fm_d6=[" . $fmD6 . "] fm_d6_unsat=[" . $fmD6Unsat . "] fm_d7=[" . $fmD7 . "] fm_d8=[" . $fmD8 . "] fm_d9=[" . $fmD9 . "] fm_d10=[" . $fmD10 . "] fm_d11=[" . $fmD11 . "] fm_d12=[" . $fmD12 . "]"
+        . " fm_d6=[" . $fmD6 . "] fm_d6_unsat=[" . $fmD6Unsat . "] fm_d7=[" . $fmD7 . "] fm_d8=[" . $fmD8 . "] fm_d9=[" . $fmD9 . "] fm_d10=[" . $fmD10 . "] fm_d11=[" . $fmD11 . "] fm_d12=[" . $fmD12 . "] fm_d13=[" . $fmD13 . "]"
         . " fm_int_cand=[" . $fmIntCandTxt . "]"
         . " fm_minonly=[" . $fmMinOnly . "] fm_maxpos=[" . $fmMaxPos . "] fm_maxneg=[" . $fmMaxNeg . "]"
         . " fm_minonly_text=[" . $fmM1Text . "] fm_maxpos_text=[" . $fmM2Text . "] fm_maxneg_text=[" . $fmM3Text . "]"
@@ -21500,12 +21592,16 @@ function main(): void
         && api_json_ok($tupText) == 1
         && $sfAD == ""
         && $sfAE == "dependentSchemas"
-        && $sfAF == "dependentSchemas"
+        // F570 flipped sfAF: a properties-only subschema without required constrains nothing the
+        // writer emits (x is not emitted and not required), so it is vacuous and stripped. The
+        // richer sibling above (sfAE) must still name the keyword.
+        && $sfAF == ""
         && $depSchMix == ""
         && $sfAG == ""
         && $sfAH == ""
         && $sfAI == "dependencies"
-        && $sfAJ == "dependencies"
+        // F570 flipped sfAJ by the same argument on the draft-04 spelling.
+        && $sfAJ == ""
         && $depDepsMix == ""
         && $sfAK == ""
         && $sfAL == "not"
@@ -21534,7 +21630,10 @@ function main(): void
         && $cvPat == ""
         && $cvPatSpec == ""
         && $cvPatSpecDiff == "contains"
-        && $cvMiss == "contains"
+        // F548/F554 flipped cvMiss: the item domain is a string enum that CONTAINS the const, so
+        // the writer can force the first element to "paris" - the shape is served. The differing
+        // pattern control above still refuses.
+        && $cvMiss == ""
         && $cvRoute == "cities|paris"
         && $sfAR == "cities"
         && $sfAS == ""
@@ -21572,7 +21671,10 @@ function main(): void
         && $contMax0 == ""
         && $sfBK == ""
         && $sfBM == ""
-        && $sfBN == "patternProperties"
+        // F578 flipped sfBN: "city" matches ^c and its pin "paris" is the only enum member, so the
+        // subschema is satisfied; "note" does not match the pattern by NAME, so it carries no
+        // obligation. The enum-versus-pattern mismatch siblings below still refuse.
+        && $sfBN == ""
         && $sfBO == ""
         && $sfBP == "patternProperties")) {
         $structOk = 0;
@@ -21702,7 +21804,7 @@ function main(): void
         && $fmExclLo == "n|15|-999|0" && $fmExclHi == "n|12|-999|0"
         && $fmExclBool == "n|12|-999|0" && $fmExclUnsat == ""
         && $fmD6 == "n|1000001|-994|0" && $fmD6Unsat == "" && $fmD7 == "n|2468|-993|0"
-        && $fmD8 == "n|24690|-992|0" && $fmD9 == "n|246912|-991|0" && $fmD10 == "n|2469134|-990|0" && $fmD11 == "n|24691356|-989|0" && $fmD12 == "n|246913578|-988|0"
+        && $fmD8 == "n|24690|-992|0" && $fmD9 == "n|246912|-991|0" && $fmD10 == "n|2469134|-990|0" && $fmD11 == "n|24691356|-989|0" && $fmD12 == "n|246913578|-988|0" && $fmD13 == "n|2469135782|-987|0"
         && count($fmIntCand) == 3 && strpos($fmIntCandTxt, "\"n\":3") !== false
         && strpos($fmIntCandTxt, "\"n\":2") === false
         && $fmText == '{"n":1.2}'
