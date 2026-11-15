@@ -2870,3 +2870,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_param_unsupported` 挂到外层链（stream 分流前），流式不再绕过 form/choice/semantic/state/sampling 五组拒绝。
 - **门**：`chat-stream-param-refuse`/`anth-stream-param-refuse` 双模式 PASS；**smoke 185→187/0**。
 - **梯**：BUILD_OK（`build_f635`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F636（2026-11-15）：8001 参数/关键字对齐
+- **修**：`api_serve_par` 用 `api_param_unsupported` + `api_schema_keywords_unsupported`，`$bad=2` 消息带具体原因。
+- **门**：`par-param-refuse`/`par-schema-keyword-refuse`（+既有 `par-sampling-refuse`）PASS；8000 双模式 187/0。
+- **梯**：BUILD_OK（`build_f636`）；自检/四 harness/par/fair/哨兵 全绿。

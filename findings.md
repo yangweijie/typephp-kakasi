@@ -5290,3 +5290,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-stream-param-refuse`（流式 logit_bias）、`anth-stream-param-refuse`（流式 top_k）双模式 PASS；**双模式 smoke 185→187/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：守卫要挂在**所有形状都必经**的那一层（本文件里是 stream 分流之前的外层链）；继承 F634 的教训——每次新增守卫，都要回答“流式/Anthropic/Responses 各自走哪条链、是否经过这里”。
 **证据**：`build_f635.log`、`selftest_f635.log`、`{req,cnt,pat,bnd}_run_f635.log`、`gate_live_f635.log`。
+
+## F636（2026-11-15）：8001 的参数与 schema 关键字拒绝对齐
+**缺口**：合作式服务器此前只接了 F621 的**采样**参数拒绝；`logit_bias`/`thinking`/`store` 等语义与状态参数、以及响应 schema 的**未实现关键字**（如 `uniqueItems:true`）在 8001 仍被流式接受。
+**改动**：`api_serve_par` 的准入判定改用 `api_param_unsupported`（五组谓词合一），并在有 `json_schema` 时跑 `api_schema_keywords_unsupported`；命中统一走 `$bad=2` 且消息给出具体原因（参数名或 `schema keyword X`）。
+**结果**：`par-param-refuse`（流式 logit_bias）、`par-schema-keyword-refuse`（`uniqueItems`）、既有 `par-sampling-refuse` 全 PASS；8000 双模式仍 **187/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：两个服务器共用一套“接受即兑现”规则时，把规则函数当成**唯一来源**（`api_param_unsupported` + 关键字检测），而不是各服务器各挑几条；新规则加进函数，两端自动一致。
+**证据**：`build_f636.log`、`selftest_f636.log`、`{req,cnt,pat,bnd}_run_f636.log`、`gate_live_f636.log`、`par_smoke_f636.log`。

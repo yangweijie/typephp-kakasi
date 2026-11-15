@@ -158,6 +158,26 @@ def main():
     check("par-plugins", pj.get("applied") == 1 and pj.get("active") not in (None, "", "none"),
           str(pj))
 
+    # F636: the cooperative server applies the same parameter set and schema-keyword rules as 8000.
+    def par_refusal(body):
+        try:
+            raw = post("/v1/chat/completions", body)
+            return "", "accepted " + raw[:100]
+        except urllib.error.HTTPError as e:
+            return e.read().decode(), str(e.code)
+
+    pmsg, pdet = par_refusal({"messages": [{"role": "user", "content": "Hi"}], "max_tokens": 4,
+                              "stream": True, "logit_bias": {"1": -100}})
+    check("par-param-refuse", pmsg.find("logit_bias") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = par_refusal({"messages": [{"role": "user", "content": "List tags."}],
+                              "max_tokens": 48, "stream": True,
+                              "response_format": {"type": "json_schema", "json_schema": {
+                                  "name": "x", "schema": {
+                                      "type": "object", "properties": {
+                                          "tags": {"type": "array", "items": {"type": "string"},
+                                                   "uniqueItems": True}}}}}})
+    check("par-schema-keyword-refuse", pmsg.find("uniqueItems") >= 0, pdet + " " + pmsg[:120])
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

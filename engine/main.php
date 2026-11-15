@@ -15882,15 +15882,21 @@ Connection: close
                         }
                     }
                 }
-                // F621: this server takes the same knobs as 8000, so it must refuse the same
-                // unimplemented ones instead of streaming under a different distribution.
-                $spBad = api_sampling_params_unsupported($body);
-                if ($spBad != "") {
+                // F621/F636: this server takes the same knobs and schemas as 8000, so it refuses
+                // the same parameter set and schema keywords instead of streaming under them.
+                $parWhy = api_param_unsupported($body);
+                if ($parWhy == "" && strpos($body, "\"json_schema\"") !== false) {
+                    $parKw = api_schema_keywords_unsupported(api_json_object_after($body, "schema"));
+                    if ($parKw != "") {
+                        $parWhy = "schema keyword " . $parKw;
+                    }
+                }
+                if ($parWhy != "") {
                     $bad = 2;
                 }
                 if ($bad != 0 || $slot < 0) {
                     $payload = $bad == 2
-                        ? ("{\"error\":{\"message\":\"sampling parameter not supported: " . $spBad
+                        ? ("{\"error\":{\"message\":\"request not supported: " . $parWhy
                            . "\",\"type\":\"invalid_request_error\"}}")
                         : ($bad == 1
                         ? "{\"error\":{\"message\":\"parallel mode: streaming text only (no tools/json/n; one stop sequence max)\",\"type\":\"invalid_request_error\"}}"
