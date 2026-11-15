@@ -2653,6 +2653,27 @@ def main():
           and c2.get("input_tokens") == (r2.get("usage") or {}).get("input_tokens"),
           "count=%r usage=%r" % (c2, r2.get("usage")))
 
+    # F627: n outside 1..4 used to be clamped to a single choice with a 200, and best_of (legacy
+    # infill sampling) is not implemented - both must refuse by name instead of answering one sample.
+    def choice_refusal(path, extra):
+        if path == "/v1/completions":
+            body = {"prompt": "The capital of France is", "max_tokens": 8}
+        else:
+            body = {"messages": [{"role": "user", "content": "The capital of France is"}],
+                    "max_tokens": 8}
+        body.update(extra)
+        try:
+            r = post(path, body)
+            return "", "answered " + str(r)[:100]
+        except urllib.error.HTTPError as e:
+            return e.read().decode(), str(e.code)
+
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {"n": 5})
+    check("chat-n-too-large-refuse", pmsg.find("not supported: n") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/completions", {"best_of": 2})
+    check("completions-best-of-refuse", pmsg.find("not supported: best_of") >= 0,
+          pdet + " " + pmsg[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

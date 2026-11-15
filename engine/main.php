@@ -12261,6 +12261,26 @@ function api_tools_required_unservable(string $body): int
     }
 }
 
+// F627: choice-count knobs. n outside 1..4 used to be clamped to one choice with a 200, which hides
+// that the caller asked for five samples and got one; best_of (legacy infill sampling) is not
+// implemented at all. Only integer-valued top-level spellings are matched, so a schema property
+// named "n" (whose value is an object or a decimal literal) cannot trigger this.
+function api_choice_params_unsupported(string $body): string
+{
+    $m = [];
+    if (preg_match('/"n"\s*:\s*([0-9]+)\s*[,}]/', $body, $m) == 1) {
+        $n = (int) $m[1];
+        if ($n < 1 || $n > 4) {
+            return "n";
+        }
+    }
+    if (preg_match('/"best_of"\s*:\s*([0-9]+)\s*[,}]/', $body, $m) == 1
+        && (int) $m[1] > 1) {
+        return "best_of";
+    }
+    return "";
+}
+
 // F625: response-level state/async knobs that the server does not implement. Accepting them would
 // answer a single stateless turn while the caller asked for stored state, a background job or a
 // continuation - a semantic lie that a 200 hides. Neutral spellings (store:false, truncation
@@ -16339,6 +16359,13 @@ function api_serve(int $port): void
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+            } else if (api_choice_params_unsupported($body) != "") {
+                $payload = "{\"error\":{\"message\":\"request parameter not supported: "
+                    . api_choice_params_unsupported($body)
+                    . " (n is served for 1..4 choices; a larger n is refused instead of being "
+                    . "clamped to one sample, and legacy best_of sampling is not implemented)\","
+                    . "\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_state_params_unsupported($body) != "") {
                 $payload = "{\"error\":{\"message\":\"request parameter not supported: "
                     . api_state_params_unsupported($body)

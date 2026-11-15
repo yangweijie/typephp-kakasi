@@ -5226,3 +5226,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`anth-count-tokens`（system+user）与 `anth-count-tokens-tools`（带 `input_schema` 工具目录）都断言 **count == 同轮响应的 `usage.input_tokens`**，双模式 PASS；**双模式 smoke 167→169/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：计费/长度类端点**不要另写计数器**——必须复用真正构造 prompt 的那条路径（连 assistant 开头轮一起算），否则“预估”与“实报”迟早分叉；门直接拿两者相等作判据。
 **证据**：`build_f626.log`、`selftest_f626.log`、`{req,cnt,pat,bnd}_run_f626.log`、`gate_live_f626.log`。
+
+## F627（2026-11-15）：n 越界与 best_of 具名拒绝
+**缺陷**：`n` 落在 1..4 之外时被**静默钳成 1** 个候选并回 200（要 5 份得 1 份却不报错）；`best_of`（旧版补全的候选采样）完全未实现且被忽略。
+**改动**：`api_choice_params_unsupported` 只匹配**整数取值**的顶层拼写（`"n":5,` / `"n":5}` 形态），`n<1 || n>4` 或 `best_of>1` 时 400 点名；正则要求数字后紧跟 `,`/`}`，所以 schema 里名为 `n` 的属性（对象值或 `0.00001` 这类小数）不会误触发。
+**结果**：`chat-n-too-large-refuse`、`completions-best-of-refuse` 双模式 PASS（`n:2` 的既有 `chat-n` 仍绿）；**双模式 smoke 169→171/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**过程说明（构建失败一次）**：首轮 `SYCL_LINK_FAILED … LNK1104 cannot open build\kakasi_engine_sycl.exe / permission denied`——上一轮误跑 `scripts/par_content_check.sh`（会自行起服务并等待）留下孤儿进程（StartTime 1:19:44），`Get-Process` 定位后 `Stop-Process -Force`，重建即过。**教训**：`par_content_check.sh` 不是离线检查，别在构建前跑；`LNK1104` 先查同名进程而不是怀疑代码。
+**证据**：`build_f627.log`（首轮失败）、`selftest_f627.log`、`{req,cnt,pat,bnd}_run_f627.log`、`gate_live_f627.log`。
