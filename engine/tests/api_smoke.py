@@ -2688,6 +2688,17 @@ def main():
     check("chat-temperature-range-refuse", pmsg.find("temperature") >= 0,
           pdet + " " + pmsg[:120])
 
+    # F630: n>1 with tools or a response schema must refuse - the constrained decode is
+    # single-shot, and answering one choice while n asked for two is the silent-drop class.
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {
+        "n": 2, "tools": [{"type": "function", "function": {
+            "name": "get_weather", "parameters": {"type": "object",
+                                                  "properties": {"city": {"type": "string"}}}}}]})
+    check("chat-n-tools-refuse", pmsg.find("not supported: n") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {
+        "n": 2, "response_format": {"type": "json_object"}})
+    check("chat-n-json-refuse", pmsg.find("not supported: n") >= 0, pdet + " " + pmsg[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

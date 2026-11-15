@@ -2840,3 +2840,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F629（2026-11-15）：8001 count_tokens
 - **修**：`api_serve_par` 增加无状态 `count_tokens` 路由（同 `api_history`+assistant 开头轮）。
 - **门**：`par-count-tokens`（计数>0 且随 system 增长）；8000 双模式 174/0 不变；自检/四 harness/par/fair/哨兵 全绿。
+
+## F630（2026-11-15）：n×约束解码组合拒���
+- **修**：`n>1` + tools/json_schema/json_object ⇒ 400（约束解码单发）；自由文本 n=2 仍服务。
+- **门**：`chat-n-tools-refuse`/`chat-n-json-refuse` 双模式 PASS；**smoke 174→176/0**。
+- **梯**：BUILD_OK（`build_f630`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

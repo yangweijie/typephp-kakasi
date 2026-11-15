@@ -16415,6 +16415,16 @@ function api_serve(int $port): void
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+            } else if (preg_match('/"n"\s*:\s*[0-9][0-9]*\s*[,}]/', $body) == 1
+                       && api_request_n($body) > 1
+                       && (strpos($body, "\"tools\"") !== false
+                           || strpos($body, "\"json_schema\"") !== false
+                           || api_json_object_requested($body) == 1)) {
+                // F630: the multi-choice loop only exists on the free-text path; with tools or a
+                // response schema the constrained decode is single-shot, so n>1 used to return one
+                // choice while reporting nothing. Refuse instead of dropping samples.
+                $payload = "{\"error\":{\"message\":\"request parameter not supported: n with tools or a response schema (constrained decoding is single-shot; use n=1)\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_request_form_unsupported($body) != "") {
                 $payload = "{\"error\":{\"message\":\"request parameter not supported: "
                     . api_request_form_unsupported($body)

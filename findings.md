@@ -5247,3 +5247,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`par-count-tokens` PASS（计数 >0，且加 system 提示后严格变大）；8000 双模式仍 **174/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：无状态端点不进调度器，别让它被「只有流式」这条闸顺手拒掉；对共享服务器的门要写成**单调关系**（加提示 ⇒ 计数变大）而不是硬编码数字。
 **证据**：`build_f629.log`、`selftest_f629.log`、`{req,cnt,pat,bnd}_run_f629.log`、`gate_live_f629.log`、`par_smoke_f629.log`。
+
+## F630（2026-11-15）：`n>1` 与约束解码组合的具名拒绝
+**缺陷**：多候选循环只在自由文本路径存在（`$toolJson == "" && $jsonMode == 0` 才进循环）；带 `tools` 或响应 schema 时 `n=2` 实际只回 **1 个 choice**，既不报错也不说明——与 F627 的 n 钳制同类。
+**改动**：新增分支：`n>1` 且（声明 `tools` / 含 `json_schema` / `json_object`）⇒ 400 点名 “n with tools or a response schema (constrained decoding is single-shot; use n=1)”。自由文本 `n=2` 保持服务（既有 `chat-n` 门仍绿）。
+**结果**：`chat-n-tools-refuse`、`chat-n-json-refuse` 双模式 PASS；**双模式 smoke 174→176/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：`n` 这样的“容器参数”要和**每条生成路径**逐格核对（自由文本 / 工具 / json_object / json_schema / 流式）；只有一格实现循环时，其余格子要么补实现、要么明确拒绝，不能靠默认单发糊过去。
+**证据**：`build_f630.log`、`selftest_f630.log`、`{req,cnt,pat,bnd}_run_f630.log`、`gate_live_f630.log`。
