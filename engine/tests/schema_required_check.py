@@ -666,6 +666,17 @@ cases = [
                         and len((obj_of(txt) or {}).get("cities")) >= 1
                         and all(x == "p" * 300
                                 for x in (obj_of(txt) or {}).get("cities")))),
+    # F581 stress on the numeric value-table writer: an emitted element must be an enum member, so
+    # a truncated 30-digit member would be a silent violation.
+    ("long_num_enum_item_exact", "Give the nums.",
+     {"type": "object", "properties": {"nums": {"type": "array",
+                                                "items": {"type": "integer",
+                                                          "enum": [123456789012345678901234567890, 7]}}}},
+     lambda code, txt: (code == 200
+                        and isinstance((obj_of(txt) or {}).get("nums"), list)
+                        and len((obj_of(txt) or {}).get("nums")) >= 1
+                        and all(x in (123456789012345678901234567890, 7)
+                                for x in (obj_of(txt) or {}).get("nums")))),
     ("const_dec17_pin_exact", "Give the code and the count.",
      {"type": "object", "properties": {"n": {"const": 1.2345678901234567},
                                         "note": {"type": "string"}}},
