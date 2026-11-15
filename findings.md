@@ -5052,4 +5052,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修复**：要求分支含 type/properties 两键（顺序无关），按 properties 键定位块；smoke `chat-oneof-reordered-branches` 断言“合法对象或 400”，修复后返回合法对象。
 **未闭**：引擎没有“schema 存在但无 claimer ⇒ 400”的统一兜底，所以任何未覆盖形态仍是散文（200）。这是**保证“接受即合法”的最后一块**；比逐个补检测器更根本，应作为专门一轮：在分发链终点判断 `json_schema` 存在且所有 schema 路由为空 ⇒ 具名 400。
 **证据**：`gate_live_f596c.log`（红：`chat-oneof-reordered-branches` 散文）、`gate_live_f597.log`（SMOKE/SMOKE-PRETTY 128/0）、`api_smoke_f597.log`。
+**键序探针补充**：数值 bounds 的根/叶子键序颠倒仍受约束（`chat-num-reordered-schema` PASS，`gate_live_f597b.log`，双模式 **129/0**）——数值检测器按键扫描，不依赖先后。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

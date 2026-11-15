@@ -2675,4 +2675,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：smoke 新增 `chat-oneof-reordered-branches`（合法对象或 400；修复后为合法对象）——SMOKE 与 SMOKE-PRETTY 均 **128/0**。
 - **梯**：BUILD_OK（`build_f597`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0。
 - **仍缺（记入队列）**：**无人认领兜底 400**——键序/形态不在任何检测器覆盖内时，引擎目前仍回散文而非显式拒绝；这是比逐个补锚点更根本的保证，需要单独一轮在分发末尾加“schema 存在但无 claimer ⇒ 400”。
+- **键序探针补充（f597b）**：数值 bounds 的根/叶子键序颠倒（`{"properties":…,"type":"object"}` 与 `{"maximum":9,"type":"integer"}`）仍正确受限（`chat-num-reordered-schema` PASS）；**双模式 smoke 129/0**。
 

@@ -1749,6 +1749,29 @@ def main():
         ro_content = e.read().decode()[:160]
     check("chat-oneof-reordered-branches", ro_ok, ro_content[:160])
 
+    # F597 probe: numeric bounds written with keys in another legal order. The value must stay
+    # inside the bound, or the request must refuse - prose is the failure mode.
+    reorder_num = {"messages": [{"role": "user", "content": "Give the number."}],
+                   "max_tokens": 24, "temperature": 0,
+                   "response_format": {"type": "json_schema", "json_schema": {
+                       "name": "x", "schema": {
+                           "properties": {"n": {"maximum": 9, "type": "integer"}},
+                           "type": "object"}}}}
+    rn_ok = False
+    rn_content = ""
+    try:
+        r = post("/v1/chat/completions", reorder_num)
+        rn_content = r["choices"][0]["message"]["content"]
+        try:
+            rn_obj = json.loads(rn_content)
+        except Exception:
+            rn_obj = {}
+        rn_ok = isinstance(rn_obj, dict) and isinstance(rn_obj.get("n"), int) and rn_obj["n"] <= 9
+    except urllib.error.HTTPError as e:
+        rn_ok = e.code == 400
+        rn_content = e.read().decode()[:160]
+    check("chat-num-reordered-schema", rn_ok, rn_content[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.
