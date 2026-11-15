@@ -78,6 +78,15 @@ def main():
     check("health-version", want_ver != "" and health.get("version") == want_ver,
           "served=%r file=%r" % (health.get("version"), want_ver))
 
+    # F631: the vendor-profile registry must report the profile it matched, so a tuning file that
+    # silently never matches is visible instead of looking applied.
+    with urllib.request.urlopen(BASE + "/plugins", timeout=60) as r:
+        pl = json.loads(r.read().decode())
+    check("plugins-report", pl.get("profiles", 0) >= 2 and pl.get("applied") == 1
+          and pl.get("active") not in (None, "", "none") and pl.get("match") not in (None, "")
+          and isinstance(pl.get("attn_mode"), int) and 0 <= pl.get("attn_mode", -1) <= 5,
+          str(pl))
+
     with urllib.request.urlopen(BASE + "/v1/models", timeout=60) as r:
         models = json.loads(r.read().decode())
     check("models", models.get("object") == "list" and len(models.get("data", [])) > 0)

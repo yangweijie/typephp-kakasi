@@ -2845,3 +2845,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`n>1` + tools/json_schema/json_object ⇒ 400（约束解码单发）；自由文本 n=2 仍服务。
 - **门**：`chat-n-tools-refuse`/`chat-n-json-refuse` 双模式 PASS；**smoke 174→176/0**。
 - **梯**：BUILD_OK（`build_f630`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F631（2026-11-15）：FR-05 声明式厂商档案
+- **交付**：`plugins/vendor_profiles.txt`（name|match|attn_mode|kv_f16|note）、启动时首条匹配并应用、`GET /plugins` 只读报告（两服务）。
+- **门**：`plugins-report`/`par-plugins` PASS；**smoke 176→177/0**；自检/四 harness/par/fair/哨兵 全绿。
+- **边界**：单二进制下不做动态代码加载；档案 → 既有旋钮（attn_mode/kv_f16）。

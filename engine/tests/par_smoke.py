@@ -152,6 +152,12 @@ def main():
     check("par-count-tokens", isinstance(c1.get("input_tokens"), int) and c1.get("input_tokens") > 0
           and c2.get("input_tokens", 0) > c1.get("input_tokens", 0), "%r %r" % (c1, c2))
 
+    # F631: the cooperative server applies the same vendor profile at start and reports it.
+    with urllib.request.urlopen(BASE + "/plugins", timeout=30) as r:
+        pj = json.loads(r.read().decode())
+    check("par-plugins", pj.get("applied") == 1 and pj.get("active") not in (None, "", "none"),
+          str(pj))
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

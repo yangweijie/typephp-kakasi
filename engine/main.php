@@ -230,6 +230,103 @@ function api_engine_version(): string
     return "0.0.0";
 }
 
+// F631: FR-05 vendor profiles. A "plugin" is declarative here, not dynamically loaded code - the
+// single-binary, no-FFI constraint forbids that. Each line maps a device-fingerprint substring to
+// kernel knobs the engine already owns (attention mode 0..5, f16 KV). The first matching line wins
+// and `*` is the fallback; losing the file only keeps the shipped defaults. GET /plugins reports
+// which profile was applied, so a tuning file that never matched is visible instead of silent.
+function api_plugins_path(): string
+{
+    return "C:/git/c/typephp-kakasi/plugins/vendor_profiles.txt";
+}
+
+function api_plugins_text(): string
+{
+    $p = api_plugins_path();
+    if (!file_exists($p)) {
+        return "";
+    }
+    $h = fopen($p, "r");
+    if ($h === false) {
+        return "";
+    }
+    $t = fread($h, 8192);
+    fclose($h);
+    return $t;
+}
+
+function api_plugins_count(string $text): int
+{
+    $lines = explode("\n", $text);
+    $n = 0;
+    for ($i = 0; $i < count($lines); $i++) {
+        $ln = trim($lines[$i]);
+        if ($ln != "" && substr($ln, 0, 1) != "#") {
+            $n++;
+        }
+    }
+    return $n;
+}
+
+// Applies the first matching profile; returns "name|match|attn|kv16|applied|profiles".
+function api_plugins_apply(): string
+{
+    $text = api_plugins_text();
+    $fp = model_device_fingerprint(0);
+    $lines = explode("\n", $text);
+    $total = api_plugins_count($text);
+    for ($i = 0; $i < count($lines); $i++) {
+        $ln = trim($lines[$i]);
+        if ($ln == "" || substr($ln, 0, 1) == "#") {
+            continue;
+        }
+        $f = explode("|", $ln);
+        if (count($f) < 4) {
+            continue;
+        }
+        if ($f[1] == "*" || strpos($fp, $f[1]) !== false) {
+            model_set_attn_mode((int) $f[2]);
+            model_set_kv_f16((int) $f[3]);
+            return $f[0] . "|" . $f[1] . "|" . model_attn_mode() . "|" . $f[3] . "|1|" . $total;
+        }
+    }
+    return "none||" . model_attn_mode() . "|0|0|" . $total;
+}
+
+function api_plugins_json(): string
+{
+    // Reporting only: the knobs were applied once at server start, so this must not touch a live
+    // session's KV. attn_mode is read back from the engine; kv_f16 is the profile's intent.
+    $text = api_plugins_text();
+    $fp = model_device_fingerprint(0);
+    $lines = explode("\n", $text);
+    $total = api_plugins_count($text);
+    $name = "none";
+    $match = "";
+    $kv = 0;
+    for ($i = 0; $i < count($lines); $i++) {
+        $ln = trim($lines[$i]);
+        if ($ln == "" || substr($ln, 0, 1) == "#") {
+            continue;
+        }
+        $f = explode("|", $ln);
+        if (count($f) < 4) {
+            continue;
+        }
+        if ($f[1] == "*" || strpos($fp, $f[1]) !== false) {
+            $name = $f[0];
+            $match = $f[1];
+            $kv = (int) $f[3];
+            break;
+        }
+    }
+    $applied = $name == "none" ? 0 : 1;
+    return "{\"profiles\":" . $total . ",\"active\":\"" . api_esc($name) . "\",\"match\":\""
+        . api_esc($match) . "\",\"device\":\"" . api_esc($fp)
+        . "\",\"attn_mode\":" . model_attn_mode() . ",\"kv_f16\":" . $kv
+        . ",\"applied\":" . $applied . "}";
+}
+
 function api_cache_stats(string $listing): string
 {
     $lines = explode("\n", $listing);
@@ -15506,6 +15603,9 @@ function api_serve_par(int $port): void
     stream_set_blocking($srv, false);
     // F368: say which attention path this process will serve with. The F366 lesson is that a
     // switch that never reached the code leaves both sides of an A/B identical and the log silent.
+    // F631: apply the vendor profile before the banner, so the mode reported below is the served
+    // one - the same "a switch that never reached the code leaves both sides identical" rule.
+    echo "PLUGINS " . api_plugins_apply() . "\n";
     echo "ATTN_MODE " . model_attn_mode() . "\n";
     // F392: the drafter window is a knob whose wrong value is silent - it looks like the drafter
     // simply had nothing to propose - so the process states the value it is running with.
@@ -15653,6 +15753,11 @@ Connection: close
                 fclose($c);
             } else if (strpos($req, "GET /v1/models") !== false) {
                 $payload = api_models_json();
+                fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                fclose($c);
+            } else if (strpos($req, "GET /plugins") !== false) {
+                $payload = api_plugins_json();
                 fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
                          . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                 fclose($c);
@@ -16228,6 +16333,9 @@ function api_serve(int $port): void
         return;
     }
     echo "API_LISTEN " . $port . "\n";
+    // F631: apply the vendor profile before the banner, so the mode reported below is the served
+    // one - the same "a switch that never reached the code leaves both sides identical" rule.
+    echo "PLUGINS " . api_plugins_apply() . "\n";
     echo "ATTN_MODE " . model_attn_mode() . "\n";
     // F392: the drafter window is a knob whose wrong value is silent - it looks like the drafter
     // simply had nothing to propose - so the process states the value it is running with.
@@ -16306,7 +16414,7 @@ function api_serve(int $port): void
         $status = "200 OK";
         // Local chat page on "/" (FR-09.2). Plain form + fetch, no build step, no CDN.
         if (strpos($req, "/v1/") === false && strpos($req, "GET /health") === false
-            && strpos($req, "GET /spec_stats") === false) {
+            && strpos($req, "GET /spec_stats") === false && strpos($req, "GET /plugins") === false) {
             $ctype = "text/html; charset=utf-8";
             $payload = "<!doctype html><meta charset=utf-8><title>Kakashi</title>"
                 . "<style>body{font:15px system-ui;max-width:46rem;margin:2rem auto;padding:0 1rem}"
@@ -16328,6 +16436,8 @@ function api_serve(int $port): void
             // immediately after the request being probed and keep the requests serial - two
             // concurrent generations would otherwise report each other's counters.
             $payload = "{\"stats\":\"" . api_esc(model_spec_stats()) . "\"}";
+        } else if (strpos($req, "GET /plugins") !== false) {
+            $payload = api_plugins_json();
         } else if (strpos($req, "/v1/models") !== false) {
             $mp = strpos($req, "/v1/models/");
             if ($mp !== false) {

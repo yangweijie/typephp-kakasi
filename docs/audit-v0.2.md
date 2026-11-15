@@ -730,4 +730,6 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 
 **增补（F622–F626，同日）**：响应级语义/状态参数具名拒绝（F620/F621 采样参数；F625 `previous_response_id`/`background`/`store:true`/`truncation:auto`/`reasoning`）；FR-17 版本化产物与 zip 安装包（F623/F624，`/health` 同源版本、`health-version` 门）；Anthropic `POST /v1/messages/count_tokens` 上线且与同轮 `usage.input_tokens` 相等（F626，门 `anth-count-tokens`/`-tools`）。
 
+**增补（F627–F631，同日）**：`n` 越界与 `best_of`（F627）、`n>1`×约束解码（F630）、未知 `response_format`/`text.format` 类型与 `tool_choice` 字符串、越界 `temperature`/`top_p`（F628）全部具名 400；`count_tokens` 覆盖 8000/8001（F626/F629）；FR-05 以**声明式厂商档案**落地（F631：`plugins/vendor_profiles.txt` → attn_mode/kv_f16，启动应用、`PLUGINS` 横幅、`GET /plugins` 只读报告，双服务有门）——动态代码加载在单二进制/禁 FFI 约束下不做。
+
 **仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包（**已做**：F623 的 `VERSION` + `scripts/package.sh` + manifest 哈希自校验，`/health` 返回同源版本，门 `health-version`；F624 追加 zip 安装包 + `7z t` 自检）。

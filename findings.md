@@ -5254,3 +5254,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-n-tools-refuse`、`chat-n-json-refuse` 双模式 PASS；**双模式 smoke 174→176/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：`n` 这样的“容器参数”要和**每条生成路径**逐格核对（自由文本 / 工具 / json_object / json_schema / 流式）；只有一格实现循环时，其余格子要么补实现、要么明确拒绝，不能靠默认单发糊过去。
 **证据**：`build_f630.log`、`selftest_f630.log`、`{req,cnt,pat,bnd}_run_f630.log`、`gate_live_f630.log`。
+
+## F631（2026-11-15）：FR-05 厂商档案注册表（声明式插件）
+**背景**：FR-05「厂商调优内核插件」原标“无插件注册/动态加载”；本项目的单二进制 + 禁 FFI 约束排除了动态代码加载，所以把“插件”定义为**声明式厂商档案**：`plugins/vendor_profiles.txt` 每行 `name|match|attn_mode|kv_f16|note`，按设备指纹子串匹配（`*` 兜底），首条命中生效，调用引擎已有的 `model_set_attn_mode` / `model_set_kv_f16`。
+**可观测**：启动横幅打印 `PLUGINS name|match|attn|kv|applied|profiles`（本机 `intel-arc|Intel|2|0|1|3`），`GET /plugins` 返回 `profiles/active/match/device/attn_mode/kv_f16/applied`（只读，不再改旋钮，避免打断在跑会话的 KV）。丢失/清空文件只是回到出厂默认，不会给出错误行为。
+**结果**：`plugins-report`、`par-plugins` 双服务 PASS；**双模式 smoke 176→177/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**边界（写清不算完成）**：这是**调优档案注册表**，不是任意代码插件；新增厂商=新增一行档案或一个新旋钮的映射，需要 C++ 侧暴露相应 setter。
+**证据**：`build_f631.log`、`selftest_f631.log`、`{req,cnt,pat,bnd}_run_f631.log`、`gate_live_f631.log`、`serve_f631.log`/`serve_par_f631.log`（PLUGINS 横幅）。
