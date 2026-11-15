@@ -29,6 +29,16 @@ def post(path, body, stream=False):
     return json.loads(raw)
 
 
+def post_raw(body_text, stream=False):
+    # F593: nineteen-place literals cannot come from a Python float; send raw JSON like an
+    # arbitrary-precision client would.
+    req = urllib.request.Request(BASE + "/v1/chat/completions", data=body_text.encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        raw = r.read().decode()
+    return raw if stream else json.loads(raw)
+
+
 def check(name, cond, detail=""):
     if cond:
         print("  PASS %s" % name)
@@ -1610,6 +1620,19 @@ def main():
     sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
                    for d in sse_data(sraw) if d != "[DONE]")
     check("chat-stream-exp-bounds", '"n":0.00001' in sout, sout)
+
+    # F593: the beyond-grid rewrite (single-point interval -> const) must hold on the streaming
+    # transport too; the literal is sent as raw JSON for the same reason as the bounds harness.
+    st_big = ('{"messages":[{"role":"user","content":"Give the number."}],'
+              '"max_tokens":24,"temperature":0,"stream":true,'
+              '"response_format":{"type":"json_schema","json_schema":{"name":"x","schema":'
+              '{"type":"object","properties":{'
+              '"n":{"type":"number","minimum":0.0001234567890123459,"maximum":0.0001234567890123459},'
+              '"note":{"type":"string"}}}}}')
+    sraw = post_raw(st_big, stream=True)
+    sout = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                   for d in sse_data(sraw) if d != "[DONE]")
+    check("chat-stream-beyond-grid", '"n":0.0001234567890123459' in sout, sout)
 
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],

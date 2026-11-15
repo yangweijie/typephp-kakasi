@@ -2647,4 +2647,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`pinned_interval_both_excl_interior_ok` 200 `{"n":0.0001234567890123457,...}`；`pinned_interval_mult_walk_ok` 200 `{"n":1,...}`；`walk_cap_refuse`/`excl_empty_refuse` 400。
 - **梯**：BUILD_OK（`build_f593`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.570×；哨兵 0。
 - **结论**：>18 位数值面已收口——能取端点/0/1×m/内部单位/≤4096 步倍数的一律精确服务，其余显式 400；不再需要“十进制串表示”大改（F582 的动机已被这条路径覆盖）。
+- **流式对账（f593b）**：smoke 新增 `chat-stream-beyond-grid`——19 位单点区间在 `stream:true` 下流出 `"n":0.0001234567890123459`，PASS；**基线 smoke 122→123**；par/fair 0、scaling 1.560×、哨兵 0。
 
