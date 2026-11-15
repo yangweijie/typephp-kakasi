@@ -2648,4 +2648,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f593`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.570×；哨兵 0。
 - **结论**：>18 位数值面已收口——能取端点/0/1×m/内部单位/≤4096 步倍数的一律精确服务，其余显式 400；不再需要“十进制串表示”大改（F582 的动机已被这条路径覆盖）。
 - **流式对账（f593b）**：smoke 新增 `chat-stream-beyond-grid`——19 位单点区间在 `stream:true` 下流出 `"n":0.0001234567890123459`，PASS；**基线 smoke 122→123**；par/fair 0、scaling 1.560×、哨兵 0。
+- **工具参数覆盖（f593c）**：`tool-beyond-grid-exact`——工具参数 schema 里的 19 位 bounds 同样被改写成 `const`，强制工具调用返回的 arguments 精确为 `{"n":0.0001234567890123456}`（**基线 smoke 123→124**）。改写发生在请求体层，因此响应 schema 与工具参数 schema 共用同一路径。
 

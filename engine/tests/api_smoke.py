@@ -1634,6 +1634,24 @@ def main():
                    for d in sse_data(sraw) if d != "[DONE]")
     check("chat-stream-beyond-grid", '"n":0.0001234567890123459' in sout, sout)
 
+    # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
+    # so a tool call must either carry the exact literal or be refused - never a value outside the
+    # bounds. Raw JSON for the same reason as above.
+    tool_big = ('{"messages":[{"role":"user","content":"Book it."}],'
+                '"tools":[{"type":"function","function":{"name":"book","parameters":'
+                '{"type":"object","properties":{"n":{"type":"number",'
+                '"minimum":0.0001234567890123456,"maximum":0.0001234567890123459}},'
+                '"required":["n"]}}}],'
+                '"tool_choice":{"type":"function","function":{"name":"book"}},'
+                '"max_tokens":32,"temperature":0}')
+    try:
+        tobj = post_raw(tool_big)
+        targs = (tobj["choices"][0]["message"].get("tool_calls") or [{}])[0].get("function", {}).get("arguments", "")
+        check("tool-beyond-grid-exact", targs == '{"n":0.0001234567890123456}', targs)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:300]
+        check("tool-beyond-grid-refused", e.code == 400 and "bounds" in body, body)
+
     # Array of integers: every element must parse as an int, and the list must close.
     arrnum_body = {"messages": [{"role": "user", "content": "Name three numbers."}],
                    "max_tokens": 48,

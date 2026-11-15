@@ -5022,4 +5022,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：先穷尽零算术的合法值（端点/0/1×m），剩余才上算术；算术只需**加法**就能覆盖取整搜索，不必实现乘除。上限要显式（4096 步）并成门，避免病态循环。
 **证据**：`build_f593.log`、`selftest_f593.log`（0 FAIL）、四个 `*_f593` harness（0）、`gate_live_f593.log`（122/0、par/fair 0、1.570×、哨兵 0）。
 **流式对账**：`chat-stream-beyond-grid` 在 `stream:true` 下流出 19 位 const 字面量（`gate_live_f593b.log`，smoke **123/0**，基线 122→123）。
+**工具参数**：改写作用于请求体层，工具参数 schema 同享——`tool-beyond-grid-exact` 断言强制工具调用的 arguments 精确为 `{"n":0.0001234567890123456}`（`gate_live_f593c.log`，smoke **124/0**）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
