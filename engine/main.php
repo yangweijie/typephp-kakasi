@@ -20153,6 +20153,8 @@ function main(): void
     $bdWinThirteen = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-987}}}');
     // F581: fourteen fraction places move it to -986.
     $bdWinFourteen = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-986}}}');
+    // F581: the ceiling itself is tested - fifteen fraction places exceed the grid and must refuse.
+    $bdOver15 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1.511111111111111,"maximum":1.511111111111119}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -20233,7 +20235,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] over15=[" . $bdOver15 . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20249,7 +20251,7 @@ function main(): void
         && $bdAB == 0 && $bdBig == "n|2000000000" && $bdAC == 0 && $bdAD == 0 && $bdBI == 0
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdWinWide == "" && $bdWinOne == "" && $bdWinMult == ""
-        && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0" && $bdWinNine == "" && $bdWinTen == "" && $bdWinEleven == "" && $bdWinTwelve == "" && $bdWinThirteen == "" && $bdWinFourteen == ""
+        && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0" && $bdWinNine == "" && $bdWinTen == "" && $bdWinEleven == "" && $bdWinTwelve == "" && $bdWinThirteen == "" && $bdWinFourteen == "" && $bdOver15 == ""
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"

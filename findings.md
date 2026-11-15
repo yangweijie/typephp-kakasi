@@ -4946,4 +4946,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **有效位**：1.51111111111111 / 0.00024691357802 都是 15 位有效数字，double round-trip 仍精确；15 位小数起需要换数值表示。
 **门**：自检 `num_dec14=[n|151111111111111|-986|0]`、`fm_d14=[n|24691357802|-986|0]`、`win_fourteen=[]`（整数 −986 拒）、`dec14_text={"n":1.51111111111111}`、`sc_ovf=-2000000000`；活体 `float_dec14_served`、`num_mult_frac_d14_ok`、`marker_window_fourteen_refuse`。
 **记法**：宽度扩展的同时要检查新数量级的**算术溢出**，不能只加 marker——溢出是静默错误，自检的精确文本门抓不到，只有守卫 + 精确门组合能覆盖。
+**上限成门**：15 位小数的 bounds 形状在自检里必须为空（`over15=[]`），活体 `dec_over15_refuse` 必须 400；14 位因此是被测试的显式上限，而不是“恰好没写测试”的偶然结果（`selftest_f581b.log`、`schema_bounds_f581b.log`）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

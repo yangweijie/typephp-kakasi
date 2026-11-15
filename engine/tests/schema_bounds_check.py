@@ -338,6 +338,11 @@ cases = [
     ("marker_window_fourteen_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -986}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F581: the ceiling is a tested behaviour - fifteen fraction places exceed the decimal grid,
+    # so the request must be refused as named numeric bounds, never served by a fallback.
+    ("dec_over15_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.511111111111111, "maximum": 1.511111111111119}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
     # (the self-test decodes its token continuation, not the HTTP body).
     ("items_num_dec11_ok", "Give the numbers.",

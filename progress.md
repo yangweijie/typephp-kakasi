@@ -2557,4 +2557,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`float_dec14_served` 200 精确；`num_mult_frac_d14_ok` 200 `{"n":0.00024691357802}`；`marker_window_fourteen_refuse` 400。
 - **梯**：BUILD_OK（`build_f581`）；自检 RUN_EXIT=0 **0 FAIL**（`selftest_f581.log`）；四 harness `CHECK_EXIT=0`；8000 **121/0**；8001 par/fair 0；scaling 1.554×；哨兵 0。
 - **代价**：整数上界 −986…−999 显式 400；15 位小数起需换数值表示。
+- **上限成门**：`over15=[]`（自检：15 位小数的 bounds 形状必须拒绝）与活体 `dec_over15_refuse` 400 —— 14 位是**被测试的显式上限**，不是偶然结果（`selftest_f581b.log`/`schema_bounds_f581b.log`，均 0 FAIL）。
 
