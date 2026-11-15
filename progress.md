@@ -2550,3 +2550,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f580e`）；自检 RUN_EXIT=0 **0 FAIL**（`selftest_f580e.log`：API-UNIT/KEYWORDS/STRUCT 全 PASS）；bounds/required/count/pattern `CHECK_EXIT=0`（`*_f580e.log`）；8000 **121/0**；8001 `PAR_EXIT=0`/`FAIR_EXIT=0`；scaling 1.571×；`SENTINELS_LEFT=0`。
 - **代价**：整数上界 −987…−999 显式 400；14 位起需先改数值表示（double 有效位耗尽）。
 
+## F581（2026-11-15）：14 位小数（marker −986）+ int64 溢出守卫
+- **有效位评估**：1.51111111111111 为 15 位有效数字，double 仍可 round-trip（0.00024691357802 同）；这是网格能承载的最后一档。
+- **实现**：全部宽度站点再 +1（scaled `*1e14`、分子上限 14、边界/形状正则 `{1,14}`、`{14}` 探测、两张 marker 表、mixed q、窗口 [−999,−986]、decimal element −986/scale 1e14、写入器 marker 白名单）；**同时补上此前缺的 int64 守卫**：`api_schema_scaled` 要求整数位数 + 小数位数 ≤ 18（否则返回 −2000000000 哨兵），`api_schema_multiplier_numerator` 对无小数点与含小数点两种拼写都检查总位数 ≤ 18（此前大整数字面量会静默溢出）。
+- **自检**：`num_dec14=[n|151111111111111|-986|0]`、`fm_d14=[n|24691357802|-986|0]`、`win_fourteen=[]`、`dec14_text={"n":1.51111111111111}`、`sc_ovf=-2000000000`。
+- **活体**：`float_dec14_served` 200 精确；`num_mult_frac_d14_ok` 200 `{"n":0.00024691357802}`；`marker_window_fourteen_refuse` 400。
+- **梯**：BUILD_OK（`build_f581`）；自检 RUN_EXIT=0 **0 FAIL**（`selftest_f581.log`）；四 harness `CHECK_EXIT=0`；8000 **121/0**；8001 par/fair 0；scaling 1.554×；哨兵 0。
+- **代价**：整数上界 −986…−999 显式 400；15 位小数起需换数值表示。
+

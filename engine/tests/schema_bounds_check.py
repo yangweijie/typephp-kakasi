@@ -327,6 +327,17 @@ cases = [
     ("marker_window_thirteen_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -987}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F581: the same machinery one place wider (marker -986); fifteen significant digits still
+    # round-trip through a double, which is why this is the last place the grid can carry.
+    ("float_dec14_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1.51111111111111, "maximum": 1.51111111111119}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":1.51111111111111}'),
+    ("num_mult_frac_d14_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345678901}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.00024691357802}'),
+    ("marker_window_fourteen_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -986}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
     # (the self-test decodes its token continuation, not the HTTP body).
     ("items_num_dec11_ok", "Give the numbers.",

@@ -4940,3 +4940,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：① 自检的 `RUN_EXIT` 不是判据，必须 `grep FAIL`；② 大函数里长 `&&` 链与跨语句的字符串比较在 tpc 下不可靠，断言应短、逐项；③ 语义翻转（支持化）必须同时翻转旧期望并保留更严对照——本次三处都是“旧期望没翻”，不是引擎回归。
 **证据**：`build_f580e.log`、`selftest_f580e.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f580e.log`（`CHECK_EXIT=0`）、`gate_live_f580e.log`（smoke 121/0、par/fair 0、scaling 1.571×、哨兵 0）。
 **防复发**：`scripts/check_gates.sh` 现在把“最新自检日志含 FAIL 行”作为硬失败（退出 1）——`RUN_EXIT` 不再能掩盖红基线；引用解析部分保持只报告。
+
+## F581（2026-11-15）：14 位小数（marker −986）+ int64 溢出守卫
+**实现**：与 F580 同构再进一位——scaled `digits == 14`（`*1e14`）、分子上限 14、边界/形状正则 `{1,14}`、宽度探测 `\.[0-9]{14}`、两张 marker 表（−986）、mixed q 范围、窗口 [−999,−986]、`api_number_decimal_element`（−986 ⇒ d=14、scale 1e14）、数组与标量写入器 marker 白名单。**新增溢出守卫**（此前各档都缺）：`api_schema_scaled` 在整数位数 + 小数位数 > 18 时返回 −2000000000 哨兵；`api_schema_multiplier_numerator` 对无小数点（>18 位）与含小数点（总位数 >18）两种拼写都返回 0。理由：`123456 * 10^14` 超 int64，旧的乘加会静默溢出（UB）。
+**有效位**：1.51111111111111 / 0.00024691357802 都是 15 位有效数字，double round-trip 仍精确；15 位小数起需要换数值表示。
+**门**：自检 `num_dec14=[n|151111111111111|-986|0]`、`fm_d14=[n|24691357802|-986|0]`、`win_fourteen=[]`（整数 −986 拒）、`dec14_text={"n":1.51111111111111}`、`sc_ovf=-2000000000`；活体 `float_dec14_served`、`num_mult_frac_d14_ok`、`marker_window_fourteen_refuse`。
+**记法**：宽度扩展的同时要检查新数量级的**算术溢出**，不能只加 marker——溢出是静默错误，自检的精确文本门抓不到，只有守卫 + 精确门组合能覆盖。
+**证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
