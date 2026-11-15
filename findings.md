@@ -5185,3 +5185,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`anth-stream-named-parallel` 双模式 PASS（index 0/1、两城市 London/Paris）；**双模式 smoke 158→159/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：同一出口的三条路径（无 choice / any / 点名 × 单发/并行）必须逐格成门；`tool_choice` 的三种拼写各走各的骨架构造，只测其中一种会留下整格空缺。
 **证据**：`build_f619.log`、`selftest_f619.log`、`{req,cnt,pat,bnd}_run_f619.log`、`gate_live_f619.log`。
+
+## F620（2026-11-15）：未实现的采样参数改为具名 400
+**缺陷**：`top_k`/`logprobs`/`top_logprobs`/`frequency_penalty`/`presence_penalty`/`repetition_penalty` 被解析层完全忽略——客户端设置后仍得 200，但分布与所要求的不同（与 schema 关键字“接受即须兑现”同一类问题）。
+**改动**：新增 `api_sampling_params_unsupported($body)`，只对**非中性**取值拒绝（`top_k≥1`、`logprobs:true`、`top_logprobs≥1`、两项 penalty≠0、`repetition_penalty≠1`）；中性拼写（`false`/`0`/`1`）放行，避免打断总是带这些字段的客户端。拒绝分支插在响应校验链首位，消息里同时列出**已兑现**的参数（temperature/top_p/seed/stop/n/max_tokens/prefix_cache）。
+**结果**：`chat-logprobs-refuse`、`chat-penalty-refuse`、`anth-top-k-refuse`、`chat-neutral-sampling-ok` 双模式 PASS；**双模式 smoke 159→163/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：“中性值”是宽容的关键：拒绝条件必须写成取值谓词而不是关键字存在性，否则会误伤 `logprobs:false` 这类常见默认。8 条并行服务器的文本模式仍不校验（其面本就窄，已在计划里记明）。
+**证据**：`build_f620.log`、`selftest_f620.log`、`{req,cnt,pat,bnd}_run_f620.log`、`gate_live_f620.log`。

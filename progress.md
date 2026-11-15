@@ -2792,3 +2792,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：点名流式路径的骨架改 `api_tool_wire`；`parallel_tool_calls` 时放两块候选，复数解析后逐个发 `content_block_start/delta/stop`，`index`/`toolu_N` 递增。
 - **门**：`anth-stream-named-parallel` 双模式 PASS；**smoke 158→159/0**。
 - **梯**：BUILD_OK（`build_f619`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F620（2026-11-15）：未实现采样参数具名 400
+- **修**：`api_sampling_params_unsupported` 对 `top_k≥1`/`logprobs:true`/`top_logprobs≥1`/penalty≠0/`repetition_penalty≠1` 返回 400 并点名；中性值放行。
+- **门**：`chat-logprobs-refuse`/`chat-penalty-refuse`/`anth-top-k-refuse`/`chat-neutral-sampling-ok` 双模式 PASS；**smoke 159→163/0**。
+- **梯**：BUILD_OK（`build_f620`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

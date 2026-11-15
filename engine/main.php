@@ -12247,6 +12247,39 @@ function api_tools_required_unservable(string $body): int
     }
 }
 
+// F620: sampling knobs with no implementation in the decoder are refused by name. Ignoring them
+// answers 200 with a distribution the caller did not ask for - the same rule schema keywords
+// follow. Neutral spellings (logprobs:false, penalties 0, top_k 0, repetition_penalty 1) pass, so
+// clients that always send these fields keep working.
+function api_sampling_params_unsupported(string $body): string
+{
+    $m = [];
+    if (preg_match('/"top_k"\s*:\s*([0-9]+)/', $body, $m) == 1 && (int) $m[1] >= 1) {
+        return "top_k";
+    }
+    if (preg_match('/"top_logprobs"\s*:\s*([0-9]+)/', $body, $m) == 1 && (int) $m[1] >= 1) {
+        return "top_logprobs";
+    }
+    if (preg_match('/"logprobs"\s*:\s*true/', $body) == 1) {
+        return "logprobs";
+    }
+    $fpv = api_float($body, "frequency_penalty", 0.0);
+    if ($fpv > 0.0 || $fpv < 0.0) {
+        return "frequency_penalty";
+    }
+    $ppv = api_float($body, "presence_penalty", 0.0);
+    if ($ppv > 0.0 || $ppv < 0.0) {
+        return "presence_penalty";
+    }
+    if (strpos($body, "\"repetition_penalty\"") !== false) {
+        $rpv = api_float($body, "repetition_penalty", 1.0);
+        if ($rpv > 1.0 || $rpv < 1.0) {
+            return "repetition_penalty";
+        }
+    }
+    return "";
+}
+
 // F598: arrays nested three or more levels deep whose innermost element is an OBJECT are not
 // served by any writer; without this guard the request fell through to unconstrained generation
 // and answered a different shape. Scalar arrays keep their 3D/4D/5D writers.
@@ -16247,6 +16280,13 @@ function api_serve(int $port): void
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+            } else if (api_sampling_params_unsupported($body) != "") {
+                $payload = "{\"error\":{\"message\":\"sampling parameter not supported: "
+                    . api_sampling_params_unsupported($body)
+                    . " (temperature, top_p, seed, stop, n, max_tokens and prefix_cache are honoured; "
+                    . "the others would change the sampled distribution and are refused rather than ignored)\","
+                    . "\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (api_schema_pattern_unsupported($schBody) == 1) {
                 // F396: a pattern the grammar cannot honour used to fall through to UNCONSTRAINED
                 // generation - the caller asked for a constraint and silently got none. Refuse it

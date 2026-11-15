@@ -2575,6 +2575,33 @@ def main():
             reason = o["delta"].get("stop_reason", "")
     check("anth-stop-stream", reason == "stop_sequence", reason)
 
+    # F620: sampling knobs the decoder does not implement are refused by name. Silently ignoring
+    # them answers 200 with a distribution the caller did not ask for; the neutral spellings
+    # (logprobs:false, penalties 0, top_k 0) must still pass so ordinary clients keep working.
+    def sampling_refusal(path, extra):
+        body = {"messages": [{"role": "user", "content": "The capital of France is"}],
+                "max_tokens": 8}
+        body.update(extra)
+        try:
+            r = post(path, body)
+            return "", "answered " + str(r)[:100]
+        except urllib.error.HTTPError as e:
+            return e.read().decode(), str(e.code)
+
+    pmsg, pdet = sampling_refusal("/v1/chat/completions", {"logprobs": True})
+    check("chat-logprobs-refuse", pmsg.find("logprobs") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = sampling_refusal("/v1/chat/completions", {"frequency_penalty": 0.5})
+    check("chat-penalty-refuse", pmsg.find("frequency_penalty") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = sampling_refusal("/v1/messages", {"top_k": 5})
+    check("anth-top-k-refuse", pmsg.find("top_k") >= 0, pdet + " " + pmsg[:120])
+    r = post("/v1/chat/completions", {"messages": [{"role": "user",
+                                                    "content": "The capital of France is"}],
+                                      "max_tokens": 8, "logprobs": False,
+                                      "frequency_penalty": 0, "presence_penalty": 0,
+                                      "top_k": 0})
+    check("chat-neutral-sampling-ok", "Paris" in r["choices"][0]["message"]["content"],
+          str(r)[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 
