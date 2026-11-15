@@ -5261,3 +5261,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`plugins-report`、`par-plugins` 双服务 PASS；**双模式 smoke 176→177/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **边界（写清不算完成）**：这是**调优档案注册表**，不是任意代码插件；新增厂商=新增一行档案或一个新旋钮的映射，需要 C++ 侧暴露相应 setter。
 **证据**：`build_f631.log`、`selftest_f631.log`、`{req,cnt,pat,bnd}_run_f631.log`、`gate_live_f631.log`、`serve_f631.log`/`serve_par_f631.log`（PLUGINS 横幅）。
+
+## F632（2026-11-15）：改变分布 / 未实现输出模式的参数具名拒绝
+**缺陷**：`logit_bias`、`reasoning_effort`、Anthropic `thinking`、`prediction`、`modalities`、`min_p∈(0,1)` 均被静默忽略——前两者直接改变采样分布，后四者要求引擎没有的输出模式/采样器。
+**改动**：`api_semantic_params_unsupported`，每项按**自身拼写**匹配（`logit_bias` 必须是对象、`prediction` 必须 `"type":"content"`、`thinking` 必须 `"type":"enabled"`），所以 schema 里同名属性/枚举不会误触发；`min_p` 只在 (0,1) 拒绝，0 是中性值。
+**结果**：`chat-logit-bias-refuse`、`chat-reasoning-effort-refuse`、`anth-thinking-refuse`、`chat-min-p-refuse` 双模式 PASS；中性门加入 `min_p:0` 仍 PASS；**双模式 smoke 177→181/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：参数拒绝的判据分三类——①改分布（logit_bias/penalties/top_k/min_p）；②要求没有的能力（thinking/reasoning/modalities/prediction/store/background）；③只是提示或注释（user/metadata/service_tier，保持接受）。同类新增按这三类归位，再决定匹配拼写与中性值。
+**证据**：`build_f632.log`、`selftest_f632.log`、`{req,cnt,pat,bnd}_run_f632.log`、`gate_live_f632.log`。

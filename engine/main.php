@@ -12419,6 +12419,36 @@ function api_choice_params_unsupported(string $body): string
     return "";
 }
 
+// F632: parameters that change WHAT the decoder may say, or ask for a mode the engine lacks.
+// Ignoring them answers a distribution the caller did not ask for. Each is matched in its own
+// spelling (objects carry their discriminator), so a schema property of the same name cannot trip
+// it; neutral spellings (min_p 0) pass.
+function api_semantic_params_unsupported(string $body): string
+{
+    if (preg_match('/"logit_bias"\s*:\s*\{/', $body) == 1) {
+        return "logit_bias";
+    }
+    if (preg_match('/"prediction"\s*:\s*\{\s*"type"\s*:\s*"content"/', $body) == 1) {
+        return "prediction";
+    }
+    if (preg_match('/"reasoning_effort"\s*:\s*"[a-zA-Z]+"/', $body) == 1) {
+        return "reasoning_effort";
+    }
+    if (preg_match('/"thinking"\s*:\s*\{\s*"type"\s*:\s*"enabled"/', $body) == 1) {
+        return "thinking";
+    }
+    if (preg_match('/"modalities"\s*:\s*\[/', $body) == 1) {
+        return "modalities";
+    }
+    if (preg_match('/"min_p"\s*:\s*-?[0-9]/', $body) == 1) {
+        $mp = api_float($body, "min_p", 0.0);
+        if ($mp > 0.0 && $mp < 1.0) {
+            return "min_p";
+        }
+    }
+    return "";
+}
+
 // F625: response-level state/async knobs that the server does not implement. Accepting them would
 // answer a single stateless turn while the caller asked for stored state, a background job or a
 // continuation - a semantic lie that a 200 hides. Neutral spellings (store:false, truncation
@@ -16548,6 +16578,13 @@ function api_serve(int $port): void
                     . api_choice_params_unsupported($body)
                     . " (n is served for 1..4 choices; a larger n is refused instead of being "
                     . "clamped to one sample, and legacy best_of sampling is not implemented)\","
+                    . "\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else if (api_semantic_params_unsupported($body) != "") {
+                $payload = "{\"error\":{\"message\":\"request parameter not supported: "
+                    . api_semantic_params_unsupported($body)
+                    . " (it would change the sampled distribution or asks for an output mode this "
+                    . "engine does not implement; refuse instead of answering a different request)\","
                     . "\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_state_params_unsupported($body) != "") {

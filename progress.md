@@ -2850,3 +2850,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **交付**：`plugins/vendor_profiles.txt`（name|match|attn_mode|kv_f16|note）、启动时首条匹配并应用、`GET /plugins` 只读报告（两服务）。
 - **门**：`plugins-report`/`par-plugins` PASS；**smoke 176→177/0**；自检/四 harness/par/fair/哨兵 全绿。
 - **边界**：单二进制下不做动态代码加载；档案 → 既有旋钮（attn_mode/kv_f16）。
+
+## F632（2026-11-15）：语义参数具名 400
+- **修**：`api_semantic_params_unsupported`：`logit_bias`/`prediction(type=content)`/`reasoning_effort`/`thinking(type=enabled)`/`modalities[]`/`min_p∈(0,1)` ⇒ 400 点名。
+- **门**：4 条新门 + 中性门（加 `min_p:0`）双模式 PASS；**smoke 177→181/0**。
+- **梯**：BUILD_OK（`build_f632`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

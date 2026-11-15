@@ -2619,7 +2619,7 @@ def main():
                                                     "content": "The capital of France is"}],
                                       "max_tokens": 8, "logprobs": False,
                                       "frequency_penalty": 0, "presence_penalty": 0,
-                                      "top_k": 0})
+                                      "top_k": 0, "min_p": 0})
     check("chat-neutral-sampling-ok", "Paris" in r["choices"][0]["message"]["content"],
           str(r)[:120])
 
@@ -2707,6 +2707,21 @@ def main():
     pmsg, pdet = choice_refusal("/v1/chat/completions", {
         "n": 2, "response_format": {"type": "json_object"}})
     check("chat-n-json-refuse", pmsg.find("not supported: n") >= 0, pdet + " " + pmsg[:120])
+
+    # F632: distribution-changing parameters and unimplemented output modes must refuse by name.
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {"logit_bias": {"50256": -100}})
+    check("chat-logit-bias-refuse", pmsg.find("not supported: logit_bias") >= 0,
+          pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {"reasoning_effort": "high"})
+    check("chat-reasoning-effort-refuse", pmsg.find("not supported: reasoning_effort") >= 0,
+          pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/messages",
+                                {"thinking": {"type": "enabled", "budget_tokens": 1024}})
+    check("anth-thinking-refuse", pmsg.find("not supported: thinking") >= 0,
+          pdet + " " + pmsg[:120])
+    pmsg, pdet = choice_refusal("/v1/chat/completions", {"min_p": 0.05})
+    check("chat-min-p-refuse", pmsg.find("not supported: min_p") >= 0,
+          pdet + " " + pmsg[:120])
 
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
