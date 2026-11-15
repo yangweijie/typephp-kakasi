@@ -5165,3 +5165,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 `prefixItems` + `unevaluatedItems:false` 的属性元组返回 `{"pair":["1000",1000]}`（`prop-tuple-closed-ok`，双模式 **155/0**）——F608 的剥离与属性 tuple 写入器接合正确。**留一个探针**：draft-4 拼写（`items:[...]` + `unevaluatedItems:false`）因剥离条件要求“无 items”，预期仍 400，待核。
 **证据**：`gate_live_f616.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
+
+## F617（2026-11-15）：draft-4 闭包 tuple（`items:[...]` + `unevaluatedItems:false`）
+**改动**：`api_schema_strip_vacuous_unevalitems` 的真空判定从“必须有 prefixItems 且无 items”扩展为：`prefixItems` 且无 `items`，**或** 唯一 `items` 且其值为数组（draft-4 元组）。`items` 为对象时不剥离——那是对每个元素分别求值的 schema，`unevaluatedItems` 仍可能有实义。
+**结果**：`prop-tuple-d4-closed-ok` 返回 `{"pair":["1000",1000]}`，双模式 **156/0**；自检 0 FAIL、四 harness `CHECK_EXIT=0`、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：“真空”只成立于写入器**能且只**发射元组前缀项的形状；同一关键字的两种数据形态（数组＝元组、对象＝逐元素）必须区分，剥离条件要写成形态谓词而不是关键字存在性。
+**证据**：`build_f617.log`、`selftest_f617.log`、`{req,cnt,pat,bnd}_run_f617.log`、`gate_live_f617b.log`（smoke 双模式 156/0、scaling 1.587×）。

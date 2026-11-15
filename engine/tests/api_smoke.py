@@ -2204,6 +2204,15 @@ def main():
                lambda t: (lambda v: isinstance(v, dict) and isinstance(v.get("pair"), list)
                           and len(v.get("pair")) == 2 and isinstance(v["pair"][0], str)
                           and isinstance(v["pair"][1], int))(pjson(t)))
+    # F617 probe: the draft-4 spelling of the same closed tuple.
+    probe_root("prop-tuple-d4-closed-ok",
+               {"type": "object", "properties": {
+                   "pair": {"type": "array",
+                            "items": [{"type": "string"}, {"type": "integer"}],
+                            "unevaluatedItems": False}}},
+               lambda t: (lambda v: isinstance(v, dict) and isinstance(v.get("pair"), list)
+                          and len(v.get("pair")) == 2 and isinstance(v["pair"][0], str)
+                          and isinstance(v["pair"][1], int))(pjson(t)))
 
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the

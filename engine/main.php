@@ -12338,9 +12338,22 @@ function api_schema_prefix_items(string $body): string
 // so unevaluatedItems is vacuously satisfied and can be stripped before the keyword gate sees it.
 function api_schema_strip_vacuous_unevalitems(string $body): string
 {
-    if (strpos($body, "\"unevaluatedItems\"") === false
-        || strpos($body, "\"prefixItems\"") === false
-        || strpos($body, "\"items\"") !== false) {
+    // F617: the vacuous form is a tuple that the writer emits exactly - either prefixItems with no
+    // items key, or a single draft-4 items ARRAY. An items-object array evaluates only its own
+    // elements' schemas, so unevaluatedItems can still apply there and must stay.
+    if (strpos($body, "\"unevaluatedItems\"") === false) {
+        return $body;
+    }
+    $hasPrefix = strpos($body, "\"prefixItems\"") !== false;
+    $hasItems = strpos($body, "\"items\"") !== false;
+    $itemsArr = preg_match('/"items"\s*:\s*\[/', $body) == 1;
+    $vacuous = 0;
+    if ($hasPrefix == true && $hasItems == false) {
+        $vacuous = 1;
+    } else if ($itemsArr == true && substr_count($body, "\"items\"") == 1) {
+        $vacuous = 1;
+    }
+    if ($vacuous == 0) {
         return $body;
     }
     $out = str_replace(",\"unevaluatedItems\":false", "", $body);

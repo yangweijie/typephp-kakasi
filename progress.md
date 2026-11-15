@@ -2777,3 +2777,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F616（2026-11-15）：属性级闭包 tuple
 - **门**：`prop-tuple-closed-ok`——对象属性内的 `prefixItems` 元组 + `unevaluatedItems:false` 返回 `{"pair":["1000",1000]}`（剥离后由属性 tuple 写入器服务）；双模式 **155/0**。
 
+
+## F617（2026-11-15）：draft-4 闭包 tuple 收口
+- **改动**：`api_schema_strip_vacuous_unevalitems` 增加形态谓词——唯一 `items` 且值为数组时同样剥离 `unevaluatedItems`；`items` 为对象时不剥离。
+- **结果**：`prop-tuple-d4-closed-ok` 返回 `{"pair":["1000",1000]}`；**双模式 smoke 155→156/0**。
+- **梯**：BUILD_OK（`build_f617`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8001 par/fair 0；哨兵 0；`check_gates` 199/0。
