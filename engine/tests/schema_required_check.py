@@ -633,6 +633,15 @@ cases = [
     # F581: exact decimal literals are not limited to the bounds grid - a numeric const is pinned
     # and emitted as TEXT by the value-plan writer, so seventeen significant digits must survive
     # verbatim even though bounds literals above fourteen fraction places refuse.
+    ("long_key_pin_exact", "Say where you are.",
+     {"type": "object", "properties": {
+         "a_very_long_property_name_that_exceeds_the_fixed_thirty_two_step_budget_for_emission":
+             {"const": "paris"},
+         "note": {"type": "string"}}},
+     lambda code, txt: (code == 200
+                        and sorted(keys_of(txt)) == sorted([
+                            "a_very_long_property_name_that_exceeds_the_fixed_thirty_two_step_budget_for_emission",
+                            "note"]))),
     ("const_dec17_pin_exact", "Give the code and the count.",
      {"type": "object", "properties": {"n": {"const": 1.2345678901234567},
                                         "note": {"type": "string"}}},
