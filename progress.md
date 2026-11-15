@@ -2633,3 +2633,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f591`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.567×；哨兵 0。
 - **剩余**：双排他但 0 不在区间内、以及正 min + multipleOf，仍需真正的十进制串算术。
 
+## F592（2026-11-15）：>18 位“乘数字面量本身”规则
+- **观察**：`multipleOf` 的字面量 m 就是 1×m，只要 m 落在区间内（含严格性）即可直接发射，仍然零算术。
+- **自检**：`pi_mul=[m]`（19 位下界 + max 1 + multipleOf 0.5 ⇒ const 0.5）、`pi_mul_miss=[kept]`（19 位 min 0.600…1 > m ⇒ 不改写）。
+- **活体**：`pinned_interval_mult_ok` 200 `{"n":0.5,...}`；`pinned_interval_mult_miss_refuse` 400。
+- **梯**：BUILD_OK（`build_f592`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.583×；哨兵 0。
+- **剩余**：区间不含 1×m 且 0 也不在区间内的 multipleOf、以及 0 不在区间内的双排他——这两类才真正需要十进制加法/取整改。
+

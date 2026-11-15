@@ -11904,6 +11904,31 @@ function api_schema_strip_pinned_interval(string $body): string
             }
         }
         if ($pick == "") {
+            // F592: the multiplier literal itself is 1 x m, so it serves any interval containing it.
+            $mo = [];
+            if (strpos($sub, "\"multipleOf\"") !== false
+                && preg_match('/"multipleOf"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mo) == 1
+                && api_decimal_cmp($mo[1], "0") > 0) {
+                $mv = $mo[1];
+                $okm = 1;
+                if ($hasMin == 1) {
+                    $c = api_decimal_cmp($mv, $minLit);
+                    if ($c < 0 || ($c == 0 && $exMin == true)) {
+                        $okm = 0;
+                    }
+                }
+                if ($hasMax == 1) {
+                    $c = api_decimal_cmp($mv, $maxLit);
+                    if ($c > 0 || ($c == 0 && $exMax == true)) {
+                        $okm = 0;
+                    }
+                }
+                if ($okm == 1) {
+                    $pick = $mv;
+                }
+            }
+        }
+        if ($pick == "") {
             continue;                 // real decimal arithmetic is still required
         }
         $wLits = [];
@@ -20645,6 +20670,9 @@ function main(): void
     $piZeroEx = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"exclusiveMinimum":-0.0001234567890123456,"exclusiveMaximum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piZeroMinOnly = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","exclusiveMinimum":-0.0001234567890123456},"note":{"type":"string"}}}');
     $piZeroMaxOnly = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","exclusiveMaximum":0.0001234567890123456},"note":{"type":"string"}}}');
+    // F592: the multiplier literal is 1 x m and serves an interval containing it; a miss stays.
+    $piMul = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":1,"multipleOf":0.5},"note":{"type":"string"}}}');
+    $piMulMiss = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.6000000000000000001,"maximum":1,"multipleOf":0.5},"note":{"type":"string"}}}');
     $piBad = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123459,"maximum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piZero = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"multipleOf":0.0000000000000000001},"note":{"type":"string"}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
@@ -20727,7 +20755,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20755,6 +20783,8 @@ function main(): void
         && strpos($piZeroEx, "\"const\":0}") !== false
         && strpos($piZeroMinOnly, "\"const\":0}") !== false
         && strpos($piZeroMaxOnly, "\"const\":0}") !== false
+        && strpos($piMul, "\"const\":0.5}") !== false
+        && strpos($piMulMiss, "\"const\"") === false
         && strpos($piBad, "\"const\"") === false
         && strpos($piZero, "\"const\":0}") !== false
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"

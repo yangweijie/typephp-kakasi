@@ -5008,4 +5008,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：自检 `pi_zero_ex`/`pi_zero_min_only`/`pi_zero_max_only`/`pi_both`/`pi_bad`；活体四个 `pinned_interval_zero_*` 200 与同正双排他 400。
 **记法**：把“合法值”问题不断化简为“端点/零点是否合法”，能消掉算术诉求的大部分；剩余的是 0 不在区间内的双排他与正 min + multipleOf。
 **证据**：`build_f591.log`、`selftest_f591.log`（0 FAIL）、四个 `*_f591` harness（0）、`gate_live_f591.log`（122/0、par/fair 0、1.567×、哨兵 0）。
+
+## F592（2026-11-15）：乘数字面量本身作为合法值
+**推理**：m = 1×m；若 m 在区间内（且不落在排他端点上），直接发 m 即可。零或端点都不可用时才需要真正的倍数计算。
+**门**：自检 `pi_mul`/`pi_mul_miss`；活体 `pinned_interval_mult_ok`（200 `{"n":0.5,...}`）与 `pinned_interval_mult_miss_refuse`（400）。
+**记法**：multipleOf 的可用值按代价排序：0（任意区间含 0）→ 端点（无 multipleOf）→ m 本身（1 倍）→ 其余倍数（需要加法/取整）。
+**证据**：`build_f592.log`、`selftest_f592.log`（0 FAIL）、四个 `*_f592` harness（0）、`gate_live_f592.log`（122/0、par/fair 0、1.583×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
