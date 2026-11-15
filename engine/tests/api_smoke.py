@@ -1792,6 +1792,33 @@ def main():
         pr_content = "400"
     check("chat-deep3-ao-refuse", pr_ok, pr_content[:160])
 
+    # F598 probe: the same schema as a REQUIRED tool parameter. The call must either be refused or
+    # carry the "a" array; an empty arguments object violates required and is the failure mode.
+    tool_deep_leaf = {"type": "object", "properties": {"x": {"type": "string"}}}
+    tool_deep_schema = {"type": "object", "properties": {
+        "a": {"type": "array", "items": {"type": "array", "items": {
+            "type": "array", "items": tool_deep_leaf}}}}, "required": ["a"]}
+    tool_deep_body = {"messages": [{"role": "user", "content": "Put the data."}],
+                      "max_tokens": 48, "temperature": 0,
+                      "tools": [{"type": "function", "function": {
+                          "name": "put", "parameters": tool_deep_schema}}],
+                      "tool_choice": {"type": "function", "function": {"name": "put"}}}
+    td_ok = False
+    td_detail = ""
+    try:
+        r = post("/v1/chat/completions", tool_deep_body)
+        td_args = (r["choices"][0]["message"].get("tool_calls") or [{}])[0].get("function", {}).get("arguments", "")
+        try:
+            td_obj = json.loads(td_args)
+        except Exception:
+            td_obj = None
+        td_ok = isinstance(td_obj, dict) and isinstance(td_obj.get("a"), list)
+        td_detail = td_args
+    except urllib.error.HTTPError as e:
+        td_ok = e.code == 400
+        td_detail = "400"
+    check("tool-deep3-ao", td_ok, td_detail[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

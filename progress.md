@@ -2685,3 +2685,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f598`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0。
 - **仍缺**：这是“逐个形态转显式拒绝”的一例；统一的“schema 存在但无 claimer ⇒ 400”兜底仍在队列（F598 记录的 F597 项）。
 
+## F599（2026-11-15）：工具参数里的同形 schema 也显式 400
+- **证据**：强制工具调用 + `required:["a"]` 的 3 层对象数组参数被答成 `{}`（违反 required，静默违反）。
+- **修复**：`api_tools_deep_array_object` 扫描每个 `parameters` 块并复用 `api_schema_deep_array_object`；命中即 400（文案点名 tool parameters）。普通工具 schema 不受影响。
+- **自检**：`dt=[1|0]`；**活体**：`tool-deep3-ao` 双模式 PASS（400）。
+- **梯**：BUILD_OK（`build_f599`）；自检 0 FAIL；四 harness 0；SMOKE 与 SMOKE-PRETTY **131/0**；par/fair 0；哨兵 0。
+

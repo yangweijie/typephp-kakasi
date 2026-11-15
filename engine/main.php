@@ -12057,6 +12057,31 @@ function api_schema_deep_array_object(string $schema): int
     }
 }
 
+// F599: the same deep-object-array shape inside tool parameter schemas. The tool path used to
+// answer an empty arguments object, violating a required key silently.
+function api_tools_deep_array_object(string $body): int
+{
+    $pos = 0;
+    while (true) {
+        $kp = strpos($body, "\"parameters\"", $pos);
+        if ($kp === false) {
+            return 0;
+        }
+        $bo = strpos($body, "{", $kp);
+        if ($bo === false) {
+            return 0;
+        }
+        $blk = api_balance_block($body, $bo);
+        if ($blk == "") {
+            return 0;
+        }
+        if (api_schema_deep_array_object($blk) == 1) {
+            return 1;
+        }
+        $pos = $bo + strlen($blk);
+    }
+}
+
 // F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
 // the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
 // the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
@@ -15924,6 +15949,11 @@ function api_serve(int $port): void
                 // F598: no writer serves three-deep arrays of objects; answering prose here used
                 // to look like success while violating the schema.
                 $payload = "{\"error\":{\"message\":\"arrays nested three or more levels deep with object elements are not supported; use a scalar array depth or a shallower object array\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else if (api_tools_deep_array_object($body) == 1) {
+                // F599: the tool path otherwise answers an empty arguments object, which violates
+                // any required key in such a schema.
+                $payload = "{\"error\":{\"message\":\"tool parameters with arrays nested three or more levels deep of objects are not supported\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_nested_overflow($schBody) == 1) {
                 // F535: deeper than the 256-level descent the nested-object detector supports. Past
@@ -21048,6 +21078,8 @@ function main(): void
     $daoDeep = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}}}}');
     $daoTwo = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}}}');
     $daoScalar = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"string"}}}}}}}');
+    $dtDeep = api_tools_deep_array_object('{"tools":[{"function":{"name":"put","parameters":{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}},"required":["a"]}}}]}');
+    $dtFlat = api_tools_deep_array_object('{"tools":[{"function":{"name":"put","parameters":{"type":"object","properties":{"n":{"type":"integer"}}}}}]}');
     // F593: exact decimal addition (digit carries) and its two new consumers - one ulp inside an
     // exclusive side, and the multiple walk.
     $dA = api_decimal_add("1", "2");
@@ -21139,7 +21171,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "] dao=[" . $daoDeep . "|" . $daoTwo . "|" . $daoScalar . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "] dao=[" . $daoDeep . "|" . $daoTwo . "|" . $daoScalar . "] dt=[" . $dtDeep . "|" . $dtFlat . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -21172,6 +21204,7 @@ function main(): void
         && $jcA == '{"a":{"b":"x  y","c":[1,2]}}'
         && $jcB == '{"s":"q\"  t"}'
         && $daoDeep == 1 && $daoTwo == 0 && $daoScalar == 0
+        && $dtDeep == 1 && $dtFlat == 0
         && $dA == "3" && $dB == "1" && $dC == "-0.5"
         && $dD == "0.0001234567890123457" && $dE == "0"
         && strpos($piWalkCap, "\"const\"") === false

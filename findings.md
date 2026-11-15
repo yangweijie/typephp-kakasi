@@ -5059,4 +5059,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修复**：`api_schema_deep_array_object` 沿 `items` 链下降计数，仅当深度 ≥3 且最内层含 `properties` 时拒绝；接入 `$schBody` 校验链，文案 `arrays nested three or more levels deep with object elements are not supported`。标量与 1–2 层对象数组不受影响（自检 `dao=[1|0|0]`，旧 ARR-OBJ/ARR2D 门保持）。
 **记法**：写“探测—修复—成门”三步时，探测必须先记录**错误输出的形状**（这里是 `items` 而非 `a`），否则很容易把“有 JSON”当成“合规”。
 **证据**：`gate_live_f597c.log`（PROSE 探针）、`gate_live_f598.log`（SMOKE/SMOKE-PRETTY 130/0）、`api_smoke_f598.log`（`PASS chat-deep3-ao-refuse`）。
+
+## F599（2026-11-15）：工具参数中的同形 schema
+**证据**：强制工具调用返回 `{}` 而参数 `required:["a"]`——工具路径对不可服务 schema 的默认空参本身就是违反。
+**修复**：`api_tools_deep_array_object` 逐个 `parameters` 块调用 F598 检测器，命中即具名 400；自检 `dt=[1|0]`。
+**记法**：同一“不可服务形态”要在**每条入口**都拒绝（响应 schema、流式、工具参数）；一处修好不代表面闭合——工具路径的默认值（空参）会把静默违反伪装成成功。
+**证据**：`gate_live_f598b.log`（红：`{}`）、`gate_live_f599.log`（131/0 双模式）、`api_smoke_f599.log`（`PASS tool-deep3-ao`）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
