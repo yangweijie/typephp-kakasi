@@ -128,6 +128,20 @@ def main():
         unc_detail = str(e.code)
     check("par-unclaimed-refuse", unc_ok, unc_detail)
 
+    # F621: the cooperative server takes the same sampling knobs as 8000, so it must refuse the
+    # same unimplemented ones instead of streaming under a different distribution.
+    sp_ok = False
+    sp_detail = ""
+    try:
+        sp_raw = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "Hi"}],
+                                               "max_tokens": 4, "stream": True, "top_k": 5})
+        sp_detail = sp_raw[:120]
+    except urllib.error.HTTPError as e:
+        sp_body = e.read().decode()
+        sp_ok = e.code == 400 and "top_k" in sp_body
+        sp_detail = str(e.code) + " " + sp_body[:120]
+    check("par-sampling-refuse", sp_ok, sp_detail)
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

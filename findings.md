@@ -5192,3 +5192,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-logprobs-refuse`、`chat-penalty-refuse`、`anth-top-k-refuse`、`chat-neutral-sampling-ok` 双模式 PASS；**双模式 smoke 159→163/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：“中性值”是宽容的关键：拒绝条件必须写成取值谓词而不是关键字存在性，否则会误伤 `logprobs:false` 这类常见默认。8 条并行服务器的文本模式仍不校验（其面本就窄，已在计划里记明）。
 **证据**：`build_f620.log`、`selftest_f620.log`、`{req,cnt,pat,bnd}_run_f620.log`、`gate_live_f620.log`。
+
+## F621（2026-11-15）：8001 并行服务器同步采样参数拒绝
+**缺口**：F620 的拒绝只在 8000 主服务；8001 的合作式服务器同样解析这些参数，却仍会静默忽略（且它的错误通道与 `$bad` 标志耦合）。
+**改动**：在 `api_serve_par` 的准入判定中加入 `api_sampling_params_unsupported`，命中时置 `$bad=2` 并给出点名 400；把原来的 `$bad==1 || $slot<0` 判定改为 `$bad!=0 || $slot<0`，错误码对 1/2 都是 400。
+**结果**：`par-sampling-refuse` PASS（`top_k:5` 得 400 且正文含 `top_k`）；8001 其余 par/fair 仍 0；8000 双模式 **163/0**；自检 0 FAIL、四 harness 0、哨兵 0、`check_gates` 199/0。
+**记法**：同一策略落两个服务器时，先看错误通道是否共用；8001 用的是 `$bad` 标志而不是 `$payload/$status` 链——新增一类拒绝要增加标志取值，而不是复制一份 400 写出逻辑（那份逻辑还夹着 `fclose` 与槽位记账）。
+**证据**：`build_f621.log`、`selftest_f621.log`、`{req,cnt,pat,bnd}_run_f621.log`、`gate_live_f621.log`、`par_smoke_f621.log`。

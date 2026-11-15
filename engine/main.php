@@ -15587,12 +15587,21 @@ Connection: close
                         }
                     }
                 }
-                if ($bad == 1 || $slot < 0) {
-                    $payload = $bad == 1
+                // F621: this server takes the same knobs as 8000, so it must refuse the same
+                // unimplemented ones instead of streaming under a different distribution.
+                $spBad = api_sampling_params_unsupported($body);
+                if ($spBad != "") {
+                    $bad = 2;
+                }
+                if ($bad != 0 || $slot < 0) {
+                    $payload = $bad == 2
+                        ? ("{\"error\":{\"message\":\"sampling parameter not supported: " . $spBad
+                           . "\",\"type\":\"invalid_request_error\"}}")
+                        : ($bad == 1
                         ? "{\"error\":{\"message\":\"parallel mode: streaming text only (no tools/json/n; one stop sequence max)\",\"type\":\"invalid_request_error\"}}"
                         : "{\"error\":{\"message\":\"parallel mode: " . $nslots
-                          . " streams at a time\",\"type\":\"server_error\"}}";
-                    $code = $bad == 1 ? "400 Bad Request" : "503 Service Unavailable";
+                          . " streams at a time\",\"type\":\"server_error\"}}");
+                    $code = ($bad == 1 || $bad == 2) ? "400 Bad Request" : "503 Service Unavailable";
                     fwrite($c, "HTTP/1.1 " . $code . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                     fclose($c);

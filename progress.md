@@ -2797,3 +2797,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_sampling_params_unsupported` 对 `top_k≥1`/`logprobs:true`/`top_logprobs≥1`/penalty≠0/`repetition_penalty≠1` 返回 400 并点名；中性值放行。
 - **门**：`chat-logprobs-refuse`/`chat-penalty-refuse`/`anth-top-k-refuse`/`chat-neutral-sampling-ok` 双模式 PASS；**smoke 159→163/0**。
 - **梯**：BUILD_OK（`build_f620`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F621（2026-11-15）：8001 同步采样参数拒绝
+- **修**：`api_serve_par` 接入 `api_sampling_params_unsupported`（`$bad=2` → 400 点名）。
+- **门**：`par-sampling-refuse` PASS；8000 双模式仍 163/0；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+- **梯**：BUILD_OK（`build_f621`）。
