@@ -6,7 +6,7 @@
 > 回归口径（每次改动都要过）：单二进制全项自检 + 跨后端 logit drift（f16 驻留 5.7e-6；**int8 驻留 1.6e-2**，断言阈值 0.05）+ `logp_parity.py` 的 window-0 判据（f32 0.00132 / f16 0.00130 nats）+ 起服务后 `api_smoke.py`（96 种 API 形状一次验完）。
 > **完成度审计**：`docs/audit-v0.2.md`（逐条 FR → 证据/缺口）。当前：FR-01/14/16 完全达成，FR-03 以 DPC++ 替代达成；FR-02/04/06/07/08/09/10/12/13/17/18 部分达成（缺口逐条列出）；FR-05/11/15 未做或本机不可验。**整体未完成**。
 > **下一步（按"缺口 × 可验证性"，2026-11-04 更新）**：⓪ **冷启动首调返回空＝功能上已闭合**（F226 修复＋F232 收窄版复验：`run_f228.log` 137 PASS/0 FAIL、`SCHEMA-DEEP200` 按首调判据 PASS、`first_len=3909`）。**该增量仍未收口的三件**：(a) 8000 `engine/tests/api_smoke.py`（含新门 `chat-json-schema-deep40-first-call`）与 8001 `par_smoke.py`/`fairness_test.py` 门禁**正在跑**（后台链 `b92wbrol6`，8000→停→8001，一次一个引擎进程）；(b) native 根因未证——只剩 F228 两条分支（`rows==0` / 整行 NaN），探针已写好但构建前 revert（`82cc910`→`8afcf73`），要单独一轮加 `model_sycl.cc:1323` 判别量再测；(c) `session_next_allowed` 里 `g_sess_len += 1` 早于 `r.empty()` 判定（`src/model_sycl.cc:1496`）未修，且收窄的时间收益缺**未收窄版的秒表对照**，不得报数。
-> **当前（F586 完成，2026-11-15）**：小数网格**公式化完成 1..18 位**（marker = −(1000−d)，窗口 [−999,−982]，scale 循环求 10^d，宽度取小数位长度）；18 位由 int64 总位数守卫封顶，19 位自检拒绝；>17 位有效数字客户端无法 round-trip（引擎按文本精确发射）。门：自检 `num_dec1..18`/`fm_d17`/`dec18_text`/`win_eighteen`/`over19`；活体 `float_dec18_served`/`marker_window_eighteen_refuse`/`exp_form_refuse`。**剩余队列**：**(1) 18+ 位小数**——仅剩十进制串表示（F582 规格）；**(2) `unevaluated*` 真判定**；**(3) FR-05/多分片**（本机不可验证）。基线：自检 0 FAIL、四 harness `CHECK_EXIT=0`、8000 **121/0**、8001 par/fair 0、scaling 1.556×、哨兵 0。
+> **当前（F586 完成，2026-11-15）**：小数网格**公式化完成 1..18 位**（marker = −(1000−d)，窗口 [−999,−982]，scale 循环求 10^d，宽度取小数位长度）；18 位由 int64 总位数守卫封顶，19 位自检拒绝；>17 位有效数字客户端无法 round-trip（引擎按文本精确发射）。门：自检 `num_dec1..18`/`fm_d17`/`dec18_text`/`win_eighteen`/`over19`；活体 `float_dec18_served`/`marker_window_eighteen_refuse`/`exp_form_refuse`。**剩余队列**：**(1) F587 指数形式 bounds**——规格已写（免回调扫描 + 精确展开，复用 1..18 位网格）；**(2) 18+ 位小数**——F582 规格（十进制串表示）；**(3) `unevaluated*` 真判定**；**(4) FR-05/多分片**（本机不可验证）。基线：自检 0 FAIL、四 harness `CHECK_EXIT=0`、8000 **121/0**、8001 par/fair 0、scaling 1.556×、哨兵 0。
 > **（F584 留档）**：小数网格到 **16 位**（marker −984）；17 位为显式上限。**(F583 留档)**：15 位（marker −985）。**(F585 留档)**：17 位（marker −983）。门：自检 `num_dec15`/`fm_d15`/`win_fifteen`/`dec15_text`/`over16`；活体 `float_dec15_served`/`num_mult_frac_d15_ok`/`marker_window_fifteen_refuse`/`dec_over16_refuse`。**剩余队列**：**(1) 16+ 位小数**——需十进制串表示（F582 规格仍适用，只是起点从 15 改为 16）；**(2) `unevaluated*` 真判定**——当前写出器输出恒真空满足，价值有限；**(3) FR-05/多分片**——本机不可验证。基线：自检 RUN_EXIT=0/**0 FAIL**、四 harness `CHECK_EXIT=0`、8000 **121/0**、8001 par/fair 0、scaling 1.610×、哨兵 0。门：自检 `num_dec14`/`fm_d14`/`win_fourteen`/`dec14_text`/`sc_ovf`/`over15`；活体 `float_dec14_served`/`num_mult_frac_d14_ok`/`marker_window_fourteen_refuse`/`dec_over15_refuse`（14 位是被测试的显式上限）。固定值走文本发射、不受网格限制，但写出预算必须按字面量长度给（`const_dec17_pin_exact` 暴露并修复了固定 8/32 步的截断；`long_enum_item_exact` 另修数组枚举的 24 步截断；300 字符键/值、30 位整数枚举与 AO 元素 const 的边界均已成门）。**剩余队列**：**(1) 15 位小数**——需更换数值表示（double/现有 token 网格耗尽）；**(2) `unevaluated*` 真判定**——当前写出器输出恒真空满足，价值有限；**(3) FR-05/多分片**——本机不可验证。基线：自检 RUN_EXIT=0/**0 FAIL**、四 harness `CHECK_EXIT=0`、8000 **121/0**、8001 par/fair 0、scaling 1.554×、哨兵 0。
 > **（F580 留档）**：小数网格到 **13 位**（marker −987，窗口 [−999,−987]，精确文本门 `num_dec13`/`fm_d13`/`win_thirteen`/`dec13_text`/`arr13_text` 与活体 `float_dec13_served`/`num_mult_frac_d13_ok`/`marker_window_thirteen_refuse`）。**同时修复长期红基线**：F548/F568–F579 已提交自检日志实际含 1–4 行 FAIL（此前“0 FAIL”记录不实，只看了 RUN_EXIT）；本轮修正候选让位条件（仅自由叶子让位）、四处 STRUCT 期望漏翻、`req_enum_all` 期望漏翻，并把 KEYWORDS chunk 改为逐项单语句（tpc 巨型函数里的字符串比较存储不稳）。**剩余队列**：**(1) 14 位小数**——double 有效位耗尽，需改数值表示；**(2) `unevaluated*` 真判定**——当前写出器输出恒真空满足，价值有限；**(3) FR-05/多分片**——本机不可验证。基线：自检 RUN_EXIT=0/**0 FAIL**、四 harness `CHECK_EXIT=0`、8000 **121/0**、8001 par/fair 0、scaling 1.571×、哨兵 0。
 > **（F579 的旧头部，留档）**：pin 判定面覆盖五族；小数网格已到 **12 位**（marker −988，窗口 [−999,−988]，发射文本精确）。**剩余队列（按优先级）**：**(1) 13 位小数**——机制相同（marker −987），但需先评估 double 有效位（约 15–16）与消费端舍入，且整数窗口再内缩一位；**(2) `unevaluated*` 真判定**——子 schema 求值器，当前写出器输出恒真空满足，价值有限；**(3) FR-05/多分片**——本机不可验证。基线：自检 RUN_EXIT=0/0 FAIL、四 harness PASS、8000 **121/0**、8001 par/fair 0、scaling ~1.5–1.6×、哨兵 0、`check_gates` **199 cited / 0 unresolved**。
@@ -2326,7 +2326,23 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **结果**：`SMOKE: PASS=121 FAIL=0`；8001 par/fair 0；哨兵 0。**基线：8000 smoke 121/0（F569 起）。**
 **结论**：流式链同样消费按值计划（无需额外接线）；混合 `v:` 写入器在两种传输上一致。
 
-## F582 规格（15+ 位小数：精确十进制表示，尚未实现）
+## F587 规格（指数形式数值 bounds，尚未实现）
+**缺口**：JSON 合法的 `1e-05` / `2.5E3` 形式的 `minimum/maximum/exclusiveMinimum/exclusiveMaximum/multipleOf` 目前一律 400（活体 `exp_form_refuse` 钉住的就是这一现状）。数值网格已到 18 位（F586），只要把指数形式**先展开成普通十进制字面量**，下游全部路径即可复用。
+**实现方案（避免 tpc 未验证的 API）**：
+1. 新 helper `api_number_expand_literal(string $lit): string`：只接受 `^(-?)([0-9]+)(?:\.([0-9]+))?[eE]([+-]?)([0-9]+)$`；按“数字串 + 小数点位移”拼结果（≤18 位总位数，否则返回 `""`）；整数部分去前导零、小数部分按要求保留（不删尾零，直接由位宽决定 d）。
+2. 新 helper `api_schema_expand_exponents(string $schema): string`：**不用** PREG_OFFSET_CAPTURE / preg_replace_callback（代码库未用过）。循环：对五个关键字各做 `preg_match` 找到 `"kw"\s*:\s*<指数字面量>`，用 `strpos($schema, $lit, $kwPos)` 定位字面量起点后拼接替换，再从替换末尾继续。只处理关键字值位置，避免误伤字符串里的数字。
+3. 接线点：两处预处理链（`api_schema_strip_vacuous_dep` 之前，`main.php` 约 14413/15041）把 `$body` 先展开；`api_schema_number_bounded_shape` 入口再展开一次（防御直接调用）。
+4. 失败语义：展开后总位数 >18、或指数过大（|e|>18）时**保持原文**，由既有语法判定 400（不引入新的静默路径）。
+**验收不变量**：
+- 展开是**精确文本变换**：`1e-5` → `0.00001`，`2.5E3` → `2500`，`-1.25e-2` → `-0.0125`，逐字符可断言（自检 helper 门）。
+- 接受即发射精确文本：`minimum 1e-5, maximum 2e-5` 必须 200 且正文 `{"n":0.00001}`（网格 d=5，marker −995）；指数形式的 `multipleOf` 同理。
+- 拒绝仍具名：指数过大/超位数 → 400 `numeric bounds`。
+- 三条传输同源：非流式、流式、数组元素共用展开后的 schema（`stream` 对账一例）。
+- 不回归：现有 1..18 位门、`exp_form_refuse` 之外的全部 harness 保持绿。
+**门计划**：自检 `exp_lit_1`/`exp_lit_2`/`exp_lit_3`（展开文本）、`exp_bounds=[n|1|-995|0]`、`exp_text={"n":0.00001}`、`exp_over=""`；活体 `exp_bounds_served`、`exp_mult_ok`、`exp_stream_ok`、`exp_huge_refuse`。
+**开工前基线（F586 复核）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、8000 121/0、8001 par/fair 0、scaling ~1.55×、哨兵 0、`check_gates 199/0`。
+
+## F582 规格（18+ 位小数：精确十进制表示，尚未实现）
 **为什么停在 16 位（F584 更新）**：F583 证明 16 位有效数字可 round-trip、17 位会退化；F584 沿网格再进一档后，**17 位小数**成为显式拒绝上限（客户端无法逐字还原且总位数逼近 int64 的 18 位守卫）。本节讨论的表示方案从 **17 位**开始适用。
 **可选表示（按代价排序）**：
 1. **两位数串**：把整数部分与小数部分作为两条 digit 串保存在值计划里（如 `k:l:1511111111111/111`），写入器直接拼文本，判定层按字符串比较（等长补零、逐位比大小）。不经过任何浮点/int64 转换，宽度只受 token 预算限制；代价是 bounds/multipleOf 的算术（最大公约数、向外取整）都要改成十进制串运算。
