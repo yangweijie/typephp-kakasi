@@ -1,0 +1,7 @@
+SPEC-GREEDY port=8000 max_tokens=128 prompt_words=40 temp=0 mode=sampled
+  plain      median= 60.77 tok/s best= 60.89 tok/s lens=[128, 128, 128] 
+  tree(1,6)  median= 83.96 tok/s best= 85.28 tok/s lens=[128, 128, 128] drafts=108 accepted=124 verifies=18 alt_branch=0 max_branches=1 drafting=on
+  tree(2,6)  median= 78.77 tok/s best= 79.15 tok/s lens=[128, 128, 128] drafts=216 accepted=124 verifies=18 alt_branch=0 max_branches=2 drafting=on
+  speedup tree(1,6)  vs plain: 1.382x
+  speedup tree(2,6)  vs plain: 1.296x
+SPEC-GREEDY: PASS measured

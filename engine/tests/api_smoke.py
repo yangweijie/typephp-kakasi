@@ -2006,6 +2006,28 @@ def main():
     print("  DIAG tuple %s %s" % ("ok" if tu_ok else "bad", tu_txt[:150]))
     check("uneval-items-closed-ok", tu_ok, tu_txt[:160])
 
+    # F610 probe: a mixed-type enum is legal JSON Schema. Either the engine serves a member or it
+    # refuses with a named 400; silently answering anything else is the failure mode.
+    mix = {"messages": [{"role": "user", "content": "Give the value."}],
+           "max_tokens": 24, "temperature": 0,
+           "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": {
+               "type": "object", "properties": {"x": {"enum": [1, "a", True]}}}}}}
+    mx_ok = False
+    mx_txt = ""
+    try:
+        r = post("/v1/chat/completions", mix)
+        mx_txt = r["choices"][0]["message"]["content"]
+        try:
+            mxo = json.loads(mx_txt)
+        except Exception:
+            mxo = None
+        mx_ok = isinstance(mxo, dict) and mxo.get("x") in (1, "a", True)
+    except urllib.error.HTTPError as e:
+        mx_txt = e.read().decode()[:300]
+        mx_ok = e.code == 400 and ("enum" in mx_txt or "not supported" in mx_txt)
+    print("  DIAG mixed-enum %s %s" % ("ok" if mx_ok else "bad", mx_txt[:150]))
+    check("mixed-enum-member-ok", mx_ok, mx_txt[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

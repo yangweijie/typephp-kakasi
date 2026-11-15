@@ -2746,3 +2746,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`prefixitems_served_ok`（required harness，翻转自 `prefixitems_refuse`）断言 200 且 pair 为 `[string, integer]`；`uneval_root_tuple_refuse` 的具名断言放宽为 `items`/`prefixItems`/`unevaluatedItems` 任一（拒绝仍显式）。活体 `uneval-items-closed-ok` 现返回 `{"pair":["1, 2",2000]}`。
 - **梯**：BUILD_OK（`build_f609`）；自检 0 FAIL；四 harness 0（`f609c`）；双模式 smoke **143/0**；PAR 0；哨兵 0。
 
+## F610（2026-11-15）：混合类型枚举的活体核验
+- **探针**：`{x: enum [1,"a",true]}` 当前返回合法成员 `{"x":"a"}`（双模式 PASS）——审计表“混合类型枚举未支持”已过期；门保留为回归覆盖（**双模式 smoke 144/0**）。
+- **记法**：审计表的老“缺”条目要先用活体探针复核再排期，避免重复实现已存在的路径。
+

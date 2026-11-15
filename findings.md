@@ -5129,4 +5129,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`prefixitems_served_ok`（翻转自 refuse）断言 200 且 `["…", int]`；`uneval_root_tuple_refuse` 具名断言放宽；双模式 143/0、四 harness 0、PAR 0。
 **记法**：同一语义的**两种标准拼写**（draft-4 vs 2020-12）最省事的桥是“入口等价重命名”，前提是写入器输出对两者都合法（只发前缀项并闭合）；改名条件要严格（唯一出现、无冲突键）。
 **证据**：`build_f609.log`、`selftest_f609.log`、`req_run_f609c.log`、`bnd_run_f609c.log`、`gate_live_f609c.log`。
+
+## F610（2026-11-15）：混合类型枚举已可服务（审计条目复核）
+**探针**：`{"type":"object","properties":{"x":{"enum":[1,"a",true]}}}` 双模式返回 `{"x":"a"}`，成员合法——旧审计“混合类型枚举未支持”不再成立；`mixed-enum-member-ok` 常驻门。
+**记法**：老“缺”条目先探针复核再排期；数值/布尔/字符串三张表之外，候选层显然已能拼出混合字面量。
+**证据**：`gate_live_f610.log`、`api_smoke_f610.log`（双模式）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
