@@ -383,6 +383,17 @@ cases = [
     ("exp_form_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0000000000000012345, "maximum": 0.0000000000000012349}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F587: exponent-form literals are expanded exactly, so the grid serves them.
+    ("exp_bounds_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1e-05, "maximum": 2e-05}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.00001}'),
+    ("exp_mult_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.0001}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.0002}'),
+    # An exponent whose expansion exceeds the digit budget is refused, not approximated.
+    ("exp_huge_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 1e-19, "maximum": 2e-19}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
     # (the self-test decodes its token continuation, not the HTTP body).
     ("items_num_dec11_ok", "Give the numbers.",

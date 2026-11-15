@@ -2590,3 +2590,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f586`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.556×；哨兵 0。
 - **边界**：18 位是 int64 总位数上限；>17 位有效数字的字面量客户端无法 round-trip（引擎仍按文本精确发射），>18 位需十进制串表示（F582 规格的最后一档）。
 
+## F587（2026-11-15）：指数形式数值 bounds（按 F587 规格实现）
+- **新增**：`api_number_expand_literal`（指数→普通十进制，纯数字串移位，≤18 位；超限返回空）与 `api_schema_expand_exponents`（只扫五个数值关键字的键位；JSON 字符串内的引号是转义的，不会误改正文）。
+- **接线**：两处请求预处理链先展开，再走原有 strip；`api_schema_number_bounded_shape` 入口再展开一次（直接调用者同语义）。
+- **语义翻转**：`SCHEMA-BOUND-REJECT` 的 `frac_exp` 由 1（拒绝）翻为 0（可服务），由新门 `exp_lit`/`exp_bounds` 与活体 `exp_bounds_served`/`exp_huge_refuse` 接替覆盖。
+- **自检**：`exp_lit=[0.00001|2500|-0.0125|]`（第三个是 1e-19 展开超限）、`exp_bounds=[n|1|-995|0]`。
+- **活体**：`exp_bounds_served` 200 `{"n":0.00001}`；`exp_mult_ok` 200 `{"n":0.0002}`；`exp_huge_refuse` 400。
+- **梯**：BUILD_OK（`build_f587c`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.589×；哨兵 0。
+- **过程坑**：第二次构建 `BUILD_FAILED rc=1` 且 `build_check.log` 为空——是上一轮 gate_live 残留的 `engine/serve.on`/引擎进程；清哨兵后重跑通过（构建前必须确认无 serve 哨兵与在跑引擎）。
+

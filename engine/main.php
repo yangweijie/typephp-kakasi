@@ -7201,6 +7201,9 @@ function api_schema_multiplier_numerator(string $lit): int
 
 function api_schema_number_bounded_shape(string $schema): string
 {
+    // F587: expand exponent-form bounds on entry so direct callers see the same grammar as the
+    // request path (which expands during preprocessing).
+    $schema = api_schema_expand_exponents($schema);
     // F420: multipleOf left the exclusion - the writer emits the smallest multiple inside the
     // bounds deterministically (the subset argument); enum/const/pattern still disqualify.
     if (preg_match('/"(enum|const|pattern)"\s*:/', $schema) == 1) {
@@ -11594,6 +11597,106 @@ function api_schema_dependent_schemas_ok(string $schema): int
 // block in place misroutes the plan (the first live run answered {"city":{"x":...}}); stripping is
 // the safe half of the exemption and the judge then sees no keyword for these entries. Entries that
 // constrain an emitted key or carry any other keyword stay, and the refusal layer names them.
+// F587: expand an exponent-form numeric literal into a plain decimal string, or "" when the
+// result cannot be represented exactly within the eighteen-digit budget.
+function api_number_expand_literal(string $lit): string
+{
+    $m = [];
+    if (preg_match('/^(-?)([0-9]+)(?:\.([0-9]+))?[eE]([+-]?)([0-9]+)$/', $lit, $m) != 1) {
+        return "";
+    }
+    if (strlen($m[5]) > 2) {
+        return "";
+    }
+    $fp = "";
+    if (count($m) > 3) {
+        $fp = $m[3];
+    }
+    $e = (int) $m[5];
+    if ($m[4] == "-") {
+        $e = -$e;
+    }
+    $digits = $m[2] . $fp;
+    $point = strlen($m[2]) + $e;
+    $out = "";
+    if ($point <= 0) {
+        $out = "0.";
+        for ($i = 0; $i < -$point; $i++) {
+            $out = $out . "0";
+        }
+        $out = $out . $digits;
+    } else if ($point >= strlen($digits)) {
+        $out = $digits;
+        for ($i = strlen($digits); $i < $point; $i++) {
+            $out = $out . "0";
+        }
+    } else {
+        $out = substr($digits, 0, $point) . "." . substr($digits, $point);
+    }
+    $dot = strpos($out, ".");
+    $ip = $dot === false ? $out : substr($out, 0, $dot);
+    $fr = $dot === false ? "" : substr($out, $dot + 1);
+    while (strlen($ip) > 1 && substr($ip, 0, 1) == "0") {
+        $ip = substr($ip, 1);
+    }
+    if ($ip == "0") {
+        $ip = "";
+    }
+    if (strlen($ip) + strlen($fr) > 18) {
+        return "";
+    }
+    $res = $ip == "" ? "0" : $ip;
+    if ($fr != "") {
+        $res = $res . "." . $fr;
+    }
+    if ($m[1] == "-") {
+        $res = "-" . $res;
+    }
+    return $res;
+}
+
+// F587: rewrite exponent-form literals in the five numeric keyword positions. Quotes inside JSON
+// strings are escaped, so the keyword pattern only matches real keys. An unrepresentable literal
+// is left untouched and the existing grammar refuses it.
+function api_schema_expand_exponents(string $schema): string
+{
+    $kws = ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"];
+    $work = $schema;
+    $pos = 0;
+    while (true) {
+        $best = -1;
+        $bestLit = "";
+        for ($ki = 0; $ki < count($kws); $ki++) {
+            $kp = strpos($work, "\"" . $kws[$ki] . "\"", $pos);
+            if ($kp === false) {
+                continue;
+            }
+            $tail = substr($work, $kp);
+            $m = [];
+            if (preg_match('/^"[a-zA-Z]+"\s*:\s*(-?[0-9]+(\.[0-9]+)?[eE][+-]?[0-9]+)/', $tail, $m) == 1) {
+                $off = strpos($tail, $m[1]);
+                if ($off !== false) {
+                    $abs = $kp + $off;
+                    if ($best == -1 || $abs < $best) {
+                        $best = $abs;
+                        $bestLit = $m[1];
+                    }
+                }
+            }
+        }
+        if ($best == -1) {
+            break;
+        }
+        $plain = api_number_expand_literal($bestLit);
+        if ($plain == "") {
+            return $schema;
+        }
+        $work = substr($work, 0, $best) . $plain . substr($work, $best + strlen($bestLit));
+        $pos = $best + strlen($plain);
+    }
+    return $work;
+}
+
 function api_schema_strip_vacuous_dep(string $body): string
 {
     $dp = strpos($body, "\"dependentSchemas\"");
@@ -14410,6 +14513,7 @@ function api_serve_par(int $port): void
             if (strpos($body, '"$ref"') !== false) {
                 $body = api_schema_resolve_refs($body);
                 if (strpos($body, "\"dependentSchemas\"") !== false) {
+                    $body = api_schema_expand_exponents($body);
                     $body = api_schema_strip_vacuous_dep($body);
                 }
                 if (strpos($body, "\"if\"") !== false) {
@@ -15038,7 +15142,8 @@ function api_serve(int $port): void
             $body = api_schema_resolve_refs($body);
         }
         if (strpos($body, '"dependentSchemas"') !== false) {
-            $body = api_schema_strip_vacuous_dep($body);
+            $body = api_schema_expand_exponents($body);
+                    $body = api_schema_strip_vacuous_dep($body);
         }
         if (strpos($body, "\"if\"") !== false) {
             $body = api_schema_strip_vacuous_if($body);
@@ -20256,6 +20361,13 @@ function main(): void
     $bdWinEighteen = api_schema_number_bounded_shape('{"properties":{"n":{"type":"integer","maximum":-982}}}');
     // F586: nineteen fraction places exceed the int64 digit budget and must refuse.
     $bdOver19 = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":0.0000000000000012345,"maximum":0.0000000000000012349}}}');
+    // F587: exponent-form literals expand exactly before the grid; an unrepresentable exponent
+    // stays as written and is refused by the plain-decimal grammar.
+    $expA = api_number_expand_literal("1e-5");
+    $expB = api_number_expand_literal("2.5E3");
+    $expC = api_number_expand_literal("-1.25e-2");
+    $expBig = api_number_expand_literal("1e-19");
+    $expBounds = api_schema_number_bounded_shape('{"properties":{"n":{"type":"number","minimum":1e-5,"maximum":2e-5}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
     // case - is served, and only values above 999,999,999 are refused.
     $bdBI = api_schema_bounds_unsupported('{"properties":{"n":{"type":"integer","multipleOf":2000000}}}');
@@ -20336,7 +20448,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20344,7 +20456,7 @@ function main(): void
     if ($bdA == 0 && $bdB == 0 && $bdC == 0 && $bdD == 0 && $bdH == 1 && $bdI == 0
         && $bdL == 1 && $bdJ == 0 && $bdK == 1 && $bdE == 0
         && $bdM == 0 && $bdN == 1 && $bdO == 0
-        && $bdP == 0 && $bdQ == 1 && $bdR == 1 && $bdS == 0
+        && $bdP == 0 && $bdQ == 1 && $bdR == 0 && $bdS == 0
         && $bdF == 0 && $bdG == 0
         && $bdT == 0 && $bdU == 1 && $bdV == 1 && $bdW == 0
         && $bdX == 0 && $bdY == 1
@@ -20353,6 +20465,8 @@ function main(): void
         && $bdIntFrac == "n|3" && $bdIntQuarter == "n|1" && $bdIntFive == "n|5"
         && $bdWinWide == "" && $bdWinOne == "" && $bdWinMult == ""
         && $bdWinNarrow == "" && $bdWinBelow == "n|-2000000|-1000|0" && $bdWinNine == "" && $bdWinTen == "" && $bdWinEleven == "" && $bdWinTwelve == "" && $bdWinThirteen == "" && $bdWinFourteen == "" && $bdWinFifteen == "" && $bdWinSixteen == "" && $bdWinSeventeen == "" && $bdWinEighteen == "" && $bdOver19 == ""
+        && $expA == "0.00001" && $expB == "2500" && $expC == "-0.0125" && $expBig == ""
+        && $expBounds == "n|1|-995|0"
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"
         && $bdMultiFrac == "a|3,b|1" && $bdMixZ == "city:s,count:z"
         && $bdMixZBad == "city:s,count:q:3"

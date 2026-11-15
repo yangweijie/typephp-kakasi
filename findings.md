@@ -4972,4 +4972,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：18 位在自检与活体同时精确发射（`0.000123456789012345`），19 位由自检 `over19` 拒绝；1..17 位旧门全部保持。**教训**：宽度阶梯应一开始就公式化——逐位 `if` 链条既产生重复劳动，也让“一次做对”难以验证；`-(1000-d)` 与 10^d 循环把 marker/scale 的语义收敛到一条规则。
 **客户端边界**：>17 位有效数字的字面量无法在 double 中还原（引擎按文本精确发射，但请求本身可能已失真）；Python 对 <1e-4 的值一律用指数形式序列化，因此宽度上限只能由自检（原始字符串）覆盖。
 **证据**：`build_f586.log`、`selftest_f586.log`（0 FAIL）、四个 `*_f586` harness（0）、`gate_live_f586.log`（121/0、par/fair 0、1.556×、哨兵 0）。
+
+## F587（2026-11-15）：指数形式数值 bounds
+**实现**：`api_number_expand_literal` 做纯数字串移位（不经过浮点），`api_schema_expand_exponents` 只匹配五个数值关键字的键位（JSON 字符串里的引号必然转义，不会误改正文），两处预处理链 + `bounded_shape` 入口接线。
+**语义翻转**：`frac_exp` 1→0（指数形式的分数 bounds 现可服务）；新门 `exp_lit`（0.00001 / 2500 / -0.0125 / 空）、`exp_bounds=[n|1|-995|0]`，活体 `exp_bounds_served`、`exp_mult_ok`、`exp_huge_refuse`。
+**教训**：① 构建失败但 `build_check.log` 为空 ⇒ 先查 `serve.on` 与在跑引擎（本轮正是上一轮 gate_live 的残留），不是源码错误；② 支持化语义翻转要同轮翻旧期望——`frac_exp` 就是被新门抓出来的。
+**证据**：`build_f587c.log`、`selftest_f587c.log`（0 FAIL）、四个 `*_f587c` harness（0）、`gate_live_f587c.log`（121/0、par/fair 0、1.589×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
