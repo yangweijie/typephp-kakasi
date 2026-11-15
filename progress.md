@@ -2650,3 +2650,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **流式对账（f593b）**：smoke 新增 `chat-stream-beyond-grid`——19 位单点区间在 `stream:true` 下流出 `"n":0.0001234567890123459`，PASS；**基线 smoke 122→123**；par/fair 0、scaling 1.560×、哨兵 0。
 - **工具参数覆盖（f593c）**：`tool-beyond-grid-exact`——工具参数 schema 里的 19 位 bounds 同样被改写成 `const`，强制工具调用返回的 arguments 精确为 `{"n":0.0001234567890123456}`（**基线 smoke 123→124**）。改写发生在请求体层，因此响应 schema 与工具参数 schema 共用同一路径。
 
+## F594（2026-11-15，负结果，已回滚）：oneOf 枚举判别
+- **尝试**：放宽两处 grammar 检测器的判别键（typeless enum 取首成员）；selftest 检测器与写入器均 PASS。
+- **活体失败**：先 `{"item":"book"}`（扁平化扫到对象分支内的 enum），加结构性分支守卫后变 `{"kind":"book"}`（另一前置漏斗吞掉外层包装）。请求路由未走到写入器。
+- **处理**：整体回滚到 `b8158da`，重建后自检 0 FAIL、smoke **124/0** 恢复；负结果与证据留档。下一步需追踪 16415/16866 两条路由的认领顺序。
+

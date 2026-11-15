@@ -1,0 +1,5 @@
+HEALTH_OK port=8000 polls=1
+SMOKE: PASS=124 FAIL=0
+SERVED-SPEC plain:   concurrent : chunks=122 wall=2.25s rate=54.22 tok/s errors=0
+SERVED-SPEC spec :   concurrent : chunks=122 wall=2.26s rate=53.95 tok/s errors=0
+SERVED-SPEC stats: {"stats":"drafts=36 accepted=13 verifies=6 alt_branch=0 max_branches=1 drafting=off"}

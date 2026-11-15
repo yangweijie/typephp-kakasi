@@ -5023,4 +5023,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **证据**：`build_f593.log`、`selftest_f593.log`（0 FAIL）、四个 `*_f593` harness（0）、`gate_live_f593.log`（122/0、par/fair 0、1.570×、哨兵 0）。
 **流式对账**：`chat-stream-beyond-grid` 在 `stream:true` 下流出 19 位 const 字面量（`gate_live_f593b.log`，smoke **123/0**，基线 122→123）。
 **工具参数**：改写作用于请求体层，工具参数 schema 同享——`tool-beyond-grid-exact` 断言强制工具调用的 arguments 精确为 `{"n":0.0001234567890123456}`（`gate_live_f593c.log`，smoke **124/0**）。
+
+## F594（2026-11-15，负结果，已回滚）：oneOf 分支用 enum 首成员作判别
+**尝试**：把两处 oneOf grammar 检测器的“首属性必须是 typeless const”放宽为“typeless enum 取首成员”，selftest 的检测器/写入器门通过（`SCHEMA-ONEOF-ENUM: PASS`）。
+**失败**：活体 `chat-oneof-enum-grammar` 先返回 `{"item":"book"}`（枚举扁平化把对象分支里的 enum 当标量），加“分支含 properties/items/type:object 则拒绝扁平化”的守卫后变成 `{"kind":"book"}`——另一条前置漏斗仍吞掉外层 `item` 包装；selftest 直接调用写入器通过，但请求路由没有走到它。
+**决定**：整体回滚（代码、selftest 门、smoke 门），回到 `b8158da` 的绿色基线（重建后自检 0 FAIL、smoke 124/0）。
+**记法**：① “写入器单测通过”不等于“路由会选它”——必须先用活体确认**哪条漏斗认领**；② 任何选择扁平化（choices flatten）都要拒绝**结构性分支**，否则会扫到子 schema 的 enum（F568 同族）。下一步需要沿 16415/16866 两条响应路由追踪认领顺序，再决定是放宽 grammar 还是让前置漏斗让位。
+**证据**：`api_smoke_f594d.log`（`{"item":"book"}`）、`api_smoke_f594e.log`（`{"kind":"book"}`）、`selftest_f594e.log`（写入器 PASS）、回滚后 `selftest_f594f.log`/`gate_live_f594f.log`（0 FAIL、124/0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
