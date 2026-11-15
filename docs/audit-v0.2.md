@@ -694,3 +694,18 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 | 门（`SCHEMA-KEYWORDS` 22 例） | 放行 `addProps=[]` `addprops_wire=[]`；仍拒 `form`/`nested`/`mixed`＝additionalProperties；`addprops_arr=maxItems`（**已知过度拒绝写进门**） | `engine/selftest_f402.log` |
 | 活体双向 | `addprops_all_string` **200** 键集合＝required；`addprops_mixed_refuse` **400** ⇒ 7 例 PASS | `engine/schema_required_f402.log` |
 | 梯 | 自检 **175/0**、8000 **115/0**、8001 par **0** fairness **0**、scaling **1.515×**、哨兵 **0** | `engine/selftest_f402.log`、`engine/api_smoke_f402.log`、`engine/throughput_f402.log` |
+
+## 审计增补（F580–F603，2026-11-15）——结构化输出面的状态更正
+
+**范围**：本轮集中在 FR-08（结构化输出/工具调用）与跨入口的“接受即合法”保证；FR-06/07/09 的引擎面未改。**与上文旧表冲突时以本节为准。**
+
+1. **数值边界**：单属性对象上的 `minimum/maximum/exclusiveMinimum/exclusiveMaximum/multipleOf` 已支持——整数任意跨度；小数网格**公式化覆盖 1..18 位**（marker = −(1000−d)，19 位显式拒绝，int64 有效位守卫）；**指数形式**（`1e-5`）按精确文本展开后复用网格；**>18 位**由“闭区间取端点 / 0 / 1×m / 排他侧最小单位 / ≤4096 步倍数行走”覆盖，其余具名 400。旧表“未支持/回退旧路径”的表述对上述形态已过期。
+2. **数组/对象**：三维以上**标量**数组、二维**对象**数组、对象数组元素内嵌套链等已支持；**三维以上对象元素数组**与工具参数中的同形 schema 已显式 400（F598/F599）。
+3. **`$ref`**：本地（F140）与调用方注册表（F207）已支持；URL/文件解析有意不做。
+4. **oneOf/anyOf**：分支判别键支持 **const 与 typeless enum 首成员**；两处 grammar 检测器对**空白与键序**不敏感（F595/F597）；候选联合只认**根级**关键字（F594/F595）。
+5. **输入形态**：请求体在入口**紧凑化**（字符串外空白），`indent=2` 与紧凑 JSON 行为一致（F596）；gate_live 常驻**双模式 smoke**。
+6. **失败关闭**：响应 schema 使用**显式 claim 谓词**（39/39 检测器，按返回契约判定：数组 `count`、整数哨兵阈值），未认领形状两传输均 400；工具参数在强制 `tool_choice` 下 `required` 不可枚举 ⇒ 400（F601–F603）。**“接受即合法”现有活体门**（`chat-unclaimed-2dao-refuse`、`tool-required-unservable-refuse`）。
+
+**回归口径（当前基线）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 各 **133/0**；8001 par/fair 0；scaling ~1.6×；哨兵 0；`check_gates 199/0`。
+
+**仍未闭合（不变）**：FR-05 插件；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 多样草稿器的真实收益；per-session KV 并行吞吐；多卡 split；GGUF 分片合并；129 层以上嵌套的**冷启动首调**缺陷（F208/F209 线索）。
