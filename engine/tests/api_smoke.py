@@ -1634,6 +1634,32 @@ def main():
                    for d in sse_data(sraw) if d != "[DONE]")
     check("chat-stream-beyond-grid", '"n":0.0001234567890123459' in sout, sout)
 
+    # F594: oneOf branches discriminated by a typeless enum pin its first member - the branch
+    # selector comes from the enum, and the second property follows the chosen branch.
+    oneof_enum_body = {"messages": [{"role": "user", "content": "Pick one item and describe it."}],
+                       "max_tokens": 32, "temperature": 0,
+                       "response_format": {"type": "json_schema", "json_schema": {
+                           "name": "x", "schema": {
+                               "type": "object", "properties": {"item": {"oneOf": [
+                                   {"type": "object", "properties": {
+                                       "kind": {"enum": ["book", "novel"]},
+                                       "title": {"type": "string"}}},
+                                   {"type": "object", "properties": {
+                                       "kind": {"enum": ["cd", "vinyl"]},
+                                       "tracks": {"type": "integer"}}}]}}}}}}
+    r = post("/v1/chat/completions", oneof_enum_body)
+    oe_content = r["choices"][0]["message"]["content"]
+    try:
+        oe_obj = json.loads(oe_content)
+        oe_item = oe_obj.get("item") if isinstance(oe_obj, dict) else {}
+        if not isinstance(oe_item, dict):
+            oe_item = {}
+    except Exception:
+        oe_item = {}
+    oe_ok = ((oe_item.get("kind") == "book" and "title" in oe_item)
+             or (oe_item.get("kind") == "cd" and "tracks" in oe_item))
+    check("chat-oneof-enum-grammar", oe_ok, oe_content[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

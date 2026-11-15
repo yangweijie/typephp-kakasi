@@ -5030,4 +5030,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **决定**：整体回滚（代码、selftest 门、smoke 门），回到 `b8158da` 的绿色基线（重建后自检 0 FAIL、smoke 124/0）。
 **记法**：① “写入器单测通过”不等于“路由会选它”——必须先用活体确认**哪条漏斗认领**；② 任何选择扁平化（choices flatten）都要拒绝**结构性分支**，否则会扫到子 schema 的 enum（F568 同族）。下一步需要沿 16415/16866 两条响应路由追踪认领顺序，再决定是放宽 grammar 还是让前置漏斗让位。
 **证据**：`api_smoke_f594d.log`（`{"item":"book"}`）、`api_smoke_f594e.log`（`{"kind":"book"}`）、`selftest_f594e.log`（写入器 PASS）、回滚后 `selftest_f594f.log`/`gate_live_f594f.log`（0 FAIL、124/0）。
+
+## F595（2026-11-15）：oneOf grammar 路由复活 + enum 判别（F594 转正）
+**三个真因**：① `api_response_schema_candidates` 的 oneOf 联合**不校验根级**，把嵌套对象分支当作整包候选（`{"kind":"book"}`，外层 `item` 丢失）；② 两处 grammar 检测器用**无空格拼接**比较 `{"oneOf":[...]}`，而 `json.dumps` 输出 `{"oneOf": [...]}`——整条 grammar 路由对标准 JSON 是死码（const 形态同样如此，此前没有活体门）；③ 枚举分支被扁平化扫到。
+**修复**：候选联合加根级守卫；两处比较去空格（结构化）；choices 扁平化拒绝含 properties/items/type:object 的结构分支；检测器接受 typeless enum 首成员作判别。
+**结果**：`chat-oneof-enum-grammar` 返回 `{"item":{"kind":"book","title":...}}` 一类合法对象（smoke **125/0**）；root oneOf 与枚举联合的旧门保持；`SCHEMA-ONEOF-ENUM` 自检 PASS。
+**记法**：**路由死码**与“写入器坏”很难从单测区分——单测常喂紧凑 JSON；必须用真实客户端序列化（json.dumps）做活体。空白/键序这类“格式差异”会让整条特性对真实客户端隐形。
+**证据**：`build_f595b.log`、`selftest_f595b.log`（0 FAIL）、四个 `*_f595b` harness（0）、`gate_live_f595b.log`（125/0、par/fair 0、哨兵 0）、`api_smoke_f595b.log`（`PASS chat-oneof-enum-grammar`）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

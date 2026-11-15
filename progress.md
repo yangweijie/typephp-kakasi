@@ -2655,3 +2655,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体失败**：先 `{"item":"book"}`（扁平化扫到对象分支内的 enum），加结构性分支守卫后变 `{"kind":"book"}`（另一前置漏斗吞掉外层包装）。请求路由未走到写入器。
 - **处理**：整体回滚到 `b8158da`，重建后自检 0 FAIL、smoke **124/0** 恢复；负结果与证据留档。下一步需追踪 16415/16866 两条路由的认领顺序。
 
+## F595（2026-11-15）：oneOf grammar 路由复活，F594 转正
+- **真因**：候选层的 oneOf 联合未校验根级（嵌套分支被当成整包）；grammar 检测器用无空格文本比较 `{"oneOf":[...]}`，而 `json.dumps` 带空格——整条路由对标准 JSON 是死码。
+- **修复**：根级守卫 + 两处去空格结构化比较 + 扁平化拒绝结构分支 + enum 首成员判别。
+- **结果**：`chat-oneof-enum-grammar` 通过（合法 `{"item":{...}}` 对象），smoke **125/0**；`SCHEMA-ONEOF-ENUM` PASS；root/枚举联合旧门保持。
+- **梯**：BUILD_OK（`build_f595b`）；自检 0 FAIL；四 harness 0；8000 125/0；par/fair 0；哨兵 0。
+

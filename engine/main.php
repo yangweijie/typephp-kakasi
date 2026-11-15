@@ -5825,7 +5825,11 @@ function api_response_schema_oneof_grammar(string $body): string
         return "";
     }
     $arr = api_balance_square($value, $ob);
-    if ($arr == "" || $value != "{\"" . $pm[2] . "\":" . $arr . "}") {
+    // F595: compare the wrapper structurally - json.dumps writes {"oneOf": [...]} with spaces, so
+    // the old exact-text comparison made this whole route dead for standard JSON clients.
+    $vC = str_replace(" ", "", str_replace("\n", "", str_replace("\r", "", $value)));
+    $aC = str_replace(" ", "", str_replace("\n", "", str_replace("\r", "", $arr)));
+    if ($arr == "" || $vC != "{\"" . $pm[2] . "\":" . $aC . "}") {
         return "";
     }
     $aend = strpos($block, $value);
@@ -5904,6 +5908,16 @@ function api_response_schema_oneof_grammar(string $body): string
                 }
                 $consts[] = $cm[1];
                 $props[] = $key . "=" . $cm[1];
+            } else if (strpos($val, "\"enum\"") !== false) {
+                // F594: a typeless enum discriminator pins its first member - any member is legal,
+                // so the branch stays deterministic and the writer path is unchanged.
+                $em = [];
+                if (preg_match('/"enum"\s*:\s*\[\s*"([A-Za-z0-9_\- ]{1,24})"/', $val, $em) != 1
+                    || preg_match('/"(type|const|pattern)"/', $val) == 1) {
+                    return "";
+                }
+                $consts[] = $em[1];
+                $props[] = $key . "=" . $em[1];
             } else if (substr_count($val, "{") == 1
                 && preg_match('/"type"\s*:\s*"string"/', $val) == 1) {
                 $props[] = $key . ":s";
@@ -6062,7 +6076,10 @@ function api_response_schema_root_oneof_grammar(string $body): string
         return "";
     }
     $arr = api_balance_square($schema, $ob);
-    if ($arr == "" || $schema != "{\"" . $pm[1] . "\":" . $arr . "}") {
+    // F595: whitespace-insensitive wrapper comparison (json.dumps emits spaces).
+    $sC = str_replace(" ", "", str_replace("\n", "", str_replace("\r", "", $schema)));
+    $aC = str_replace(" ", "", str_replace("\n", "", str_replace("\r", "", $arr)));
+    if ($arr == "" || $sC != "{\"" . $pm[1] . "\":" . $aC . "}") {
         return "";
     }
     $inner = substr($arr, 1, strlen($arr) - 2);
@@ -6133,6 +6150,16 @@ function api_response_schema_root_oneof_grammar(string $body): string
                 }
                 $consts[] = $cm[1];
                 $props[] = $key . "=" . $cm[1];
+            } else if (strpos($val, "\"enum\"") !== false) {
+                // F594: a typeless enum discriminator pins its first member - any member is legal,
+                // so the branch stays deterministic and the writer path is unchanged.
+                $em = [];
+                if (preg_match('/"enum"\s*:\s*\[\s*"([A-Za-z0-9_\- ]{1,24})"/', $val, $em) != 1
+                    || preg_match('/"(type|const|pattern)"/', $val) == 1) {
+                    return "";
+                }
+                $consts[] = $em[1];
+                $props[] = $key . "=" . $em[1];
             } else if (substr_count($val, "{") == 1
                 && preg_match('/"type"\s*:\s*"string"/', $val) == 1) {
                 $props[] = $key . ":s";
@@ -8661,6 +8688,13 @@ function api_schema_flatten_choices(string $s): string
             break;
         }
         $inner = substr($arr, 1, strlen($arr) - 2);
+        // F594: object branches carry their own discriminator enums; scanning inside them turns an
+        // object schema into a bare scalar value. Only scalar enum/const branches may be flattened.
+        if (strpos($inner, "\"properties\"") !== false
+            || strpos($inner, "\"items\"") !== false
+            || preg_match('/"type"\s*:\s*"object"/', $inner) == 1) {
+            return $s;
+        }
         $vals = "";
         $pos = 0;
         while ($pos < strlen($inner)) {
@@ -9523,9 +9557,12 @@ function api_response_schema_candidates(string $body): array
         return [];
     }
     // Root-level oneOf/anyOf over object branches: the constrained set is the union of the
-    // branches' own candidate sets (finite branches only).
-    $op = strpos($schema, "\"oneOf\"");
-    if ($op === false) {
+    // branches' own candidate sets (finite branches only). F594: the keyword must actually be the
+    // schema root - a nested property-level oneOf is handled by the flatten/grammar routes, and
+    // unioning its branches here dropped the enclosing property from the response.
+    $rootOne = preg_match('/^\{\s*"(oneOf|anyOf)"\s*:/', $schema) == 1;
+    $op = $rootOne == 1 ? strpos($schema, "\"oneOf\"") : false;
+    if ($op === false && $rootOne == 1) {
         $op = strpos($schema, "\"anyOf\"");
     }
     if ($op !== false) {
@@ -24090,6 +24127,31 @@ function main(): void
         echo "SCHEMA-ARR-OBJ-NEST: PASS (nested chain inside object-array element)\n";
     } else {
         echo "SCHEMA-ARR-OBJ-NEST: FAIL det=[" . $onDet . "] shape=" . $onShape . "\n";
+    }
+
+    // F594: typeless enum discriminators pin their first member, so the same grammar path serves
+    // them; the detector text is the proof that the selector came from the enum branch.
+    $ofEBody = '{"json_schema":{"name":"r","schema":{"type":"object","properties":{"item":{"oneOf":'
+        . '[{"type":"object","properties":{"kind":{"enum":["book","novel"]},"title":{"type":"string"}}},'
+        . '{"type":"object","properties":{"kind":{"enum":["cd","vinyl"]},"tracks":{"type":"integer"}}}]}}}}}';
+    $ofEDet = api_response_schema_oneof_grammar($ofEBody);
+    $ofEIds = tok_chat("user", "Pick one item and describe it.") . "," . tok_chat_open("assistant");
+    $ofEOut = api_oneof_grammar_value($ofEIds, "item", "kind=book,title:s;kind=cd,tracks:i",
+        "abcdefghijklmnopqrstuvwxyz ", 6, 0);
+    $ofEParts = explode(",", $ofEOut);
+    $ofEBase = count(explode(",", $ofEIds));
+    $ofEText = "";
+    for ($i = $ofEBase; $i < count($ofEParts); $i++) {
+        $ofEText = $ofEText . gguf_token_str((int) $ofEParts[$i]);
+    }
+    $ofEText = str_replace("Ġ", " ", $ofEText);
+    $ofEShape = (preg_match('/^\{"item":\{"kind":"book","title":"[a-z ]*"\}\}$/', $ofEText) == 1
+        || preg_match('/^\{"item":\{"kind":"cd","tracks":-?(0|[1-9][0-9]*)\}\}$/', $ofEText) == 1) ? 1 : 0;
+    echo "SCHEMA-ONEOF-ENUM det=[" . $ofEDet . "] text=[" . $ofEText . "]\n";
+    if ($ofEDet == "item|kind=book,title:s;kind=cd,tracks:i" && $ofEShape == 1) {
+        echo "SCHEMA-ONEOF-ENUM: PASS (enum first member selects the branch)\n";
+    } else {
+        echo "SCHEMA-ONEOF-ENUM: FAIL det=[" . $ofEDet . "]\n";
     }
 
     // One-of over small object branches: the const first property selects the branch through
