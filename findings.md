@@ -5134,4 +5134,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **探针**：`{"type":"object","properties":{"x":{"enum":[1,"a",true]}}}` 双模式返回 `{"x":"a"}`，成员合法——旧审计“混合类型枚举未支持”不再成立；`mixed-enum-member-ok` 常驻门。
 **记法**：老“缺”条目先探针复核再排期；数值/布尔/字符串三张表之外，候选层显然已能拼出混合字面量。
 **证据**：`gate_live_f610.log`、`api_smoke_f610.log`（双模式）。
+
+## F611（2026-11-15）：三条审计条目的精确定论
+**元字符 pattern**：`^[A-Z]{3}-[0-9]+$` 被服务且值匹配——旧表“含元字符 pattern 未支持”对这一类不成立；门按“200 且正则匹配”断言。
+**混合枚举**：带自由兄弟时 200（可只发所需键，合法）；顶层混合枚举数组具名 400（`items`）。
+**记法**：审计旧条目先跑探针；探针的断言要从“合法或 400”升级为**精确形态**，否则无法阻止将来退化到另一条合法但非预期的路径。
+**证据**：`gate_live_f611b.log`、`api_smoke_f611b.log`（双模式 147/0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

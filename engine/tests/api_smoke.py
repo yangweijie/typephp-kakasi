@@ -2028,6 +2028,70 @@ def main():
     print("  DIAG mixed-enum %s %s" % ("ok" if mx_ok else "bad", mx_txt[:150]))
     check("mixed-enum-member-ok", mx_ok, mx_txt[:160])
 
+    # F611 probes: refine the audit entries with exact assertions.
+    pm_schema = {"type": "object", "properties": {"x": {"type": "string", "pattern": "^[A-Z]{3}-[0-9]+$"}}}
+    pm_body = {"messages": [{"role": "user", "content": "Give the value."}],
+               "max_tokens": 32, "temperature": 0,
+               "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": pm_schema}}}
+    pm_ok = False
+    pm_txt = ""
+    try:
+        r = post("/v1/chat/completions", pm_body)
+        pm_txt = r["choices"][0]["message"]["content"]
+        try:
+            pmv = json.loads(pm_txt).get("x")
+        except Exception:
+            pmv = None
+        # F611: this metacharacter pattern is actually served and the value matches it.
+        pm_ok = isinstance(pmv, str) and bool(re.fullmatch(r"[A-Z]{3}-[0-9]+", pmv))
+    except urllib.error.HTTPError as e:
+        pm_txt = e.read().decode()[:300]
+        pm_ok = e.code == 400
+    print("  DIAG pattern-metachar %s %s" % ("ok" if pm_ok else "bad", pm_txt[:120]))
+    check("pattern-metachar-ok", pm_ok, pm_txt[:160])
+
+    mf_schema = {"type": "object", "properties": {"x": {"enum": [1, "a"]},
+                                                  "note": {"type": "string"}}}
+    mf_body = {"messages": [{"role": "user", "content": "Give the value."}],
+               "max_tokens": 32, "temperature": 0,
+               "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": mf_schema}}}
+    mf_ok = False
+    mf_txt = ""
+    try:
+        r = post("/v1/chat/completions", mf_body)
+        mf_txt = r["choices"][0]["message"]["content"]
+        try:
+            mfo = json.loads(mf_txt)
+        except Exception:
+            mfo = None
+        mf_ok = (isinstance(mfo, dict) and mfo.get("x") in (1, "a")
+                 and ("note" not in mfo or isinstance(mfo.get("note"), str)))
+    except urllib.error.HTTPError as e:
+        mf_txt = e.read().decode()[:300]
+        mf_ok = e.code == 400
+    print("  DIAG mixed-enum-free %s %s" % ("ok" if mf_ok else "bad", mf_txt[:120]))
+    check("mixed-enum-free-sibling-ok", mf_ok, mf_txt[:160])
+
+    tm_schema = {"type": "array", "items": {"enum": [1, "a"]}}
+    tm_body = {"messages": [{"role": "user", "content": "Give the values."}],
+               "max_tokens": 32, "temperature": 0,
+               "response_format": {"type": "json_schema", "json_schema": {"name": "x", "schema": tm_schema}}}
+    tm_ok = False
+    tm_txt = ""
+    try:
+        r = post("/v1/chat/completions", tm_body)
+        tm_txt = r["choices"][0]["message"]["content"]
+        try:
+            tmv = json.loads(tm_txt)
+        except Exception:
+            tmv = None
+        tm_ok = isinstance(tmv, list) and len(tmv) >= 1 and all(v in (1, "a") for v in tmv)
+    except urllib.error.HTTPError as e:
+        tm_txt = e.read().decode()[:300]
+        tm_ok = e.code == 400 and ("items" in tm_txt or "not supported" in tm_txt)
+    print("  DIAG top-mixed-enum %s %s" % ("ok" if tm_ok else "bad", tm_txt[:120]))
+    check("top-mixed-enum-array-ok", tm_ok, tm_txt[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.
