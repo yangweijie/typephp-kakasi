@@ -5053,4 +5053,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **未闭**：引擎没有“schema 存在但无 claimer ⇒ 400”的统一兜底，所以任何未覆盖形态仍是散文（200）。这是**保证“接受即合法”的最后一块**；比逐个补检测器更根本，应作为专门一轮：在分发链终点判断 `json_schema` 存在且所有 schema 路由为空 ⇒ 具名 400。
 **证据**：`gate_live_f596c.log`（红：`chat-oneof-reordered-branches` 散文）、`gate_live_f597.log`（SMOKE/SMOKE-PRETTY 128/0）、`api_smoke_f597.log`。
 **键序探针补充**：数值 bounds 的根/叶子键序颠倒仍受约束（`chat-num-reordered-schema` PASS，`gate_live_f597b.log`，双模式 **129/0**）——数值检测器按键扫描，不依赖先后。
+
+## F598（2026-11-15）：3 层对象数组转为显式 400
+**证据**：3 层“数组→数组→数组→对象”被答成 `{"items":[{"x":"100000"}]}`（200，形状错误）。
+**修复**：`api_schema_deep_array_object` 沿 `items` 链下降计数，仅当深度 ≥3 且最内层含 `properties` 时拒绝；接入 `$schBody` 校验链，文案 `arrays nested three or more levels deep with object elements are not supported`。标量与 1–2 层对象数组不受影响（自检 `dao=[1|0|0]`，旧 ARR-OBJ/ARR2D 门保持）。
+**记法**：写“探测—修复—成门”三步时，探测必须先记录**错误输出的形状**（这里是 `items` 而非 `a`），否则很容易把“有 JSON”当成“合规”。
+**证据**：`gate_live_f597c.log`（PROSE 探针）、`gate_live_f598.log`（SMOKE/SMOKE-PRETTY 130/0）、`api_smoke_f598.log`（`PASS chat-deep3-ao-refuse`）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

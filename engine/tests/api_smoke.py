@@ -1772,6 +1772,26 @@ def main():
         rn_content = e.read().decode()[:160]
     check("chat-num-reordered-schema", rn_ok, rn_content[:160])
 
+    # F598: three-deep arrays of objects have no writer. Before the guard this answered
+    # {"items":[...]} - a different shape than requested. The request must now refuse explicitly.
+    probe_leaf = {"type": "object", "properties": {"x": {"type": "string"}}}
+    probe_schema = {"type": "object", "properties": {
+        "a": {"type": "array", "items": {"type": "array", "items": {
+            "type": "array", "items": probe_leaf}}}}}
+    probe_body = {"messages": [{"role": "user", "content": "Give the data."}],
+                  "max_tokens": 48, "temperature": 0,
+                  "response_format": {"type": "json_schema",
+                                      "json_schema": {"name": "x", "schema": probe_schema}}}
+    pr_ok = False
+    pr_content = ""
+    try:
+        r = post("/v1/chat/completions", probe_body)
+        pr_content = r["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        pr_ok = e.code == 400 and "arrays nested" in e.read().decode()[:600]
+        pr_content = "400"
+    check("chat-deep3-ao-refuse", pr_ok, pr_content[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

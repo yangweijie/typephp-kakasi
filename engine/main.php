@@ -12010,6 +12010,53 @@ function api_json_compact(string $s): string
     return $out;
 }
 
+// F598: arrays nested three or more levels deep whose innermost element is an OBJECT are not
+// served by any writer; without this guard the request fell through to unconstrained generation
+// and answered a different shape. Scalar arrays keep their 3D/4D/5D writers.
+function api_schema_deep_array_object(string $schema): int
+{
+    $pos = 0;
+    while (true) {
+        $ip = strpos($schema, "\"items\"", $pos);
+        if ($ip === false) {
+            return 0;
+        }
+        $bo = strpos($schema, "{", $ip);
+        if ($bo === false) {
+            return 0;
+        }
+        $blk = api_balance_block($schema, $bo);
+        if ($blk == "") {
+            return 0;
+        }
+        $depth = 1;
+        $cur = $blk;
+        while (true) {
+            if ($depth >= 3 && strpos($cur, "\"properties\"") !== false) {
+                return 1;
+            }
+            if (preg_match('/"type"\s*:\s*"array"/', $cur) != 1) {
+                break;
+            }
+            $np = strpos($cur, "\"items\"");
+            if ($np === false) {
+                break;
+            }
+            $nb = strpos($cur, "{", $np);
+            if ($nb === false) {
+                break;
+            }
+            $nblk = api_balance_block($cur, $nb);
+            if ($nblk == "") {
+                break;
+            }
+            $cur = $nblk;
+            $depth = $depth + 1;
+        }
+        $pos = $bo + strlen($blk);
+    }
+}
+
 // F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
 // the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
 // the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
@@ -15872,6 +15919,11 @@ function api_serve(int $port): void
                 // single integer property with bounds of any sign and any span, either side
                 // missing; what remains is float bounds and multi-property bounds.
                 $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; an unbounded multipleOf up to 999999 is served by a forced suffix whose width follows the multiplier, and one above that is refused; a multipleOf on a schema with more than one property, or on a number (non-integer) leaf, is not supported; the draft-4 boolean spelling (exclusiveMinimum/exclusiveMaximum:true) is not supported; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else if (api_schema_deep_array_object($schBody) == 1) {
+                // F598: no writer serves three-deep arrays of objects; answering prose here used
+                // to look like success while violating the schema.
+                $payload = "{\"error\":{\"message\":\"arrays nested three or more levels deep with object elements are not supported; use a scalar array depth or a shallower object array\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_nested_overflow($schBody) == 1) {
                 // F535: deeper than the 256-level descent the nested-object detector supports. Past
@@ -20991,6 +21043,11 @@ function main(): void
     // F596: request bodies are compacted once at ingestion; whitespace inside strings survives.
     $jcA = api_json_compact('{ "a" : { "b" : "x  y" , "c" : [ 1 , 2 ] } }');
     $jcB = api_json_compact("{\"s\":\"q\\\"  t\"}");
+    // F598: only object elements at depth three or more are refused; scalar depth and 1-2 level
+    // object arrays keep their writers.
+    $daoDeep = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}}}}');
+    $daoTwo = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}}}');
+    $daoScalar = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"string"}}}}}}}');
     // F593: exact decimal addition (digit carries) and its two new consumers - one ulp inside an
     // exclusive side, and the multiple walk.
     $dA = api_decimal_add("1", "2");
@@ -21082,7 +21139,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "] dao=[" . $daoDeep . "|" . $daoTwo . "|" . $daoScalar . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -21114,6 +21171,7 @@ function main(): void
         && strpos($piMulMiss, "\"const\":1}") !== false
         && $jcA == '{"a":{"b":"x  y","c":[1,2]}}'
         && $jcB == '{"s":"q\"  t"}'
+        && $daoDeep == 1 && $daoTwo == 0 && $daoScalar == 0
         && $dA == "3" && $dB == "1" && $dC == "-0.5"
         && $dD == "0.0001234567890123457" && $dE == "0"
         && strpos($piWalkCap, "\"const\"") === false

@@ -2677,3 +2677,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **仍缺（记入队列）**：**无人认领兜底 400**——键序/形态不在任何检测器覆盖内时，引擎目前仍回散文而非显式拒绝；这是比逐个补锚点更根本的保证，需要单独一轮在分发末尾加“schema 存在但无 claimer ⇒ 400”。
 - **键序探针补充（f597b）**：数值 bounds 的根/叶子键序颠倒（`{"properties":…,"type":"object"}` 与 `{"maximum":9,"type":"integer"}`）仍正确受限（`chat-num-reordered-schema` PASS）；**双模式 smoke 129/0**。
 
+## F598（2026-11-15）：3 层以上“对象元素数组”显式 400
+- **证据先行**：探针（3 层数组套对象）返回 `{"items":[{"x":"100000"}]}`——完全不同的形状且 200，属静默违反。
+- **修复**：`api_schema_deep_array_object` 沿 items 链下降，仅当**深度 ≥3 且最内层元素是对象（properties）**时报告；接入响应校验链，返回具名 400。标量 3D/4D/5D 数组与 1–2 层对象数组保持支持。
+- **自检**：`dao=[1|0|0]`（深对象 =1；两层对象 =0；三层标量 =0）。
+- **活体**：`chat-deep3-ao-refuse` 在普通与美化序列化下均 PASS（400 且文案含 `arrays nested`）；**双模式 smoke 130/0**。
+- **梯**：BUILD_OK（`build_f598`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0。
+- **仍缺**：这是“逐个形态转显式拒绝”的一例；统一的“schema 存在但无 claimer ⇒ 400”兜底仍在队列（F598 记录的 F597 项）。
+
