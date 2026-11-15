@@ -2617,3 +2617,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f589`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 122/0；par/fair 0；scaling 1.561×；哨兵 0。
 - **边界**：正 min 且带 multipleOf、或排他边界的 >18 位情况仍需真正的十进制串算术（F582）。
 
+## F590（2026-11-15）：>18 位单侧排他边界取另一闭端点
+- **观察**：`exclusiveMinimum` + 闭 `maximum` 时，只要 min<max，max 本身合法；`exclusiveMaximum` + 闭 `minimum` 同理取 min。仅需严格比较，无算术。
+- **实现**：strip 判定接受 exclusive 关键字，按 `(c>0 拒绝) / (c==0 仅双闭可取) / (c<0 取未排他一侧)` 选择；multipleOf 的 0 规则加入严格性（排他边界恰为 0 时排除）。
+- **自检**：`pi_excl=[max]`、`pi_exmax=[min]`、`pi_both=[kept]`、`pi_bad=[kept]`。
+- **活体**：`pinned_interval_exmin_ok` 200（发 max 字面量）、`pinned_interval_exmax_ok` 200（发 min）、`pinned_interval_both_excl_refuse`/`pinned_interval_bad_refuse` 400。
+- **梯**：BUILD_OK（`build_f590`）；自检 0 FAIL；四 harness 0；8000 122/0；par/fair 0；scaling 1.622×；哨兵 0。
+- **边界**：双侧排他、或同时带 multipleOf 的正 min，仍需十进制串算术。
+

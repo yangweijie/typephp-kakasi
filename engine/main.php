@@ -11803,35 +11803,55 @@ function api_schema_strip_pinned_interval(string $body): string
         $hasMax = preg_match('/"maximum"\s*:\s*(-?[0-9]+(\.[0-9]+)?)/', $sub, $mx);
         if (($hasMin != 1 && $hasMax != 1)
             || preg_match('/"type"\s*:\s*"number"/', $sub) != 1
-            || strpos($sub, "\"exclusiveMinimum\"") !== false
-            || strpos($sub, "\"exclusiveMaximum\"") !== false
             || strpos($sub, "\"const\"") !== false
             || strpos($sub, "\"enum\"") !== false) {
             continue;
         }
+        $exMin = strpos($sub, "\"exclusiveMinimum\"") !== false;
+        $exMax = strpos($sub, "\"exclusiveMaximum\"") !== false;
         $minLit = $hasMin == 1 ? $mn[1] : "";
         $maxLit = $hasMax == 1 ? $mx[1] : "";
         $pick = "";
         if (strpos($sub, "\"multipleOf\"") === false) {
-            // F589: a closed interval contains its smaller endpoint, and a one-sided bound contains
-            // the endpoint itself, so that literal is legal with no arithmetic at all.
+            // F589/F590: an inclusive endpoint is a legal value; with one exclusive side the OTHER
+            // endpoint still works whenever the interval is non-degenerate.
             if ($hasMin == 1 && $hasMax == 1) {
-                if (api_decimal_cmp($minLit, $maxLit) <= 0) {
+                $c = api_decimal_cmp($minLit, $maxLit);
+                if ($c > 0) {
+                    $pick = "";
+                } else if ($c == 0) {
+                    if ($exMin == false && $exMax == false) {
+                        $pick = $minLit;
+                    }
+                } else if ($exMin == false) {
                     $pick = $minLit;
+                } else if ($exMax == false) {
+                    $pick = $maxLit;
                 }
             } else if ($hasMin == 1) {
-                $pick = $minLit;
+                if ($exMin == false) {
+                    $pick = $minLit;
+                }
             } else {
-                $pick = $maxLit;
+                if ($exMax == false) {
+                    $pick = $maxLit;
+                }
             }
         } else {
-            // Zero is a multiple of every positive multiplier, so it serves any bounds containing it.
+            // Zero is a multiple of every positive multiplier; an exclusive side that sits exactly
+            // on zero excludes it.
             $ok0 = 1;
-            if ($hasMin == 1 && api_decimal_cmp($minLit, "0") > 0) {
-                $ok0 = 0;
+            if ($hasMin == 1) {
+                $c = api_decimal_cmp($minLit, "0");
+                if ($c > 0 || ($c == 0 && $exMin == true)) {
+                    $ok0 = 0;
+                }
             }
-            if ($hasMax == 1 && api_decimal_cmp($maxLit, "0") < 0) {
-                $ok0 = 0;
+            if ($hasMax == 1) {
+                $c = api_decimal_cmp($maxLit, "0");
+                if ($c < 0 || ($c == 0 && $exMax == true)) {
+                    $ok0 = 0;
+                }
             }
             if ($ok0 == 1) {
                 $pick = "0";
@@ -20572,6 +20592,8 @@ function main(): void
     // F589: closed spans and one-sided bounds serve their smallest legal endpoint; exclusive bounds
     // and inverted spans stay untouched; a span containing zero serves it under any multipleOf.
     $piExcl = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMinimum":0.0001234567890123456},"note":{"type":"string"}}}');
+    $piExMax = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMaximum":0.0001234567890123459},"note":{"type":"string"}}}');
+    $piBoth = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459,"exclusiveMinimum":0.0001234567890123456,"exclusiveMaximum":0.0001234567890123459},"note":{"type":"string"}}}');
     $piBad = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123459,"maximum":0.0001234567890123456},"note":{"type":"string"}}}');
     $piZero = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":-0.0001234567890123456,"maximum":0.0001234567890123456,"multipleOf":0.0000000000000000001},"note":{"type":"string"}}}');
     // F443: the suffix width reaches nine digits now, so 2,000,000 - the old "beyond the mechanism"
@@ -20654,7 +20676,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -20676,7 +20698,9 @@ function main(): void
         && $piPlan == "n:q:0.0001234567890123456,note:s"
         && strpos($piKeep, "\"const\"") === false
         && strpos($piSpan, "\"const\":0.0001234567890123456}") !== false
-        && strpos($piExcl, "\"const\"") === false
+        && strpos($piExcl, "\"const\":0.0001234567890123459}") !== false
+        && strpos($piExMax, "\"const\":0.0001234567890123456}") !== false
+        && strpos($piBoth, "\"const\"") === false
         && strpos($piBad, "\"const\"") === false
         && strpos($piZero, "\"const\":0}") !== false
         && $bdBA == 0 && $bdBB == 0 && $bdBC == 0 && $bdMultiBig == "a|2000000000,b|2000000001"

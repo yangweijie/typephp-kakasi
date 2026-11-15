@@ -1261,10 +1261,27 @@ def raw_leaf(leaf):
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123456,'
                               '"maximum":0.0001234567890123459,'
                               '"exclusiveMinimum":0.0001234567890123456}'))
+good = code == 200 and '"n":0.0001234567890123459' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_exmin_ok", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123456,'
+                              '"maximum":0.0001234567890123459,'
+                              '"exclusiveMaximum":0.0001234567890123459}'))
+good = code == 200 and '"n":0.0001234567890123456' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_exmax_ok", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123456,'
+                              '"maximum":0.0001234567890123459,'
+                              '"exclusiveMinimum":0.0001234567890123456,'
+                              '"exclusiveMaximum":0.0001234567890123459}'))
 good = code == 400 and "numeric bounds" in txt
 if not good:
     bad += 1
-print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_excl_refuse", code, good, txt[:140]))
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_both_excl_refuse", code, good, txt[:140]))
 
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123459,'
                               '"maximum":0.0001234567890123456}'))

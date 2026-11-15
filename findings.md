@@ -4994,4 +4994,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：自检 `pi_span`/`pi_zero`/`pi_excl`/`pi_bad`；活体五个 `pinned_interval_*`（原始 JSON 文本）。
 **记法**：约束面里有很多“取一个合法值”的问题，先问“端点/零点是否天然合法”，能绕开算术的就不写算术；真正需要算术的（正 min + multipleOf、排他边界）留到十进制串实现。
 **证据**：`build_f589.log`、`selftest_f589.log`（0 FAIL）、四个 `*_f589` harness（0）、`gate_live_f589.log`（122/0、par/fair 0、1.561×、哨兵 0）。
+
+## F590（2026-11-15）：单侧排他边界取另一闭端点
+**推理**：`exclusiveMinimum + maximum(闭)` 且 min<max ⇒ max 合法；`exclusiveMaximum + minimum(闭)` ⇒ min 合法。仅需严格比较。双排他无可取端点；单侧排他且另一侧缺失也没有参照点。
+**实现**：strip 接受 exclusive 关键字，按比较结果选端点；multipleOf 的 0 规则加入严格性。宽度守卫不变。
+**门**：自检 `pi_excl`/`pi_exmax`/`pi_both`；活体 `pinned_interval_exmin_ok`/`exmax_ok`/`both_excl_refuse`/`bad_refuse`。
+**记法**：排他边界不是“一律拒绝”——先看另一侧是否闭端点；只有双排他才真正需要区间内部值（算术）。
+**证据**：`build_f590.log`、`selftest_f590.log`（0 FAIL）、四个 `*_f590` harness（0）、`gate_live_f590.log`（122/0、par/fair 0、1.622×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
