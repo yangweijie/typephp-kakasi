@@ -22853,6 +22853,52 @@ function main(): void
             . "|" . $uniqEnumUnsat . "|" . $uniqEnumPat . "\n";
     }
 
+    // PARAM-GUARDS (F639): unit gates for the refusal predicates behind the live 400s. A predicate
+    // that starts refusing a legal spelling - or a schema property named like a parameter - would
+    // otherwise surface only as a live regression, and a missed refusal only as a silent 200.
+    $pgCases = ['{"n":2}|', '{"n":5}|n', '{"logprobs":false}|', '{"logprobs":true}|logprobs',
+        '{"top_k":0}|', '{"top_k":5}|top_k', '{"min_p":0}|', '{"min_p":0.05}|min_p',
+        '{"store":false}|', '{"store":true}|store',
+        '{"thinking":{"type":"enabled"}}|thinking',
+        '{"text":{"format":{"type":"bogus"}}}|text.format', '{"temperature":0}|',
+        '{"temperature":9}|temperature', '{"best_of":2}|best_of',
+        '{"logit_bias":{"1":-100}}|logit_bias', '{"reasoning_effort":"high"}|reasoning_effort',
+        '{"properties":{"n":{"type":"integer"}}}|', '{"format":{"type":"date"}}|',
+        '{"metadata":{"k":"v"},"user":"u"}|'];
+    $pgN = count($pgCases);
+    $pgOk = 0;
+    $pgBad = "";
+    for ($pgi = 0; $pgi < count($pgCases); $pgi++) {
+        $pgp = strpos($pgCases[$pgi], "|");
+        $pgBody = substr($pgCases[$pgi], 0, $pgp);
+        $pgWant = substr($pgCases[$pgi], $pgp + 1);
+        if (api_param_unsupported($pgBody) == $pgWant) {
+            $pgOk = $pgOk + 1;
+        } else {
+            $pgBad = $pgBad . "|" . $pgBody;
+        }
+    }
+    // The F637 regression in unit form: a beyond-grid TOOL bound is servable exactly, so the guard
+    // must stay silent here (the strip rewrites it to a const before the tool checks run).
+    $pgTool = '{"messages":[{"role":"user","content":"Book it."}],"tools":[{"type":"function","function":{"name":"book","parameters":{"type":"object","properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":0.0001234567890123459}},"required":["n"]}}}],"tool_choice":{"type":"function","function":{"name":"book"}},"max_tokens":32}';
+    $pgToolOk = api_schema_guard_unsupported($pgTool) == "" ? 1 : 0;
+    // The guard only inspects the response schema when the body carries the json_schema marker.
+    $pgKwOk = api_schema_guard_unsupported('{"json_schema":{"name":"x","schema":{"type":"object","properties":{"t":{"type":"array","items":{"type":"string"},"uniqueItems":true}}}}}') == "schema keyword uniqueItems" ? 1 : 0;
+    // `format` is a keyword the decoder does not honour, so the guard names it rather than passing
+    // it through - the lookalike test asserts it is NOT mistaken for a sampling parameter.
+    $pgFmt = api_schema_guard_unsupported('{"json_schema":{"name":"x","schema":{"type":"object","properties":{"c":{"type":"string","format":"date"}}}}}');
+    $pgFmtOk = (strpos($pgFmt, "format") !== false && strpos($pgFmt, "request parameter") === false) ? 1 : 0;
+    $pgDeep = api_schema_guard_unsupported('{"json_schema":{"name":"x","schema":{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"y":{"type":"string"}}}}}}}}}}');
+    $pgDeepOk = strpos($pgDeep, "arrays nested") !== false ? 1 : 0;
+    echo "PARAM-GUARDS pass=" . $pgOk . "/" . $pgN . " tool=" . $pgToolOk . " kw=" . $pgKwOk
+        . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " bad=" . $pgBad . "\n";
+    if ($pgOk == $pgN && $pgToolOk == 1 && $pgKwOk == 1 && $pgFmtOk == 1 && $pgDeepOk == 1) {
+        echo "PARAM-GUARDS: PASS (neutral spellings accepted, schema-named lookalikes ignored, tool bounds still served)\n";
+    } else {
+        echo "PARAM-GUARDS: FAIL ok=" . $pgOk . "/" . $pgN . " tool=" . $pgToolOk
+            . " kw=" . $pgKwOk . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " bad=" . $pgBad . "\n";
+    }
+
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour
     // paths, and contains/not/patternProperties/if/unevaluated*/minContains/maxContains gained narrow
     // ones (F449/F448/F451/F452/F453/F454); each can be violated by what the model emits, so each is

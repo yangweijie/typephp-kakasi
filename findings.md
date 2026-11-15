@@ -5312,3 +5312,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-stream-pattern-refuse`（`(?i)abc`）、`chat-stream-bounds-refuse`（双属性小数 bounds）双模式 PASS；既有的 `chat-stream-exp-bounds`/`chat-stream-beyond-grid`/`tool-beyond-grid-exact` 均保持服务；**双模式 smoke 189→191/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：守卫合并的最后一块是“依赖前置变换的谓词”——只要在外层先做同一变换，就能与内层共用；这与 F637 的 pinned-interval 修复是同一条规则。
 **证据**：`build_f638.log`、`selftest_f638.log`、`{req,cnt,pat,bnd}_run_f638.log`、`gate_live_f638.log`。
+
+## F639（2026-11-15）：拒绝谓词的单元门（PARAM-GUARDS）
+**动机**：F620–F638 的拒绝谓词只由活体 smoke 覆盖；一个把合法拼写拒掉（或把 schema 同名属性误判）的改动会以“某个远端用例变红”的形式出现，定位成本高。
+**新增**：自检块 `PARAM-GUARDS`——20 个谓词用例（`n`/`logprobs`/`top_k`/`min_p`/`store`/`thinking`/`text.format`/`temperature`/`best_of`/`logit_bias`/`reasoning_effort` 的正反例 + `properties.n`/`format:date`/`metadata`/`user` 等中性或同名形态）+ 4 个 schema 守卫用例（工具超网格 bound 必须放行＝F637 回归的单元版、`uniqueItems` 命名、`format` 命名、三层对象数组）。
+**过程（两次红，都是夹具理解错误）**：① 守卫只在该 body 含 `json_schema` 标记时才检查响应 schema，而单元夹具只放了裸 schema ⇒ `kw=0 deep=0`；夹具补上 `{"json_schema":{"name":"x","schema":…}}` 后转绿。② 原以为 `format:date` 会被放行，实际 `format` 属被具名拒绝的结构关键字 ⇒ 断言改为“**必须命名 format** 而不是当采样参数”。
+**结果**：`PARAM-GUARDS: PASS`（20/20 + tool/kw/fmt/deep 全 1）；自检 0 FAIL；四 harness 0；smoke 双模式 **191/0**；par/fair 0；哨兵 0；`check_gates 199/0`。
+**记法**：单元夹具必须复刻**真实调用上下文**（这里是 json_schema 标记），否则测的是另一条分支；断言前先确认被拒原因属于“结构关键字”还是“请求参数”，两类消息不同。
+**证据**：`build_f639c.log`、`selftest_f639c.log`（第 791–792 行）、`{req,cnt,pat,bnd}_run_f639c.log`、`gate_live_f639c.log`；失败轮 `gate_live_f639.log`（kw/deep）、`gate_live_f639b.log`（fmt）。

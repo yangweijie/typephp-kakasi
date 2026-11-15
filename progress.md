@@ -2885,3 +2885,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_schema_guard_unsupported` 追加 pattern、bounds、choices_pure_bounds（基于 pinned-interval 重写后的 body/schema）。
 - **门**：`chat-stream-pattern-refuse`/`chat-stream-bounds-refuse` PASS；既有 served 门不变；**smoke 189→191/0**。
 - **梯**：BUILD_OK（`build_f638`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F639（2026-11-15）：PARAM-GUARDS 单元门
+- **新增**：自检 `PARAM-GUARDS`（20 条谓词用例 + 4 条 schema 守卫用例，含 F637 回归的单元版）。
+- **结果**：`PARAM-GUARDS: PASS`；自检 0 FAIL；四 harness 0；smoke 双模式 191/0；par/fair 0；哨兵 0；`check_gates` 199/0。
+- **梯**：BUILD_OK（`build_f639c`）；两轮失败夹具已在 findings 记录。
