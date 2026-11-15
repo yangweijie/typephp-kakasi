@@ -2562,4 +2562,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯（f581d）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.580×；哨兵 0。
 - **预算审计**：其余固定预算都是标点/短常量（`}`/`,`/`"`，4–8 步）；内容相关的写入点已按长度给预算，另新增 `long_key_pin_exact`（89 字符属性名 + const）作为回归门——通过（`schema_required_f581e.log`），未发现第二处现实截断。
 - **压力门（f581f）**：`long_key_stress_exact`（300 字符属性名）与 `long_const_value_exact`（300 字符字符串 const）均逐字通过（`schema_required_f581f.log`）——截断只在固定预算小于字面量 token 数时出现（8 步数值 pin），按长度给预算后该类风险闭合。
+- **数组枚举写入器修复（f581i）**：`long_enum_item_exact`（单成员 300 字符 enum 的数组）先失败——`{"cities":["ppp…,ppp…"]}`：固定 24 步预算把成员截断并在字符串内重复，属于**静默违反**。`$must`/`$vals[$it]`/`$cands` 三处改为按字面量长度给预算（`$candSteps` 取候选最大长度+4）后逐字发射。梯：自检 0 FAIL；四 harness 0；8000 121/0；par/fair 0；scaling 1.598×；哨兵 0（`selftest_f581i.log`/`gate_live_f581i.log`）。
 

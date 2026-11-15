@@ -655,6 +655,17 @@ cases = [
                                         "note": {"type": "string"}}},
      lambda code, txt: (code == 200
                         and (obj_of(txt) or {}).get("city") == "p" * 300)),
+    # F581 stress on the array-enum writer: every emitted element must still be a member of the
+    # enum, so a truncated 300-character member would be a silent violation, not just ugly text.
+    ("long_enum_item_exact", "Give the cities.",
+     {"type": "object", "properties": {"cities": {"type": "array",
+                                                  "items": {"type": "string",
+                                                            "enum": ["p" * 300]}}}},
+     lambda code, txt: (code == 200
+                        and isinstance((obj_of(txt) or {}).get("cities"), list)
+                        and len((obj_of(txt) or {}).get("cities")) >= 1
+                        and all(x == "p" * 300
+                                for x in (obj_of(txt) or {}).get("cities")))),
     ("const_dec17_pin_exact", "Give the code and the count.",
      {"type": "object", "properties": {"n": {"const": 1.2345678901234567},
                                         "note": {"type": "string"}}},

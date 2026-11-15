@@ -1713,6 +1713,14 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
         return "";
     }
     $endIds = $commaIds . "," . $bracketIds;
+    // F581: a fixed 24-step budget truncated a 300-character enum member and even re-emitted it,
+    // violating the enum silently. Every continuation below is bounded by its own literal length.
+    $candSteps = 24;
+    for ($ci = 0; $ci < count($cands); $ci++) {
+        if (strlen($cands[$ci]) + 4 > $candSteps) {
+            $candSteps = strlen($cands[$ci]) + 4;
+        }
+    }
     $done = 0;
     for ($it = 0; $it < $maxItems; $it++) {
         if ($unique == 1 && $patMode == 0 && $it >= count($vals)) {
@@ -1740,11 +1748,11 @@ function api_array_enum_value(string $ids, string $prop, string $valsCsv, int $m
             $s = $s . "," . $cq;
         } else {
             if ($must != "" && $it < $mustCount && $unique == 0 && $patMode == 0) {
-                $f = api_constrained_continue([$numMode == 1 ? $must : $must . "\""], 24);
+                $f = api_constrained_continue([$numMode == 1 ? $must : $must . "\""], strlen($must) + 4);
             } else if ($unique == 1) {
-                $f = api_constrained_continue([$numMode == 1 ? $vals[$it] : $vals[$it] . "\""], 24);
+                $f = api_constrained_continue([$numMode == 1 ? $vals[$it] : $vals[$it] . "\""], strlen($vals[$it]) + 4);
             } else {
-                $f = api_constrained_continue($cands, 24);
+                $f = api_constrained_continue($cands, $candSteps);
             }
             if ($f == "") {
                 return "";
