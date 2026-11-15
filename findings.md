@@ -4951,4 +4951,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **压力验证**：300 字符属性名与 300 字符字符串 const 在值计划写入器上均逐字往返（`long_key_stress_exact`/`long_const_value_exact`）——截断只在固定预算小于字面量 token 数时发生（8 步的数值 pin），按长度给预算后该风险消失。
 **数组枚举写入器的同类违反（F581 修复）**：单成员 300 字符 enum 的数组最初返回 `{"cities":["ppp…,ppp…"]}`——固定 24 步预算把成员截断并在同一字符串内重复，元素不再属于 enum（静默违反）。`$must`/`$vals[$it]`/`$cands` 三处改为按字面量长度（候选取最大长度+4）后逐字发射。教训：**枚举/常量类写入器必须逐元素做“输出 ∈ 允许集合”的断言**，只检查整体 200 会漏掉截断后仍合法 JSON 的情况。
 **数值表对照**：30 位整数枚举成员逐字往返（`long_num_enum_item_exact`），说明数值表写入器没有固定预算；截断面集中在字符串 continuation 的固定步数处。
+**对象数组边界**：AO 元素内的 `const` 不被任何写入器认领，显式 400 并点名 `items`（`long_const_in_ao_refuse`）——这是明确的未实现面，而非静默违反；顶层与标量数组内的长 const 均已逐字覆盖。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

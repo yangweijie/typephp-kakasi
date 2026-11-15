@@ -677,6 +677,13 @@ cases = [
                         and len((obj_of(txt) or {}).get("nums")) >= 1
                         and all(x in (123456789012345678901234567890, 7)
                                 for x in (obj_of(txt) or {}).get("nums")))),
+    # F581: a const inside an array-of-objects ELEMENT is not claimed by any writer and refuses
+    # explicitly (400 naming items) - the honest side of the boundary, unlike a truncated value.
+    ("long_const_in_ao_refuse", "Give the rows.",
+     {"type": "object", "properties": {"rows": {"type": "array",
+                                                "items": {"type": "object",
+                                                          "properties": {"tag": {"const": "p" * 300}}}}}},
+     lambda code, txt: code == 400 and "items" in txt),
     ("const_dec17_pin_exact", "Give the code and the count.",
      {"type": "object", "properties": {"n": {"const": 1.2345678901234567},
                                         "note": {"type": "string"}}},
