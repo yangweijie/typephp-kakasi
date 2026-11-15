@@ -4958,4 +4958,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **实现/门**：与 F580/F581 同构（scaled/分子/正则/探测/marker 表/mixed q/窗口 [−999,−985]/decimal element/写入器白名单）；自检 `num_dec15`、`fm_d15`、`win_fifteen`、`dec15_text`，上限门翻为 `over16`（16 位必须拒绝）；活体 `float_dec15_served`、`num_mult_frac_d15_ok`、`marker_window_fifteen_refuse`、`dec_over16_refuse`。
 **记法**：对“消费端能否表示”的断言必须用**实测 repr/文本**取证，不能按有效位数估算——15 与 16 的边界就是这样被前一轮规格写错的。
 **证据**：`build_f583.log`、`selftest_f583.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f583.log`（`CHECK_EXIT=0`）、`gate_live_f583.log`（smoke 121/0、par/fair 0、scaling 1.610×、哨兵 0）。
+
+## F584（2026-11-15）：16 位小数（marker −984），上限抬到 17 位
+**实现**：同构再进一档；16 位字面量的有效数字可被客户端 round-trip（例 `0.0002469135780241`），17 位有效数字会退化，所以上限门设在 17 位小数。首次构建时 `num_dec16`/`fm_d16` 为空：`api_schema_scaled` 的正则写作 `\.([0-9]{1,15})`（点后紧跟括号），与其它站点形态不同，全局替换漏掉——**宽度扩展必须 grep 两种形态（`\.(` 与 `(\\.`）**，并让新门在首次运行就暴露漏点。
+**门**：自检 `num_dec16=[n|2469135780241|-984|0]`、`fm_d16=[n|2469135780246|-984|0]`、`win_sixteen=[]`、`dec16_text`、`over17`；活体 `float_dec16_served`、`num_mult_frac_d16_ok`、`marker_window_sixteen_refuse`、`dec_over17_refuse`。
+**证据**：`build_f584b.log`、`selftest_f584b.log`（0 FAIL）、四个 `*_f584b` harness（0）、`gate_live_f584b.log`（121/0、par/fair 0、1.576×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

@@ -2572,3 +2572,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`float_dec15_served` 200 精确；`num_mult_frac_d15_ok` 200 `{"n":0.000246913578024}`；`marker_window_fifteen_refuse`/`dec_over16_refuse` 400。
 - **梯**：BUILD_OK（`build_f583`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.610×；哨兵 0。
 
+## F584（2026-11-15）：16 位小数（marker −984）+ 17 位上限门
+- **边界**：16 位小数可服务的前提是字面量的有效数字仍能被客户端 round-trip（如 `0.0002469135780241` 为 13 位有效数字）；17 位有效数字会退化，故上限门设在 **17 位小数**。
+- **实现**：同构再进一档（scaled `*1e16`、分子上限 16、正则 `{1,16}`、`{16}` 探测、两张 marker 表、mixed q、窗口 [−999,−984]、decimal element −984/scale 1e16、写入器白名单）。**首次实现踩坑**：`api_schema_scaled` 的正则写作 `\.([0-9]{1,15})`（括号形式），全局替换未命中，16 位字面量在缩放前就被拒——修正后通过。
+- **自检**：`num_dec16=[n|2469135780241|-984|0]`、`fm_d16=[n|2469135780246|-984|0]`、`win_sixteen=[]`、`dec16_text={"n":0.0002469135780241}`；上限门翻到 `over17`（17 位小数拒绝）。
+- **活体**：`float_dec16_served` 200 精确；`num_mult_frac_d16_ok` 200 `{"n":0.0002469135780246}`；`marker_window_sixteen_refuse`/`dec_over17_refuse` 400。
+- **梯**：BUILD_OK（`build_f584b`）；自检 0 FAIL；四 harness 0；8000 121/0；par/fair 0；scaling 1.576×；哨兵 0。
+
