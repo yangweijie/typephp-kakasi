@@ -12088,6 +12088,10 @@ function api_tools_required_unservable(string $body): int
     $pos = 0;
     while (true) {
         $kp = strpos($body, "\"parameters\"", $pos);
+        $ks = strpos($body, "\"input_schema\"", $pos);
+        if ($ks !== false && ($kp === false || $ks < $kp)) {
+            $kp = $ks;
+        }
         if ($kp === false) {
             return 0;
         }
@@ -12167,6 +12171,10 @@ function api_tools_deep_array_object(string $body): int
     $pos = 0;
     while (true) {
         $kp = strpos($body, "\"parameters\"", $pos);
+        $ks = strpos($body, "\"input_schema\"", $pos);
+        if ($ks !== false && ($kp === false || $ks < $kp)) {
+            $kp = $ks;
+        }
         if ($kp === false) {
             return 0;
         }
@@ -16895,8 +16903,7 @@ function api_serve(int $port): void
                         fclose($c);
                         continue;
                     }
-                    if (strpos($body, "\"response_format\"") !== false
-                        && strpos($body, "\"json_schema\"") !== false
+                    if (strpos($body, "\"json_schema\"") !== false
                         && api_response_schema_claim($body) == 0) {
                         // F601: fail closed on the streaming transport with the same explicit
                         // claim predicate - never by inspecting an intermediate empty variable.
@@ -17414,8 +17421,7 @@ function api_serve(int $port): void
                     fclose($c);
                     continue;
                 }
-                if (strpos($body, "\"response_format\"") !== false
-                    && strpos($body, "\"json_schema\"") !== false
+                if (strpos($body, "\"json_schema\"") !== false
                     && api_response_schema_claim($body) == 0) {
                     // F601: explicit claim signal (F600's negative result). Free-generating text
                     // for an unclaimed schema would look like success while ignoring the request.

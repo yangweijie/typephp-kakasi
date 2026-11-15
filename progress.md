@@ -2713,3 +2713,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`tool-required-unservable-refuse`（必填自由字符串参数）双模式 PASS（400）；其余工具用例（候选可枚举、deep3、parallel）保持。
 - **梯**：BUILD_OK（`build_f603`）；自检 0 FAIL；四 harness 0；SMOKE/SMOKE-PRETTY **133/0**；哨兵 0。
 
+## F604（2026-11-15）：Anthropic 传输面的失败关闭核验
+- **发现**：`output_format.schema` 翻译只追加 `json_schema`（无 `response_format`），守卫原条件不会触发；工具 schema 用 `input_schema` 而非 `parameters`，两个工具守卫扫不到。
+- **修复**：两条传输的守卫改为只看 `"json_schema"` 存在；`api_tools_deep_array_object`/`api_tools_required_unservable` 同时扫描 `parameters` 与 `input_schema`。
+- **门**：`anth-unclaimed-refuse`、`anth-tool-required-refuse`、`anth-deep3-refuse` 双模式 PASS（均 400）；**SMOKE/SMOKE-PRETTY 136/0**；四 harness 0、自检 0 FAIL、哨兵 0。
+

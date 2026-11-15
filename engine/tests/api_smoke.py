@@ -1858,6 +1858,43 @@ def main():
         tr_ok = e.code == 400 and ("required" in tr_detail or "cannot be enumerated" in tr_detail)
     check("tool-required-unservable-refuse", tr_ok, tr_detail[:160])
 
+    # F604: Anthropic transport parity. output_format.schema is translated to the json_schema
+    # notation, and tool declarations use input_schema instead of parameters - both must reach the
+    # same fail-closed paths.
+    anth_unc = {"model": "claude", "max_tokens": 48,
+                "messages": [{"role": "user", "content": "Give the data."}],
+                "output_format": {"type": "json_schema", "schema": unc_schema}}
+    a1 = False
+    try:
+        post("/v1/messages", anth_unc)
+    except urllib.error.HTTPError as e:
+        a1 = e.code == 400
+    check("anth-unclaimed-refuse", a1)
+
+    anth_tool = {"model": "claude", "max_tokens": 32,
+                 "messages": [{"role": "user", "content": "Put the note."}],
+                 "tools": [{"name": "put", "description": "d",
+                            "input_schema": {"type": "object",
+                                             "properties": {"q": {"type": "string"}},
+                                             "required": ["q"]}}],
+                 "tool_choice": {"type": "any"}}
+    a2 = False
+    try:
+        post("/v1/messages", anth_tool)
+    except urllib.error.HTTPError as e:
+        a2 = e.code == 400
+    check("anth-tool-required-refuse", a2)
+
+    anth_deep = {"model": "claude", "max_tokens": 48,
+                 "messages": [{"role": "user", "content": "Give the data."}],
+                 "output_format": {"type": "json_schema", "schema": probe_schema}}
+    a3 = False
+    try:
+        post("/v1/messages", anth_deep)
+    except urllib.error.HTTPError as e:
+        a3 = e.code == 400
+    check("anth-deep3-refuse", a3)
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

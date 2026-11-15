@@ -5092,4 +5092,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`tool-required-unservable-refuse` 双模式 PASS；既有工具门（候选、deep3、parallel、stream）全绿 → **SMOKE/SMOKE-PRETTY 133/0**。
 **记法**：工具路径的“默认空参”会把不可服务 schema 伪装成成功；失败关闭在工具面必须显式，且只在强制执行时生效（`tool_choice` 缺失时模型可以不调用）。
 **证据**：`build_f603.log`、`selftest_f603.log`（0 FAIL）、四个 `*_f603` harness（0）、`gate_live_f603.log`（133/0 双模式）。
+
+## F604（2026-11-15）：Anthropic 传输面的同一条失败关闭
+**差距**：Anthropic 的 `output_format.schema` 只被翻译成 `json_schema` 记号（没有 `response_format`），守卫条件漏掉；工具声明键是 `input_schema`，两个工具守卫只扫 `parameters`。
+**修复**：守卫触发条件改为 `"json_schema"` 存在即可；工具守卫同时扫描两种键。
+**门**：`anth-unclaimed-refuse`、`anth-tool-required-refuse`、`anth-deep3-refuse` 双模式 PASS（400），既有 133 项全绿 ⇒ **双模式 136/0**。
+**记法**：同一语义在**每条传输**都要有等价入口（OpenAI response_format / Anthropic output_format / 工具 parameters vs input_schema）；检测器的“键名假设”是最常见的传输级缺口。
+**证据**：`build_f604.log`、`selftest_f604.log`（0 FAIL）、四个 `*_f604` harness（0）、`gate_live_f604.log`（136/0 双模式）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
