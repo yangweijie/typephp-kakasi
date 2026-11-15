@@ -2774,3 +2774,6 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：4 元素（s,i,s,i）、单元素（s）、全字符串（s,s）、以及 **closed**（`unevaluatedItems:false`，经真空剥离）——四者在双模式下均返回合法元组（`["10000000",2000,"10000000",2000]` 等）。
 - **结果**：根 tuple 的接受面覆盖 1..4 元素、闭包与任意 s/i 组合；**双模式 smoke 150→154/0**。
 
+## F616（2026-11-15）：属性级闭包 tuple
+- **门**：`prop-tuple-closed-ok`——对象属性内的 `prefixItems` 元组 + `unevaluatedItems:false` 返回 `{"pair":["1000",1000]}`（剥离后由属性 tuple 写入器服务）；双模式 **155/0**。
+

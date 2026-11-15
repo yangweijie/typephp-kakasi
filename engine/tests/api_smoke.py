@@ -2194,6 +2194,16 @@ def main():
                {"type": "array", "prefixItems": [{"type": "string"}, {"type": "string"}]},
                lambda t: (lambda v: isinstance(v, list) and len(v) == 2
                           and isinstance(v[0], str) and isinstance(v[1], str))(pjson(t)))
+    # F616: the closed form at PROPERTY level - the tuple writer emits exactly its items, so
+    # unevaluatedItems:false is vacuous there too.
+    probe_root("prop-tuple-closed-ok",
+               {"type": "object", "properties": {
+                   "pair": {"type": "array",
+                            "prefixItems": [{"type": "string"}, {"type": "integer"}],
+                            "unevaluatedItems": False}}},
+               lambda t: (lambda v: isinstance(v, dict) and isinstance(v.get("pair"), list)
+                          and len(v.get("pair")) == 2 and isinstance(v["pair"][0], str)
+                          and isinstance(v["pair"][1], int))(pjson(t)))
 
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the

@@ -5160,4 +5160,8 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：4 元素 / 1 元素 / 全字符串 / 闭包（`unevaluatedItems:false` 先剥离）均返回合法元组且类型逐位匹配（`gate_live_f615.log`，双模式 **154/0**）。
 **记法**：元组写入器与 kinds 串已覆盖 1..4 元素和任意 s/i 组合；闭包依赖 F608 的真空剥离，两处改动必须同时在位。
 **证据**：`api_smoke_f615.log`、`api_smoke_pretty_f615.log`。
+
+## F616（2026-11-15）：属性级闭包 tuple
+`prefixItems` + `unevaluatedItems:false` 的属性元组返回 `{"pair":["1000",1000]}`（`prop-tuple-closed-ok`，双模式 **155/0**）——F608 的剥离与属性 tuple 写入器接合正确。**留一个探针**：draft-4 拼写（`items:[...]` + `unevaluatedItems:false`）因剥离条件要求“无 items”，预期仍 400，待核。
+**证据**：`gate_live_f616.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
