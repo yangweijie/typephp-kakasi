@@ -1926,6 +1926,37 @@ def main():
         r3 = e.code == 400
     check("resp-tool-required-refuse", r3)
 
+    # F606: numeric parity across the other two transports - the exponent expansion must serve the
+    # same exact literal wherever the schema arrives.
+    ath_exp = {"messages": [{"role": "user", "content": "Give the number."}],
+               "max_tokens": 32,
+               "output_format": {"type": "json_schema", "schema": {
+                   "type": "object", "properties": {"n": {"type": "number",
+                                                          "minimum": 1e-05, "maximum": 2e-05}}}}}
+    ae_ok = False
+    ae_txt = ""
+    try:
+        r = post("/v1/messages", ath_exp)
+        ae_txt = r["content"][0]["text"]
+        ae_ok = '"n":0.00001' in ae_txt
+    except urllib.error.HTTPError as e:
+        ae_txt = str(e.code)
+    check("anth-exp-bounds-served", ae_ok, ae_txt[:160])
+
+    resp_exp = {"input": "Give the number.", "max_output_tokens": 32,
+                "text": {"format": {"type": "json_schema", "name": "x", "schema": {
+                    "type": "object", "properties": {"n": {"type": "number",
+                                                           "minimum": 1e-05, "maximum": 2e-05}}}}}}
+    re_ok = False
+    re_txt = ""
+    try:
+        r = post("/v1/responses", resp_exp)
+        re_txt = r["output"][0]["content"][0]["text"]
+        re_ok = '"n":0.00001' in re_txt
+    except urllib.error.HTTPError as e:
+        re_txt = str(e.code)
+    check("resp-exp-bounds-served", re_ok, re_txt[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

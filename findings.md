@@ -5106,4 +5106,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：自检 `pi_pow`/`pi_walk_cap`；活体 `pinned_interval_pow10_ok` 200、`pinned_interval_walk_cap_refuse` 400——双模式 smoke 139/0，四 harness 0、自检 0 FAIL。
 **记法**：倍数搜索的可用捷径按代价排序——0 → 端点 → 1×m → 10 幂整除 → 有上限的加法行走；每加一条捷径，都要**替换旧的“能力上限”对照**以保持它仍有判别力（本轮把 1e-19 换成 3e-19）。
 **证据**：`build_f605.log`、`selftest_f605.log`（0 FAIL）、四个 `*_f605` harness（0）、`gate_live_f605.log`（139/0 双模式）。
+
+## F606（2026-11-15）：指数 bounds 跨传输一致
+**门**：`anth-exp-bounds-served`、`resp-exp-bounds-served`——同一 `1e-5/2e-5` schema 经 `output_format` 与 `text.format` 到达时，正文均精确含 `"n":0.00001`；双模式 **141/0**。
+**记法**：数值/展开类能力要按“入口形状 × 序列化形态”做二维核对；本轮把指数类补到与失败关闭同等覆盖。
+**证据**：`gate_live_f606.log`、`api_smoke_f606.log`、`api_smoke_pretty_f606.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

@@ -2726,3 +2726,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`pinned_interval_pow10_ok` 200 `{"n":0.0001234567890123456,...}`；`pinned_interval_walk_cap_refuse` 400。
 - **梯**：BUILD_OK（`build_f605`）；自检 0 FAIL；四 harness 0；双模式 smoke 139/0；par/fair 0；哨兵 0。
 
+## F606（2026-11-15）：指数 bounds 的跨传输核验
+- **门**：`anth-exp-bounds-served`（`output_format`）与 `resp-exp-bounds-served`（`text.format`）在 `1e-5/2e-5` 下均返回含精确 `"n":0.00001` 的正文（普通与美化序列化都 PASS）。
+- **结果**：指数展开在三种请求形状上一致；**双模式 smoke 139→141/0**。
+
