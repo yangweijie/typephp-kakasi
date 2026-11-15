@@ -142,6 +142,16 @@ def main():
         sp_detail = str(e.code) + " " + sp_body[:120]
     check("par-sampling-refuse", sp_ok, sp_detail)
 
+    # F629: count_tokens is stateless, so the cooperative server answers it too; the count must be
+    # positive and grow when a system prompt is added (same builder as the message turn).
+    c1 = json.loads(post("/v1/messages/count_tokens",
+                         {"messages": [{"role": "user", "content": "The capital of France is"}]}))
+    c2 = json.loads(post("/v1/messages/count_tokens",
+                         {"system": "You are a terse assistant who always answers in one word.",
+                          "messages": [{"role": "user", "content": "The capital of France is"}]}))
+    check("par-count-tokens", isinstance(c1.get("input_tokens"), int) and c1.get("input_tokens") > 0
+          and c2.get("input_tokens", 0) > c1.get("input_tokens", 0), "%r %r" % (c1, c2))
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

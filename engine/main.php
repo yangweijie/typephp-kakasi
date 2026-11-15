@@ -15656,6 +15656,21 @@ Connection: close
                 fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
                          . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                 fclose($c);
+            } else if (strpos($req, "/v1/messages/count_tokens") !== false) {
+                // F629: stateless and slot-free, so the cooperative server answers it too instead of
+                // failing the streaming-only check. Same builder as 8000, same assistant open turn.
+                $ctIds = api_history($body);
+                if ($ctIds == "") {
+                    $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+                    fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                             . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                } else {
+                    $ctIds = $ctIds . "," . tok_chat_open("assistant");
+                    $payload = "{\"input_tokens\":" . count(explode(",", $ctIds)) . "}";
+                    fwrite($c, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                             . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                }
+                fclose($c);
             } else {
                 $bad = 0;
                 if (preg_match('/"stream"\s*:\s*true/', $body) != 1) {

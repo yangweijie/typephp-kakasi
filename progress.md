@@ -2836,3 +2836,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_request_form_unsupported`：未知 `response_format`/`text.format` type、未知 `tool_choice` 字符串、`temperature∉[0,2]`、`top_p∉(0,1]` ⇒ 400 并列出可接受集合。
 - **门**：`chat-response-format-unknown-refuse`/`chat-tool-choice-unknown-refuse`/`chat-temperature-range-refuse` 双模式 PASS；**smoke 171→174/0**。
 - **梯**：BUILD_OK（`build_f628`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F629（2026-11-15）：8001 count_tokens
+- **修**：`api_serve_par` 增加无状态 `count_tokens` 路由（同 `api_history`+assistant 开头轮）。
+- **门**：`par-count-tokens`（计数>0 且随 system 增长）；8000 双模式 174/0 不变；自检/四 harness/par/fair/哨兵 全绿。

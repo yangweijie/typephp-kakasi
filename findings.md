@@ -5240,3 +5240,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-response-format-unknown-refuse`、`chat-tool-choice-unknown-refuse`、`chat-temperature-range-refuse` 双模式 PASS；**双模式 smoke 171→174/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：枚举型参数的“未知值”比缺省更危险——缺省有明确默认，未知值说明客户端期待一种服务端没有的行为；拒绝消息要带**可接受集合**，否则调用方只能猜。范围校验要与 schema 关键字区分（`format` 在 JSON Schema 里是注释关键字）。
 **证据**：`build_f628.log`、`selftest_f628.log`、`{req,cnt,pat,bnd}_run_f628.log`、`gate_live_f628.log`。
+
+## F629（2026-11-15）：8001 也提供 `count_tokens`
+**缺口**：F626 只接了 8000；8001 的合作式服务器把非流式请求一律归为「parallel mode: streaming text only」，于是无状态的 `count_tokens` 在那边 400。
+**改动**：在 `api_serve_par` 的模型路由之后、`$bad` 判定之前加 `count_tokens` 分支——同样 `api_history` + assistant 开头轮，空内容 400，其余 200；不占槽、不触发生成。
+**结果**：`par-count-tokens` PASS（计数 >0，且加 system 提示后严格变大）；8000 双模式仍 **174/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：无状态端点不进调度器，别让它被「只有流式」这条闸顺手拒掉；对共享服务器的门要写成**单调关系**（加提示 ⇒ 计数变大）而不是硬编码数字。
+**证据**：`build_f629.log`、`selftest_f629.log`、`{req,cnt,pat,bnd}_run_f629.log`、`gate_live_f629.log`、`par_smoke_f629.log`。
