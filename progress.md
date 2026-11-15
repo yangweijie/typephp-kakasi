@@ -2660,4 +2660,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修复**：根级守卫 + 两处去空格结构化比较 + 扁平化拒绝结构分支 + enum 首成员判别。
 - **结果**：`chat-oneof-enum-grammar` 通过（合法 `{"item":{...}}` 对象），smoke **125/0**；`SCHEMA-ONEOF-ENUM` PASS；root/枚举联合旧门保持。
 - **梯**：BUILD_OK（`build_f595b`）；自检 0 FAIL；四 harness 0；8000 125/0；par/fair 0；哨兵 0。
+- **路由常驻门（f595d）**：新增 `chat-oneof-const-grammar`（属性级 const + grammar 叶子，修复前对标准 JSON 是死码）与 `chat-root-oneof-const-grammar`（根级；候选联合可返回最小合法分支对象，门只断言合法性）——smoke **127/0**。
 

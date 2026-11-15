@@ -5037,4 +5037,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-oneof-enum-grammar` 返回 `{"item":{"kind":"book","title":...}}` 一类合法对象（smoke **125/0**）；root oneOf 与枚举联合的旧门保持；`SCHEMA-ONEOF-ENUM` 自检 PASS。
 **记法**：**路由死码**与“写入器坏”很难从单测区分——单测常喂紧凑 JSON；必须用真实客户端序列化（json.dumps）做活体。空白/键序这类“格式差异”会让整条特性对真实客户端隐形。
 **证据**：`build_f595b.log`、`selftest_f595b.log`（0 FAIL）、四个 `*_f595b` harness（0）、`gate_live_f595b.log`（125/0、par/fair 0、哨兵 0）、`api_smoke_f595b.log`（`PASS chat-oneof-enum-grammar`）。
+**路由常驻门**：`chat-oneof-const-grammar`（属性级 const 形态，修复前死码）与 `chat-root-oneof-const-grammar`（根级：候选联合可答最小合法分支对象，门按合法性断言）——`gate_live_f595d.log`，smoke **127/0**。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

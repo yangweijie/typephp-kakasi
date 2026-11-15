@@ -1660,6 +1660,58 @@ def main():
              or (oe_item.get("kind") == "cd" and "tracks" in oe_item))
     check("chat-oneof-enum-grammar", oe_ok, oe_content[:160])
 
+    # F595: the const-discriminator grammar route was dead for standard JSON before the
+    # whitespace-insensitive comparison; a free grammar leaf keeps the candidate tier out.
+    oneof_const_body = {"messages": [{"role": "user", "content": "Pick one item and describe it."}],
+                        "max_tokens": 32, "temperature": 0,
+                        "response_format": {"type": "json_schema", "json_schema": {
+                            "name": "x", "schema": {
+                                "type": "object", "properties": {"item": {"oneOf": [
+                                    {"type": "object", "properties": {
+                                        "kind": {"const": "book"},
+                                        "title": {"type": "string"}}},
+                                    {"type": "object", "properties": {
+                                        "kind": {"const": "cd"},
+                                        "tracks": {"type": "integer"}}}]}}}}}}
+    r = post("/v1/chat/completions", oneof_const_body)
+    oc_content = r["choices"][0]["message"]["content"]
+    try:
+        oc_obj = json.loads(oc_content)
+        oc_item = oc_obj.get("item") if isinstance(oc_obj, dict) else {}
+        if not isinstance(oc_item, dict):
+            oc_item = {}
+    except Exception:
+        oc_item = {}
+    oc_ok = ((oc_item.get("kind") == "book" and "title" in oc_item)
+             or (oc_item.get("kind") == "cd" and "tracks" in oc_item))
+    check("chat-oneof-const-grammar", oc_ok, oc_content[:160])
+
+    # F595: at the schema ROOT the candidate union may answer the minimal legal branch object
+    # (the free leaf is optional), so the gate requires legality: a known discriminator and no
+    # keys outside that branch's declared set.
+    root_const_body = {"messages": [{"role": "user", "content": "Pick one item and describe it."}],
+                       "max_tokens": 32, "temperature": 0,
+                       "response_format": {"type": "json_schema", "json_schema": {
+                           "name": "x", "schema": {"oneOf": [
+                               {"type": "object", "properties": {
+                                   "kind": {"const": "book"},
+                                   "title": {"type": "string"}}},
+                               {"type": "object", "properties": {
+                                   "kind": {"const": "cd"},
+                                   "tracks": {"type": "integer"}}}]}}}}
+    r = post("/v1/chat/completions", root_const_body)
+    orc_content = r["choices"][0]["message"]["content"]
+    try:
+        orc_obj = json.loads(orc_content)
+    except Exception:
+        orc_obj = {}
+    if not isinstance(orc_obj, dict):
+        orc_obj = {}
+    orc_keys = set(orc_obj.keys())
+    orc_ok = ((orc_obj.get("kind") == "book" and orc_keys <= {"kind", "title"})
+              or (orc_obj.get("kind") == "cd" and orc_keys <= {"kind", "tracks"}))
+    check("chat-root-oneof-const-grammar", orc_ok, orc_content[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.
