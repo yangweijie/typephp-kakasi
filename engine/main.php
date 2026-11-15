@@ -12419,6 +12419,17 @@ function api_choice_params_unsupported(string $body): string
     return "";
 }
 
+// F633: Anthropic clients read errors as {"type":"error","error":{...}}; every refusal in the
+// server was written in the OpenAI shape. The transform lives at the writer so new refusals inherit
+// it instead of each site remembering the envelope.
+function api_error_for_path(string $req, string $payload): string
+{
+    if (strpos($req, "/v1/messages") !== false && strpos($payload, "{\"error\":{") === 0) {
+        return "{\"type\":\"error\",\"error\":" . substr($payload, 9);
+    }
+    return $payload;
+}
+
 // F632: parameters that change WHAT the decoder may say, or ask for a mode the engine lacks.
 // Ignoring them answers a distribution the caller did not ask for. Each is matched in its own
 // spelling (objects carry their discriminator), so a schema property of the same name cannot trip
@@ -18047,6 +18058,7 @@ function api_serve(int $port): void
                     // negative truncation family). Refuse explicitly instead of free-generating.
                     $status = "400 Bad Request";
                     $payload = "{\"error\":{\"message\":\"structured output could not be decoded for this schema\",\"type\":\"invalid_request_error\"}}";
+                    $payload = api_error_for_path($req, $payload);
                     fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                     fclose($c);
@@ -18058,6 +18070,7 @@ function api_serve(int $port): void
                     // for an unclaimed schema would look like success while ignoring the request.
                     $status = "400 Bad Request";
                     $payload = "{\"error\":{\"message\":\"response schema is not supported by any constrained writer; refuse instead of ignoring it\",\"type\":\"invalid_request_error\"}}";
+                    $payload = api_error_for_path($req, $payload);
                     fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                     fclose($c);
@@ -18369,6 +18382,8 @@ function api_serve(int $port): void
             }
         }
 
+        // F633: one writer decides the error envelope, so every 400/503 above follows the outlet.
+        $payload = api_error_for_path($req, $payload);
         fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: " . $ctype . "\r\nConnection: close\r\n"
                  . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
         fclose($c);

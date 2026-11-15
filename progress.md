@@ -2855,3 +2855,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_semantic_params_unsupported`：`logit_bias`/`prediction(type=content)`/`reasoning_effort`/`thinking(type=enabled)`/`modalities[]`/`min_p∈(0,1)` ⇒ 400 点名。
 - **门**：4 条新门 + 中性门（加 `min_p:0`）双模式 PASS；**smoke 177→181/0**。
 - **梯**：BUILD_OK（`build_f632`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F633（2026-11-15）：错误信封跟随出口
+- **修**：`api_error_for_path` 在通用写出点与两处提前 400 处变换；`/v1/messages` 得 Anthropic 形态。
+- **门**：`anth-error-shape`/`chat-error-shape` 双模式 PASS；**smoke 181→183/0**。
+- **梯**：BUILD_OK（`build_f633`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

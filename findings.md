@@ -5268,3 +5268,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-logit-bias-refuse`、`chat-reasoning-effort-refuse`、`anth-thinking-refuse`、`chat-min-p-refuse` 双模式 PASS；中性门加入 `min_p:0` 仍 PASS；**双模式 smoke 177→181/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：参数拒绝的判据分三类——①改分布（logit_bias/penalties/top_k/min_p）；②要求没有的能力（thinking/reasoning/modalities/prediction/store/background）；③只是提示或注释（user/metadata/service_tier，保持接受）。同类新增按这三类归位，再决定匹配拼写与中性值。
 **证据**：`build_f632.log`、`selftest_f632.log`、`{req,cnt,pat,bnd}_run_f632.log`、`gate_live_f632.log`。
+
+## F633（2026-11-15）：错误信封按出口成形
+**缺陷**：所有 400 都写成 OpenAI 形态 `{"error":{…}}`，包括 `/v1/messages` 的请求——Anthropic 客户端按 `{"type":"error","error":{…}}` 读，等于拿不到错误类型/消息。
+**改动**：`api_error_for_path($req,$payload)` 在**写出点**统一变换（非流式通用写出点 + 两处提前返回的 400），新增拒绝自动继承；OpenAI 出口不变。
+**结果**：`anth-error-shape`（`type=error` 且 `error.message` 含 `top_k`）、`chat-error-shape`（无顶层 `type:error`、`error.message` 含 `logprobs`）双模式 PASS；**双模式 smoke 181→183/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**未覆盖（明确写出）**：流式拒答（`event: error`）仍走原有 `data:` 形态，留待下一轮——非流式已闭环。
+**记法**：信封差异放在**唯一写出点**，别在十几个分支里各写一次；提前返回的写点只有两处，也要一起改，否则“多数请求对、少数路径错”。
+**证据**：`build_f633.log`、`selftest_f633.log`、`{req,cnt,pat,bnd}_run_f633.log`、`gate_live_f633.log`。

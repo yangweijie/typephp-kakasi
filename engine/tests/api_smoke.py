@@ -2723,6 +2723,30 @@ def main():
     check("chat-min-p-refuse", pmsg.find("not supported: min_p") >= 0,
           pdet + " " + pmsg[:120])
 
+    # F633: the error envelope follows the outlet - Anthropic clients read {"type":"error",...},
+    # OpenAI clients read {"error":{...}} with no top-level type.
+    def err_body(path, extra):
+        body = {"messages": [{"role": "user", "content": "The capital of France is"}],
+                "max_tokens": 8}
+        body.update(extra)
+        try:
+            post(path, body)
+            return None
+        except urllib.error.HTTPError as e:
+            try:
+                return json.loads(e.read().decode())
+            except Exception:
+                return {}
+
+    aerr = err_body("/v1/messages", {"top_k": 5})
+    check("anth-error-shape", isinstance(aerr, dict) and aerr.get("type") == "error"
+          and isinstance(aerr.get("error"), dict)
+          and "top_k" in (aerr.get("error") or {}).get("message", ""), str(aerr)[:160])
+    oerr = err_body("/v1/chat/completions", {"logprobs": True})
+    check("chat-error-shape", isinstance(oerr, dict) and oerr.get("type") != "error"
+          and isinstance(oerr.get("error"), dict)
+          and "logprobs" in (oerr.get("error") or {}).get("message", ""), str(oerr)[:160])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 
