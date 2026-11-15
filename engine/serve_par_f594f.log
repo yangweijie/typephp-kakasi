@@ -13,3 +13,8 @@ SESSION par slot=A tokens=103 reason=eos
 SESSION par slot=B tokens=103 reason=eos
 SESSION par slot=A tokens=2 reason=max
 SESSION par slot=B tokens=4 reason=max
+SESSION par slot=A tokens=101 reason=eos
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=A tokens=60 reason=max
+SESSION par slot=B tokens=60 reason=max
