@@ -706,6 +706,8 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 5. **输入形态**：请求体在入口**紧凑化**（字符串外空白），`indent=2` 与紧凑 JSON 行为一致（F596）；gate_live 常驻**双模式 smoke**。
 6. **失败关闭**：响应 schema 使用**显式 claim 谓词**（39/39 检测器，按返回契约判定：数组 `count`、整数哨兵阈值），未认领形状两传输均 400；工具参数在强制 `tool_choice` 下 `required` 不可枚举 ⇒ 400（F601–F603）。**“接受即合法”现有活体门**（`chat-unclaimed-2dao-refuse`、`tool-required-unservable-refuse`）。
 
-**回归口径（当前基线）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 各 **133/0**；8001 par/fair 0；scaling ~1.6×；哨兵 0；`check_gates 199/0`。
+**回归口径（当前基线）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 各 **143/0**；8001 par/fair 0；scaling ~1.6×；哨兵 0；`check_gates 199/0`。
+
+**增补（F607–F609，同日）**：失败关闭在 **8001 协作服务器**也有活体门（`par-unclaimed-refuse`）；数值能力在 Anthropic/Responses 两形状上逐字一致（`anth-exp-bounds-served`、`resp-exp-bounds-served`）；`unevaluatedProperties:false` 全声明键 **200**（`uneval-props-closed-ok`），tuple 的 `prefixItems` 经等价重命名后 **200**（`prefixitems_served_ok`，活体 `{"pair":["1, 2",2000]}`），根级不支持的 tuple 形态保持具名 400。三形状（chat/Anthropic/Responses）× 两服务（8000/8001）× 两序列化（compact/pretty）的验收矩阵均有门。
 
 **仍未闭合（不变）**：FR-05 插件；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 多样草稿器的真实收益；per-session KV 并行吞吐；多卡 split；GGUF 分片合并；129 层以上嵌套的**冷启动首调**缺陷（F208/F209 线索）。
