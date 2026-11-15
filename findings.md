@@ -3698,13 +3698,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **活体四例（`engine/schema_keywords_f398b.log`）**：`req_all` **200**；`req_subset` **400**；`minItems` **400**；**带 tool 参数 schema（required 为真子集）的请求 200** ⇒ 工具路径不受影响。
 **自己造成的回归与修复（本轮最重要的一条）**：第一版三个检测器都扫**整个 body**，于是 **tool 参数 schema 里的 `required`（真子集很常见）也被拒** ⇒ **api_smoke 从 115 掉到 62**（FAIL=0，因为脚本提前中断）。修法：先用 `api_json_object_after($body,"schema")` 取出**响应 schema**，三个检测器只看它（`$schBody`）；重跑后 **SMOKE 回到 115/0**，并活体验证"tool 真子集 → 200"。
 ⇒ **方法条**：**"拒绝不支持的约束"这类改动，必须同时验证"受支持的用法不被误伤"**——本轮的误伤面不在 response schema，而在**同一请求里的另一份 schema（tools）**。**扫描范围本身就是一个需要断言的性质。**
-### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F566；**“支持”以活体为准，仅静态门通过不算**）
+### 约束支持表（请求侧可预期的行为；每行都有门或活体证据；截至 F593；**“支持”以活体为准，仅静态门通过不算**）
 > **F541–F546 活体更新**：本地 `$ref` **两种键序均支持**（定义容器整对删除，F541）；oneOf/anyOf 的 **const 分支折叠**为单值 enum（F540），**纯数值界分支显式 400**（F542）；**根级 string enum/const 支持**（引号 JSON 字面量；非流式 F543、流式 F545）；`stream:true` 八项成对核对仅根标量一处差异（F546）。`not`/根级 `contains` 的 const 形态仍为运行时 400（F538）。
 > **F548 补充**：`contains` 的 **const**（或与 items 域相交的 enum）形态已支持——元素 0 被强制为该值（minContains≤1、无 maxContains），域内无解仍 400。流式同形由 smoke `chat-stream-contains-const` 常驻门覆盖（F549）。
 > **F550 补充**：items 与 contains **同一 pattern 字面量**时，全部元素都匹配 ⇒ 构造满足（`contains_pattern_same_ok`）；不同 pattern 仍需一个元素同时匹配两者，仍 400。
 > **F551 补充**：同 pattern 下 `minContains`/`maxContains` 就是元素个数上下限（全部元素都是匹配），由 `api_response_schema_array_bounds` 折叠；无 `minItems` 时以 `0:0` 为基。不可满足组合（min>max）仍 400。流式同形由 smoke `chat-stream-contains-min3`/`chat-stream-contains-max1` 常驻门覆盖（F552）。
 > **F553 补充**：const 形态下 `minContains:K` 由写入器把前 K 个元素强制为必需值（`$mustCount`）；`uniqueItems`+K>1 或 `maxItems<K` 不可满足 ⇒ 400；`maxContains` 对 const 仍需求值，保持 400。
 > **F554 补充**：const 形态的 `maxContains` 现为构造界——强制前 K 个后，其余元素**从域中排除必需值**，匹配数恰为 K（K≤M 可满足，K>M 400）；单值域收缩 `bMax=maxItems=K` 恰发 K 个。
+> **F580–F593 数值面更新**：小数网格**公式化覆盖 1..18 位**（marker = −(1000−d)，窗口 [−999,−982]，19 位显式拒绝；`num_dec18`/`dec18_text`/`over19`）。**指数形式 bounds**（`1e-5`）按精确文本展开后复用网格，双传输均有活体门（`exp_bounds`、`chat-stream-exp-bounds`）。**>18 位**：单点/闭区间/单侧排他/含 0 的 multipleOf/m 本身/排他侧内部单位/≤4096 步倍数行走都可精确服务（`pinned_interval_*`、`chat-stream-beyond-grid`）；超出该搜索能力或不可满足时显式 400。固定值（const/enum）不受网格限制，按字面量长度发射。
 
 ## F555（2026-11-12）：`propertyNames` 的枚举被扁平枚举路由吞掉
 **症状**（`claims_f555.log`）：对象 schema `{"properties":{"city","note"},"propertyNames":{"enum":["city","note"]}}` 返回 200 **`"city"`**（裸字符串）——`$enumFlat` 在整包上扫 `"enum"`，把 propertyNames 子 schema 的枚举当作顶层答案。正确结果应是对象（键集恰为声明集，propertyNames 真空满足）。
