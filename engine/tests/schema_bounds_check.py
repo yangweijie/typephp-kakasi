@@ -360,10 +360,28 @@ cases = [
     ("marker_window_sixteen_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "maximum": -984}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
-    # F584: the ceiling is a tested behaviour - seventeen fraction places exceed the decimal grid,
-    # so the request must be refused as named numeric bounds, never served approximately.
-    ("dec_over17_refuse", "Give the number.",
+    # F585: seventeen places for a literal whose digits still round-trip; eighteen is the ceiling.
+    ("float_dec17_served", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.00012345678901234, "maximum": 0.00012345678901239}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.00012345678901234}'),
+    ("num_mult_frac_d17_ok", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0002, "maximum": 0.001, "multipleOf": 0.00012345678901234}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.00024691357802468}'),
+    ("marker_window_seventeen_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -983}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F586: the width formula carries the grid to eighteen places in one step; nineteen is the end.
+    ("float_dec18_served", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.000123456789012345, "maximum": 0.000123456789012349}}},
+     lambda code, txt: code == 200 and txt.strip() == '{"n":0.000123456789012345}'),
+    ("marker_window_eighteen_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "maximum": -982}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt),
+    # F586: nineteen plain-decimal places exceed the int64 digit budget, but a Python float
+    # serializes anything that small in exponent form (1.2345e-15), which the literal grammar does
+    # not accept either - this gate pins that boundary honestly instead of pretending to test width.
+    ("exp_form_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "number", "minimum": 0.0000000000000012345, "maximum": 0.0000000000000012349}}},
      lambda code, txt: code == 400 and "numeric bounds" in txt),
     # F533: the array-element writer shares the decimal grid; its 11-place path is live-checked here
     # (the self-test decodes its token continuation, not the HTTP body).

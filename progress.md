@@ -2579,3 +2579,14 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **活体**：`float_dec16_served` 200 精确；`num_mult_frac_d16_ok` 200 `{"n":0.0002469135780246}`；`marker_window_sixteen_refuse`/`dec_over17_refuse` 400。
 - **梯**：BUILD_OK（`build_f584b`）；自检 0 FAIL；四 harness 0；8000 121/0；par/fair 0；scaling 1.576×；哨兵 0。
 
+## F585（2026-11-15）：17 位小数（marker −983）
+- 同构一档；自检 `num_dec17=[n|12345678901234|-983|0]`、`fm_d17=[n|24691357802468|-983|0]`、`dec17_text={"n":0.00012345678901234}`；活体 `float_dec17_served`/`num_mult_frac_d17_ok`/`marker_window_seventeen_refuse`/`dec_over18_refuse`；梯 0 FAIL、smoke 121/0、par/fair 0、scaling 1.565×、哨兵 0（`*_f585`）。
+
+## F586（2026-11-15）：宽度公式化——1..18 位一次做完（marker −999…−982）
+- **动机**：逐位递增来自 marker/scale/探针的硬编码链条；用户要求“一个任务做完”。
+- **实现**：`api_schema_scaled` 的 scale 改为循环求 10^d（并保留原表，不影响旧调用）；两处 marker 链在 return 前统一改写为 `marker = -(1000-d)`；块 2 的宽度探针改为**直接取小数位长度**；窗口守卫、mixed q、两处写入器标记判定改为区间 `[-999,-982]`；decimal element 的 else 分支按 `d = 1000 + hi` 求宽度与 scale；int64 守卫改为只计**有效**整数位（`0.xxx` 的前导零不计），因此 18 位小数（值 <1）可用。
+- **自检**：`num_dec18=[n|123456789012345|-982|0]`、`dec18_text={"n":0.000123456789012345}`、`win_eighteen=[]`、`over19=[]`；此前的 1..17 位门全部保持 PASS。
+- **活体**：`float_dec18_served` 200 精确；`marker_window_eighteen_refuse` 400；19 位字面量在 Python 里只能以指数形式发出（`1.2345e-15`），故活体上限门改名为 `exp_form_refuse`（指数形式同样 400），宽度上限由自检 `over19` 覆盖。
+- **梯**：BUILD_OK（`build_f586`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.556×；哨兵 0。
+- **边界**：18 位是 int64 总位数上限；>17 位有效数字的字面量客户端无法 round-trip（引擎仍按文本精确发射），>18 位需十进制串表示（F582 规格的最后一档）。
+

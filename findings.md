@@ -4963,4 +4963,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **实现**：同构再进一档；16 位字面量的有效数字可被客户端 round-trip（例 `0.0002469135780241`），17 位有效数字会退化，所以上限门设在 17 位小数。首次构建时 `num_dec16`/`fm_d16` 为空：`api_schema_scaled` 的正则写作 `\.([0-9]{1,15})`（点后紧跟括号），与其它站点形态不同，全局替换漏掉——**宽度扩展必须 grep 两种形态（`\.(` 与 `(\\.`）**，并让新门在首次运行就暴露漏点。
 **门**：自检 `num_dec16=[n|2469135780241|-984|0]`、`fm_d16=[n|2469135780246|-984|0]`、`win_sixteen=[]`、`dec16_text`、`over17`；活体 `float_dec16_served`、`num_mult_frac_d16_ok`、`marker_window_sixteen_refuse`、`dec_over17_refuse`。
 **证据**：`build_f584b.log`、`selftest_f584b.log`（0 FAIL）、四个 `*_f584b` harness（0）、`gate_live_f584b.log`（121/0、par/fair 0、1.576×、哨兵 0）。
+
+## F585（2026-11-15）：17 位小数（marker −983）
+同构一档；`num_dec17`/`fm_d17`/`dec17_text` 与活体三门前移；梯 0 FAIL。
+
+## F586（2026-11-15）：宽度公式化——一次覆盖 1..18 位
+**改动**：scale 用循环（保留旧表）、marker 统一 `-(1000-d)`、宽度取小数位长度（替换探针梯）、窗口/写入器/mixed q 改区间 `[-999,-982]`、decimal element 按 `d=1000+hi` 求值、int64 守卫只计有效整数位（前导零不计）。
+**结果**：18 位在自检与活体同时精确发射（`0.000123456789012345`），19 位由自检 `over19` 拒绝；1..17 位旧门全部保持。**教训**：宽度阶梯应一开始就公式化——逐位 `if` 链条既产生重复劳动，也让“一次做对”难以验证；`-(1000-d)` 与 10^d 循环把 marker/scale 的语义收敛到一条规则。
+**客户端边界**：>17 位有效数字的字面量无法在 double 中还原（引擎按文本精确发射，但请求本身可能已失真）；Python 对 <1e-4 的值一律用指数形式序列化，因此宽度上限只能由自检（原始字符串）覆盖。
+**证据**：`build_f586.log`、`selftest_f586.log`（0 FAIL）、四个 `*_f586` harness（0）、`gate_live_f586.log`（121/0、par/fair 0、1.556×、哨兵 0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
