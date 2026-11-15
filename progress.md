@@ -2860,3 +2860,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_error_for_path` 在通用写出点与两处提前 400 处变换；`/v1/messages` 得 Anthropic 形态。
 - **门**：`anth-error-shape`/`chat-error-shape` 双模式 PASS；**smoke 181→183/0**。
 - **梯**：BUILD_OK（`build_f633`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F634（2026-11-15）：流式错误信封 + 修 Anth 流式 fail-open
+- **交付**：`api_stream_error($req,$msg)`；四处流式错误按出口成形（Anthropic `event: error`、无 `[DONE]`）。
+- **修复**：Anthropic 流式 `json_schema` 未认领时不再落自由文本，先按 `api_response_schema_claim` 拒绝。
+- **门**：`chat-stream-error-shape`/`anth-stream-error-shape` 双模式 PASS；**smoke 183→185/0**；自检/四 harness/par/fair/哨兵 全绿。

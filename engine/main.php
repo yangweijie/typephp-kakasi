@@ -12419,6 +12419,17 @@ function api_choice_params_unsupported(string $body): string
     return "";
 }
 
+// F634: streamed refusals follow the same outlet rule as bodies - Anthropic expects a named
+// "error" event carrying {"type":"error","error":{...}}; OpenAI expects data: {"error":{...}}.
+function api_stream_error(string $req, string $message): string
+{
+    if (strpos($req, "/v1/messages") !== false) {
+        return "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"api_error\","
+            . "\"message\":\"" . api_esc($message) . "\"}}\n\n";
+    }
+    return "data: {\"error\":{\"message\":\"" . api_esc($message) . "\"}}\n\n";
+}
+
 // F633: Anthropic clients read errors as {"type":"error","error":{...}}; every refusal in the
 // server was written in the OpenAI shape. The transform lives at the writer so new refusals inherit
 // it instead of each site remembering the envelope.
@@ -16874,6 +16885,14 @@ function api_serve(int $port): void
                     // first, then replay it as text deltas (grammar ran to completion above).
                     $anthJson = "";
                     if (strpos($body, '"json_schema"') !== false) {
+                        // F634: this branch used to fall through to free text when no writer claimed
+                        // the schema - the streamed twin of F600/F601. Refuse on the stream too.
+                        if (api_response_schema_claim($body) == 0) {
+                            fwrite($c, api_stream_error($req, "response schema is not supported by any constrained writer; refuse instead of ignoring it"));
+                            echo "SESSION anth-stream json reason=unclaimed\n";
+                            fclose($c);
+                            continue;
+                        }
                         $anthJson = api_schema_token_value($ids, $body, 0);
                     }
                     if ($anthJson != "") {
@@ -17169,7 +17188,7 @@ function api_serve(int $port): void
                         $sItems = api_tool_items($sCall);
                         $sName = count($sItems) > 0 ? api_str($sItems[0], "name") : "";
                         if ($sName == "") {
-                            fwrite($c, "data: {\"error\":{\"message\":\"tool constraint failed\"}}\n\n");
+                            fwrite($c, api_stream_error($req, "tool constraint failed"));
                             echo "SESSION stream tool=failed reason=constraint cands=" . count($sArgs0)
                                 . " out=" . strlen($sOut) . " call=" . strlen($sCall) . "\n";
                             fclose($c);
@@ -17503,7 +17522,7 @@ function api_serve(int $port): void
                     if ($sJOut != "") {
                         $sJson = api_gen_text($sJOut, $promptN);
                         if ($sJson == "") {
-                            fwrite($c, "data: {\"error\":{\"message\":\"schema constraint failed\"}}\n\n");
+                            fwrite($c, api_stream_error($req, "schema constraint failed"));
                             echo "SESSION stream json=failed reason=constraint\n";
                             fclose($c);
                             continue;
@@ -17544,8 +17563,11 @@ function api_serve(int $port): void
                         && api_response_schema_claim($body) == 0) {
                         // F601: fail closed on the streaming transport with the same explicit
                         // claim predicate - never by inspecting an intermediate empty variable.
-                        fwrite($c, "data: {\"error\":{\"message\":\"response schema is not supported by any constrained writer; refuse instead of ignoring it\"}}\n\n");
-                        fwrite($c, "data: [DONE]\n\n");
+                        fwrite($c, api_stream_error($req, "response schema is not supported by any constrained writer; refuse instead of ignoring it"));
+                        // Anthropic streams end with message_stop, never with [DONE].
+                        if (strpos($req, "/v1/messages") === false) {
+                            fwrite($c, "data: [DONE]\n\n");
+                        }
                         fclose($c);
                         continue;
                     }
@@ -17554,7 +17576,7 @@ function api_serve(int $port): void
                         $sCacheHit = model_cache_prefill(0, $ids, $pcPath);
                     }
                     if ($sCacheHit < 0 && model_session_start(0, $ids) != 0) {
-                        fwrite($c, "data: {\"error\":{\"message\":\"session start failed\"}}\n\n");
+                        fwrite($c, api_stream_error($req, "session start failed"));
                         $reason = "start-failed";
                     } else {
                         model_session_seed($seed);

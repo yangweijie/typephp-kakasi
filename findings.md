@@ -5276,3 +5276,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **未覆盖（明确写出）**：流式拒答（`event: error`）仍走原有 `data:` 形态，留待下一轮——非流式已闭环。
 **记法**：信封差异放在**唯一写出点**，别在十几个分支里各写一次；提前返回的写点只有两处，也要一起改，否则“多数请求对、少数路径错”。
 **证据**：`build_f633.log`、`selftest_f633.log`、`{req,cnt,pat,bnd}_run_f633.log`、`gate_live_f633.log`。
+
+## F634（2026-11-15）：流式错误信封 + 抓出 Anthropic 流式 fail-open
+**目标**：非流式（F633）之后，把流式拒答也按出口成形：Anthropic 用 `event: error` + `{"type":"error","error":{…}}`（不带 `[DONE]`），OpenAI 用 `data: {"error":{…}}` + `[DONE]`。新增 `api_stream_error($req,$msg)` 并替换四处 `data: {"error":…}` 写点（tool/schema 约束失败、未认领 schema、session start 失败）。
+**门的意外收获（真 bug）**：`anth-stream-error-shape` 首跑失败——Anthropic 流式的 `json_schema` 分支在**没有任何写入器认领**时直接落到自由文本流（`event: message_start`），从未经过 OpenAI 侧的 F601 守卫；这正是 F600 在流式上的翻版。修复：该分支先查 `api_response_schema_claim($body)==0`，未认领即发 `event: error` 并结束。
+**结果**：`chat-stream-error-shape`、`anth-stream-error-shape` 双模式 PASS（后者断言 `event: error`、`"type":"error"`、无 `[DONE]`）；**双模式 smoke 183→185/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：两套出口各有**独立**的流式分支，守卫写在其中一条上不等于覆盖另一条；“信封测试”顺带就是 fail-open 探针——先断言错误事件存在，才能发现本该出错却没出错。
+**证据**：`build_f634.log`、`selftest_f634.log`、`{req,cnt,pat,bnd}_run_f634.log`、`gate_live_f634.log`（首跑红：`anth-stream-error-shape` → `event: message_start`）、`gate_live_f634b.log`（修复后 185/0）。

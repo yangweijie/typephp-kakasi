@@ -2747,6 +2747,18 @@ def main():
           and isinstance(oerr.get("error"), dict)
           and "logprobs" in (oerr.get("error") or {}).get("message", ""), str(oerr)[:160])
 
+    # F634: streamed refusals follow the outlet too - Anthropic gets a named error event carrying
+    # {"type":"error",...} and no [DONE]; OpenAI keeps data: {"error":...} plus [DONE].
+    raw = post("/v1/chat/completions", dict(unc_body, stream=True), stream=True)
+    check("chat-stream-error-shape", (not events(raw)) and '"error"' in raw and "[DONE]" in raw,
+          raw[:160])
+    aunc = {"model": "claude", "max_tokens": 48, "stream": True, "temperature": 0,
+            "messages": [{"role": "user", "content": "Give the data."}],
+            "output_format": {"type": "json_schema", "schema": unc_schema}}
+    raw = post("/v1/messages", aunc, stream=True)
+    check("anth-stream-error-shape", "event: error" in raw and '"type":"error"' in raw
+          and "[DONE]" not in raw and "error" in events(raw), raw[:200])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 
