@@ -5305,3 +5305,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-stream-keyword-refuse`、`chat-stream-deep-ao-refuse` 双模式 PASS，`tool-beyond-grid-exact` 仍按精确字面量服务；**双模式 smoke 187→189/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：把守卫从内层搬到外层时，必须连带**它原先依赖的前置变换**（这里是 pinned-interval strip）；否则“更早执行”会改变谓词含义。
 **证据**：`build_f637.log`、`selftest_f637.log`、`{req,cnt,pat,bnd}_run_f637.log`、`gate_live_f637.log`（语法红）、`gate_live_f637b.log`（守卫回归）、`gate_live_f637c.log`（189/0）。
+
+## F638（2026-11-15）：pattern / bounds / 纯界 oneOf 守卫并入外层
+**缺口**：F637 的外层守卫只并入关键字/深对象数组/工具形状/嵌套上限；`pattern`（元字符不可实现）、数值 bounds（多属性/小数叶等不服务形态）、只含数值 bounds 的 oneOf/anyOf 仍只在非流式链上。
+**改动**：`api_schema_guard_unsupported` 在已做 pinned-interval 重写的 body/schema 上追加 `api_schema_pattern_unsupported`、`api_schema_bounds_unsupported`、`api_schema_choices_pure_bounds`；拒绝消息分别含 `pattern` / `bounds`。
+**结果**：`chat-stream-pattern-refuse`（`(?i)abc`）、`chat-stream-bounds-refuse`（双属性小数 bounds）双模式 PASS；既有的 `chat-stream-exp-bounds`/`chat-stream-beyond-grid`/`tool-beyond-grid-exact` 均保持服务；**双模式 smoke 189→191/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：守卫合并的最后一块是“依赖前置变换的谓词”——只要在外层先做同一变换，就能与内层共用；这与 F637 的 pinned-interval 修复是同一条规则。
+**证据**：`build_f638.log`、`selftest_f638.log`、`{req,cnt,pat,bnd}_run_f638.log`、`gate_live_f638.log`。

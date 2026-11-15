@@ -2794,6 +2794,20 @@ def main():
     check("chat-stream-deep-ao-refuse", pmsg.find("arrays nested") >= 0,
           pdet + " " + pmsg[:120])
 
+    # F638: the remaining shape guards (pattern, bounds, bounds-only oneOf) join the same outer
+    # guard, so streaming cannot carry them either.
+    pmsg, pdet = stream_param_refusal("/v1/chat/completions", {
+        "response_format": {"type": "json_schema", "json_schema": {
+            "name": "x", "schema": {"type": "object", "properties": {
+                "code": {"type": "string", "pattern": "(?i)abc"}}}}}})
+    check("chat-stream-pattern-refuse", pmsg.find("pattern") >= 0, pdet + " " + pmsg[:120])
+    pmsg, pdet = stream_param_refusal("/v1/chat/completions", {
+        "response_format": {"type": "json_schema", "json_schema": {
+            "name": "x", "schema": {"type": "object", "properties": {
+                "a": {"type": "number", "minimum": 0.5},
+                "b": {"type": "number", "maximum": 2.5}}}}}})
+    check("chat-stream-bounds-refuse", pmsg.find("bounds") >= 0, pdet + " " + pmsg[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

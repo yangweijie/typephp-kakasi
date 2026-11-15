@@ -12439,6 +12439,15 @@ function api_schema_guard_unsupported(string $body): string
     if ($kw != "") {
         return "schema keyword " . $kw;
     }
+    if (api_schema_pattern_unsupported($sch) == 1) {
+        return "schema pattern with regex metacharacters";
+    }
+    if (api_schema_bounds_unsupported($sch) == 1) {
+        return "numeric bounds";
+    }
+    if (api_schema_choices_pure_bounds($sch) == 1) {
+        return "oneOf/anyOf branches carrying only numeric bounds";
+    }
     if (api_schema_deep_array_object($sch) == 1) {
         return "arrays nested three or more levels deep with object elements";
     }
