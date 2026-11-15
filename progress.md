@@ -2875,3 +2875,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_serve_par` 用 `api_param_unsupported` + `api_schema_keywords_unsupported`，`$bad=2` 消息带具体原因。
 - **门**：`par-param-refuse`/`par-schema-keyword-refuse`（+既有 `par-sampling-refuse`）PASS；8000 双模式 187/0。
 - **梯**：BUILD_OK（`build_f636`）；自检/四 harness/par/fair/哨兵 全绿。
+
+## F637（2026-11-15）：schema 守卫覆盖流式
+- **修**：`api_schema_guard_unsupported`（关键字/深对象数组/工具形状/嵌套上限）挂到外层链；内部先做 `api_schema_strip_pinned_interval` 以保持工具路径的精确字面量服务。
+- **门**：`chat-stream-keyword-refuse`/`chat-stream-deep-ao-refuse` PASS；`tool-beyond-grid-exact` 保持；**smoke 187→189/0**。
+- **梯**：BUILD_OK（`build_f637`）；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。

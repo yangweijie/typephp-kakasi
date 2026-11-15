@@ -2776,6 +2776,24 @@ def main():
     pmsg, pdet = stream_param_refusal("/v1/messages", {"top_k": 5})
     check("anth-stream-param-refuse", pmsg.find("top_k") >= 0, pdet + " " + pmsg[:120])
 
+    # F637: the schema-shape guards must cover streaming too (they used to sit on the non-stream
+    # chain only): an unserviceable keyword or a three-deep object array cannot slip through.
+    pmsg, pdet = stream_param_refusal("/v1/chat/completions", {
+        "response_format": {"type": "json_schema", "json_schema": {
+            "name": "x", "schema": {"type": "object", "properties": {
+                "tags": {"type": "array", "items": {"type": "string"},
+                         "uniqueItems": True}}}}}})
+    check("chat-stream-keyword-refuse", pmsg.find("uniqueItems") >= 0, pdet + " " + pmsg[:120])
+    deep_leaf = {"type": "object", "properties": {"y": {"type": "string"}}}
+    deep_ao = {"type": "object", "properties": {"a": {"type": "array", "items": {
+        "type": "array", "items": {"type": "array", "items": deep_leaf}}}}}
+    pmsg, pdet = stream_param_refusal("/v1/chat/completions",
+                                      {"response_format": {"type": "json_schema",
+                                                           "json_schema": {"name": "x",
+                                                                           "schema": deep_ao}}})
+    check("chat-stream-deep-ao-refuse", pmsg.find("arrays nested") >= 0,
+          pdet + " " + pmsg[:120])
+
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

@@ -12419,6 +12419,35 @@ function api_choice_params_unsupported(string $body): string
     return "";
 }
 
+// F637: the schema-shape guards (keywords, deep object arrays, tool parameter shapes, nesting cap)
+// sat only on the non-stream chain, so a STREAMED request could carry the same unserviceable schema
+// and be answered anyway. Bounds are deliberately not hoisted here: their check depends on the
+// pinned-interval rewrite that runs later.
+function api_schema_guard_unsupported(string $body): string
+{
+    // The tool candidate machinery runs AFTER the pinned-interval rewrite; without it a beyond-grid
+    // bound looks unenumerable here and would refuse a request the tool path actually serves.
+    $b = api_schema_strip_pinned_interval($body);
+    if (api_tools_deep_array_object($b) == 1 || api_tools_required_unservable($b) == 1) {
+        return "tool parameters that cannot be enumerated";
+    }
+    $sch = strpos($b, "\"json_schema\"") !== false ? api_json_object_after($b, "schema") : "";
+    if ($sch == "") {
+        return "";
+    }
+    $kw = api_schema_keywords_unsupported($sch);
+    if ($kw != "") {
+        return "schema keyword " . $kw;
+    }
+    if (api_schema_deep_array_object($sch) == 1) {
+        return "arrays nested three or more levels deep with object elements";
+    }
+    if (api_schema_nested_overflow($sch) == 1) {
+        return "nested object depth beyond 256 levels";
+    }
+    return "";
+}
+
 // F635: the refusal predicates were wired into the non-stream branch only, so a STREAMED request
 // with logit_bias/top_k/thinking/store slipped through untouched. One combined probe runs on the
 // outer chain, before the stream split, so every shape sees the same rule.
@@ -16557,6 +16586,13 @@ function api_serve(int $port): void
                 $ctIds = $ctIds . "," . tok_chat_open("assistant");
                 $payload = "{\"input_tokens\":" . count(explode(",", $ctIds)) . "}";
             }
+        } else if (api_schema_guard_unsupported($body) != "") {
+            // F637: one guard for both transports; the streamed branch used to skip these checks.
+            $payload = "{\"error\":{\"message\":\"request schema not supported: "
+                . api_schema_guard_unsupported($body)
+                . " (the streamed and non-streamed transports share this guard)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "400 Bad Request";
         } else if (api_param_unsupported($body) != "") {
             // F635: same rule on both transports; this branch sits before the stream split.
             $payload = "{\"error\":{\"message\":\"request parameter not supported: "

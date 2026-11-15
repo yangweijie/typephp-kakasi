@@ -5297,3 +5297,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`par-param-refuse`（流式 logit_bias）、`par-schema-keyword-refuse`（`uniqueItems`）、既有 `par-sampling-refuse` 全 PASS；8000 双模式仍 **187/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：两个服务器共用一套“接受即兑现”规则时，把规则函数当成**唯一来源**（`api_param_unsupported` + 关键字检测），而不是各服务器各挑几条；新规则加进函数，两端自动一致。
 **证据**：`build_f636.log`、`selftest_f636.log`、`{req,cnt,pat,bnd}_run_f636.log`、`gate_live_f636.log`、`par_smoke_f636.log`。
+
+## F637（2026-11-15）：schema 形状守卫覆盖流式（含一次真实回归的修复）
+**缺陷**：关键字/深对象数组/工具参数形状/嵌套上限的守卫只在非流式链上；**流式**带 `uniqueItems:true` 或三层对象数组仍被接受并流式输出。
+**改动**：新增 `api_schema_guard_unsupported($body)` 挂到外层链（stream 分流前）：工具 deep3 / required 不可枚举、`api_schema_keywords_unsupported`、deep-ao、nested-overflow；**bounds 不在其中**（其判定依赖后面的 pinned-interval 重写）。
+**过程（两次红）**：① 首红是 smoke 自身的语法错误（手写三层括号少了右括号）⇒ `SMOKE PASS=0`；先用 `ast.parse` 自检再跑梯子。② 修语法后 `tool-beyond-grid-refused` 回归——外层守卫在 **pinned-interval 重写之前**跑，超出网格的工具 bound 看起来“不可枚举”，把本该被工具路径以精确字面量服务的请求拒了；修复是守卫内部先做同一 `api_schema_strip_pinned_interval($body)` 再判。
+**结果**：`chat-stream-keyword-refuse`、`chat-stream-deep-ao-refuse` 双模式 PASS，`tool-beyond-grid-exact` 仍按精确字面量服务；**双模式 smoke 187→189/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：把守卫从内层搬到外层时，必须连带**它原先依赖的前置变换**（这里是 pinned-interval strip）；否则“更早执行”会改变谓词含义。
+**证据**：`build_f637.log`、`selftest_f637.log`、`{req,cnt,pat,bnd}_run_f637.log`、`gate_live_f637.log`（语法红）、`gate_live_f637b.log`（守卫回归）、`gate_live_f637c.log`（189/0）。
