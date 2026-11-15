@@ -2359,3 +2359,21 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 - 溢出无声即失败：凡是无法精确表示的组合（整数位+小数位超限、multipleOf 分子超限）必须走拒绝路径，不得回落到自由生成。
 **测试计划**：自检 `num_dec15`/`dec15_text`/`sc_ovf15`；活体 `float_dec15_served`、`marker_over15_refuse`；再补 1 个“总位数 18/19 边界”用例与流式对账 `stream_dec15`。
 **开工前基线（F581 复核）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、8000 121/0、8001 par/fair 0、scaling ~1.55×、哨兵 0、`check_gates 199/0`。
+
+## F588–F609 会话交接（2026-11-15）
+**验收命令（按序，全部在仓库根）**：
+1. `bash scripts/build-check.sh`（清缓存重编，必须 `BUILD_OK`；`BUILD_FAILED` 且 `build_check.log` 为空 ⇒ 先清 `engine/serve*.on` 与孤儿引擎进程）
+2. `cmd //c 'scripts\run-kakasi-selftest.bat' 'selftest_<tag>.log'`（`==RUN_EXIT=0==` 且 **grep FAIL 为 0**；RUN_EXIT 不是判据）
+3. `bash scripts/schema_{required,count,pattern,bounds}_run.sh <tag>`（各 `CHECK_EXIT=0`；重定向用别名文件，避免覆盖脚本自写日志）
+4. `bash scripts/gate_live.sh <tag>`（compact+pretty 双 smoke、8001 par/fair；smoke 非零即 exit 1；约 15–18 分钟）
+5. `bash scripts/check_gates.sh`（`unresolved=0`；最新自检含 FAIL 行则 exit 1）
+
+**当前基线**：自检 0 FAIL、四 harness 0、SMOKE 与 SMOKE-PRETTY 各 **143/0**、par/fair 0、scaling ~1.6×、哨兵 0、`check_gates 199/0`。HEAD `2704832`（engine 最后改动 `67d091b` 的二进制）。
+
+**本轮新增的关键不可倒退项**：
+- 入口紧凑化（`api_json_compact`）与两处服务器接线；**美化/紧凑 JSON 必须行为一致**。
+- 显式 claim 谓词（`api_response_schema_claim`，39/39 检测器、镜像返回契约）；两传输未认领 ⇒ 400。
+- 工具参数（`parameters`/`input_schema`）的 deep3 与 required 不可枚举 ⇒ 400；`prefixItems` 等价重命名；`unevaluatedItems:false` 真空剥离。
+- >18 位数值：端点/0/1×m/±1ulp/10 幂/≤4096 步行走；病态形态保持具名 400。F582 规格已结项（非开工依据）。
+
+**下一步候选**：① `unevaluatedItems` 根级复合形态的接受态（当前具名 400）；② FR-06 多样草稿器收益（`model_sycl.cc` 草稿源，非本轮范围）；③ per-session KV 并行吞吐/多卡/GGUF 分片（需第二设备或新写合并器）；④ 129 层嵌套冷启动首调缺陷（F208/F209 线索）。
