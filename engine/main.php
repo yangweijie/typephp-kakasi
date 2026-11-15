@@ -12010,6 +12010,55 @@ function api_json_compact(string $s): string
     return $out;
 }
 
+// F601: explicit claim predicate for response schemas. F600 showed that "the output variable is
+// still empty" cannot distinguish "no route claimed" from "a route will fill it later", so the
+// fail-closed decision re-runs the same detectors the dispatch uses (they are parse-only). Every
+// statement is short on purpose - the giant boolean chains are the construct tpc mishandles.
+function api_response_schema_claim(string $body): int
+{
+    $claim = 0;
+    if (api_response_schema_oneof_grammar($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_root_oneof_grammar($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_nested_object($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_nested_number($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_object_nested($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_object_array2($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_object_array($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_object_int_array($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_object($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array6_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array5_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array4_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array3_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array2_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_number($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_bounds($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_item_bounds($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_item_number($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_item_multiple($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_n_int($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_n_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_array_enum($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_tuple($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_object($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_nested_object($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_number($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_bool($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_scalar_enum($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_string_bounds($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_string_props_required($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_number_prop($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_number_bounded($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_multiple_unbounded($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_multi_multiple($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_mixed_object($body) != "") { $claim = 1; }
+    if ($claim == 0 && count(api_response_schema_candidates($body)) > 0) { $claim = 1; }
+    if ($claim == 0 && count(api_root_scalar_choices($body)) > 0) { $claim = 1; }
+    return $claim;
+}
+
 // F598: arrays nested three or more levels deep whose innermost element is an OBJECT are not
 // served by any writer; without this guard the request fell through to unconstrained generation
 // and answered a different shape. Scalar arrays keep their 3D/4D/5D writers.
@@ -16788,6 +16837,16 @@ function api_serve(int $port): void
                         fclose($c);
                         continue;
                     }
+                    if (strpos($body, "\"response_format\"") !== false
+                        && strpos($body, "\"json_schema\"") !== false
+                        && api_response_schema_claim($body) == 0) {
+                        // F601: fail closed on the streaming transport with the same explicit
+                        // claim predicate - never by inspecting an intermediate empty variable.
+                        fwrite($c, "data: {\"error\":{\"message\":\"response schema is not supported by any constrained writer; refuse instead of ignoring it\"}}\n\n");
+                        fwrite($c, "data: [DONE]\n\n");
+                        fclose($c);
+                        continue;
+                    }
                     $sCacheHit = -1;
                     if ($prefixCache == 1) {
                         $sCacheHit = model_cache_prefill(0, $ids, $pcPath);
@@ -17292,6 +17351,18 @@ function api_serve(int $port): void
                     // negative truncation family). Refuse explicitly instead of free-generating.
                     $status = "400 Bad Request";
                     $payload = "{\"error\":{\"message\":\"structured output could not be decoded for this schema\",\"type\":\"invalid_request_error\"}}";
+                    fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                             . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                    fclose($c);
+                    continue;
+                }
+                if (strpos($body, "\"response_format\"") !== false
+                    && strpos($body, "\"json_schema\"") !== false
+                    && api_response_schema_claim($body) == 0) {
+                    // F601: explicit claim signal (F600's negative result). Free-generating text
+                    // for an unclaimed schema would look like success while ignoring the request.
+                    $status = "400 Bad Request";
+                    $payload = "{\"error\":{\"message\":\"response schema is not supported by any constrained writer; refuse instead of ignoring it\",\"type\":\"invalid_request_error\"}}";
                     fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
                              . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                     fclose($c);

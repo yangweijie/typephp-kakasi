@@ -2696,3 +2696,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **失败**：成功路由同样经过空产物中间态 ⇒ smoke 16 项即崩、四 harness 全红；回滚后基线恢复（131/0 双模式）。
 - **结论**：需要**显式 claim 信号**或把分发重构为“返回 claim 的函数”；不能用中间变量为空推断无人认领。已写入 findings，作为队列 #1 的前置条件。
 
+## F601（2026-11-15）：显式 claim 判定 + 双传输失败关闭守卫
+- **实现**：`api_response_schema_claim`（40 个仅解析检测器顺序判定，短语句置位）；两条传输在“有 response_format+json_schema 且 claim=0”时 400。
+- **梯**：BUILD_OK（`build_f601`）；自检 0 FAIL；四 harness 0；SMOKE/SMOKE-PRETTY **131/0**；哨兵 0——谓词对受支持面无回归。
+- **探针线索**：对象属性内 2 层对象数组被嵌套检测器**过度认领**（答 `{"m":{"items":{"y":"10000000"}}}`）——残留风险转为“过度认领答错形”，下一步核对该检测器的 claim/写入器同源。
+

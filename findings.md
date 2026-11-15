@@ -5072,4 +5072,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **回滚**：两处守卫移除，重建后自检 0 FAIL、四 harness 0、双模式 smoke **131/0** 恢复。
 **结论**：失败关闭必须依赖**显式 claim 信号**（每条 schema 路由命中时置一个标志，或把分发重构为返回 claim 的函数），不能用中间变量是否为空来推断。这是 F561/F562/F564 同一类教训的又一次复现：**“可判定”与“会被认领”是两件事**。
 **证据**：`gate_live_f600.log`（SMOKE 16 即崩、CHECK_EXIT=1×4）、`gate_live_f600b.log`（回滚后 131/0）。
+
+## F601（2026-11-15）：显式 claim 判定（失败关闭的基础设施）
+**实现**：`api_response_schema_claim` 顺序调用与分发相同的 40 个仅解析检测器（短语句逐项置位，避开 tpc 的长链问题），两条传输只在 `response_format`+`json_schema` 存在且 claim=0 时 400。
+**结果**：全套无回归——自检 0 FAIL、四 harness 0、SMOKE/SMOKE-PRETTY **131/0**、哨兵 0。说明谓词对受支持面至少与套件一样宽松。
+**探针发现（转向下一线索）**：构造的“无人认领”形状（对象属性内 2 层对象数组）实际被某个嵌套检测器**过度认领**，答成 `{"m":{"items":{"y":"10000000"}}}`（形状可疑）。即当前最主要的残留风险已从“无人认领回散文”转为“**过度认领答错形**”；下一步应逐个核对该嵌套检测器的 claim 与写入器是否同源。
+**记法**：claim 谓词只能证明“有检测器认领”，不能证明“认领者的写入器会产出正确形状”——两者需分别验证（与 F561/F564 同源）。
+**证据**：`build_f601.log`、`selftest_f601.log`（0 FAIL）、四个 `*_f601` harness（0）、`gate_live_f601.log`（131/0 双模式）、`gate_live_f601b.log`（探针输出）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

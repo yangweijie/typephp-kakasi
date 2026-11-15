@@ -1792,6 +1792,25 @@ def main():
         pr_content = "400"
     check("chat-deep3-ao-refuse", pr_ok, pr_content[:160])
 
+    # F601 probe: a legal shape no writer claims - two-deep array of objects nested inside an
+    # object property. Must now refuse 400 instead of free-generating.
+    unc_leaf = {"type": "object", "properties": {"y": {"type": "string"}}}
+    unc_schema = {"type": "object", "properties": {"m": {"type": "object", "properties": {
+        "x": {"type": "array", "items": {"type": "array", "items": unc_leaf}}}}}}
+    unc_body = {"messages": [{"role": "user", "content": "Give the data."}],
+                "max_tokens": 48, "temperature": 0,
+                "response_format": {"type": "json_schema",
+                                    "json_schema": {"name": "x", "schema": unc_schema}}}
+    unc_ok = False
+    unc_detail = ""
+    try:
+        r = post("/v1/chat/completions", unc_body)
+        unc_detail = r["choices"][0]["message"]["content"][:160]
+    except urllib.error.HTTPError as e:
+        unc_detail = e.read().decode()[:160]
+        unc_ok = e.code == 400 and "not supported" in unc_detail
+    print("  PROBE unclaimed %s %s" % ("REFUSED" if unc_ok else "SERVED", unc_detail))
+
     # F598 probe: the same schema as a REQUIRED tool parameter. The call must either be refused or
     # carry the "a" array; an empty arguments object violates required and is the failure mode.
     tool_deep_leaf = {"type": "object", "properties": {"x": {"type": "string"}}}
