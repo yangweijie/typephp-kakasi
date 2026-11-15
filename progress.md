@@ -2701,3 +2701,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f601`）；自检 0 FAIL；四 harness 0；SMOKE/SMOKE-PRETTY **131/0**；哨兵 0——谓词对受支持面无回归。
 - **探针线索**：对象属性内 2 层对象数组被嵌套检测器**过度认领**（答 `{"m":{"items":{"y":"10000000"}}}`）——残留风险转为“过度认领答错形”，下一步核对该检测器的 claim/写入器同源。
 
+## F602（2026-11-15）：过度认领修复 + F601 守卫首次活体证明
+- **误认领真因**：`api_response_schema_nested_object` 的下降正则会把**数组关键字**（如 `items`）当成链上的用户键（plan `m/items|y:s`）。加 `api_schema_chain_keyword`：链层级命中 schema 关键字（items/properties/contains/prefixItems/additionalProperties/not/if/then/else/oneOf/anyOf/allOf/definitions/dependentSchemas/propertyNames）即拒绝。
+- **claim 谓词语义修正**：`string_props_required` 返回**数组** ⇒ 用 `count()>0`；`top_array_{string,bool,number}` 是**整数哨兵**（`==1` / `>=0`）而不是字符串——`[Array] != ""` 与 `-1 != ""` 曾使 claim 恒真，守卫永不触发。
+- **结果**：`UNCLAIM-DIAG2 claim=0`；活体 `chat-unclaimed-2dao-refuse` 在普通与美化序列化下均返回 **400**（`response schema is not supported…`），**双模式 smoke 132/0**；四 harness 0、自检 0 FAIL、哨兵 0。
+- **意义**：这是“schema 存在但无人认领 ⇒ 显式 400”的**首次活体证明**（F600 的失败关闭现在有可验证路径）。
+

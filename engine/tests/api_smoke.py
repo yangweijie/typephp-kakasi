@@ -1792,8 +1792,9 @@ def main():
         pr_content = "400"
     check("chat-deep3-ao-refuse", pr_ok, pr_content[:160])
 
-    # F601 probe: a legal shape no writer claims - two-deep array of objects nested inside an
-    # object property. Must now refuse 400 instead of free-generating.
+    # F601/F602: a legal shape no writer claims (two-deep object array inside an object property)
+    # used to be over-claimed by the nested-chain detector and answered {"m":{"items":...}}. It must
+    # now refuse explicitly.
     unc_leaf = {"type": "object", "properties": {"y": {"type": "string"}}}
     unc_schema = {"type": "object", "properties": {"m": {"type": "object", "properties": {
         "x": {"type": "array", "items": {"type": "array", "items": unc_leaf}}}}}}
@@ -1807,9 +1808,9 @@ def main():
         r = post("/v1/chat/completions", unc_body)
         unc_detail = r["choices"][0]["message"]["content"][:160]
     except urllib.error.HTTPError as e:
-        unc_detail = e.read().decode()[:160]
+        unc_detail = e.read().decode()[:300]
         unc_ok = e.code == 400 and "not supported" in unc_detail
-    print("  PROBE unclaimed %s %s" % ("REFUSED" if unc_ok else "SERVED", unc_detail))
+    check("chat-unclaimed-2dao-refuse", unc_ok, unc_detail[:160])
 
     # F598 probe: the same schema as a REQUIRED tool parameter. The call must either be refused or
     # carry the "a" array; an empty arguments object violates required and is the failure mode.

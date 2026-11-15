@@ -4775,12 +4775,23 @@ function api_root_scalar_choices(string $body): array
 }
 
 
+// F602: keys that are JSON-Schema keywords, not user property names, when walking nested chains.
+function api_schema_chain_keyword(string $k): int
+{
+    if ($k == "items" || $k == "properties" || $k == "contains" || $k == "prefixItems"
+        || $k == "additionalProperties" || $k == "not" || $k == "if" || $k == "then"
+        || $k == "else" || $k == "oneOf" || $k == "anyOf" || $k == "allOf" || $k == "definitions"
+        || $k == "dependentSchemas" || $k == "propertyNames") {
+        return 1;
+    }
+    return 0;
+}
+
 function api_response_schema_nested_object(string $body): string
 {
     if (preg_match('/"json_schema"/', $body) != 1) {
         return "";
-    }
-    $schema = api_json_object_after($body, "schema");
+    }    $schema = api_json_object_after($body, "schema");
     if ($schema == "") {
         return "";
     }
@@ -4804,6 +4815,11 @@ function api_response_schema_nested_object(string $body): string
     }
     $ip = strpos($schema, $pm[0]);
     if ($ip === false) {
+        return "";
+    }
+    // F602: the descent pattern matches any key whose block contains a properties block - including
+    // array keywords. A chain level named like a schema keyword is not a user property.
+    if (api_schema_chain_keyword($pm[1]) == 1) {
         return "";
     }
     $path = $pm[1];
@@ -4836,6 +4852,9 @@ function api_response_schema_nested_object(string $body): string
         $cm = [];
         if (preg_match('/"([A-Za-z0-9_\-]+)"\s*:\s*\{(?=[^{}]*"properties"\s*:\s*\{)/s',
             $block, $cm) != 1) {
+            return "";
+        }
+        if (api_schema_chain_keyword($cm[1]) == 1) {
             return "";
         }
         $path = $path . "/" . $cm[1];
@@ -12043,12 +12062,12 @@ function api_response_schema_claim(string $body): int
     if ($claim == 0 && api_response_schema_tuple($body) != "") { $claim = 1; }
     if ($claim == 0 && api_response_schema_top_array_object($body) != "") { $claim = 1; }
     if ($claim == 0 && api_response_schema_top_array_nested_object($body) != "") { $claim = 1; }
-    if ($claim == 0 && api_response_schema_top_array_number($body) != "") { $claim = 1; }
-    if ($claim == 0 && api_response_schema_top_array_bool($body) != "") { $claim = 1; }
-    if ($claim == 0 && api_response_schema_top_array_string($body) != "") { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_number($body) >= 0) { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_bool($body) == 1) { $claim = 1; }
+    if ($claim == 0 && api_response_schema_top_array_string($body) == 1) { $claim = 1; }
     if ($claim == 0 && api_response_schema_top_array_scalar_enum($body) != "") { $claim = 1; }
     if ($claim == 0 && api_response_schema_string_bounds($body) != "") { $claim = 1; }
-    if ($claim == 0 && api_response_schema_string_props_required($body) != "") { $claim = 1; }
+    if ($claim == 0 && count(api_response_schema_string_props_required($body)) > 0) { $claim = 1; }
     if ($claim == 0 && api_response_schema_number_prop($body) != "") { $claim = 1; }
     if ($claim == 0 && api_response_schema_number_bounded($body) != "") { $claim = 1; }
     if ($claim == 0 && api_response_schema_multiple_unbounded($body) != "") { $claim = 1; }
@@ -21151,6 +21170,38 @@ function main(): void
     $daoScalar = api_schema_deep_array_object('{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"string"}}}}}}}');
     $dtDeep = api_tools_deep_array_object('{"tools":[{"function":{"name":"put","parameters":{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"x":{"type":"string"}}}}}}},"required":["a"]}}}]}');
     $dtFlat = api_tools_deep_array_object('{"tools":[{"function":{"name":"put","parameters":{"type":"object","properties":{"n":{"type":"integer"}}}}}]}');
+    // F601 DIAG (temporary): which nested detector claims the object-property / 2-deep object
+    // array shape that the live probe answered as {"m":{"items":...}}.
+    $ucD = '{"json_schema":{"name":"x","schema":{"type":"object","properties":{"m":{"type":"object","properties":{"x":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"y":{"type":"string"}}}}}}}}}}}';
+    $ucDNest = api_response_schema_nested_object($ucD);
+    $ucDArrObj = api_response_schema_array_object($ucD);
+    $ucDAoNest = api_response_schema_array_object_nested($ucD);
+    $ucDAoArr = api_response_schema_array_object_array($ucD);
+    $ucDMix = api_response_schema_mixed_object($ucD);
+    $ucDNum = api_response_schema_nested_number($ucD);
+    $ucDC = api_response_schema_candidates($ucD);
+    $ucDSb = api_response_schema_string_bounds($ucD);
+    $ucDSpr = api_response_schema_string_props_required($ucD);
+    $ucDNb = api_response_schema_number_bounded($ucD);
+    $ucDTup = api_response_schema_tuple($ucD);
+    $ucDTao = api_response_schema_top_array_object($ucD);
+    $ucDTas = api_response_schema_top_array_string($ucD);
+    $ucDTan = api_response_schema_top_array_number($ucD);
+    $ucDTab = api_response_schema_top_array_bool($ucD);
+    $ucDTse = api_response_schema_top_array_scalar_enum($ucD);
+    $ucDAe = api_response_schema_array_enum($ucD);
+    echo "UNCLAIM-DIAG2 cands=" . count($ucDC) . " sb=[" . $ucDSb . "] spr=[" . $ucDSpr . "] nb=["
+        . $ucDNb . "] tup=[" . $ucDTup . "] tao=[" . $ucDTao . "] tas=[" . $ucDTas . "] tan=["
+        . $ucDTan . "] tab=[" . $ucDTab . "] tse=[" . $ucDTse . "] ae=[" . $ucDAe . "] claim="
+        . api_response_schema_claim($ucD) . "\n";
+    echo "UNCLAIM-DIAG nest=[" . $ucDNest . "] arrObj=[" . $ucDArrObj . "] aoNest=[" . $ucDAoNest
+        . "] aoArr=[" . $ucDAoArr . "] mix=[" . $ucDMix . "] num=[" . $ucDNum . "]\n";
+    if ($ucDNest == "" && $ucDArrObj == "" && $ucDAoNest == "" && $ucDAoArr == ""
+        && $ucDMix == "" && $ucDNum == "") {
+        echo "UNCLAIM-DIAG: PASS (no nested detector claims the object-property 2-deep object array)\n";
+    } else {
+        echo "UNCLAIM-DIAG: FAIL\n";
+    }
     // F593: exact decimal addition (digit carries) and its two new consumers - one ulp inside an
     // exclusive side, and the multiple walk.
     $dA = api_decimal_add("1", "2");

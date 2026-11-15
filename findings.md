@@ -5079,4 +5079,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **探针发现（转向下一线索）**：构造的“无人认领”形状（对象属性内 2 层对象数组）实际被某个嵌套检测器**过度认领**，答成 `{"m":{"items":{"y":"10000000"}}}`（形状可疑）。即当前最主要的残留风险已从“无人认领回散文”转为“**过度认领答错形**”；下一步应逐个核对该嵌套检测器的 claim 与写入器是否同源。
 **记法**：claim 谓词只能证明“有检测器认领”，不能证明“认领者的写入器会产出正确形状”——两者需分别验证（与 F561/F564 同源）。
 **证据**：`build_f601.log`、`selftest_f601.log`（0 FAIL）、四个 `*_f601` harness（0）、`gate_live_f601.log`（131/0 双模式）、`gate_live_f601b.log`（探针输出）。
+
+## F602（2026-11-15）：修复过度认领，claim 守卫首次活体生效
+**三层排查**：① `nested_object` 把数组 `items` 关键字当作链键（plan `m/items|y:s`）→ 加 `api_schema_chain_keyword` 守卫；② claim 谓词把**数组返回值**与 `""` 比较（恒真）→ 改 `count()>0`；③ 把**整数哨兵**（`top_array_number >= 0`、`string/bool == 1`）与 `""` 比较（`-1 != ""` 为真）→ 按分发原语义比较。修正后 `claim=0`。
+**结果**：`chat-unclaimed-2dao-refuse` 双模式 **400**，双模式 smoke **132/0**，四 harness 0、自检 0 FAIL——失败关闭第一次有活体证明。
+**记法**：**claim 谓词必须镜像检测器的返回契约**（字符串用 `!= ""`、数组用 `count`、整数哨兵按阈值）；把“非空”当成统一判据会在 tpdp 的弱类型下静默失效。另：任何“从 schema 文本里找下一个 properties 块”的下降都必须排除 schema 关键字，否则会把数组/组合关键字当成用户属性。
+**证据**：`selftest_f602c.log`（`UNCLAIM-DIAG2 … claim=0`）、`gate_live_f602c.log`（132/0）、`api_smoke_f602c.log`（`PASS chat-unclaimed-2dao-refuse`）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
