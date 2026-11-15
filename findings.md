@@ -4948,4 +4948,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：宽度扩展的同时要检查新数量级的**算术溢出**，不能只加 marker——溢出是静默错误，自检的精确文本门抓不到，只有守卫 + 精确门组合能覆盖。
 **上限成门**：15 位小数的 bounds 形状在自检里必须为空（`over15=[]`），活体 `dec_over15_refuse` 必须 400；14 位因此是被测试的显式上限，而不是“恰好没写测试”的偶然结果（`selftest_f581b.log`、`schema_bounds_f581b.log`）。
 **固定值不经网格，但写出预算曾截断（F581 修复）**：活的 `const_dec17_pin_exact` 一开始返回 `{"n":1.234567,...}`——同一份值计划里的数值 pin 在写出器用固定 8 token 预算，把 17 位有效数字截到 6 位小数；`v` 引脚的固定 32 对长字符串同样会截断。两者都改为按字面量长度给预算（`strlen+4`/`strlen+6`），与 F532 对边界写入器的修复同源。教训：**“文本发射”不等于“不会截断”**——任何固定步数的 continuation 都要有按内容长度的下限，否则 schema 接受而发射值违反 const，属于静默违反。
+**压力验证**：300 字符属性名与 300 字符字符串 const 在值计划写入器上均逐字往返（`long_key_stress_exact`/`long_const_value_exact`）——截断只在固定预算小于字面量 token 数时发生（8 步的数值 pin），按长度给预算后该风险消失。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

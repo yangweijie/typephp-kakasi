@@ -642,6 +642,19 @@ cases = [
                         and sorted(keys_of(txt)) == sorted([
                             "a_very_long_property_name_that_exceeds_the_fixed_thirty_two_step_budget_for_emission",
                             "note"]))),
+    # F581 stress: a token budget is not a character budget, so push the key far past any fixed
+    # step count. The emitted key must still be byte-identical or the shape is a silent violation.
+    ("long_key_stress_exact", "Say where you are.",
+     {"type": "object", "properties": {
+         "a" * 300: {"const": "paris"},
+         "note": {"type": "string"}}},
+     lambda code, txt: (code == 200
+                        and sorted(keys_of(txt)) == sorted(["a" * 300, "note"]))),
+    ("long_const_value_exact", "Say where you are.",
+     {"type": "object", "properties": {"city": {"const": "p" * 300},
+                                        "note": {"type": "string"}}},
+     lambda code, txt: (code == 200
+                        and (obj_of(txt) or {}).get("city") == "p" * 300)),
     ("const_dec17_pin_exact", "Give the code and the count.",
      {"type": "object", "properties": {"n": {"const": 1.2345678901234567},
                                         "note": {"type": "string"}}},

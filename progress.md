@@ -2561,4 +2561,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **固定值不受网格限制，但曾静默截断（已修）**：活体新门 `const_dec17_pin_exact` 最初返回 `{"n":1.234567,...}`——数值 pin 的写出预算写死 8 token，把 17 位有效数字截到 6 位小数（`v` 引脚的 32 同样会截长串）。改为按字面量长度给预算（`strlen+4` / `strlen+6`，F532 的同一教训），17 位 `const` 现逐字发射 `{"n":1.2345678901234567,...}`。
 - **梯（f581d）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；8000 121/0；par/fair 0；scaling 1.580×；哨兵 0。
 - **预算审计**：其余固定预算都是标点/短常量（`}`/`,`/`"`，4–8 步）；内容相关的写入点已按长度给预算，另新增 `long_key_pin_exact`（89 字符属性名 + const）作为回归门——通过（`schema_required_f581e.log`），未发现第二处现实截断。
+- **压力门（f581f）**：`long_key_stress_exact`（300 字符属性名）与 `long_const_value_exact`（300 字符字符串 const）均逐字通过（`schema_required_f581f.log`）——截断只在固定预算小于字面量 token 数时出现（8 步数值 pin），按长度给预算后该类风险闭合。
 
