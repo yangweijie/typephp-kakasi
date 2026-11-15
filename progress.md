@@ -2756,3 +2756,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **顶层混合枚举数组**：具名 400（`items`）——`top-mixed-enum-array-ok` 断言 400 且点名。
 - **梯**：双模式 smoke **147/0**（144+3）；其余基线不变。
 
+## F612（2026-11-15，负结果，已回滚）：根级 tuple
+- **尝试**：新增 `api_response_schema_top_tuple` 检测器与 `api_top_tuple_value` 写入器（字符串部分复用根数组文法、整数用 `api_number_fill`），接入 claim、三处分发与 `structural_unsupported` 放行。
+- **引擎侧验证**：自检直调 `TT-DIAG det=[t:s,i] text=[["Alice and Bob are discussing the ethics of",1000]]`——检测与写入都正确。
+- **活体失败**：同 schema 的请求返回**散文** `(1, 2)`——说明**更早的认领者**截走该形状（其写入失败后回落自由文本），且该认领使 claim=1，F601 失败关闭也不会触发。
+- **处理**：回滚代码与探针；重建后基线恢复（自检 0 FAIL、四 harness 0、双模式 **147/0**、哨兵 0）。根级 tuple 仍为**具名 400**（`items`）。
+- **下一步**：在自检里对**完整直播 body**打印各 top-level 检测器的 claim 位，找出抢先的认领者，再决定“让它让位”还是把 tuple 分支前移。
+

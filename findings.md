@@ -5140,4 +5140,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **混合枚举**：带自由兄弟时 200（可只发所需键，合法）；顶层混合枚举数组具名 400（`items`）。
 **记法**：审计旧条目先跑探针；探针的断言要从“合法或 400”升级为**精确形态**，否则无法阻止将来退化到另一条合法但非预期的路径。
 **证据**：`gate_live_f611b.log`、`api_smoke_f611b.log`（双模式 147/0）。
+
+## F612（2026-11-15，负结果，已回滚）：根级 tuple 的认领顺序
+**尝试**：顶级 tuple 检测器 + `["<s>",<i>]` 写入器（字符串用根数组文法、整数用 `api_number_fill`），claim 与三处分发接入，`structural_unsupported` 放行。
+**引擎侧**：直调通过（`t:s,i` → `["…",1000]`）。
+**活体**：返回散文 `(1, 2)`——**更早的检测器抢先认领**且写入失败后回落自由文本；因为它认领，F601 的失败关闭也不触发。证据指向“认领者 ≠ 写入者”的又一实例。
+**回滚**：代码与探针复原，基线重建为双模式 **147/0**、四 harness 0、自检 0 FAIL；根级 tuple 维持具名 400。
+**下一步**：在自检里对**完整直播 body**打印每个 top-level 检测器的输出（claim 图），找出抢先者；要么让其让位，要么把 tuple 分支前移。**不要在没画 claim 图之前再写新写入器**。
+**证据**：`selftest_f612d.log`（TT-DIAG）、`gate_live_f612c.log`（散文）、`gate_live_f612e.log`（回滚后 147/0）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
