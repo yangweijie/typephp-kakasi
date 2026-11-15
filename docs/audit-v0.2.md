@@ -711,3 +711,21 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 **增补（F607–F609，同日）**：失败关闭在 **8001 协作服务器**也有活体门（`par-unclaimed-refuse`）；数值能力在 Anthropic/Responses 两形状上逐字一致（`anth-exp-bounds-served`、`resp-exp-bounds-served`）；`unevaluatedProperties:false` 全声明键 **200**（`uneval-props-closed-ok`），tuple 的 `prefixItems` 经等价重命名后 **200**（`prefixitems_served_ok`，活体 `{"pair":["1, 2",2000]}`），根级不支持的 tuple 形态保持具名 400。三形状（chat/Anthropic/Responses）× 两服务（8000/8001）× 两序列化（compact/pretty）的验收矩阵均有门。
 
 **仍未闭合（不变）**：FR-05 插件；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 多样草稿器的真实收益；per-session KV 并行吞吐；多卡 split；GGUF 分片合并；129 层以上嵌套的**冷启动首调**缺陷（F208/F209 线索）。
+
+## 审计增补（F610–F621，2026-11-15）——结构化输出与工具流的收尾，以及三条旧陈述的更正
+
+**范围**：F610–F621 全部落在 FR-08/FR-09 的服务面；引擎计算核与 FR-06/07/10/13 未改。**与上文旧表及 F580–F603 增补冲突时以本节为准。**
+
+1. **根级 tuple 已服务**（F612 负结果 → F613 修复）：`{"type":"array","items":[{"type":"string"},{"type":"integer"}]}` 在 chat/Anthropic/Responses 三出口返回 `["…",1000]`；F612 的失败揭示了**第四条分发链**（`$enumOut` 非流式主链），定位方法是 claim 图 + 临时分支回声。F615 把形态矩阵钉到 1..4 元素、任意 s/i 组合与闭包形态。
+2. **属性级 tuple 与两种闭包拼写**（F616/F617）：`prefixItems` + `unevaluatedItems:false` 与 draft-4 `items:[…]` + `unevaluatedItems:false` 均在对象属性内返回 `{"pair":["1000",1000]}`。真空剥离现在按**形态**判定：`prefixItems` 且无 `items`，或唯一 `items` 且为数组；`items` 为对象时不剥离（逐元素求值，闭包仍可能有实义）。
+3. **Anthropic 流式工具出口三格齐平**（F618/F619）：无 choice / `{"type":"any"}` / 点名三条路径都携带自 `input_schema` 枚举出的实参；`parallel_tool_calls:true` 时三者在流里都发多个 `tool_use` 块，`index` 与 `toolu_N` 递增。F618 修掉的正是“骨架把 `arguments` 钉成 `{}`”这一类**结构性静默违约**。
+4. **未实现的采样参数改为具名 400**（F620/F621）：`top_k`/`logprobs`/`top_logprobs`/`frequency_penalty`/`presence_penalty`/`repetition_penalty` 在非中性取值时两服务都拒绝并点名；中性拼写（`false`/`0`/`1`）放行。拒绝消息同时列出**已兑现**的参数。
+
+**三条旧陈述的更正**（都有代码与日志）：
+- **“129 层以上嵌套冷启动首调返回空”已闭合**（F226/F238：根因层修复后首次与后续调用的装配逐字一致；F208/F209 的线索不应再当开放缺口引用）。
+- **“前缀缓存无新近度/命中率悬崖”已两轮收口**：F342 的 2 路组相联 + owner 索引把撞槽盲驱逐从 49→22 变成 49→49；F343 再加 use-tick 受害者选择（`api_cache_use`/`api_cache_victim`）。`CACHE-EVICT` 是常驻判据。
+- **FR-06 的“多样草稿器”已是决策题而非调参题**：换排序（F318）与加宽窗口（F320）实测中性；模型自举分支仅 +1.05%（中位）。在“单二进制 + 同一模型自举”的约束下，再往上需要引入独立草稿模型（额外权重），与单 GGUF/单二进制的约束冲突，需产品决策。
+
+**回归口径（当前基线，F621）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE 与 SMOKE-PRETTY 各 **163/0**；8001 par/fair 0；scaling ~1.6×；哨兵 0；`check_gates 199/0`。证据：`engine/selftest_f621.log`、`engine/gate_live_f621.log`、`engine/api_smoke_{,pretty_}f621.log`、`engine/par_smoke_f621.log`。
+
+**仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包/版本化产物。
