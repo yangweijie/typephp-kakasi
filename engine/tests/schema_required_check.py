@@ -630,6 +630,14 @@ cases = [
                                         "note": {"type": "string"}},
       "required": ["note", "zzz"]},
      lambda code, txt: code == 400 and "required" in txt),
+    # F581: exact decimal literals are not limited to the bounds grid - a numeric const is pinned
+    # and emitted as TEXT by the value-plan writer, so seventeen significant digits must survive
+    # verbatim even though bounds literals above fourteen fraction places refuse.
+    ("const_dec17_pin_exact", "Give the code and the count.",
+     {"type": "object", "properties": {"n": {"const": 1.2345678901234567},
+                                        "note": {"type": "string"}}},
+     lambda code, txt: (code == 200 and sorted(keys_of(txt)) == ["n", "note"]
+                        and '"n":1.2345678901234567' in txt)),
     ("const_num_pin_ok", "Give the code and the count.",
      {"type": "object", "properties": {"city": {"const": "paris"},
                                         "count": {"const": 5}}},

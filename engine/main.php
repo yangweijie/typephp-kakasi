@@ -6605,7 +6605,9 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
             // F510: a bound-bearing numeric leaf whose multipleOf fold collapsed to ONE integer
             // constant - emit that constant (it satisfies the bounds and the multiplier by
             // construction, the same subset argument the single-property fold uses).
-            $qv = api_constrained_continue([$pSpec], 8);
+            // F581: the step budget follows the literal, not a fixed 8 - a 17-digit const was
+            // truncated to six decimals by the old cap (the F532 lesson, applied to pins).
+            $qv = api_constrained_continue([$pSpec], strlen($pSpec) + 4);
             if ($qv == "") {
                 return "";
             }
@@ -6614,7 +6616,8 @@ function api_object_mixed(string $ids, string $plan, string $charset, int $maxSt
             // F566: a pinned string literal from the shared value plan - the quotes travel WITH the
             // value (the head/sep did not open one), so one continuation emits the whole quoted
             // literal and the next key's separator (or the closing brace) follows verbatim.
-            $vl = api_constrained_continue(["\"" . $pSpec . "\""], 32);
+            // F581: the same length-derived budget; a fixed 32 would truncate a long pin.
+            $vl = api_constrained_continue(["\"" . $pSpec . "\""], strlen($pSpec) + 6);
             if ($vl == "") {
                 return "";
             }
