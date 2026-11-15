@@ -7,6 +7,9 @@
 #   bash scripts/check_gates.sh --list     # also print each unresolved name
 #
 # Report only, never a gate: a name can be added to the table before the log that prints it exists.
+# EXCEPT the redness check below - RUN_EXIT does not reflect self-test assertions (F580 found four
+# FAIL lines committed under "0 FAIL" claims), so a non-zero FAIL count in the newest log is a hard
+# failure here.
 set -u
 R=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 cd "$R" || exit 2
@@ -18,6 +21,12 @@ LOG=$(ls -t engine/selftest_*.log 2>/dev/null | head -1)
 if [ -z "$LOG" ]; then
   echo "NO_LOG: no engine/selftest_*.log found"
   exit 0
+fi
+FAILS=$(grep -c 'FAIL' "$LOG")
+if [ "$FAILS" -gt 0 ]; then
+  echo "SELFTEST_RED log=$(basename "$LOG") fail_lines=$FAILS"
+  grep -n 'FAIL' "$LOG" | head -5
+  exit 1
 fi
 # A row may cite a self-test gate/field OR a served case, so the haystack is the newest self-test
 # plus the newest live harness logs.

@@ -4939,3 +4939,4 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 
 **记法**：① 自检的 `RUN_EXIT` 不是判据，必须 `grep FAIL`；② 大函数里长 `&&` 链与跨语句的字符串比较在 tpc 下不可靠，断言应短、逐项；③ 语义翻转（支持化）必须同时翻转旧期望并保留更严对照——本次三处都是“旧期望没翻”，不是引擎回归。
 **证据**：`build_f580e.log`、`selftest_f580e.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f580e.log`（`CHECK_EXIT=0`）、`gate_live_f580e.log`（smoke 121/0、par/fair 0、scaling 1.571×、哨兵 0）。
+**防复发**：`scripts/check_gates.sh` 现在把“最新自检日志含 FAIL 行”作为硬失败（退出 1）——`RUN_EXIT` 不再能掩盖红基线；引用解析部分保持只报告。
