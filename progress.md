@@ -2812,3 +2812,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **交付**：`VERSION=0.1.0`；`scripts/package.sh` 产出 `dist/typephp-kakasi-0.1.0-win64/`（二进制 + manifest：commit/sha256/size），脚本自校验副本哈希。
 - **服务**：`/health` 两服务返回 `version`；`health-version` 门与 VERSION 文件比对。
 - **梯**：BUILD_OK+Y。`PACKAGE_OK`；**smoke 163→164/0**；自检 0 FAIL；四 harness 0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F624（2026-11-15）：安装包 zip（FR-17 收尾）
+- **交付**：`package.sh` 追加 zip（全路径 7z + `7z t` 自检 + 归档哈希）。
+- **结果**：`ARCHIVE_OK sha256=7a015d3f…`（exe 5,894,656 B + manifest 180 B）。引擎未改，基线不变（双模式 164/0）。

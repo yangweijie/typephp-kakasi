@@ -40,3 +40,17 @@ if [ "$PACKED" != "$SUM" ]; then
   exit 1
 fi
 echo "PACKAGE_OK dir=$OUT version=$VER sha256=$SUM size=$SIZE"
+
+# The install pack is the directory above, zipped and self-tested. 7-Zip lives outside PATH on this
+# host, so it is addressed by full path and a missing tool is reported instead of guessed.
+SEVENZ="C:/Program Files/7-Zip/7z.exe"
+ZIP="dist/typephp-kakasi-$VER-win64.zip"
+if [ -x "$SEVENZ" ]; then
+  rm -f "$ZIP"
+  "$SEVENZ" a -tzip "$ZIP" "./$OUT/*" > /dev/null || { echo "ARCHIVE_FAILED"; exit 1; }
+  "$SEVENZ" t "$ZIP" > /dev/null || { echo "ARCHIVE_TEST_FAILED"; exit 1; }
+  echo "ARCHIVE_OK path=$ZIP sha256=$(sha256sum "$ZIP" | cut -d' ' -f1)"
+else
+  echo "ARCHIVE_SKIPPED no-7z"
+fi
+

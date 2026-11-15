@@ -5206,3 +5206,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`PACKAGE_OK dir=dist/typephp-kakasi-0.1.0-win64 version=0.1.0 sha256=134d796d… size=5894656`；`health-version` 双模式 PASS；**双模式 smoke 163→164/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：manifest 的价值在于**可证伪**——哈希由打包脚本自己对副本重算并比对，而不是抄一遍；版本号只放在一个文件里，脚本与运行时都读它。
 **证据**：`build_f623.log`、`package_f623.log`、`selftest_f623.log`、`{req,cnt,pat,bnd}_run_f623.log`、`gate_live_f623.log`。
+
+## F624（2026-11-15）：安装包（FR-17 收尾）
+**交付**：`scripts/package.sh` 在 manifest 之后追加 zip 安装包 `dist/typephp-kakasi-<ver>-win64.zip`，用全路径 `C:/Program Files/7-Zip/7z.exe`（该机 7-Zip 不在 PATH），并跑 `7z t` 自检归档完整性；缺 7-Zip 时打印 `ARCHIVE_SKIPPED` 而不是静默跳过。
+**结果**：`PACKAGE_OK … sha256=134d796d…`、`ARCHIVE_OK path=dist/typephp-kakasi-0.1.0-win64.zip sha256=7a015d3f…`；`7z l` 显示两件（exe 5,894,656 B + manifest 180 B，压缩后 1,907,403 B）。引擎与测试未改，F623 基线（自检 0 FAIL / 四 harness 0 / 双模式 164/0 / par·fair 0 / 哨兵 0）保持不变。
+**记法**：归档也要**可证伪**——打包后立刻 `t`（test）一次，且把归档哈希打进同一份输出，后续可据 `manifest.txt` 的 exe 哈希与 zip 哈希分别核对。
+**证据**：`engine/package_f623.log`（首段）、本轮 `package` 输出（`ARCHIVE_OK … 7a015d3f…`）。
