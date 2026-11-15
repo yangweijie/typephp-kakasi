@@ -286,10 +286,11 @@ function api_plugins_select(string $text, string $fp): string
             continue;
         }
         if ($f[1] == "*" || strpos($fp, $f[1]) !== false) {
-            return $f[0] . "|" . $f[1] . "|" . $f[2] . "|" . $f[3] . "|" . $total;
+            $wp = count($f) >= 6 ? $f[5] : "";
+            return $f[0] . "|" . $f[1] . "|" . $f[2] . "|" . $f[3] . "|" . $total . "|" . $wp;
         }
     }
-    return "none||2|0|" . $total;
+    return "none||2|0|" . $total . "|";
 }
 
 function api_plugins_apply(): string
@@ -298,6 +299,12 @@ function api_plugins_apply(): string
     if ($st[0] != "none") {
         model_set_attn_mode((int) $st[2]);
         model_set_kv_f16((int) $st[3]);
+        // F642: the optional sixth field selects resident weight precision (0 = f16, 1 = int8).
+        // Absent means "leave the shipped default alone" - the setter drops residency, so it is
+        // only called when a vendor profile actually asks for it.
+        if (count($st) >= 6 && $st[5] != "") {
+            model_set_weight_prec((int) $st[5]);
+        }
     }
     return $st[0] . "|" . $st[1] . "|" . model_attn_mode() . "|" . $st[3] . "|"
         . ($st[0] == "none" ? 0 : 1) . "|" . $st[4];
@@ -306,12 +313,15 @@ function api_plugins_apply(): string
 function api_plugins_json(): string
 {
     // Reporting only: the knobs were applied once at server start, so this must not touch a live
-    // session's KV. attn_mode is read back from the engine; kv_f16 is the profile's intent.
+    // session's KV. attn_mode/weight_prec are read back from the engine; kv_f16 and wprec_intent
+    // are the profile's intent (wprec_intent is -1 when the line has no sixth field).
     $st = explode("|", api_plugins_select(api_plugins_text(), model_device_fingerprint(0)));
     $applied = $st[0] == "none" ? 0 : 1;
+    $wpi = (count($st) >= 6 && $st[5] != "") ? $st[5] : "-1";
     return "{\"profiles\":" . $st[4] . ",\"active\":\"" . api_esc($st[0]) . "\",\"match\":\""
         . api_esc($st[1]) . "\",\"device\":\"" . api_esc(model_device_fingerprint(0))
         . "\",\"attn_mode\":" . model_attn_mode() . ",\"kv_f16\":" . $st[3]
+        . ",\"weight_prec\":" . model_weight_prec() . ",\"wprec_intent\":" . $wpi
         . ",\"applied\":" . $applied . "}";
 }
 
@@ -22898,15 +22908,18 @@ function main(): void
     $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
     $plB = api_plugins_select($plText, "some cpu");
     $plC = api_plugins_select("bad|line\n", "Arc");
-    $plOk1 = $plA == "arc|Arc|1|1|3" ? 1 : 0;
-    $plOk2 = $plB == "last|*|2|0|3" ? 1 : 0;
-    $plOk3 = $plC == "none||2|0|1" ? 1 : 0;
-    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . "\n";
-    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1) {
-        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped)\n";
+    $plOk1 = $plA == "arc|Arc|1|1|3|" ? 1 : 0;
+    $plOk2 = $plB == "last|*|2|0|3|" ? 1 : 0;
+    $plOk3 = $plC == "none||2|0|1|" ? 1 : 0;
+    // F642: 6th field (weight_prec) - a line with 6 fields should parse the 6th field
+    $plD = api_plugins_select("w|Arc|0|1|note|0\n", "Arc");
+    $plOk4 = $plD == "w|Arc|0|1|1|0" ? 1 : 0;
+    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . "\n";
+    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1) {
+        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, weight_prec parsed)\n";
     } else {
-        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . " sel=" . $plA
-            . " fb=" . $plB . " empty=" . $plC . "\n";
+        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . " sel=" . $plA
+            . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour

@@ -5335,3 +5335,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`PROFILES: PASS`；自检 0 FAIL；四 harness 0；smoke 双模式 **191/0**；par/fair 0；哨兵 0；`check_gates 199/0`。
 **记法**：机制类功能的门要落在**决策函数**上（选择/匹配/排序），而不是落在“最终状态恰好等于默认值”的表面输出上；把纯决策从副作用里拆出来是最小代价。
 **证据**：`build_f641.log`、`selftest_f641.log`（793–794 行）、`{req,cnt,pat,bnd}_run_f641.log`、`gate_live_f641.log`。
+
+## F642（2026-11-15）：FR-05 weight_prec 可选字段（可单测、可报告、可热插拔）
+**动机**：FR-05 "厂商调优内核插件" 要求把更多内核旋钮放入档案；`weight_prec`（权重精度：0=f16、1=int8）是引擎已有的旋钮，加入档案后可按厂商自动切换精度/显存占用。
+**改动**：档案格式扩展为 6 字段 `name|match|attn_mode|kv_f16|note|weight_prec(optional 0/1)`；`api_plugins_select` 解析第 6 字段，`api_plugins_apply` 在匹配行存在第 6 字段时调用 `model_set_weight_prec`（仅在档案给出时调用，不覆盖默认）；`/plugins` 新增 `weight_prec`（引擎当前值）与 `wprec_intent`（档案意图，-1=未指定）。
+**结果**：`PROFILES: PASS` 新增 6 字段夹具 PASS；`par-plugins-weight_prec` 双模式 PASS；`/plugins` 返回 `weight_prec` (0/1) 与 `wprec_intent` (-1/0/1)；基线不变（出厂档案仍 5 字段，int8 默认）。基线：自检 0 FAIL、四 harness 0、SMOKE 双模式 **191/0**、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：档案格式演进必须**可加字段不破坏旧行**——可选字段放末尾、缺省即默认；解析器用 `count($f) >= 6` 兼容；setter 只在字段非空时调用，避免每轮启动都重算并清 KV。
+**证据**：`build_f642.log`、`selftest_f642.log`（PROFILES wprec=0）、`gate_live_f642.log`（`par-plugins-weight_prec` PASS）、`par_smoke_f642.log`。

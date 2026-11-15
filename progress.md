@@ -2898,3 +2898,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F641（2026-11-15）：PROFILES 选择逻辑单测
 - **重构**：`api_plugins_select`（纯选择）+ `api_plugins_apply`/`api_plugins_json` 消费之。
 - **门**：自检 `PROFILES: PASS`（首匹配/通配回落/跳行三规则）；自检 0 FAIL；smoke 双模式 191/0；par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F642（2026-11-15）：weight_prec 可选档案字段
+- **交付**：vendor_profiles.txt 第 6 字段 `weight_prec(0/1)`，`api_plugins_select` 解析，`api_plugins_apply` 条件调用 `model_set_weight_prec`，`/plugins` 报告 `weight_prec`/`wprec_intent`。
+- **门**：`PROFILES: PASS`（6 字段夹具 PASS）、`par-plugins-weight_prec` PASS；基线 191/0 双模式。

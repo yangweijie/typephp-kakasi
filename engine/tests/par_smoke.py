@@ -199,6 +199,13 @@ def main():
     check("par-json-error-shape", isinstance(oerr, dict) and oerr.get("type") != "error"
           and isinstance(oerr.get("error"), dict), odet + " " + str(oerr)[:100])
 
+    # F642: plugins endpoint reports weight_prec
+    with urllib.request.urlopen(BASE + "/plugins", timeout=30) as r:
+        pl = json.loads(r.read().decode())
+    check("par-plugins-weight_prec", pl.get("weight_prec") in (0, 1)
+          and pl.get("wprec_intent") in (-1, 0, 1)
+          and pl.get("profiles", 0) >= 3, str(pl))
+
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1
 

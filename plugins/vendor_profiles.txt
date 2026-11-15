@@ -1,7 +1,8 @@
 # typephp-kakasi vendor profiles (FR-05). A profile is declarative, not loaded code: the binary
 # stays one, and each line maps a device-fingerprint substring to kernel knobs the engine already
-# owns. Fields: name|match|attn_mode|kv_f16|note
+# owns. Fields: name|match|attn_mode|kv_f16|note|weight_prec(optional 0=f16,1=int8)
 # attn_mode: 0 score-cache, 1 three-pass, 2 split-KV (default). kv_f16: 1 = f16 KV, 0 = f32.
+# weight_prec: 0 = f16 weights, 1 = int8 weights. If absent, engine default is used.
 # The first line whose `match` occurs in the device fingerprint wins; `*` matches anything, so keep
 # specific vendors above the fallback. Deleting this file simply keeps the shipped defaults.
 intel-arc|Intel|2|0|Arc: split-KV attention with f32 KV (validated on B390)
