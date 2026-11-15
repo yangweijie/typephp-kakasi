@@ -2719,3 +2719,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：`anth-unclaimed-refuse`、`anth-tool-required-refuse`、`anth-deep3-refuse` 双模式 PASS（均 400）；**SMOKE/SMOKE-PRETTY 136/0**；四 harness 0、自检 0 FAIL、哨兵 0。
 - **Responses 传输（f604b）**：`resp-unclaimed-refuse`、`resp-deep3-refuse`、`resp-tool-required-refuse` 双模式 PASS（`text.format` 的 `json_schema` 记号与函数 `parameters` 同样命中守卫）；**双模式 smoke 139/0**。
 
+## F605（2026-11-15）：10 的幂次 multipleOf（免行走）
+- **观察**：乘数的有效数字为 `1`（0.0001、1、10…）时，任何小数位数 ≤ d 的字面量都是其倍数——区间下界本身即可直接发射，无需 4096 步行走。
+- **实现**：strip 在行走之前先判 10 幂（`msig=="1"` 且 `min` 小数位 ≤ d，闭下界、且在 max 内）；命中即取 min。
+- **自检**：`pi_pow=[min]`；原“步数上限”对照改用**非 10 幂**乘数（0.0000000000000000003）并保持 `pi_walk_cap=[kept]`。
+- **活体**：`pinned_interval_pow10_ok` 200 `{"n":0.0001234567890123456,...}`；`pinned_interval_walk_cap_refuse` 400。
+- **梯**：BUILD_OK（`build_f605`）；自检 0 FAIL；四 harness 0；双模式 smoke 139/0；par/fair 0；哨兵 0。
+

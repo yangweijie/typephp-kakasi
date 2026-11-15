@@ -5100,4 +5100,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：同一语义在**每条传输**都要有等价入口（OpenAI response_format / Anthropic output_format / 工具 parameters vs input_schema）；检测器的“键名假设”是最常见的传输级缺口。
 **证据**：`build_f604.log`、`selftest_f604.log`（0 FAIL）、四个 `*_f604` harness（0）、`gate_live_f604.log`（136/0 双模式）。
 **Responses 传输**：`text.format` 的 `json_schema` 记号与函数 `parameters` 同样命中守卫——`resp-unclaimed-refuse`/`resp-deep3-refuse`/`resp-tool-required-refuse` 双模式 PASS（`gate_live_f604b.log`，**139/0**）。
+
+## F605（2026-11-15）：10 幂次乘数免行走
+**观察**：m 的功效数字为 1（10^k 或 10^-k）时，任何小数位 ≤ d 的字面量都是倍数，故闭下界即合法值。strip 在行走前判定（闭下界、在 max 内），命中直接取 min。原“4096 步上限”对照改用 3e-19 以保留判别力。
+**门**：自检 `pi_pow`/`pi_walk_cap`；活体 `pinned_interval_pow10_ok` 200、`pinned_interval_walk_cap_refuse` 400——双模式 smoke 139/0，四 harness 0、自检 0 FAIL。
+**记法**：倍数搜索的可用捷径按代价排序——0 → 端点 → 1×m → 10 幂整除 → 有上限的加法行走；每加一条捷径，都要**替换旧的“能力上限”对照**以保持它仍有判别力（本轮把 1e-19 换成 3e-19）。
+**证据**：`build_f605.log`、`selftest_f605.log`（0 FAIL）、四个 `*_f605` harness（0）、`gate_live_f605.log`（139/0 双模式）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

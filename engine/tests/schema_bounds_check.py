@@ -1319,11 +1319,18 @@ if not good:
 print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_mult_walk_ok", code, good, txt[:140]))
 
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":2,"maximum":2,'
-                              '"multipleOf":0.0000000000000000001}'))
+                              '"multipleOf":0.0000000000000000003}'))
 good = code == 400 and "numeric bounds" in txt
 if not good:
     bad += 1
 print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_walk_cap_refuse", code, good, txt[:140]))
+
+code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.0001234567890123456,'
+                              '"maximum":1,"multipleOf":0.0000000000000000001}'))
+good = code == 200 and '"n":0.0001234567890123456' in txt
+if not good:
+    bad += 1
+print("%-20s status=%s ok=%s text=%s" % ("pinned_interval_pow10_ok", code, good, txt[:140]))
 
 code, txt = post_raw(raw_leaf('{"type":"number","minimum":0.5,"maximum":0.5,'
                               '"exclusiveMinimum":0.5,"exclusiveMaximum":0.5}'))
