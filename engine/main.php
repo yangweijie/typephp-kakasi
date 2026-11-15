@@ -11972,6 +11972,39 @@ function api_decimal_add(string $a, string $b): string
     return api_decimal_canon($sb, $r[0], $r[1]);
 }
 
+// F596: drop insignificant whitespace outside JSON strings so every detector sees one text shape.
+// Pretty-printed requests (indent=2) used to bypass whitespace-sensitive route comparisons and fall
+// through to unconstrained generation. String contents and escapes are copied verbatim.
+function api_json_compact(string $s): string
+{
+    $out = "";
+    $inStr = 0;
+    $esc = 0;
+    $n = strlen($s);
+    for ($i = 0; $i < $n; $i++) {
+        $c = substr($s, $i, 1);
+        if ($inStr == 1) {
+            $out = $out . $c;
+            if ($esc == 1) {
+                $esc = 0;
+            } else if ($c == "\\") {
+                $esc = 1;
+            } else if ($c == "\"") {
+                $inStr = 0;
+            }
+            continue;
+        }
+        if ($c == " " || $c == "\t" || $c == "\n" || $c == "\r") {
+            continue;
+        }
+        if ($c == "\"") {
+            $inStr = 1;
+        }
+        $out = $out . $c;
+    }
+    return $out;
+}
+
 // F588: a single-point interval (minimum == maximum, same literal text) is exactly a const. When
 // the literal is past the int64 grid, rewrite the leaf into a const so the value-plan writer emits
 // the text verbatim. A real span at that width stays refused until decimal-string arithmetic exists.
@@ -15062,6 +15095,7 @@ function api_serve_par(int $port): void
                 }
             }
             $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
+            $body = api_json_compact($body);
             if ($body != "" && strpos($req, "/v1/messages") !== false) {
                 $body = api_anthropic_output_format($body);
             }
@@ -15691,6 +15725,7 @@ function api_serve(int $port): void
             }
         }
         $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
+        $body = api_json_compact($body);
         if ($body != "" && strpos($req, "/v1/messages") !== false) {
             $body = api_anthropic_output_format($body);
         }
@@ -20948,6 +20983,9 @@ function main(): void
     // F592: the multiplier literal is 1 x m and serves an interval containing it; a miss stays.
     $piMul = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.0001234567890123456,"maximum":1,"multipleOf":0.5},"note":{"type":"string"}}}');
     $piMulMiss = api_schema_strip_pinned_interval('{"properties":{"n":{"type":"number","minimum":0.6000000000000000001,"maximum":1,"multipleOf":0.5},"note":{"type":"string"}}}');
+    // F596: request bodies are compacted once at ingestion; whitespace inside strings survives.
+    $jcA = api_json_compact('{ "a" : { "b" : "x  y" , "c" : [ 1 , 2 ] } }');
+    $jcB = api_json_compact("{\"s\":\"q\\\"  t\"}");
     // F593: exact decimal addition (digit carries) and its two new consumers - one ulp inside an
     // exclusive side, and the multiple walk.
     $dA = api_decimal_add("1", "2");
@@ -21039,7 +21077,7 @@ function main(): void
         . "] unb_int_frac=[" . $bdIntFrac . "] unb_int_quarter=[" . $bdIntQuarter
         . "] unb_int_five=[" . $bdIntFive . "]"
         . "] win_wide=[" . $bdWinWide . "] win_one=[" . $bdWinOne . "] win_mult=[" . $bdWinMult
-        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
+        . "] win_narrow_shape=[" . $bdWinNarrow . "] win_below=[" . $bdWinBelow . "] win_nine=[" . $bdWinNine . "] win_ten=[" . $bdWinTen . "] win_eleven=[" . $bdWinEleven . "] win_twelve=[" . $bdWinTwelve . "] win_thirteen=[" . $bdWinThirteen . "] win_fourteen=[" . $bdWinFourteen . "] win_fifteen=[" . $bdWinFifteen . "] win_sixteen=[" . $bdWinSixteen . "] win_seventeen=[" . $bdWinSeventeen . "] win_eighteen=[" . $bdWinEighteen . "] over19=[" . $bdOver19 . "] exp_lit=[" . $expA . "|" . $expB . "|" . $expC . "|" . $expBig . "] exp_bounds=[" . $expBounds . "] pi_plan=[" . $piPlan . "] pi_keep=[" . (strpos($piKeep, "\"const\"") === false ? "grid" : "const") . "] pi_span=[" . (strpos($piSpan, "\"const\"") === false ? "kept" : "const") . "] pi_excl=[" . (strpos($piExcl, "\"const\":0.0001234567890123459}") !== false ? "max" : "kept") . "] pi_exmax=[" . (strpos($piExMax, "\"const\":0.0001234567890123456}") !== false ? "min" : "kept") . "] pi_both=[" . (strpos($piBoth, "\"const\"") === false ? "kept" : "const") . "] pi_zero_ex=[" . (strpos($piZeroEx, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_min_only=[" . (strpos($piZeroMinOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_zero_max_only=[" . (strpos($piZeroMaxOnly, "\"const\":0}") !== false ? "zero" : "kept") . "] pi_mul=[" . (strpos($piMul, "\"const\":0.5}") !== false ? "m" : "kept") . "] pi_mul_miss=[" . (strpos($piMulMiss, "\"const\":1}") !== false ? "walk" : "kept") . "] dec_add=[" . $dA . "|" . $dB . "|" . $dC . "|" . $dD . "|" . $dE . "] pi_walk_cap=[" . (strpos($piWalkCap, "\"const\"") === false ? "kept" : "const") . "] pi_ex_empty=[" . (strpos($piExEmpty, "\"const\"") === false ? "kept" : "const") . "] pi_bad=[" . (strpos($piBad, "\"const\"") === false ? "kept" : "const") . "] json_compact=[" . (strpos($jcA, "x  y") !== false ? "keepstr" : "loststr") . "|" . $jcB . "]" . "] pi_zero=[" . (strpos($piZero, "\"const\":0}") !== false ? "zero" : "kept") . "]"
         . "] mult_number=[" . $bdBC . "] excl_bool=[" . $bdBD . "] excl_bool_false=[" . $bdBE
         . "] bool_shape=[" . $bdBF . "] bool_alone=[" . $bdBG . "] multi_plan=[" . $bdBH
         . "] unbounded_2m=[" . $bdBI . "
@@ -21069,6 +21107,8 @@ function main(): void
         && strpos($piZeroMaxOnly, "\"const\":0}") !== false
         && strpos($piMul, "\"const\":0.5}") !== false
         && strpos($piMulMiss, "\"const\":1}") !== false
+        && $jcA == '{"a":{"b":"x  y","c":[1,2]}}'
+        && $jcB == '{"s":"q\"  t"}'
         && $dA == "3" && $dB == "1" && $dC == "-0.5"
         && $dD == "0.0001234567890123457" && $dE == "0"
         && strpos($piWalkCap, "\"const\"") === false

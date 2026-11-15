@@ -2662,3 +2662,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **梯**：BUILD_OK（`build_f595b`）；自检 0 FAIL；四 harness 0；8000 125/0；par/fair 0；哨兵 0。
 - **路由常驻门（f595d）**：新增 `chat-oneof-const-grammar`（属性级 const + grammar 叶子，修复前对标准 JSON 是死码）与 `chat-root-oneof-const-grammar`（根级；候选联合可返回最小合法分支对象，门只断言合法性）——smoke **127/0**。
 
+## F596（2026-11-15）：请求体入口紧凑化——美化 JSON 不再绕过路由
+- **发现**：给 smoke 加 `SMOKE_PRETTY=1`（`indent=2` 序列化）后 **17 项** deep40/嵌套检测全部失效（散文或错误形状）——整族检测器依赖紧凑文本。
+- **修复**：`api_json_compact` 在两处服务器读取 body 后各调用一次；扫描器跟踪字符串/转义，只删除字符串外的空白。字符串内容与 `\"` 原样保留（自检 `json_compact=[keepstr|...]`）。
+- **结果**：普通序列化与美化序列化 **smoke 都 127/0**（修复前美化模式 109/18）。
+- **门强化**：`gate_live.sh` 现在把美化 smoke 作为常驻门，并且**smoke 退出非零会让 gate_live 退出非零**（此前只打印 FAIL 计数却仍 exit 0，曾让红梯子看起来是绿的）。
+- **梯**：BUILD_OK（`build_f596`）；自检 0 FAIL；四 harness 0；SMOKE 127/0；SMOKE-PRETTY 127/0；par/fair 0；哨兵 0。
+

@@ -7,6 +7,7 @@ Kept dependency-free (urllib) so it runs on a bare Python. Each check states wha
 must be true, not just "got 200" - a wrong shape is a failure.
 """
 import json
+import os
 import re
 import socket
 import sys
@@ -19,8 +20,11 @@ BASE = "http://127.0.0.1:%d" % PORT
 fails = []
 
 
+PRETTY = os.environ.get("SMOKE_PRETTY") == "1"
+
+
 def post(path, body, stream=False):
-    data = json.dumps(body).encode()
+    data = (json.dumps(body, indent=2) if PRETTY else json.dumps(body)).encode()
     req = urllib.request.Request(BASE + path, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as r:
         raw = r.read().decode()

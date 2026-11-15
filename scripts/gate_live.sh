@@ -57,8 +57,16 @@ if ! wait_health 8000 40; then
   exit 2
 fi
 python "$E/tests/api_smoke.py" > "$E/api_smoke_$TAG.log" 2>&1
-echo "SMOKE_EXIT=$?" >> "$E/api_smoke_$TAG.log"
+SMOKE_RC=$?
+echo "SMOKE_EXIT=$SMOKE_RC" >> "$E/api_smoke_$TAG.log"
 echo "SMOKE: PASS=$(grep -c 'PASS' "$E/api_smoke_$TAG.log") FAIL=$(grep -c 'FAIL' "$E/api_smoke_$TAG.log")"
+# F596: the same suite with pretty-printed request bodies. Whitespace outside strings must not
+# change routing - before the ingestion compaction this run failed 17 schema checks that the
+# compact run never touched.
+SMOKE_PRETTY=1 python "$E/tests/api_smoke.py" > "$E/api_smoke_pretty_$TAG.log" 2>&1
+SMOKE_PRETTY_RC=$?
+echo "SMOKE_PRETTY_EXIT=$SMOKE_PRETTY_RC" >> "$E/api_smoke_pretty_$TAG.log"
+echo "SMOKE-PRETTY: PASS=$(grep -c 'PASS' "$E/api_smoke_pretty_$TAG.log") FAIL=$(grep -c 'FAIL' "$E/api_smoke_pretty_$TAG.log")"
 # F351: the served speculation claim becomes a standing observation instead of a one-off
 # measurement - spec off vs spec on at equal temperature, plus the engine's own counters. Reported,
 # not asserted: the honest result so far is "runs, accepts, does not speed this workload up", and a
@@ -102,4 +110,10 @@ echo "PAR: $(tail -1 "$E/par_smoke_$TAG.log")"
 echo "FAIR: $(tail -1 "$E/fairness_$TAG.log")"
 echo "THRU: $(grep -E 'scaling|THROUGHPUT:' "$E/throughput_$TAG.log" | tr '\n' ' ')"
 echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
+# F596: a failing smoke suite must fail the gate - the FAIL counts were previously printed while
+# the script still exited 0, which let red ladders look green.
+if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0}"
+  exit 1
+fi
 echo GATE_LIVE_DONE tag=$TAG

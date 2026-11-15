@@ -5038,4 +5038,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **记法**：**路由死码**与“写入器坏”很难从单测区分——单测常喂紧凑 JSON；必须用真实客户端序列化（json.dumps）做活体。空白/键序这类“格式差异”会让整条特性对真实客户端隐形。
 **证据**：`build_f595b.log`、`selftest_f595b.log`（0 FAIL）、四个 `*_f595b` harness（0）、`gate_live_f595b.log`（125/0、par/fair 0、哨兵 0）、`api_smoke_f595b.log`（`PASS chat-oneof-enum-grammar`）。
 **路由常驻门**：`chat-oneof-const-grammar`（属性级 const 形态，修复前死码）与 `chat-root-oneof-const-grammar`（根级：候选联合可答最小合法分支对象，门按合法性断言）——`gate_live_f595d.log`，smoke **127/0**。
+
+## F596（2026-11-15）：入口紧凑化，关闭“美化 JSON”整族失效
+**证据链**：`SMOKE_PRETTY=1`（indent=2）首跑 `gate_live_f595e.log`：**109 PASS / 18 FAIL**，失败集中在 deep40/嵌套对象检测（返回散文或 `{"count":100000}` 等浅层形状）——这些检测器把请求文本当作紧凑 JSON 来扫描。
+**修复**：`api_json_compact` 在**两处**服务器读完 body 后调用：字符扫描跟踪 `inStr/esc`，字符串外的空格/制表/换行删除，字符串内的空白与 `\"` 保留（自检 `json_compact` 两门）。检测器因此只看到一种文本形态。
+**效果**：`gate_live_f596p.log` 美化模式 **127/0**；普通模式 `gate_live_f596.log` **127/0**；`gate_live_f596b.log` 作为常驻双模式门（SMOKE 与 SMOKE-PRETTY）**双双 127/0**。
+**门强化**：`gate_live.sh` 在末尾检查两个 smoke 退出码，非零即 `GATE_FAIL` + exit 1——此前 smoke FAIL 只打印不致病，红梯子可以假装绿（F594d/e 就发生过）。
+**记法**：**路由/检测器的输入形态是一等公民**。要么所有检测器对空白健壮，要么入口统一规范化；后者一次解决一整族问题，且比逐处修补更可验证（双模式 smoke 就是断言）。
+**证据**：`gate_live_f595e.log`（红）、`gate_live_f596p.log`/`gate_live_f596b.log`（绿）、`selftest_f596.log`、`api_smoke_pretty_f596p.log`。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。
