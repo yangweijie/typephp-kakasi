@@ -5085,4 +5085,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`chat-unclaimed-2dao-refuse` 双模式 **400**，双模式 smoke **132/0**，四 harness 0、自检 0 FAIL——失败关闭第一次有活体证明。
 **记法**：**claim 谓词必须镜像检测器的返回契约**（字符串用 `!= ""`、数组用 `count`、整数哨兵按阈值）；把“非空”当成统一判据会在 tpdp 的弱类型下静默失效。另：任何“从 schema 文本里找下一个 properties 块”的下降都必须排除 schema 关键字，否则会把数组/组合关键字当成用户属性。
 **证据**：`selftest_f602c.log`（`UNCLAIM-DIAG2 … claim=0`）、`gate_live_f602c.log`（132/0）、`api_smoke_f602c.log`（`PASS chat-unclaimed-2dao-refuse`）。
+
+## F603（2026-11-15）：工具参数 required 的失败关闭
+**规则**：强制 `tool_choice`（非 none）下，工具 `parameters` 含非空 `required` 且无可枚举候选 ⇒ 空参 `{}` 必然违反 required，改为具名 400。
+**判定**：逐 `parameters` 块检查；工具名取该块之前最近的 `"function"` 后第一个 `name`；候选由 `api_schema_arg_candidates` 判定。
+**门**：`tool-required-unservable-refuse` 双模式 PASS；既有工具门（候选、deep3、parallel、stream）全绿 → **SMOKE/SMOKE-PRETTY 133/0**。
+**记法**：工具路径的“默认空参”会把不可服务 schema 伪装成成功；失败关闭在工具面必须显式，且只在强制执行时生效（`tool_choice` 缺失时模型可以不调用）。
+**证据**：`build_f603.log`、`selftest_f603.log`（0 FAIL）、四个 `*_f603` harness（0）、`gate_live_f603.log`（133/0 双模式）。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

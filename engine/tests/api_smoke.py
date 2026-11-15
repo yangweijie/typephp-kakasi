@@ -1839,6 +1839,25 @@ def main():
         td_detail = "400"
     check("tool-deep3-ao", td_ok, td_detail[:160])
 
+    # F603: a forced tool whose parameters require a FREEFORM string has no enumerable candidate
+    # set; the empty-arguments answer would violate required, so it must refuse 400.
+    tool_req_body = {"messages": [{"role": "user", "content": "Put the note."}],
+                     "max_tokens": 32, "temperature": 0,
+                     "tools": [{"type": "function", "function": {
+                         "name": "put", "parameters": {"type": "object",
+                                                       "properties": {"q": {"type": "string"}},
+                                                       "required": ["q"]}}}],
+                     "tool_choice": {"type": "function", "function": {"name": "put"}}}
+    tr_ok = False
+    tr_detail = ""
+    try:
+        r = post("/v1/chat/completions", tool_req_body)
+        tr_detail = (r["choices"][0]["message"].get("tool_calls") or [{}])[0].get("function", {}).get("arguments", "")
+    except urllib.error.HTTPError as e:
+        tr_detail = e.read().decode()[:300]
+        tr_ok = e.code == 400 and ("required" in tr_detail or "cannot be enumerated" in tr_detail)
+    check("tool-required-unservable-refuse", tr_ok, tr_detail[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.

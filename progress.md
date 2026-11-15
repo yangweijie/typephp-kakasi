@@ -2707,3 +2707,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：`UNCLAIM-DIAG2 claim=0`；活体 `chat-unclaimed-2dao-refuse` 在普通与美化序列化下均返回 **400**（`response schema is not supported…`），**双模式 smoke 132/0**；四 harness 0、自检 0 FAIL、哨兵 0。
 - **意义**：这是“schema 存在但无人认领 ⇒ 显式 400”的**首次活体证明**（F600 的失败关闭现在有可验证路径）。
 
+## F603（2026-11-15）：工具参数的一般失败关闭
+- **问题**：强制工具调用时，参数含 `required` 却无可枚举候选的 schema 仍被答成 `{}`（违反 required）。
+- **实现**：`api_tools_required_unservable`——仅在 `tool_choice` 存在且不是 `none` 时检查：逐个 `parameters` 块若有非空 `required` 数组且 `api_schema_arg_candidates` 为空 ⇒ 命中。接入校验链，具名 400。
+- **门**：`tool-required-unservable-refuse`（必填自由字符串参数）双模式 PASS（400）；其余工具用例（候选可枚举、deep3、parallel）保持。
+- **梯**：BUILD_OK（`build_f603`）；自检 0 FAIL；四 harness 0；SMOKE/SMOKE-PRETTY **133/0**；哨兵 0。
+

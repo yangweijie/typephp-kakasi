@@ -12078,6 +12078,41 @@ function api_response_schema_claim(string $body): int
     return $claim;
 }
 
+// F603: forced tool calls whose parameters carry required keys but no enumerable candidate set used
+// to answer an empty arguments object - a silent violation of required. Refuse instead.
+function api_tools_required_unservable(string $body): int
+{
+    if (strpos($body, "\"tool_choice\"") === false || strpos($body, "\"tool_choice\":\"none\"") !== false) {
+        return 0;
+    }
+    $pos = 0;
+    while (true) {
+        $kp = strpos($body, "\"parameters\"", $pos);
+        if ($kp === false) {
+            return 0;
+        }
+        $bo = strpos($body, "{", $kp);
+        if ($bo === false) {
+            return 0;
+        }
+        $blk = api_balance_block($body, $bo);
+        if ($blk == "") {
+            return 0;
+        }
+        if (preg_match('/"required"\s*:\s*\[\s*"/', $blk) == 1) {
+            $head = substr($body, 0, $kp);
+            $fp = strrpos($head, "\"function\"");
+            $nm = [];
+            if ($fp === false
+                || preg_match('/"name"\s*:\s*"([A-Za-z0-9_\-]+)"/', substr($head, $fp), $nm) != 1
+                || count(api_schema_arg_candidates($body, $nm[1])) == 0) {
+                return 1;
+            }
+        }
+        $pos = $bo + strlen($blk);
+    }
+}
+
 // F598: arrays nested three or more levels deep whose innermost element is an OBJECT are not
 // served by any writer; without this guard the request fell through to unconstrained generation
 // and answered a different shape. Scalar arrays keep their 3D/4D/5D writers.
@@ -16022,6 +16057,10 @@ function api_serve(int $port): void
                 // F599: the tool path otherwise answers an empty arguments object, which violates
                 // any required key in such a schema.
                 $payload = "{\"error\":{\"message\":\"tool parameters with arrays nested three or more levels deep of objects are not supported\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
+            } else if (api_tools_required_unservable($body) == 1) {
+                // F603: required keys without an enumerable candidate set.
+                $payload = "{\"error\":{\"message\":\"tool parameters require keys that cannot be enumerated; refuse instead of answering empty arguments\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_nested_overflow($schBody) == 1) {
                 // F535: deeper than the 256-level descent the nested-object detector supports. Past
