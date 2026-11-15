@@ -690,6 +690,58 @@ def main():
     check("anth-tool-named-parallel", len(ab) == 2 and acities == ["London", "Paris"]
           and r.get("stop_reason") == "tool_use", "%s %s" % (str(ab)[:120], r.get("stop_reason")))
 
+    # F618: the streamed {"type":"any"} path used to constrain to a bare skeleton with
+    # "arguments":{} - the winning tool arrived without its arguments, and nothing asserted the
+    # payload. It now builds the candidates from each tool's own input_schema.
+    def anth_blocks(raw):
+        starts, parts = {}, {}
+        for d in sse_data(raw):
+            o = json.loads(d)
+            cb = o.get("content_block") or {}
+            if o.get("type") == "content_block_start" and cb.get("type") == "tool_use":
+                starts[o.get("index")] = cb.get("name")
+            if o.get("type") == "content_block_delta":
+                i = o.get("index")
+                parts[i] = parts.get(i, "") + (o.get("delta") or {}).get("partial_json", "")
+        ins = {}
+        for i, s in parts.items():
+            try:
+                ins[i] = json.loads(s)
+            except Exception:
+                ins[i] = {}
+        return starts, ins
+
+    r = post("/v1/messages", {"messages": [{"role": "user", "content": "Weather in Paris?"}],
+                              "max_tokens": 64, "stream": True, "seed": 5,
+                              "tool_choice": {"type": "any"},
+                              "tools": [{"name": "get_weather", "input_schema": {
+                                  "type": "object", "properties": {
+                                      "city": {"type": "string",
+                                               "enum": ["Paris", "London"]}}}}]}, stream=True)
+    astart, ains = anth_blocks(r)
+    check("anth-stream-any-args", list(astart.keys()) == [0] and astart.get(0) == "get_weather"
+          and ains.get(0, {}).get("city") in ("Paris", "London"), "%s %s" % (astart, ains))
+
+    r = post("/v1/messages", {"messages": [{"role": "user",
+                                            "content": "Call both get_weather and get_time "
+                                                       "in one turn."}],
+                              "max_tokens": 192, "stream": True, "seed": 5,
+                              "parallel_tool_calls": True,
+                              "tool_choice": {"type": "any"},
+                              "tools": [{"name": "get_weather", "input_schema": {
+                                  "type": "object", "properties": {
+                                      "city": {"type": "string",
+                                               "enum": ["Paris", "London"]}}}},
+                                        {"name": "get_time", "input_schema": {
+                                  "type": "object", "properties": {
+                                      "city": {"type": "string",
+                                               "enum": ["Paris", "London"]}}}}]}, stream=True)
+    pstart, pains = anth_blocks(r)
+    check("anth-stream-any-parallel", sorted(pstart.keys()) == [0, 1]
+          and all(pstart[i] in ("get_weather", "get_time") for i in pstart)
+          and all(pains.get(i, {}).get("city") in ("Paris", "London") for i in pains),
+          "%s %s" % (pstart, pains))
+
     # F205: the same parallel turn must survive streaming. OpenAI deltas carry one entry per call
     # with its own index and id; Responses streams one output item per call and completes once.
     stream_par = {"messages": [{"role": "user",

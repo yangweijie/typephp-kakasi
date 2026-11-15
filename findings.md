@@ -5171,3 +5171,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`prop-tuple-d4-closed-ok` 返回 `{"pair":["1000",1000]}`，双模式 **156/0**；自检 0 FAIL、四 harness `CHECK_EXIT=0`、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：“真空”只成立于写入器**能且只**发射元组前缀项的形状；同一关键字的两种数据形态（数组＝元组、对象＝逐元素）必须区分，剥离条件要写成形态谓词而不是关键字存在性。
 **证据**：`build_f617.log`、`selftest_f617.log`、`{req,cnt,pat,bnd}_run_f617.log`、`gate_live_f617b.log`（smoke 双模式 156/0、scaling 1.587×）。
+
+## F618（2026-11-15）：Anthropic 流式 `{"type":"any"}` 携带实参并可并行
+**缺陷**：流式 `tool_choice:{type:"any"}` 的骨架是 `{"name":X,"arguments":{}}`，参数被钉死为空对象——无论 `input_schema` 有什么，客户端都收到 `input` 无实参；且只发一个 `tool_use` 块。
+**改动**：骨架改用 `api_tool_wire` 由 `api_schema_arg_candidates`（`input_schema` 亦被扫描）逐工具逐候选构造；`parallel_tool_calls:true` 时只放“两块串联”候选（与 chat 出口同理，贪心解码在首个完整块即停）；解析改用 `api_tool_calls_json` / `api_tool_items`，逐调用发 `content_block_start/delta/stop`，`index` 与 `toolu_N` 递增，最后统一 `message_delta`+`message_stop`。
+**结果**：`anth-stream-any-args`（单调用且 `input.city ∈ {Paris,London}`）、`anth-stream-any-parallel`（两块，index 0/1，各自实参合法）双模式 PASS；**双模式 smoke 156→158/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：骨架里的字面量就是答案——把 `arguments` 写成 `{}` 等于承诺“没有参数”，而白名单/约束都拦不住它；门必须解析 `partial_json` 的**内容**，只看事件序列会漏掉这一整类退化。
+**证据**：`build_f618.log`、`selftest_f618.log`、`{req,cnt,pat,bnd}_run_f618.log`、`gate_live_f618.log`（smoke 双模式 158/0）。

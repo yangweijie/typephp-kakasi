@@ -2782,3 +2782,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **改动**：`api_schema_strip_vacuous_unevalitems` 增加形态谓词——唯一 `items` 且值为数组时同样剥离 `unevaluatedItems`；`items` 为对象时不剥离。
 - **结果**：`prop-tuple-d4-closed-ok` 返回 `{"pair":["1000",1000]}`；**双模式 smoke 155→156/0**。
 - **梯**：BUILD_OK（`build_f617`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；8001 par/fair 0；哨兵 0；`check_gates` 199/0。
+
+## F618（2026-11-15）：Anthropic 流式 any 的实参与并行
+- **修**：流式 `any` 的骨架原为 `arguments:{}`（参数恒空），改为按 `input_schema` 候选构造 `api_tool_wire`；`parallel_tool_calls` 时用两块候选，逐调用递增 `index`/`toolu_N`。
+- **门**：`anth-stream-any-args`、`anth-stream-any-parallel` 双模式 PASS；**smoke 156→158/0**。
+- **梯**：BUILD_OK（`build_f618`）；自检 0 FAIL；四 harness `CHECK_EXIT=0`；par/fair 0；哨兵 0；`check_gates` 199/0。

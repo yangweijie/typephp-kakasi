@@ -16344,26 +16344,43 @@ function api_serve(int $port): void
                     $anAny = preg_match('/"tool_choice"\s*:\s*\{\s*"type"\s*:\s*"any"/', $body) ? 1 : 0;
                     if ($anAny == 1) {
                         $anNames = api_tool_names($body);
-                        $anSkels = [];
+                        $anWire = [];
                         for ($ani = 0; $ani < count($anNames); $ani++) {
-                            $anSkels[] = "{\"name\":\"" . $anNames[$ani] . "\",\"arguments\":{}}";
+                            $anArgsI = api_schema_arg_candidates($body, $anNames[$ani]);
+                            if (count($anArgsI) > 0) {
+                                for ($anj = 0; $anj < count($anArgsI); $anj++) {
+                                    $anWire[] = api_tool_wire($anNames[$ani], $anArgsI[$anj]);
+                                }
+                            } else {
+                                $anWire[] = api_tool_wire($anNames[$ani], "{}");
+                            }
                         }
-                        if (count($anSkels) > 0) {
-                            $anOut = api_constrained($ids, $anSkels, 64, $prefixCache);
-                            $anText = api_gen_text($anOut, $promptN);
-                            $anPick = $anSkels[0];
-                            for ($ani = 0; $ani < count($anSkels); $ani++) {
-                                if (strpos($anText, $anSkels[$ani]) === 0) {
-                                    $anPick = $anSkels[$ani];
+                        $anSkels = [];
+                        for ($ani = 0; $ani < count($anWire); $ani++) {
+                            $anSkels[] = $anWire[$ani];
+                        }
+                        // F618: a streamed fan-out exists only among pair candidates - greedy
+                        // decoding ends the turn at the first complete block.
+                        if (preg_match('/"parallel_tool_calls"\s*:\s*true/', $body) == 1
+                            && count($anWire) > 1) {
+                            $anSkels = [];
+                            for ($ana = 0; $ana < count($anWire); $ana++) {
+                                for ($anb = 0; $anb < count($anWire); $anb++) {
+                                    if ($ana == $anb) {
+                                        continue;
+                                    }
+                                    if (count($anSkels) >= 24) {
+                                        break;
+                                    }
+                                    $anSkels[] = $anWire[$ana] . "\n" . $anWire[$anb];
                                 }
                             }
-                            $anCall = api_tool_call_json($anPick, $anNames);
-                            $anName = $anCall == "" ? "" : api_str($anCall, "name");
-                            if ($anName != "") {
-                                $anArgs = api_unesc(api_str($anCall, "arguments"));
-                                if ($anArgs == "") {
-                                    $anArgs = "{}";
-                                }
+                        }
+                        if (count($anSkels) > 0) {
+                            $anOut = api_constrained($ids, $anSkels, 192, $prefixCache);
+                            $anList = api_tool_calls_json(api_gen_text($anOut, $promptN), $anNames);
+                            $anItems = api_tool_items($anList);
+                            if (count($anItems) > 0 && api_str($anItems[0], "name") != "") {
                                 $anGen = count(explode(",", $anOut)) - $promptN;
                                 if ($anGen < 0) {
                                     $anGen = 0;
@@ -16372,20 +16389,35 @@ function api_serve(int $port): void
                                          . "{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\","
                                          . "\"model\":\"" . $modelId . "\",\"content\":[],"
                                          . "\"usage\":{\"input_tokens\":" . $promptN . ",\"output_tokens\":0}}}\n\n");
-                                fwrite($c, "event: content_block_start\ndata: {\"type\":\"content_block_start\","
-                                         . "\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\","
-                                         . "\"name\":\"" . api_esc($anName) . "\",\"input\":{}}}\n\n");
-                                fwrite($c, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
-                                         . "\"index\":0,\"delta\":{\"type\":\"input_json_delta\","
-                                         . "\"partial_json\":\"" . api_esc($anArgs) . "\"}}\n\n");
-                                fwrite($c, "event: content_block_stop\ndata: "
-                                         . "{\"type\":\"content_block_stop\",\"index\":0}\n\n");
+                                $anK = 0;
+                                $anSeen = "";
+                                for ($ani = 0; $ani < count($anItems); $ani++) {
+                                    $anName = api_str($anItems[$ani], "name");
+                                    if ($anName == "") {
+                                        continue;
+                                    }
+                                    $anArgs = api_unesc(api_str($anItems[$ani], "arguments"));
+                                    if ($anArgs == "") {
+                                        $anArgs = "{}";
+                                    }
+                                    fwrite($c, "event: content_block_start\ndata: {\"type\":\"content_block_start\","
+                                             . "\"index\":" . $anK . ",\"content_block\":{\"type\":\"tool_use\","
+                                             . "\"id\":\"toolu_" . ($anK + 1) . "\",\"name\":\""
+                                             . api_esc($anName) . "\",\"input\":{}}}\n\n");
+                                    fwrite($c, "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
+                                             . "\"index\":" . $anK . ",\"delta\":{\"type\":\"input_json_delta\","
+                                             . "\"partial_json\":\"" . api_esc($anArgs) . "\"}}\n\n");
+                                    fwrite($c, "event: content_block_stop\ndata: "
+                                             . "{\"type\":\"content_block_stop\",\"index\":" . $anK . "}\n\n");
+                                    $anSeen = $anSeen == "" ? $anName : $anSeen . "," . $anName;
+                                    $anK = $anK + 1;
+                                }
                                 fwrite($c, "event: message_delta\ndata: {\"type\":\"message_delta\","
                                          . "\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":"
                                          . $anGen . "}}\n\n");
                                 fwrite($c, "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
-                                echo "SESSION anth-stream tool=call reason=complete name=" . $anName
-                                    . " mode=any\n";
+                                echo "SESSION anth-stream tool=call reason=complete name=" . $anSeen
+                                    . " mode=any n=" . $anK . "\n";
                                 fclose($c);
                                 continue;
                             }
