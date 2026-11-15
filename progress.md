@@ -2768,4 +2768,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **结果**：根 tuple 活体返回 `["Alice and Bob are discussing the ethics of",1000]`（合法 `[string,int]`）；临时回声已移除，补自检门 `SCHEMA-TOP-TUPLE`。
 - **梯**：BUILD_OK（`build_f612j`）；自检 0 FAIL；四 harness 0；SMOKE/SMOKE-PRETTY **148/0**；哨兵 0。
 - **记法**：同一语义的分支可能散落在**多条分发链**（本文件已见 4 条 top-level 链）；改动必须用“claim 图 + 分支回声”确认命中哪条，而不是只改 grep 到的前几处。
+- **跨传输（f614）**：根 tuple 经 Anthropic `output_format` 与 Responses `text.format` 也返回合法 `[string,int]`（`anth-top-tuple-ok`、`resp-top-tuple-ok` 双模式 PASS）；**双模式 smoke 148→150/0**。
 

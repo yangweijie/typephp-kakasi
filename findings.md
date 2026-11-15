@@ -5154,4 +5154,5 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`["…",1000]` 合法服务；自检 `SCHEMA-TOP-TUPLE` PASS；双模式 **148/0**、四 harness 0、自检 0 FAIL。
 **记法**：grep 到的分支数量 ≠ 分发链数量；用**分支回声**（临时代码，验证后移除）确认实际链路。claim 谓词只能保证“有认领”，定位“谁认领/哪条链写入”仍需回声。
 **证据**：`gate_live_f612h.log`（仅 CLAIM/STRUCT，无 BR）、`gate_live_f612i.log`（BR4 命中+148/0）、`gate_live_f612j.log`（最终 148/0）、`selftest_f612j.log`。
+**跨传输**：`anth-top-tuple-ok`、`resp-top-tuple-ok` 双模式 PASS（`gate_live_f614.log`，**150/0**）——重命名与 tuple 路由对三形状一致。
 **证据**：`build_f581.log`、`selftest_f581.log`（0 FAIL）、`schema_{bounds,required,count,pattern}_f581.log`（`CHECK_EXIT=0`）、`gate_live_f581.log`（smoke 121/0、par/fair 0、scaling 1.554×、哨兵 0）。

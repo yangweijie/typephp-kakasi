@@ -2114,6 +2114,43 @@ def main():
     print("  DIAG top-tuple %s %s" % ("ok" if tt_ok else "bad", tt_txt[:150]))
     check("top-tuple-ok", tt_ok, tt_txt[:160])
 
+    # F613: the root tuple must serve on the other two request shapes as well.
+    ath_tt = {"messages": [{"role": "user", "content": "Give the pair."}], "max_tokens": 32,
+              "output_format": {"type": "json_schema", "schema": {
+                  "type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]}}}
+    att_ok = False
+    att_txt = ""
+    try:
+        r = post("/v1/messages", ath_tt)
+        att_txt = r["content"][0]["text"]
+        try:
+            attv = json.loads(att_txt)
+        except Exception:
+            attv = None
+        att_ok = (isinstance(attv, list) and len(attv) == 2
+                  and isinstance(attv[0], str) and isinstance(attv[1], int))
+    except urllib.error.HTTPError as e:
+        att_txt = e.read().decode()[:200]
+    check("anth-top-tuple-ok", att_ok, att_txt[:160])
+
+    resp_tt = {"input": "Give the pair.", "max_output_tokens": 32,
+               "text": {"format": {"type": "json_schema", "name": "x", "schema": {
+                   "type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]}}}}
+    rtt_ok = False
+    rtt_txt = ""
+    try:
+        r = post("/v1/responses", resp_tt)
+        rtt_txt = r["output"][0]["content"][0]["text"]
+        try:
+            rttv = json.loads(rtt_txt)
+        except Exception:
+            rttv = None
+        rtt_ok = (isinstance(rttv, list) and len(rttv) == 2
+                  and isinstance(rttv[0], str) and isinstance(rttv[1], int))
+    except urllib.error.HTTPError as e:
+        rtt_txt = e.read().decode()[:200]
+    check("resp-top-tuple-ok", rtt_ok, rtt_txt[:160])
+
     # F593: the same rewrite runs over tool parameter schemas (the strip scans the request body),
     # so a tool call must either carry the exact literal or be refused - never a value outside the
     # bounds. Raw JSON for the same reason as above.
