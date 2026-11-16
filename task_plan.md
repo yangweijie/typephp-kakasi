@@ -2507,3 +2507,21 @@ bash scripts/check_gates.sh
 **在飞**：`b2gsfm46t`（tag `f648c`，全程 `&&`，链内先 `grep BUILD_OK` 再对照 exe mtime 与当前时间；`f648b` 的自检产物将被 `f648c` 取代，**`f648b` 的 `orch[frac] FAIL` 不得被引用为"引擎缺陷"**，它是夹具缺陷且已修）。
 **提交条件不变**（见上节四条件）；额外要求：`orch[frac] PASS` 文案里的两个 `budget=` 数值必须与 `frac=0.02` 的算术一致（设备 25.34GiB ⇒ 预算应约 0.51GiB，对照 `orch[policy]` 的 0.05GiB 形态可读），否则说明字段取错。
 **残余项**：F649（`budget_gib` 语义错位 + 三态 `null` 设计，已定方案 C）、F646b 那次 400 的单点观测仍未解释（不阻塞，已固化为"解释不了的观测不能立功能项"）。
+
+### F648 f648c 读数与唯一缺陷（2026-11-16 19:55）
+**绿的部分**：`PROFILES: PASS`（10 字段/9 竖线，五制式全过）、`PARAM-GUARDS: PASS`、四族 harness `CHECK_EXIT=0`（含 bounds）、SMOKE 与 SMOKE-PRETTY 各 **191/0**、`PAR_EXIT=0`/`FAIR_EXIT=0`、scaling **1.592×**、`SENTINELS_LEFT=0`、exe mtime 与构建同刻（03:55:35）⇒ 五层实现与链接、双模式可用性、既有面**均无回归**。
+**唯一红**：`orch[frac] FAIL shrinking the share left a budget field unchanged`（`selftest_f648c.log:108`，`FAILCOUNT=2` 含 `ORCH: 1 FAILURE(S)`）。
+**根因是我门的读值时序，不是引擎**：`model_residency_report()` 的 `budget=` 取 `g_res.budget`，而该字段只在 `residency_prepare`（=**下一次生成**路径）里重算；我的顺序是
+`set frac → plan → report → generate`，于是 `report` 读的是**上一次**驻留态的旧预算（未变），`plan` 的 `budget=` 确实按 0.02 变了 ⇒ "两处都须移动"的合取被我的取样次序否决。
+**修法（只改自检，顺序正确化）**：
+```
+model_set_residency_frac(0.0); model_generate(0,$ids,6);      // 先让默认份额的驻留态成型
+$fracBase=plan; $fracRepBase=report;
+model_set_residency_frac(0.02); $fracPlan=plan;
+$fracTok=generate; $fracRep=report;                           // report 必须在 generate 之后
+$fracVal=model_residency_frac(); $fracIntent=model_residency_frac_intent();
+model_set_residency_frac(0.0); model_generate(0,$ids,6);
+$fracBack=plan; $fracRepBack=report;                           // 同理，回落取样也要在生成之后
+```
+**新学到的通用判据（写进记忆口径）**：**"引擎的只读报告字段"要按其**失效与刷新机制**取样**——凡由某条执行路径重算的状态（此处 `residency_prepare`），读取必须排在该路径之后；否则断言测的是取样时序而非被测性质。这与 F647d"过强断言会逼人去改引擎"是同一类：红先怀疑门，再看引擎。
+**恢复即做**：按上序改 `orch[frac]` 取样点 → 只重建＋跑自检（无需整梯，因为改动仅在自检文本）→ 期望 `orch[frac] PASS` 且 `FAILCOUNT=0` → 再跑 gate_live/check_gates 确认无回归 → 提交 F648（含 `git add -f` 的日志）。算术自检仍须成立：25.34GiB × 0.02 ≈ **0.51GiB**。
