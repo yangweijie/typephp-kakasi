@@ -25,7 +25,7 @@ fi
 # Completeness comes first: a self-test that aborts mid-file contains no FAIL text at all, so
 # judging redness alone certifies a truncated log as green. That is how F644 got committed on
 # selftest_f644g.log (741 lines, RUN_EXIT=-1, no PROFILES section, FAIL count 0).
-if ! bash "$R/scripts/check_selftest_log.sh" --sections "PROFILES PARAM-GUARDS" "$LOG" > /tmp/kakasi_cpl.txt 2>&1; then
+if ! bash "$R/scripts/check_selftest_log.sh" --ignore-fails --sections "PROFILES PARAM-GUARDS" "$LOG" > /tmp/kakasi_cpl.txt 2>&1; then
   echo "SELFTEST_INCOMPLETE log=$(basename "$LOG")"
   grep -E '^(NOT_EVIDENCE|EVIDENCE|floor_lines)' /tmp/kakasi_cpl.txt | head -3
   exit 1

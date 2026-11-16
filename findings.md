@@ -5430,3 +5430,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **处置**：`engine/main.php` 的具名分支与配套 `mof/mofsrv/mofbound` 夹具一并回退到 `fdcbe00`（`git checkout fdcbe00 --`，php -l 通过，两处 grep 计数 0），diff 留档 `engine/_f646b_engine.patch`（62 行）与 `engine/_f646b_fixture.patch`（18 行）。当前二进制仍是 f646b 那次构建（含分支），所以**下一次构建必须把源码与二进制重新对齐**——这条按记忆条目"Build successful ≠ 二进制更新 / 测的是旧二进制"处理，F648 梯自带对齐。
 **仍未解释的残余**：原始探针里那次 400 究竟从何而来（同一形状 harness 恒 200）。已排除：预算依赖（见上）、另一写点措辞（两处 `numeric bounds` 产出点措辞不同，探针拿到的是守卫串）、name 缓存（harness 用同一 name 跑 200 例不同 schema 全绿）。候选：探针脚本自身把六个用例的 schema/name 传串了（我的 `_probe_mof.py` 用 `name="p"` 且逐例改 dict，值得怀疑的是我复用了同一个 dict 变量顺序而非缓存）。**处理原则：解释不了的单点观测不能拿来立功能项**——上一轮我正是用它写了 F646b 与一条夹具。留 `_probe_f646b.py`（唯一 name、mt 三档）在新二进制上做一次性复核，若仍无"无界却报 numeric bounds"，则此路彻底关闭。
 **方法论**：本轮把"新增判据要能在旧证据上复现已知失败"反过来用了一次——**新增功能项也要能在源码上找到它的机制**；机制查不到就先撤回，而不是先写夹具。
+
+## F647d（2026-11-16）：完整性门把"真红"误标成"不完整"——诊断信息本身也是一种假绿
+**现象**：`f646b` 梯跑出 `selftest_f646b.log`（911 行、`RUN_EXIT=0`、`PROFILES: PASS`、`PARAM-GUARDS: FAIL mof=0`）——完整且真红。`check_gates` 却打印 `SELFTEST_INCOMPLETE log=… lines=911 fail_lines=1` 后 exit 1。判红没错，**标签错了**：`check_selftest_log.sh` 把 `fails==0` 也当成"证据"定义的一部分，于是完整性检查对"跑完了但失败"返回非零，调用方一律按"不完整"报告。
+**为什么算缺陷**：读门输出的人会顺着标签去找"截断/中断"（查 marker、查行数、重跑一次），而真正要做的是去读那行 FAIL。诊断误导 = 让下一次取证走错方向的假绿。
+**修法**：把两个轴拆开——`check_selftest_log.sh` 加 `--ignore-fails`（只判末节/marker/动态下界/必需小节），`check_gates.sh` 的完整性调用用该模式，随后仍由原有 `grep -c FAIL` 走 `SELFTEST_RED` 分支。
+**实测**：`f646b` → `SELFTEST_RED log=selftest_f646b.log fail_lines=1` 并直接引用 `792:PARAM-GUARDS: FAIL … mof=0 …`；`f644g` 在 `--ignore-fails` 下仍 `NOT_EVIDENCE … no_terminal_section run_exit_not_0 short(741<868)`；两条轴互不吞。
+**顺带自查**：验证时先写了 `bash scripts/check_gates.sh | head -4; echo $?` 拿到 0 —— 又是"`cmd | tail; echo $?` 取的是 tail 的状态"这条老坑；改为重定向到文件后单独取 `$?` 才拿到真值。

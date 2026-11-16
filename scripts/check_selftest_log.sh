@@ -21,11 +21,13 @@ SUMMARY=0
 SECTIONS=""
 FILES=""
 TERMINAL="INT8-REPRO"
+IGNORE_FAILS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --summary) SUMMARY=1 ;;
     --sections) shift; SECTIONS="${1:-}" ;;
     --terminal) shift; TERMINAL="${1:-}" ;;
+    --ignore-fails) IGNORE_FAILS=1 ;;
     *) FILES="$FILES $1" ;;
   esac
   shift
@@ -62,7 +64,8 @@ judge() {
   for s in $SECTIONS; do
     grep -q "$s" "$f" || sect_ok=0
   done
-  if [ "$term" = "1" ] && [ "$marker" = "1" ] && [ "$n" -ge "$FLOOR" ] && [ "$sect_ok" = "1" ] && [ "$fails" = "0" ]; then
+  if [ "$term" = "1" ] && [ "$marker" = "1" ] && [ "$n" -ge "$FLOOR" ] && [ "$sect_ok" = "1" ] \
+     && { [ "$IGNORE_FAILS" = "1" ] || [ "$fails" = "0" ]; }; then
     [ "$SUMMARY" = "1" ] || echo "EVIDENCE $(basename "$f") lines=$n"
     return 0
   fi
