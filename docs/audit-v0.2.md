@@ -737,3 +737,18 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 **回归口径（F641）**：自检 0 FAIL；四 harness `CHECK_EXIT=0`；SMOKE/SMOKE-PRETTY 各 **191/0**；8001 par/fair 0（含 `par-sampling/param/schema-keyword/error-shape` 与 `par-count-tokens`、`par-plugins`）；哨兵 0；`check_gates 199/0`。
 
 **仍未闭合（同上节，去掉已闭合项）**：FR-05 插件注册/动态加载；FR-11 MoE（无对象）；FR-15 UNIKERN（条件未触发）；FR-06 独立草稿模型（决策题）；per-session KV 并行吞吐；多卡 split（无第二设备）；GGUF 分片合并；FR-02 式计算图调度；FR-17 安装包（**已做**：F623 的 `VERSION` + `scripts/package.sh` + manifest 哈希自校验，`/health` 返回同源版本，门 `health-version`；F624 追加 zip 安装包 + `7z t` 自检）。
+
+## 审计增补（F642–F647，2026-11-16）——档案字段续增为真，但**两处"全绿"陈述被证伪并更正**
+**功能面（成立）**：FR-05 厂商档案继续加字段：F642 第 6 字段 `weight_prec`（0=f16/1=int8，仅在档案给出时调 setter，避免每轮启动清 KV），F644 第 7–9 字段 `budget_gib`/`split_backend`/`split_layer`；`api_plugins_select` 纯选择、`api_plugins_apply` 条件应用、`GET /plugins` 只读报告 `weight_prec`/`wprec_intent`/`budget_gib`/`budget_intent`/`split_backend`/`split_intent`。出厂档案仍 5 字段，默认行为不变。
+
+**更正一（本节最重要的自我更正）**：**上一节"回归口径（F641）：四 harness `CHECK_EXIT=0`"不成立**。对 `engine/schema_bounds_*.log` 的 `VERDICT` 迁移做时序扫描：F584/F588/F600/F609 各自红后当日修复，而 **F638（11-16 05:06）起 `VERDICT: FAIL cases=1` 且 f639…f645 每一轮都红、从未修**——即 F639–F645 期间所有"四 harness 0"的表述（含 F641/F642/F644 的提交信息与本文件旧句）对 bounds 均为假。缺陷本体：F635–F638 把 schema 形状守卫前移成合成谓词后，bounds 分支返回**族名** `"numeric bounds"`，丢掉夹具 `exclusive_bool_alone_refuse` 要求的关键字 `exclusive`，违反本项目自己的"拒绝必须具名（accepted ⇒ honored）"。F646 修复：守卫镜像谓词自身的孤立 draft-4 布尔条件（同 `preg_match` + 同 `api_schema_number_bounded_shape` 判空）返回具名串，其余 bounds 原因保持族名；`PARAM-GUARDS` 同轮加双向夹具 `exc=`/`excsrv=`。**判据取自同一条件 ⇒ 措辞与判定不会再各走各路。**
+
+**更正二（假绿的第二条机制，比第一条更隐蔽）**：F644 的"自检 0 FAIL"取自**中断日志** `selftest_f644g.log`——741 行、结尾 `RUN_EXIT=-1`、**没有 PROFILES 段**，因此 `grep -c FAIL` 天然为 0。教训固化为：**"没有报错"≠"发生了检查"**；凡以日志为证据的门必须先断言日志完整。工具 `scripts/check_selftest_log.sh`（完整性=含末节 `INT8-REPRO` + 若存在则 `RUN_EXIT=0` + 行数≥**动态**下界(实测 868，取历史完整日志最小值) + FAIL 数 0），`check_gates.sh` 前置调用它。全历史 317 份回放：245 证据 / 8 "0 FAIL 但没跑完"（其中 3 份即 F644 的 d/e/g）/ 64 真红；判据第一版曾把"marker 缺失"当不完整，误伤旧调用格式的 883 行完整日志（40 例虚高），改为取自检自身末节后得 8 例。
+
+**机制层根因（为何 7 轮无人看见）**：两条叠加——①四个 `schema_*_run.sh` 末尾以 `cat/echo` 收场，**恒 exit 0**，python 状态被吞，故 `bash … ; echo $?` 与 `&&` 链都不可能暴露失败；②`check_gates.sh` 只判自检日志，**从不读 harness 判定行**。F647 两手都补：脚本改为 `RC=$?` + 日志 `CHECK_EXIT=$RC` + 末尾 `exit $RC`（保留 `*_DONE` 标记在后，兼容既有读法）；`check_gates` 对四族各取最新 `schema_<fam>_*.log`，先要求 `VERDICT:` 行存在（完整性），再要求 `VERDICT: PASS` 且 `CHECK_EXIT=0`。**新门用历史自证**：首跑即对 `f645` 的 bounds 报 `HARNESS_RED`，修复后对 `f646` 放行——同一门既能否决已知红又能确认转绿，说明它测的是判定行而非命名巧合。
+
+**F645 修复的宽度契约**：`api_plugins_select` 的无匹配回落分支曾只拼 8 字段（命中分支 9 字段），而夹具 `plOk3` **照抄缺陷输出**、`plOk4` 多写一竖线——两头都错使同一契约被掩盖。现回落补到 9 字段、期望改真实串、删除被脚本重复插入三遍的夹具块，并新增**断言宽度本身**的门（`api_plugins_pipes` 逐字符计数，刻意避开 `explode`+尾部空字段的编译期语义差）。
+
+**F646b（进行中）**：普查守卫返回词汇 × 34 条族名断言后确认窄化条件；实测同一形状随 `max_tokens` 在 400（无界却报 `numeric bounds`）与 200（真被 writer 认领）之间切换，而既有活体夹具写成"400 具名 **或** 200 合规"的 OR 支路，故该路径的具名缺失**永不可见**。补三条单侧门（`mof/mofsrv/mofbound`）+ 一条无逃生支路的活体夹具。
+
+**F647 回归口径（当前基线，`f646` 实测）**：自检 911 行 0 FAIL、`PROFILES: PASS`、`PARAM-GUARDS: PASS`（`pass=20/20 exc=1 excsrv=1`）；四 harness 全 `VERDICT: PASS` + `CHECK_EXIT=0`（**bounds 由红转绿**）；SMOKE/SMOKE-PRETTY 各 191/0；8001 par/fair 0；scaling 1.537×；哨兵 0；`check_gates 199/0` 且 exit 0。
