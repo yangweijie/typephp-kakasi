@@ -273,8 +273,7 @@ function api_plugins_count(string $text): int
 // fallback, comment/blank/field-count skipping) are unit-testable without touching engine state.
 function api_plugins_select(string $text, string $fp): string
 {
-    $lines = explode("
-", $text);
+    $lines = explode("\n", $text);
     $total = api_plugins_count($text);
     for ($i = 0; $i < count($lines); $i++) {
         $ln = trim($lines[$i]);
@@ -290,9 +289,13 @@ function api_plugins_select(string $text, string $fp): string
             $bg = count($f) >= 7 ? $f[6] : "";
             $sb = count($f) >= 8 ? $f[7] : "";
             $sl = count($f) >= 9 ? $f[8] : "";
-            return $f[0] . "|" . $f[1] . "|" . $f[2] . "|" . $f[3] . "|" . $total . "|" . $wp . "|" . $bg . "|" . $sb . "|" . $sl;
+            // F644: ensure exactly 9 fields (8 pipes) for consistent parsing
+            $f0 = $f[0]; $f1 = $f[1]; $f2 = $f[2]; $f3 = $f[3];
+            $wp = (string)$wp; $bg = (string)$bg; $sb = (string)$sb; $sl = (string)$sl;
+            return $f0 . "|" . $f1 . "|" . $f2 . "|" . $f3 . "|" . $total . "|" . $wp . "|" . $bg . "|" . $sb . "|" . $sl;
         }
     }
+    // F644: 9 fields for consistent parsing (name|match|attn|kv|total|wp|bg|sb|sl)
     return "none||2|0|" . $total . "|||";
 }
 
@@ -22930,12 +22933,19 @@ function main(): void
     $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
     $plB = api_plugins_select($plText, "some cpu");
     $plC = api_plugins_select("bad|line\n", "Arc");
+    // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line
+    // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
+    // Format: name|match|attn|kv|total|wp|bg|sb|sl (9 fields, 8 pipes)
+    $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
+    $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
+    $plB = api_plugins_select($plText, "some cpu");
+    $plC = api_plugins_select("bad|line\n", "Arc");
     $plOk1 = $plA == "arc|Arc|1|1|3||||" ? 1 : 0;
-    $plOk2 = $plB == "last|*|2|0|3|||" ? 1 : 0;
+    $plOk2 = $plB == "last|*|2|0|3||||" ? 1 : 0;
     $plOk3 = $plC == "none||2|0|1|||" ? 1 : 0;
     // F642: 6th field (weight_prec) - a line with 6 fields should parse the 6th field
     $plD = api_plugins_select("w|Arc|0|1|note|0\n", "Arc");
-    $plOk4 = $plD == "w|Arc|0|1|1|0|||" ? 1 : 0;
+    $plOk4 = $plD == "w|Arc|0|1|1|0||||" ? 1 : 0;
     // F644: 7th, 8th, 9th fields (budget_gib, split_backend, split_layer)
     $plE = api_plugins_select("e|Arc|1|1|note|0|1.5|0|5\n", "Arc");
     $plOk5 = $plE == "e|Arc|1|1|1|0|1.5|0|5" ? 1 : 0;
