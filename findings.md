@@ -5392,3 +5392,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **实测**：新门首轮运行即 `HARNESS_GREEN required/count/pattern` + `HARNESS_RED bounds log=schema_bounds_f645.log`（正是那处 7 轮回归）；完整性分支也在真场景里验过——运行中 `selftest_f646.log`（189→266 行）被 `SELFTEST_INCOMPLETE` 拒判并 **exit=1**，说明它不会给半成品日志盖章。`check_selftest_log.sh` 单文件判定模式 exit 码：好日志 0、截断 1、真红 1。
 **顺序设计**：完整性 → harness 判定 → 自检 FAIL 计数 → 引用解析（`unresolved` 仍为报告项）。完整性排最前，因为"没跑到"必须先于"跑过了但失败"被区分出来。
 **记法**：**新增判据要能在旧证据上复现已知失败**——这条门第一次跑就抓出 F638 回归，等于用 7 轮历史做了回归测试；反过来，任何"只检查本轮产物"的门都无法证明它自己有效。
+
+## F647c（2026-11-16）：引用门的第三个缺陷——**用历史日志满足引用**，以及我自己补丁里的两个 bash 坑
+**缺陷**：`check_gates.sh` 的注释写"the newest self-test plus the newest live harness logs"，代码却是 `$(ls engine/schema_*.log) $(ls engine/api_smoke_*.log)`——**全部 1430 份历史日志**（43KB 路径串，且 Windows 侧命令行本就有 ~32K 字符量级的限制，越攒越脆）。语义后果比体积更严重：某条被引用的门名只要**任何一次历史运行**打印过就能判"已解析"，于是门会去认证**当前二进制已不再输出**的名字——正好抵消它存在的理由（引用必须能在本轮证据里落地）。
+**改法**：每族只取 `ls -t … | head -1`，haystack 从 1430 降到 8 个不同文件（自检 1 + 双模式 smoke 2 + 四族 harness 4，去重后 8）。
+**我自己补丁里连踩两坑（都被实测抓出）**：
+1. `for pat in engine/api_smoke_*.log …` —— **`for` 的词表在建立循环时就做路径名展开**，`pat` 逐个变成具体文件名，`ls -t "$f" | head -1` 恒返回它自己 ⇒ haystack 仍是 1430 份。改法是把模式**加引号**，让展开发生在循环体内的命令替换里。
+2. 加引号后 `engine/api_smoke_*.log` 与 `engine/api_smoke_pretty_*.log` 会**同时命中最新那份 pretty 日志**（`api_smoke_pretty_*` 本就匹配前一个模式），两条模式解析成同一文件 ⇒ 非 pretty 的 compact smoke 掉出 haystack，191 条服务态名字有一半可能失去证据。改法：对第一个模式 `grep -v pretty` 后再取 `head -1`。
+**验证方式**：不用整门（自检日志正被链写入，会先撞完整性判据），而是把 haystack 构造**单独跑**，断言 `files=8 distinct=8`、`grep -c api_smoke=2`，再 `bash -n`。⇒ 与本轮主题一致：**改动门本身也要有能立刻跑出结论的判据**。
+**遗留影响（须如实报告而非消音）**：收紧 haystack 后，若某些引用只在旧日志里成立，`unresolved` 会**如实升高**——那是"表格引用了当前不再产出的名字"的真漂移，要逐条改表或改门，**不许**为凑 0 把 glob 放宽回去。

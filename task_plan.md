@@ -2418,8 +2418,7 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 **F646b 规格**：①守卫 bounds 分支再镜像 `api_schema_bounds_unsupported` 的 multipleOf 拒绝子条件，命中时返回 `schema keyword multipleOf …`；②夹具补一条**无逃生支路**的对照：`multipleOf` 落在无 writer 认领的形态（如 number 叶 + 小数倍率且界缺失）时必须 400 且正文含 `multipleOf`；③`PARAM-GUARDS` 同步加 `mof=` 断言。原则：**夹具里的 OR/宽限支路会把一类回归永久变成不可见**，凡"接受或拒绝皆可"的断言都应补一条更严的单侧对照。
 **①的精确条件（已核对源码，可直接照抄，避免下轮再猜）**：谓词里 multipleOf 的拒绝共三处——`main.php` 14667-14674（number 叶 + 小数倍率）、14675-14682（number 叶 + 整数倍率）、14694-14698（多叶且无 multi-multiple writer）。三者**共享同一组豁免**：`api_schema_number_bounded_shape($b)=="" && api_schema_array_item_multiple($b)=="" && api_response_schema_multiple_unbounded($b)=="" && api_response_schema_mixed_object($b)==""`。⇒ 守卫里按 `strpos($sch,"\"multipleOf\"")!==false` 且上述四豁免同时成立时返回具名串，位置排在 exclusive 分支之后、通用 `"numeric bounds"` 之前（顺序即优先级，勿置前以免抢占 exclusive 与"无倍率"的界类拒绝）。
 
-## F648 规格（原 F646 重编号）：FR-05 显存驻留比例旋钮
-**动机**：FR-05 剩余的本地可交付项是"新 C++ setter + 档案字段同步"。`0.55` 的驻留预算比例在 `model_sycl.cc` 里写死了**两处**（`residency_prepare` 与 `model_residency_report`），只有 `budget_gib` 绝对值能覆盖它。按比例给档案一个旋钮，才能力单卡上模拟不同显存档位（12G/16G 用同一 `total*frac` 语义），且不依赖第二设备。
+## F648 规格（原 F646 重编号）：FR-05 显存驻留比例旋钮**动机**：FR-05 剩余的本地可交付项是"新 C++ setter + 档案字段同步"。`0.55` 的驻留预算比例在 `model_sycl.cc` 里写死了**两处**（`residency_prepare` 与 `model_residency_report`），只有 `budget_gib` 绝对值能覆盖它。按比例给档案一个旋钮，才能力单卡上模拟不同显存档位（12G/16G 用同一 `total*frac` 语义），且不依赖第二设备。
 **改动（一次做完，四层同步）**：
 1. `engine/src/model_sycl.cc`：新增 `double g_residency_frac = 0.0;`；`set_residency_frac(double f)`（`f<=0` 或 `f>=1` 视为恢复默认并清零，切换时 `g_res.clear_all()` 丢驻留，语义与 `set_weight_prec`/`set_budget_gib` 一致）；新增 `residency_frac()` 返回 `g_residency_frac > 0.0 ? g_residency_frac : 0.55`；**两处** `0.55` 都替换为 `residency_frac()`，且 `budget_gib` 绝对覆盖仍优先（顺序不变）。
 2. `engine/src/model.cc`：`php_model_set_residency_frac(php::Float f)` + `php_model_residency_frac()` 包装。
@@ -2431,6 +2430,7 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 **已核验不回归**：F645 把回落分支从 8 字段补到 9 字段后，`api_plugins_json`/`api_plugins_apply` 全部用 `count($st) >= N && $st[i] != ""` 守卫，空串与缺字段在 `/plugins` 上产出完全一致（`wprec_intent=-1`、`budget_intent=""`），出厂无档案路径无行为变化。
 **风险**：改 C++ 需要整梯重建（非仅清 ast 缓存）；`model_residency_report` 的文本门字段若被 harness 引用，先 grep 全部夹具再动措辞。
 **已核（消除风险）**：
+- **五处同步点已逐一定位**（跨 TU 声明**不在头文件**，而在 `model.cc` 的 `namespace model` 声明块 13–88 行内，如 `void set_budget_gib(double);` 在 30 行、`int weight_prec();` 在 34 行）：①`model_sycl.cc` 全局 `g_residency_frac` + `set_residency_frac` + `residency_frac()` + 替换 954/1100 两处 `0.55`；②`model.cc` 声明块加两条 + `php_model_*` 包装两条（照抄 127–130 与 136–139 的写法：setter 回传 `model::residency_frac()` 以便 PHP 侧一次调用即读到生效值）；③`model.stub.php` 两条声明（缺声明运行期 undefined）；④`main.php` 档案第 10 字段 + select/apply/json；⑤`vendor_profiles.txt` 头注释与 `PROFILES` 宽度门（9 竖线）。
 - 两处预算的字节量纲**一致**：站点 1 用 `(1ull<<30)`、站点 2 用 `KiB2 = 1024.0*1024.0*1024.0`，同为 1 GiB 的字节数 ⇒ 不存在"两处 0.55 换算不同"的隐藏缺陷（改名 `GIB` 属美化，不做）。
 - `model_residency_report()` 的引擎内消费点只有 5 处（`main.php` 19063 打印、19616/19628/19711/19715 自检），仓库内仅 `engine/tests/throughput_test.py` 出现 residency 字样；自检里现成的锚是 `orch[policy]`（`model_set_budget_gib(0.05)` 后 `model_plan` 判定必须改变）与 `residency tiny=` 打印。
 **门设计（据此定，不新造夹具）**：在 `orch[policy]` 旁新增 `orch[frac]` 三断言——①`model_set_residency_frac(0.02)` 后 `model_plan(0,2048)` 判定与默认不同（能力）；②`model_set_residency_frac(0.0)` 后 `model_plan` 与改动前逐字符相同（回落默认 0.55 无漂移）；③同一 frac 值下 `model_residency_report()` 与 `model_plan()` 的预算方向一致（两个 C++ 站点同受旋钮控制，防"只改一处"）。生成 token 仍须 `== $base`（驻留只换路径不换数值）。

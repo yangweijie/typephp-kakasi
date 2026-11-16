@@ -58,8 +58,25 @@ for fam in required count pattern bounds; do
   fi
 done
 # A row may cite a self-test gate/field OR a served case, so the haystack is the newest self-test
-# plus the newest live harness logs.
-HAY="$LOG $(ls engine/schema_*.log 2>/dev/null) $(ls engine/api_smoke_*.log 2>/dev/null)"
+# plus the newest live harness logs. Newest only, deliberately: globbing every historical log
+# (~1400 files, 43KB of paths and climbing toward the process argument limit) lets a citation be
+# satisfied by a log from weeks ago, which certifies gate names the current build no longer prints.
+HAY="$LOG"
+# Quoted on purpose: an unquoted word list here is pathname-expanded when the loop is set up, so
+# `pat` would iterate over every individual log file and the haystack would stay the full history.
+for pat in 'engine/api_smoke_*.log' 'engine/api_smoke_pretty_*.log' \
+           'engine/schema_required_*.log' 'engine/schema_count_*.log' \
+           'engine/schema_pattern_*.log' 'engine/schema_bounds_*.log' \
+           'engine/par_smoke_*.log'; do
+  # api_smoke_*.log also matches the pretty logs, so without the filter both patterns can resolve
+  # to the same newest file and the compact run silently leaves the haystack.
+  if [ "$pat" = 'engine/api_smoke_*.log' ]; then
+    f=$(ls -t engine/api_smoke_*.log 2>/dev/null | grep -v pretty | head -1)
+  else
+    f=$(ls -t $pat 2>/dev/null | head -1)
+  fi
+  [ -n "$f" ] && HAY="$HAY $f"
+done
 
 # The support table is the block between its heading and the "仍未实现" line.
 awk '/约束支持表/{on=1} on{print} /仍未实现/{if(on) exit}' findings.md > /tmp/kakasi_table.txt
