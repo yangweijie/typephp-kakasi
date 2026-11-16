@@ -2434,6 +2434,8 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 - 两处预算的字节量纲**一致**：站点 1 用 `(1ull<<30)`、站点 2 用 `KiB2 = 1024.0*1024.0*1024.0`，同为 1 GiB 的字节数 ⇒ 不存在"两处 0.55 换算不同"的隐藏缺陷（改名 `GIB` 属美化，不做）。
 - `model_residency_report()` 的引擎内消费点只有 5 处（`main.php` 19063 打印、19616/19628/19711/19715 自检），仓库内仅 `engine/tests/throughput_test.py` 出现 residency 字样；自检里现成的锚是 `orch[policy]`（`model_set_budget_gib(0.05)` 后 `model_plan` 判定必须改变）与 `residency tiny=` 打印。
 **门设计（据此定，不新造夹具）**：在 `orch[policy]` 旁新增 `orch[frac]` 三断言——①`model_set_residency_frac(0.02)` 后 `model_plan(0,2048)` 判定与默认不同（能力）；②`model_set_residency_frac(0.0)` 后 `model_plan` 与改动前逐字符相同（回落默认 0.55 无漂移）；③同一 frac 值下 `model_residency_report()` 与 `model_plan()` 的预算方向一致（两个 C++ 站点同受旋钮控制，防"只改一处"）。生成 token 仍须 `== $base`（驻留只换路径不换数值）。
+**门的精确判据（已核输出格式，可直接写串）**：两处的字段名相同——`model_plan()` 打印 `… total=%.2fGiB budget=%.2fGiB … strategy=weights-resident|stream-weights resident_now=…`（`model_sycl.cc` 1107-1112），`model_residency_report()` 打印 `residency enabled=%d kept=%d/%d planned=%.2fGiB used=%.2fGiB budget=%.2fGiB device=%.2fGiB hot_embedding_kept=%d`（1063-1065）。⇒ ①取 `frac=0.02` 后 plan 串的 `strategy=` 变为 `stream-weights` 或 `budget=` 数值下降；②`frac=0` 后 plan 串与基线**逐字符相等**（最强回落证据，不需数值比较）；③同一 frac 下 **两个串的 `budget=` 数值之差 ≤ 0.01GiB**（同源于 `total*frac`，防"只改一处 0.55"），且把 frac 从 0.5 降到 0.02 时两处**同时**下降。④`model_generate(0,$ids,6)` 在三组 frac 下 token 串仍 `== $base`。
+**注**：若设备显存使 `total*0.02` 仍大于权重，①可能不翻转 strategy ⇒ 以 **budget 数值下降 + ③同向** 为主判据，strategy 翻转作辅助（写在 FAIL 分支打印两侧 plan/report 串以便一轮定位）。
 
 ## F647 规格（紧接 F646，先于任何新功能）：`check_gates` 完整性门
 **动机**：F644 的假绿来自 `selftest_f644g.log`（`RUN_EXIT=-1`、无 PROFILES 段、FAIL 计数 0）。`check_gates.sh` 只 `grep -c FAIL`，所以截断日志被判绿；它又是唯一"硬失败"的门，等于把假绿认证成基线。

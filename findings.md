@@ -5404,3 +5404,29 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 
 **F647c 续（同一轮实测）**：haystack 收紧到 8 份当前日志后，`unresolved` 只升高 **1** 项：`tool_req_subset`。追查：该夹具名只存在于 `schema_keywords_f398b.log`，在**任何当前夹具源码里都没有**⇒ F398 之后该活体用例已被移除，而支持表一直用它当证据。同轮把它改引为当前真在产出的记号（单元 `PARAM-GUARDS` 的 tool= 断言 + 活体 `tool-beyond-grid-exact`），实测 `cited=198 unresolved=0`。计数从 199 变 198 是**诚实结果**（少了一个不再存在的引用），不是门退化，不得为了让数字好看把 glob 放宽回去。
 **再补一个自伤坑（机制同类）**：第一次改表时我在括号注里写“旧引用 `tool_req_subset` 已移除”——反引号让提取器把这个**正在被宣告死亡的**名字重新当成一条活引用，unresolved 立刻回到 1。⇒ 表内反引号即“引用门名”的记号，说明历史时**不要加反引号**；凡“扫描文本找记号”的门，都要考虑**提及不等于主张**（mention/use 混淆）这一类误报来源。
+
+## F646b 第一轮实测：我自己写的夹具抓出了我自己镜像错的条件下（mof=0）
+**读数**：`selftest_f646b.log` 911 行、`PROFILES: PASS`、`PARAM-GUARDS pass=20/20 tool=1 kw=1 fmt=1 deep=1 exc=1 excsrv=1 `**`mof=0`**` mofsrv=1 mofbound=1`。
+**定位链**：`"numeric bounds"` 这段文本在全仓**只有** `api_schema_guard_unsupported` 产出（另一处是 `oneOf/anyOf branches carrying only numeric bounds`，串不同），而活体探针在 `max_tokens=48` 时正是拿到该串 ⇒ 拒绝确实出自我改的那个分支 ⇒ **mof=0 不是"没走到"，而是走到了却没具名**，即镜像条件不成立。
+**我的推理错在哪**：我把条件抄成"谓词里那两条 multipleOf 分支的前置豁免"（读的是 14667–14682），但 `api_schema_bounds_unsupported` 是一条**长链**，真正命中的是**别的分支**。⇒ "镜像判定条件"只有在**镜像了实际命中的那一条**时才有效；照抄局部看似对应的条件，比原缺陷更难发现（它让夹具与实现同时"看着有理"）。
+**改法（更稳且可证）**：具名条件不再依赖任何 writer 豁免，只用**关键字在场性**——请求里存在数字 `multipleOf` 且**完全没有** minimum/maximum/exclusive 四个界关键字 ⇒ 族名 `"numeric bounds"` 必为误述（用户没写任何界），改报 `schema keyword multipleOf (…)`。此条件与那 34 条族名断言**按构造互斥**（那些夹具的形状全部带界关键字，已逐条核对）。
+**诊断可见性**：位图 `mof=0` 只能说"没过"，说不出"返回了什么"。FAIL 分支新增 `PARAM-GUARDS-TEXT exc=… mof=…` 打印守卫实际返回串 ⇒ 一轮定位（与本轮"读判定行"主题同源：门的输出要能自证）。
+**遗留**：本轮 `f646b` 梯的其余读数（四 harness/gate_live）测的是修复**前**的二进制，只作 F645/F646 复验用；F646b 须以 `f646c` 重跑后再提交。
+
+## F646b 悬案（待裁决实验）：同一形状在探针里 400、在 harness 里 200——两条互斥解释，我已排除一条半
+**冲突事实**：`(type:number, multipleOf:3)` @`max_tokens=48`
+- 15:20 手工探针（f646 二进制，六个请求共用 `json_schema.name="p"`）⇒ **400**，正文是守卫串 `request schema not supported: numeric bounds (the streamed and non-streamed transports share this guard)`。
+- 19:32 `f646b` harness（同形请求，runner 确实用 `mt=case[4]`=48）⇒ **200** `{"n":2345001}`（该值确为 3 的倍数）。
+⇒ 我上一轮写的"预算依赖 ⇒ 现有门看不见具名缺失"**证据不足**，只是解释之一；夹具 `number_leaf_multipleof_named_refuse` 因此**不能保留**（它可能编码不存在的行为）。
+**已排除的猜想（别再去追）**：①"探针 name 复用导致缓存污染"——harness 更极端：它把 `name="bnd"` 复用给约 200 个**不同 schema**，若存在 name 键缓存，harness 会大面积乱码，实际全绿；②"另一个 400 写点 produces 该串"——`grep` 全仓只有两个 `numeric bounds` 产出点，且**措辞不同**：守卫 12496 与遗留 16777 的 `numeric bounds are honoured on a single integer property…`；探针拿到的是前者 ⇒ 确实是守卫判的拒。③"两条分支之一返回空导致没具名"——分支在 `if (api_schema_bounds_unsupported($sch) == 1)` **内部**，只改措辞、不改判决。
+**剩下的主假设（须实验裁决）**：`f646b` 与 `f646` 二进制唯一的源码差就是我新加的那段守卫分支，而判决却从 400 变 200 ⇒ 可能是 **tpc 在大函数邻域的代码失真**（记忆条目"tpc 巨型函数存储失真 ⇒ 值在两条不写它的语句间变化"）：**语义上纯改字符串的代码，编译后改变了谓词结果**。这与本仓已有史实同族（F367 曾把"负结果"归因于没生效的开关）。
+**裁决实验**（`engine/tests/_probe_f646b.py`，端口空出即跑）：唯一 name `pf<i>`、`mt∈{16,48,64}`、含小数倍率/integer 叶/多叶混合，逐例打印 `code / has_multipleOf / has_numeric_bounds`。
+**判读规则（先写好，免得事后找解释）**：
+- 若现二进制对 `(number, multipleOf:3)` 在所有 mt 下都 **200** ⇒ "无界却报 numeric bounds" 在现码下**不可复现** ⇒ F646b 前提不成立：**回退守卫分支 + 撤夹具**，把负结果写死在文档；`mof` 相关夹具一并删除。
+- 若某 mt 下 **400 且串里没有 multipleOf** ⇒ 前提成立且夹具须改用该 mt；同时须用"仅回退源码、不改其它"的一次对照实验确认这段代码是否本身在扰动判决——若是，**宁可把具名挪到消息组装处**，绝不在谓词邻域加代码。
+
+## F646b 撤回（负结果，2026-11-16 19:38）：守卫看不见预算，所以"不可见的具名退化"不成立
+**静态裁决（不依赖探针）**：`max_tokens` 在 `main.php` 里只在**请求路由处**被解析（如 16010 `api_max_tokens(api_num($body,"max_tokens",…))`），守卫调用链 `api_schema_guard_unsupported → api_schema_bounds_unsupported → 各认领谓词` **没有任何一处读 max_tokens**；`api_response_schema_multiple_unbounded` 的早退只看 schema 关键字（enum/const/pattern/minimum/maximum/exclusive）。⇒ **"具名缺失只在低预算下发生"这个说法在机制上不可能**，我上一轮写下的前提是错的；它建立在"探针 400 vs harness 200"的矛盾上，而我当时只用"预算"去解释，没检查该谓词是否能看见预算。
+**处置**：`engine/main.php` 的具名分支与配套 `mof/mofsrv/mofbound` 夹具一并回退到 `fdcbe00`（`git checkout fdcbe00 --`，php -l 通过，两处 grep 计数 0），diff 留档 `engine/_f646b_engine.patch`（62 行）与 `engine/_f646b_fixture.patch`（18 行）。当前二进制仍是 f646b 那次构建（含分支），所以**下一次构建必须把源码与二进制重新对齐**——这条按记忆条目"Build successful ≠ 二进制更新 / 测的是旧二进制"处理，F648 梯自带对齐。
+**仍未解释的残余**：原始探针里那次 400 究竟从何而来（同一形状 harness 恒 200）。已排除：预算依赖（见上）、另一写点措辞（两处 `numeric bounds` 产出点措辞不同，探针拿到的是守卫串）、name 缓存（harness 用同一 name 跑 200 例不同 schema 全绿）。候选：探针脚本自身把六个用例的 schema/name 传串了（我的 `_probe_mof.py` 用 `name="p"` 且逐例改 dict，值得怀疑的是我复用了同一个 dict 变量顺序而非缓存）。**处理原则：解释不了的单点观测不能拿来立功能项**——上一轮我正是用它写了 F646b 与一条夹具。留 `_probe_f646b.py`（唯一 name、mt 三档）在新二进制上做一次性复核，若仍无"无界却报 numeric bounds"，则此路彻底关闭。
+**方法论**：本轮把"新增判据要能在旧证据上复现已知失败"反过来用了一次——**新增功能项也要能在源码上找到它的机制**；机制查不到就先撤回，而不是先写夹具。
