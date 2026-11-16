@@ -2457,3 +2457,16 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 **判绿唯一口径**（本轮两次假绿换来的）：①harness 只读 `VERDICT:`/`CHECK_EXIT=` 行，脚本 exit 现已传播但旧日志仍以行内为准；②自检先过 `scripts/check_selftest_log.sh`（末节+RUN_EXIT+动态行数下界）再数 FAIL；③`RUN_EXIT/LADDER_EXIT/GATE_LIVE_EXIT` 都不是判据。
 **下一步顺序**：F646 证据齐 → 提交（须含 `git add -f` 的 f646 日志，且 bounds 从 7 轮红转绿是这次的主要交付证据）→ F646b（multipleOf 具名 + 无逃生支路对照夹具，精确条件见上）→ F648（FR-05 驻留比例旋钮，改 `model_sycl.cc` 两处 0.55 + `model.cc` 包装 + `model.stub.php` 声明 + 档案第 10 字段，门设计见 F648 规格；注意"每条 return 同批改"与"report/plan 两站点同受旋钮控制"）。
 **不可倒退项（本轮新增）**：扩展返回契约时每条 return 同批改且门断言**宽度/形状本身**；期望串禁止照抄缺陷输出；守卫搬家要带上"拒绝措辞的具体性"（族名不能替代关键字）；夹具的 OR/宽限支路会把一类回归永久变成不可见，须配更严单侧对照；新判据要能在旧证据上复现已知失败才算有效。
+
+### F646 停车状态与恢复指令（2026-11-16 15:37，轮次将尽）
+**在飞**：后台链 `bakrvyy5m`（tag `f646`）仍在自检段（`engine/selftest_f646.log` 756/911 行，FAIL 计数 0 但 `PROFILES/PARAM-GUARDS` 尚未打印 ⇒ **此刻"0 FAIL"不是证据**，正是 F645b 描述的情形）。链自带 `stop_all`，不要手工 kill 引擎进程，也不要再起服务抢 8000。
+**工作树**：`engine/main.php` = 未提交的 F646 修复（已编进本轮 exe，exe mtime 23:33:11、BUILD_OK）；`engine/spec_req.log` 由链写入，勿提交。HEAD = `24e214f`（文档）← `2d63b34`（F647 门）← `62c92c9`（F645 修复）。
+**恢复第一条命令**（读判定行，不读 `*_EXIT`）：
+```
+cd /c/git/c/typephp-kakasi && sed -n '/PARAM-GUARDS pass=/,/PROFILES/p' engine/selftest_f646.log | tail -4
+grep -E 'REQ_VERDICT|CNT_VERDICT|PAT_VERDICT|BND_VERDICT|EXCL_CASE' <task-output-file>
+grep -E '^SMOKE:|^SMOKE-PRETTY:|^PAR:|^FAIR:|SENTINELS' engine/gate_live_f646.log
+bash scripts/check_gates.sh
+```
+**提交条件（三者齐）**：①`selftest_f646.log` 含 `==RUN_EXIT=0==` + `PARAM-GUARDS: PASS` 且行内有 `exc=1 excsrv=1` + `PROFILES: PASS` + FAIL 计数 0；②四族最新 `schema_<fam>_*f646*.log` 全 `VERDICT: PASS` + `CHECK_EXIT=0`（**bounds 从 7 轮红转绿是本次主交付**）；③gate_live 双模式 smoke 仍 191/0、par/fair 0、哨兵 0、`check_gates` exit 0。任一不满足 ⇒ 不提交 `main.php`，把差异写进本文件继续修。
+**若 bounds 仍红的先查点**：`EXCL_CASE` 里 400 正文是否已含 `exclusive`；若仍为族名，说明镜像条件里 `api_schema_number_bounded_shape($sch)` 在守卫上下文与谓词上下文取值不同（守卫传的是 `json_schema` 后的 schema 子对象），改判 `$sch` 的传参层级而非加新分支。
