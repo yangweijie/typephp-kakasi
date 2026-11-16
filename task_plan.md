@@ -2450,3 +2450,10 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 **改法 B（更关键，系统层）**：`check_gates.sh` 目前只对**自检日志**做硬失败，**从不读 harness 判定行** ⇒ F638 起 bounds 连续 7 轮红却在提交信息里被写成"四 harness 0"。补一条硬门：对每个 harness 家族取最新 `engine/schema_<fam>*.log`，要求 `CHECK_EXIT=0` 且不含 `VERDICT: FAIL`；任一不满足打印 `HARNESS_RED fam=… log=…` 并 exit 1（与自检同构：先完整性——须有 `VERDICT:` 行，再判红）。
 **为什么 B 比 A 重要**：A 只让 `&&` 链能失败；B 让"**最新证据即红**"这件事在**提交前**就被唯一那个常被跑的门自动抓到，而不依赖跑梯子的人记得去 grep 判定行。本轮 F638 回归的教训正是：人会引用旧声明，门不会。
 **验收**：现有 `schema_bounds_f646*.log` 若仍红则该门必须 exit 1；修好后 exit 0；故意 `touch` 一份旧的 FAIL 日志应立刻判红（可回滚，不动内容）。
+
+## F645–F648 会话交接（2026-11-16）
+**提交链**：`a288b16`(F644，**红**) → `62c92c9`(F645 PROFILES/回落宽度修复 + 自检完整性门) → `2d63b34`(F647 harness 判定门 + 四脚本 exit 语义)。工作树当前唯一未提交源码改动是 `engine/main.php`（F646 具名拒绝修复 + `PARAM-GUARDS` 的 `exc/excsrv` 夹具），它**已被 `f646` 阶梯的二进制包含**（build 于 15:31:07 起跑，exe mtime 23:33:11，BUILD_OK），但**验证证据尚未产生** ⇒ 谁接手都别先提交它。
+**待回填（阻塞项）**：后台链 `bakrvyy5m`（tag `f646`）应产出：`selftest_f646.log`（判据 `grep -c FAIL` + `PROFILES/PARAM-GUARDS` 行 + `==RUN_EXIT=0==`）；四份 `schema_<fam>_<fam>_f646.log` 的 `VERDICT/CHECK_EXIT`（链内已直接打印 `REQ/CNT/PAT/BND_VERDICT` 与 `EXCL_CASE`）；`gate_live_f646.log` 的 `SMOKE/SMOKE-PRETTY/PAR/FAIR/THRU/SENTINELS`；末行 `check_gates`。
+**判绿唯一口径**（本轮两次假绿换来的）：①harness 只读 `VERDICT:`/`CHECK_EXIT=` 行，脚本 exit 现已传播但旧日志仍以行内为准；②自检先过 `scripts/check_selftest_log.sh`（末节+RUN_EXIT+动态行数下界）再数 FAIL；③`RUN_EXIT/LADDER_EXIT/GATE_LIVE_EXIT` 都不是判据。
+**下一步顺序**：F646 证据齐 → 提交（须含 `git add -f` 的 f646 日志，且 bounds 从 7 轮红转绿是这次的主要交付证据）→ F646b（multipleOf 具名 + 无逃生支路对照夹具，精确条件见上）→ F648（FR-05 驻留比例旋钮，改 `model_sycl.cc` 两处 0.55 + `model.cc` 包装 + `model.stub.php` 声明 + 档案第 10 字段，门设计见 F648 规格；注意"每条 return 同批改"与"report/plan 两站点同受旋钮控制"）。
+**不可倒退项（本轮新增）**：扩展返回契约时每条 return 同批改且门断言**宽度/形状本身**；期望串禁止照抄缺陷输出；守卫搬家要带上"拒绝措辞的具体性"（族名不能替代关键字）；夹具的 OR/宽限支路会把一类回归永久变成不可见，须配更严单侧对照；新判据要能在旧证据上复现已知失败才算有效。
