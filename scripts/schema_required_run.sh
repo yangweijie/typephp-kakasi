@@ -44,8 +44,10 @@ if ! wait_health 8000 40; then
   exit 2
 fi
 python "$E/tests/schema_required_check.py" 8000 > "$E/schema_required_$TAG.log" 2>&1
-echo "CHECK_EXIT=$?" >> "$E/schema_required_$TAG.log"
+RC=$?
+echo "CHECK_EXIT=$RC" >> "$E/schema_required_$TAG.log"
 cat "$E/schema_required_$TAG.log"
 stop_all
 echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
 echo SCHEMA_REQUIRED_RUN_DONE tag=$TAG
+exit $RC

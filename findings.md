@@ -5385,3 +5385,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修法（最小且同源）**：在 `api_schema_guard_unsupported` 的 bounds 分支里，镜像 `api_schema_bounds_unsupported` 已有的孤立布尔条件（同一 `preg_match('/"exclusive(?:Minimum|Maximum)"\s*:\s*true/')` + 同一 `api_schema_number_bounded_shape` 判空），命中时返回 `"schema keyword exclusiveMinimum/exclusiveMaximum ..."`，其余 bounds 原因保持 `"numeric bounds"`。不重写整条 bounds 链（那会复制 14635–14658 的多重豁免，易漂移）。
 **夹具面核查**：bounds harness 里按名断言的族共 9 种（`uniqueItems`×7、`contains`×6、`keyword`×5、`items`×4、`multipleOf`/`minContains`/`maxContains`/`prefixItems`/`required`/`unevaluatedItems`/`exclusive` 各 1）；**只有 `exclusive` 这一条翻红**，其余仍绿 ⇒ 目标修一处即可，不动其它族名。
 **记法**：**外层守卫搬家时必须携带的不只是前置变换（F637 的 pinned-interval），还有"拒绝措辞的具体性"**——把多个专用守卫合成一个谓词，很容易把"具名关键字"压成"族名"，而门（和用户）要的是前者。判绿一律读**日志内的判定行**（`CHECK_EXIT=`、`VERDICT:`），不看脚本 exit；新写 harness 脚本时应 `exit $rc` 传播 python 状态（本轮先按现状用判定行，改脚本另列）。
+
+## F647（2026-11-16）：把"最新证据即红"接进唯一常被跑的门
+**两处改动**：①`scripts/check_selftest_log.sh`（新）+ `check_gates.sh` 前置完整性硬门（自检日志须含末节、`RUN_EXIT=0`（若存在）、行数≥动态下界、FAIL 数 0）；②`check_gates.sh` 新增 **harness 判定硬门**：对 `required/count/pattern/bounds` 各取最新 `engine/schema_<fam>_*.log`，先要求存在 `VERDICT:` 行（完整性），再要求 `VERDICT: PASS` 且 `CHECK_EXIT=0`，否则 `HARNESS_RED` 并 exit 1。
+**为什么 ② 才是重点**：F638 起 bounds 连续 7 轮 `VERDICT: FAIL`，每次提交都写"四 harness 0"。链路里**没有任何一处**读过 harness 判定：脚本恒 exit 0（吞掉 python 状态），而 `check_gates` 只看自检日志。⇒ 单修 harness 的 exit 只让 `&&` 链能失败；把判定读进 `check_gates` 才让"引用旧声明"这条路被堵住。**人会引用旧声明，门不会。**
+**实测**：新门首轮运行即 `HARNESS_GREEN required/count/pattern` + `HARNESS_RED bounds log=schema_bounds_f645.log`（正是那处 7 轮回归）；完整性分支也在真场景里验过——运行中 `selftest_f646.log`（189→266 行）被 `SELFTEST_INCOMPLETE` 拒判并 **exit=1**，说明它不会给半成品日志盖章。`check_selftest_log.sh` 单文件判定模式 exit 码：好日志 0、截断 1、真红 1。
+**顺序设计**：完整性 → harness 判定 → 自检 FAIL 计数 → 引用解析（`unresolved` 仍为报告项）。完整性排最前，因为"没跑到"必须先于"跑过了但失败"被区分出来。
+**记法**：**新增判据要能在旧证据上复现已知失败**——这条门第一次跑就抓出 F638 回归，等于用 7 轮历史做了回归测试；反过来，任何"只检查本轮产物"的门都无法证明它自己有效。

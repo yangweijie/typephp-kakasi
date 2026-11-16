@@ -36,6 +36,27 @@ if [ "$FAILS" -gt 0 ]; then
   grep -n 'FAIL' "$LOG" | head -5
   exit 1
 fi
+# Harness verdicts are gated exactly like the self-test: newest log per family, completeness first
+# (a VERDICT line must exist), then redness. Before this check_gates never read a harness log, so
+# the bounds harness stayed "VERDICT: FAIL" from F638 through F645 while every commit message
+# claimed four harnesses green - the scripts themselves always exit 0, so nothing but this line
+# could notice.
+for fam in required count pattern bounds; do
+  HLOG=$(ls -t "engine/schema_${fam}_"*.log 2>/dev/null | head -1)
+  if [ -z "$HLOG" ]; then
+    echo "HARNESS_NO_LOG fam=$fam"
+    exit 1
+  fi
+  if ! grep -q 'VERDICT: ' "$HLOG"; then
+    echo "HARNESS_INCOMPLETE fam=$fam log=$(basename "$HLOG")"
+    exit 1
+  fi
+  if ! grep -q 'VERDICT: PASS' "$HLOG" || ! grep -q 'CHECK_EXIT=0' "$HLOG"; then
+    echo "HARNESS_RED fam=$fam log=$(basename "$HLOG")"
+    grep -m 3 'VERDICT:\|CHECK_EXIT' "$HLOG"
+    exit 1
+  fi
+done
 # A row may cite a self-test gate/field OR a served case, so the haystack is the newest self-test
 # plus the newest live harness logs.
 HAY="$LOG $(ls engine/schema_*.log 2>/dev/null) $(ls engine/api_smoke_*.log 2>/dev/null)"

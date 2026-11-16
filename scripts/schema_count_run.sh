@@ -43,8 +43,10 @@ if ! wait_health 8000 40; then
   exit 2
 fi
 python "$E/tests/schema_count_check.py" 8000 > "$E/schema_count_$TAG.log" 2>&1
-echo "CHECK_EXIT=$?" >> "$E/schema_count_$TAG.log"
+RC=$?
+echo "CHECK_EXIT=$RC" >> "$E/schema_count_$TAG.log"
 cat "$E/schema_count_$TAG.log"
 stop_all
 echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
 echo SCHEMA_COUNT_RUN_DONE tag=$TAG
+exit $RC

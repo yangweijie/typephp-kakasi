@@ -2912,4 +2912,15 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **根因**：①回落分支 return 只有 8 字段，命中分支 9 字段（扩宽度漏改一条 return）；②`plOk3` 期望照抄缺陷输出、`plOk4` 期望多一个竖线；③Python 就地改写把夹具块重复插入三遍。
 - **修**：回落补到 9 字段；两条期望改真实串；删重复；新增 `api_plugins_pipes()` 逐字符计数并断言**每条路径 8 个竖线**（不用 `explode`，避开编译期尾部空字段语义差）。
 - **方法**：先用 Node 从 `main.php` 抽出纯函数 + 真 PHP 跑夹具（5/5 MATCH），确认期望串后才花一轮构建验编译语义。
-- **门**：F645 阶梯数值待回填（build/selftest/四 harness/gate_live/check_gates）。
+- **门**：`f645` 实测（提交 `62c92c9`）自检 911 行 0 FAIL + `PROFILES: PASS` + `RUN_EXIT=0`；`check_gates 199/0`；SMOKE/SMOKE-PRETTY 各 191/0；par/fair 0；scaling 1.501×；哨兵 0。bounds harness 仍红（F638 回归，见 F646），本轮不声称四 harness 全绿。
+
+## F646（2026-11-16）：修 F638 具名拒绝回归（bounds harness 红了 7 轮）
+- **缺陷**：`exclusive_bool_alone_refuse` 自 F638 起每轮 FAIL；守卫外移后 bounds 分支返回族名 `"numeric bounds"`，丢失关键字。
+- **修**：`api_schema_guard_unsupported` bounds 分支镜像谓词自身的孤立 draft-4 布尔条件（同 `preg_match` + 同 `api_schema_number_bounded_shape($sch)==""`），命中返回 `schema keyword exclusiveMinimum/exclusiveMaximum (…)`；其余仍给族名。
+- **门**：`PARAM-GUARDS` 加双向夹具 `exc=`（具名拒绝）与 `excsrv=`（伴随 inclusive 界时须放行），已并入 PASS 条件与打印行。
+- **状态**：`f646` 阶梯后台跑（`bakrvyy5m`），判定行由链内直接打印；**未验证前不声称绿**。
+
+## F647（2026-11-16）：完整性门 + harness 判定门 + harness exit 语义修正
+- **`scripts/check_selftest_log.sh`（新）**：判"日志是否算证据"（末节 `INT8-REPRO` + 若有则 `RUN_EXIT=0` + 行数≥动态下界 + FAIL 数 0）；命名文件=判定（exit 0/1），全历史扫描=报告。
+- **`scripts/check_gates.sh`**：前置自检完整性硬门；新增 **harness 判定硬门**（四族各取最新 `schema_<fam>_*.log`，须有 `VERDICT:` 且 `VERDICT: PASS` + `CHECK_EXIT=0`，否则 `HARNESS_RED` exit 1）。实测首轮即 `HARNESS_RED fam=bounds`，并在线拒判写入中的 `selftest_f646.log`（`SELFTEST_INCOMPLETE`，exit 1）。
+- **四份 `schema_*_run.sh`**：`RC=$?` 紧跟 python、日志写 `CHECK_EXIT=$RC`、末尾 `exit $RC`（在 `*_DONE` 之后，保留既有标记读取习惯）。此前脚本恒 exit 0 吞掉 python 状态 ⇒ `&&` 链与 `*_EXIT` 读数都不可能暴露失败。

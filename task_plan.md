@@ -2402,7 +2402,8 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 **做了什么**：不复用提交信息的结论，重新跑一遍取证（`build_f645.log` 链），确认 `a288b16` 实为 `PROFILES: FAIL 11101`；定位三处缺陷（回落分支 8 字段、两条期望串各错一头、夹具块被重复插入三遍）；修复并加断言"每条 return 宽度=8 竖线"（新纯函数 `api_plugins_pipes`，逐字符 `substr`，刻意不用 `explode` 以避开编译期尾部空字段语义差）。
 **方法增益**：先用 Node 从 `main.php` 抽出 `api_plugins_pipes/count/select` 三个纯函数、用真 PHP 8.5 跑夹具确认 5/5 MATCH + pipes=8，**才**启动一轮构建；把"期望串对不对"从构建轮次里摘出来。
 **追加发现**：`grep -c FAIL` 会把**截断日志**判成绿（`selftest_f644g.log`：741 行、`RUN_EXIT=-1`、无 PROFILES 段、FAIL 计数 0），且 `check_gates.sh` 唯一硬门就只用这个计数 ⇒ 假绿被认证成基线。全历史量化见 F645c，工具已落地 `scripts/check_selftest_log.sh`（317 份日志：245 证据 / 8 假绿类，其中 3 份是 F644 自己的 d/e/g 轮）。
-**阶梯数值（本轮 `f645` 标签）**：待后台链完成后回填——build / selftest FAIL 数 / 四 harness / gate_live 双模式 smoke / par 与 fair / check_gates。
+**阶梯数值（本轮 `f645` 标签，提交 `62c92c9`）**：`build_f645.log` BUILD_OK；自检 `selftest_f645.log` 911 行、`fail_lines=0`、`PROFILES: PASS`、`==RUN_EXIT=0==`；`check_gates → cited_names=199 unresolved=0`（且新的完整性硬门先通过）；gate_live **SMOKE 191/0、SMOKE-PRETTY 191/0**、`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling **1.501×**、`SENTINELS_LEFT=0`。**唯一不绿项**：`schema_bounds_f645.log` `VERDICT: FAIL cases=1` / `CHECK_EXIT=1`（`exclusive_bool_alone_refuse`），系 F638 遗留回归、非本轮改动引入 ⇒ 作为 F646 单独修。required/count/pattern 三份 `CHECK_EXIT=0`。
+**取证口径纠正**：`HARNESS_*_EXIT=0` 无效（harness 脚本末尾 echo 吞状态，恒 exit 0）；判绿只读日志内 `CHECK_EXIT=` / `VERDICT:` 行。
 **回填前必须先做（勿直接引用 `f645` 的四 harness 日志）**：我的后台链把 harness 的 stdout 重定向到了 `engine/schema_${h}_f645.log`，而 `schema_*_run.sh` 内部**正是往同一路径写**（`$E/schema_required_$TAG.log` 然后 `cat`）⇒ 两个写入者争同一文件，命中已知坑"重定向到 harness 自身 tag 日志会互相覆盖"。正确姿势是别名承接 stdout：`bash scripts/schema_required_run.sh f645 > engine/req_run_f645.log`（cnt/pat/bnd 同理），让脚本独占 `schema_*_f645.log`。四份 harness 需按此**重跑一遍**再判 `CHECK_EXIT`，随后再跑 `check_gates`。自检日志 `selftest_f645.log` 与 `gate_live` 的 `api_smoke_f645/api_smoke_pretty_f645` 不受此影响（命名不与自身产物撞车）。
 
 
@@ -2413,6 +2414,9 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 **验收**：bounds harness `VERDICT: PASS cases=0` 且 `CHECK_EXIT=0`（**读判定行，不信脚本 exit**）；required/pattern/count 三份仍 `CHECK_EXIT=0`；自检 0 FAIL；双模式 smoke 不劣化；新增单元夹具复刻"孤立 draft-4 布尔 → 400 且正文含 exclusive"进 `PARAM-GUARDS`/bounds 单元层，防再次靠搬家降级词汇。
 **流程改正（同批）**：harness 脚本末尾 `echo` 吞掉 python 状态 ⇒ 任何用 `bash scripts/schema_*_run.sh` 的 exit 码判绿都无效。要么在脚本里 `exit $rc`（改动面小、影响既有调用者对 DONE 行的读取），要么把"读 `CHECK_EXIT=`/`VERDICT:` 行"固化为唯一口径。**本批先固化口径并在 check 脚本里加自动读数**，不动 harness 脚本签名。
 **顺带发现**：我这条 F645 链把 harness stdout 重定向到脚本自身 tag 日志（同文件双写入者），日志仍可读但不可靠；今后统一别名 stdout。
+**同类隐患普查（本轮做完 F646 后接 F646b）**：把守卫返回词汇（10 条）对撞四份 harness + smoke 的 28 种"按名断言"关键字，结论：主路径 `"schema keyword " . $kw` 天然具名，覆盖 `not/contains/uniqueItems/patternProperties/dependentSchemas/required/items/if/minItems/minContains/propertyNames/dependencies/pattern/minLength/dependentRequired/unevaluatedItems/minProperties/maxProperties/maxItems/prefixItems/maxContains/format/contentEncoding/additionalProperties` 等；族名字符串只有 4 条，其中 `"schema pattern with regex metacharacters"` 含 `pattern/metachar`、`"oneOf/anyOf branches…"` 含 `oneOf`，均无对应断言缺口。**真正的残余风险是 `"numeric bounds"` 这条族名**：`multipleOf` 的具名断言只有 1 处，且夹具写成 `(400 且含 multipleOf) or (200 且 n%3==0)`——OR 逃生支路使"词汇退化"在该路径上**不可能被现有门抓到**。`exclusive` 之所以被抓到，纯粹因为它的夹具没有逃生支路。
+**F646b 规格**：①守卫 bounds 分支再镜像 `api_schema_bounds_unsupported` 的 multipleOf 拒绝子条件，命中时返回 `schema keyword multipleOf …`；②夹具补一条**无逃生支路**的对照：`multipleOf` 落在无 writer 认领的形态（如 number 叶 + 小数倍率且界缺失）时必须 400 且正文含 `multipleOf`；③`PARAM-GUARDS` 同步加 `mof=` 断言。原则：**夹具里的 OR/宽限支路会把一类回归永久变成不可见**，凡"接受或拒绝皆可"的断言都应补一条更严的单侧对照。
+**①的精确条件（已核对源码，可直接照抄，避免下轮再猜）**：谓词里 multipleOf 的拒绝共三处——`main.php` 14667-14674（number 叶 + 小数倍率）、14675-14682（number 叶 + 整数倍率）、14694-14698（多叶且无 multi-multiple writer）。三者**共享同一组豁免**：`api_schema_number_bounded_shape($b)=="" && api_schema_array_item_multiple($b)=="" && api_response_schema_multiple_unbounded($b)=="" && api_response_schema_mixed_object($b)==""`。⇒ 守卫里按 `strpos($sch,"\"multipleOf\"")!==false` 且上述四豁免同时成立时返回具名串，位置排在 exclusive 分支之后、通用 `"numeric bounds"` 之前（顺序即优先级，勿置前以免抢占 exclusive 与"无倍率"的界类拒绝）。
 
 ## F648 规格（原 F646 重编号）：FR-05 显存驻留比例旋钮
 **动机**：FR-05 剩余的本地可交付项是"新 C++ setter + 档案字段同步"。`0.55` 的驻留预算比例在 `model_sycl.cc` 里写死了**两处**（`residency_prepare` 与 `model_residency_report`），只有 `budget_gib` 绝对值能覆盖它。按比例给档案一个旋钮，才能力单卡上模拟不同显存档位（12G/16G 用同一 `total*frac` 语义），且不依赖第二设备。
@@ -2439,3 +2443,10 @@ F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `
 3. 保持现有 FAIL 计数检查在后；引用解析（`unresolved`）仍为报告项。
 **验收**：人为把 `selftest_f644g.log` 设为最新（`touch`）应触发 `SELFTEST_INCOMPLETE` 且 exit 1；恢复后对本轮 F645 日志应给出 `cited_names=199 unresolved=0`。
 **风险**：行数下限若用最大值会误伤正常短日志；用"历史完整日志（含 `RUN_EXIT=0`）行数下界"。
+
+## F647b 规格（与 F647 同批）：把 harness 判定也纳入硬门，并修 harness 的 exit 语义
+**已核**：四个 `scripts/schema_*_run.sh` **无任何脚本调用者**（仅文档提及），且都以 `echo SENTINELS_LEFT / echo *_DONE` 结尾 ⇒ python 的退出码被吞、脚本**恒 exit 0**。所以加 `exit $RC` 不影响既有调用方。
+**改法 A（harness 自身）**：每份脚本在 python 行后 `RC=$?`，`echo "CHECK_EXIT=$RC" >> 日志`，末尾 `echo …_DONE` 之后 `exit $RC`。
+**改法 B（更关键，系统层）**：`check_gates.sh` 目前只对**自检日志**做硬失败，**从不读 harness 判定行** ⇒ F638 起 bounds 连续 7 轮红却在提交信息里被写成"四 harness 0"。补一条硬门：对每个 harness 家族取最新 `engine/schema_<fam>*.log`，要求 `CHECK_EXIT=0` 且不含 `VERDICT: FAIL`；任一不满足打印 `HARNESS_RED fam=… log=…` 并 exit 1（与自检同构：先完整性——须有 `VERDICT:` 行，再判红）。
+**为什么 B 比 A 重要**：A 只让 `&&` 链能失败；B 让"**最新证据即红**"这件事在**提交前**就被唯一那个常被跑的门自动抓到，而不依赖跑梯子的人记得去 grep 判定行。本轮 F638 回归的教训正是：人会引用旧声明，门不会。
+**验收**：现有 `schema_bounds_f646*.log` 若仍红则该门必须 exit 1；修好后 exit 0；故意 `touch` 一份旧的 FAIL 日志应立刻判红（可回滚，不动内容）。
