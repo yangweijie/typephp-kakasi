@@ -2498,3 +2498,12 @@ bash scripts/check_gates.sh
 **提交条件（四者齐）**：①链接成功且 exe mtime 晚于本轮源码 mtime；②`orch[frac] PASS` + `PROFILES: PASS`（10 字段）+ `PARAM-GUARDS: PASS 20/20 exc=1 excsrv=1` + FAIL 0 + `RUN_EXIT=0`；③四族 `VERDICT: PASS`/`CHECK_EXIT=0`；④SMOKE 与 SMOKE-PRETTY 各 191/0、par/fair 0、哨兵 0、`check_gates` exit 0（当前基线 `cited=198 unresolved=0`，**198 是 F647c 收紧后的诚实值**）。
 **若 `orch[frac]` FAIL**：先读它在 FAIL 分支打印的 `plan=/rep=` 完整串再判断——三断言分别指向"没移动两处"、"frac=0 没复原"、"getter 与旋钮不同源"，不要凭第一反应改夹具。
 **余项队列**：F649（`/plugins` 的 `budget_gib` 实为 KV 缓存量；方案 C：改名 `kv_cache_gib` + 从 `model_residency_report()` 抽 `residency_budget_gib`/`residency_enabled`，未 prefill 时为 `null`，配 4 条状态迁移活体门）、F646b 残疑（唯一 name 探针 `_probe_f646b.py` 复核那次 400）、FR-06/FR-02（决策/重设计）、多卡与 GGUF 分片（缺第二设备）。
+
+### F648 停车状态 v2（2026-11-16 19:53）
+**本轮由我自己新写的门抓出一个真缺陷（门起作用了）**：`f648b` 自检报
+`orch[frac] FAIL frac=0 did not restore the shipped plan/report`。
+根因**不在引擎**，在我写的断言：整串比较里含 `resident_now=`（=驻留占用 `g_res.used`）与 `used=` 这类**瞬时占用字段**——frac=0.02 那一趟强制走流式，占用被清成 0，所以即便预算精确复原，整串也不会复原。⇒ 断言把"旋钮控制量"与"实时占用"混为一谈，属**过强断量**，会长期判红并诱使人去改引擎。
+**修法（改断言，不改引擎）**：新增纯扫描取值函数 `api_report_field($s,$key)`（不用 preg 分组，避免"没匹配到"静默成空串），三条断言只比 `budget=` 与 `strategy=`：①能力=两侧 `budget=` 都变；②回落=两侧 `budget=`/`strategy=` 与基线相等；③getter 与旋钮同源；④token 仍须等于驻留基线。PASS/FAIL 文案改为打印具体数值（`base→frac` 与 `rep base→rep frac`），不再输出整串。
+**在飞**：`b2gsfm46t`（tag `f648c`，全程 `&&`，链内先 `grep BUILD_OK` 再对照 exe mtime 与当前时间；`f648b` 的自检产物将被 `f648c` 取代，**`f648b` 的 `orch[frac] FAIL` 不得被引用为"引擎缺陷"**，它是夹具缺陷且已修）。
+**提交条件不变**（见上节四条件）；额外要求：`orch[frac] PASS` 文案里的两个 `budget=` 数值必须与 `frac=0.02` 的算术一致（设备 25.34GiB ⇒ 预算应约 0.51GiB，对照 `orch[policy]` 的 0.05GiB 形态可读），否则说明字段取错。
+**残余项**：F649（`budget_gib` 语义错位 + 三态 `null` 设计，已定方案 C）、F646b 那次 400 的单点观测仍未解释（不阻塞，已固化为"解释不了的观测不能立功能项"）。
