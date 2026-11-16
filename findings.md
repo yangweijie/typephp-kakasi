@@ -5437,3 +5437,17 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修法**：把两个轴拆开——`check_selftest_log.sh` 加 `--ignore-fails`（只判末节/marker/动态下界/必需小节），`check_gates.sh` 的完整性调用用该模式，随后仍由原有 `grep -c FAIL` 走 `SELFTEST_RED` 分支。
 **实测**：`f646b` → `SELFTEST_RED log=selftest_f646b.log fail_lines=1` 并直接引用 `792:PARAM-GUARDS: FAIL … mof=0 …`；`f644g` 在 `--ignore-fails` 下仍 `NOT_EVIDENCE … no_terminal_section run_exit_not_0 short(741<868)`；两条轴互不吞。
 **顺带自查**：验证时先写了 `bash scripts/check_gates.sh | head -4; echo $?` 拿到 0 —— 又是"`cmd | tail; echo $?` 取的是 tail 的状态"这条老坑；改为重定向到文件后单独取 `$?` 才拿到真值。
+
+## F648 期间发现（报告字段名与值不同源，F644 遗留，尚未修）：`/plugins` 的 `budget_gib` 报的是 KV 缓存量
+**证据**：`engine/main.php` 361 行 `"budget_gib":" . model_kv_cache_gib()`，而 `model_kv_cache_gib()`（`model_sycl.cc` 1187-1192）算的是 `2·层数·cap·dkv·elem / GiB` —— **KV 缓存占用**；同一行的邻居 `budget_intent` 取档案第 7 字段，经 `model_set_budget_gib` 生效的是**驻留预算**（设备显存中允许常驻权重的那份，见 `g_res.budget`）。⇒ 一对"引擎值 / 档案意图"字段里，值端报的是**另一种量**，用户拿 `budget_gib` 去核 `budget_intent` 必然对不上。
+**为什么一直没人发现**：`grep -rn budget_gib engine/tests/*.py` **零命中** —— 该字段没有任何活体门引用；文档里有 11 处提及（提及不等于验证，同 F647c 的"引用门名"教训）。
+**修法（两个候选，须同批改报告与夹具）**：
+- 方案 A（小）：字段改名 `kv_cache_gib`，`budget_intent` 保留，并在文档说明"档案的 budget_gib 意图当前无引擎回读口"。诚实但仍有半截（意图无对应值）。
+- 方案 B（完整，推荐）：C++ 加 `double residency_budget_gib()` 返回 `g_res.budget/(1<<30)`（注意 `residency_prepare` 未跑过时为 0，须与 `enabled` 一起判读），stub + `php_model_*` 同步，`/plugins` 的 `budget_gib` 改用它，并新增活体门同时断言 `budget_gib` 与 `budget_intent` **同源可比**（设 0.05 后 `budget_gib` 应≈0.05·？按 GiB 直读），另加 `frac` 的同源门。
+**本轮不做的理由（流程纪律）**：梯正在 `build-check` 编译阶段，改 `main.php` 可能与编译争同一文件；且 F646b 刚因"未验证夹具进了本轮"而报废一次。⇒ 记为 F649，下一轮单独做单独验。
+
+## F648 编译期教训：`model_sycl.cc` 有两个作用域，getter 放错层会 LNK2019
+**现象**：首轮 `build-check` 链接失败：`model_sycl.obj : error LNK2019: unresolved external symbol "double __cdecl model::'anonymous namespace'::residency_frac(void)"`，`fatal error LNK1120`。PHP 侧 11 个文件"Successfully compiled"照常打印——**编译成功不代表能链接**。
+**根因**：`model_sycl.cc` 的结构是 `namespace model { namespace { ... } // 23..1062 }`。①globals（`g_res/g_budget_override_gib`）与 `residency_prepare`、`plan` 的驻留预算站点都在**匿名命名空间**里；②导出的 setter（`set_budget_gib/set_weight_prec/set_split`，1119 之后）在 **`namespace model` 本体**。我把 `residency_frac()` 的**声明**写在 globals 旁（=匿名作用域）、**定义**写在 setter 旁（=model 作用域），于是匿名作用域里的两处调用点解析到一个"从未定义"的符号；同时 `model.cc` 想跨 TU 调它也拿不到（匿名命名空间对外不可见）。
+**正解（本轮采用）**：getter 的**定义**放进匿名命名空间（与调用点同层），跨 TU 的导出面另起一个 model 作用域包装 `double residency_frac_effective() { return residency_frac(); }`（同 TU 内非限定查找能找到匿名层的那个），`model.cc` 只声明并调用 `model::residency_frac_effective()`。`set_residency_frac/get_residency_frac` 留在 model 层即可——写匿名层的 globals 在同 TU 内本来就允许（与既有 `set_budget_gib` 完全同构）。
+**流程教训**：①`&&` 链里失败后的各步用 `;` 连接，会让 harness/gate_live **拿旧二进制**继续跑——本轮 `f648` 的 req/cnt/pat/bnd 与 serve 日志全是旧 exe 产物，已删除以免成为 `check_gates` 眼中的"最新证据"（改名 `f648b` 重跑）；②重跑链改成**全程 `&&`** 并先 `grep BUILD_OK` + 打印 exe mtime 与当前时间对照，让"测的是旧二进制"这类问题在同一轮就暴露；③新增 native 要一次摆正**三层**：匿名层实现 / model 层导出包装 / `model.cc` 声明 + `model.stub.php` 声明。

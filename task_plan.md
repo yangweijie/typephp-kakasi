@@ -2472,3 +2472,29 @@ bash scripts/check_gates.sh
 ```
 **提交条件（三者齐）**：①`selftest_f646.log` 含 `==RUN_EXIT=0==` + `PARAM-GUARDS: PASS` 且行内有 `exc=1 excsrv=1` + `PROFILES: PASS` + FAIL 计数 0；②四族最新 `schema_<fam>_*f646*.log` 全 `VERDICT: PASS` + `CHECK_EXIT=0`（**bounds 从 7 轮红转绿是本次主交付**）；③gate_live 双模式 smoke 仍 191/0、par/fair 0、哨兵 0、`check_gates` exit 0。任一不满足 ⇒ 不提交 `main.php`，把差异写进本文件继续修。
 **若 bounds 仍红的先查点**：`EXCL_CASE` 里 400 正文是否已含 `exclusive`；若仍为族名，说明镜像条件里 `api_schema_number_bounded_shape($sch)` 在守卫上下文与谓词上下文取值不同（守卫传的是 `json_schema` 后的 schema 子对象），改判 `$sch` 的传参层级而非加新分支。
+
+## F649 规格（下一轮，先于新旋钮）：报告字段与生效量同源
+**缺陷**：`/plugins` 的 `budget_gib` 实为 `model_kv_cache_gib()`（KV 缓存占用），而它配对的 `budget_intent` 走 `model_set_budget_gib`（驻留预算）。两者不是同一个量 ⇒ "意图 vs 生效值"的读法被破坏。无任何夹具引用该字段（`grep engine/tests` 零命中），文档 11 处提及。
+**改法（方案 B）**：①`model_sycl.cc` 加 `residency_budget_gib()`（`g_res.budget/(1ull<<30)`，`enabled` 为假时为 0 需在文档标注）；②`model.cc` 声明 + `php_model_residency_budget_gib()`；③`model.stub.php` 声明；④`main.php` 的 `budget_gib` 改用它；⑤活体门 `par-plugins-budget-source`：设档案第 7 字段为某值后，`/plugins` 的 `budget_gib` 与 `budget_intent` 数值同量级可比；同时为 F648 的 `residency_frac`/`frac_intent` 加同源门（当前只有单元层 `orch[frac]`，无 8000/8001 活体门）。
+**已核出的生命周期事实（⇒ 方案 B 降级，改推方案 C）**：`struct Residency` 的 `budget = 0`（`model_sycl.cc` 105-109），而 `residency_prepare` 只在**首次 prefill** 时被调用（定义在 946 行，调用点同文件内）。⇒ 任何直接回读 `g_res.budget` 的新 native 在**刚启动、未生成过**的服务器上恒报 0，`/plugins` 会把"没有驻留"与"驻留预算很小"混成同一个数——这比现在的误标更难读懂，而且为此要在报表路径里新发一次设备查询并不值得。
+**方案 C（推荐，零 C++、同源、诚实）**：`/plugins` 里
+ ①把现有 `budget_gib` **改名 `kv_cache_gib`**（它本就是 `model_kv_cache_gib()`，改名即诚实）；
+ ②新增 `residency_budget_gib` 与 `residency_enabled`，值取自引擎自己已有的权威串 `model_residency_report()`（内含 `enabled=%d … budget=%.2fGiB device=%.2fGiB`），用现成的 `api_num_after`/定点解析抽 `budget=`，`enabled=0` 时把 `residency_budget_gib` 置为 `null` 而非 0，从而"未准备"与"预算为 0"可区分；
+ ③档案意图侧继续报 `budget_intent`/`frac_intent`，并新增活体门断言**三件事**：`residency_enabled` 为真时 `residency_budget_gib` 与 `budget_intent`（或 `frac×device`）同源可比；`frac_intent` 存在时 `model_residency_frac()` 回读等于它；未跑过生成时 `residency_budget_gib` 必须是 `null` 而不是 0。
+ ④顺带把 F648 的 `residency_frac`/`frac_intent` 补上 8000/8001 活体门（现在只有单元层 `orch[frac]`）。
+**活体门设计（据调用点证据加强）**：已核 `residency_prepare` 只在生成路径内被调（`model_sycl.cc` 1678，紧跟 `queue_for`），⇒ 刚启动、未生成过的服务器确实处于 `budget=0 / enabled=false`。于是门不写"查一次 `/plugins` 看数"，而写**同会话内的状态迁移**：
+ 1) 先发一次极小 completion（触发 prefill），再查 `/plugins`；断言 `residency_enabled=1` 且 `residency_budget_gib` 是数值；
+ 2) 断言该数值与档案同源：`budget_intent` 存在时 `≈ budget_intent`；否则 `≈ frac_intent × device_gib`；两者都缺省时 `≈ 0.55 × device_gib`（默认 0.55 由此变成**被验证的**事实而非注释里的说法）；
+ 3) 顺序敏感地**先**查一次 `/plugins`（在未生成过的实例上），断言 `residency_budget_gib` 为 `null`——这条专门防止"把未初始化当 0"；若测序无法保证未生成，则改在**新起的第二实例**（8001）上跑 1 与 3，避免与 8000 的会话状态纠缠。
+ 4) `frac_intent` 存在时断言 `model_residency_frac()` 回读等于它（8000 与 8001 各一次，符合"入口×服务实例"矩阵口径）。
+**纪律**：一次只改一层就提交是本仓假绿的主因；F649 必须"报告 + 活体门"一轮内做完，且夹具期望先用真解释器或真探针取得，不靠类比。方案 C 不需要重建 C++，可与 F646b 残疑（探针复核）共用一次梯。
+
+### F648 停车状态（2026-11-16 19:50）
+**HEAD**：`291efcb`(F647d) ← `a08fe6d`(F646b 撤回) ← `fdcbe00`(F646 具名拒绝修复，**已验证**) ← `2d63b34`/`62c92c9`(F647/F645) ← `a288b16`(红)。
+**未提交的在飞改动 = F648 全部源码**（刻意为之：验证未出，不提交，避免"HEAD 声称绿"重演）：`engine/src/model_sycl.cc`（匿名层 `residency_frac()` + `g_residency_frac` + 两站点改用 + model 层 `set_/get_/residency_frac_effective`）、`engine/src/model.cc`（声明 + 3 个 `php_model_*`）、`engine/src/model.stub.php`（3 条声明）、`engine/main.php`（档案第 10 字段、`api_plugins_apply` 条件调用、`/plugins` 的 `residency_frac`/`frac_intent`、`split_intent` 改消费 `$sb/$sl`、`PROFILES` 期望改 10 字段/9 竖线并新增 `plF`、`orch[frac]` 三断言）、`plugins/vendor_profiles.txt`（字段表与示例）。
+**已废证据**：首轮 `f648` 因链接失败（匿名层/model 层作用域错位）而 `&&` 后各步仍跑完，产出的 `req/cnt/pat/bnd/serve_*_f648.log` 全部来自**旧二进制**，已删除；勿在任何声明里引用它们。
+**在跑**：`b74ayms10`（tag `f648b`，全程 `&&`，链内先 `grep BUILD_OK` 再打印 exe mtime 与当前时间对照）。
+**恢复第一条命令**：读 `b74ayms10` 输出里的 `FRAC= / PROFILES= / GUARDS= / FAILCOUNT= / REQ..BND= / SMOKE / CHECK_EXIT`；判定口径不变——harness 读 `VERDICT/CHECK_EXIT` 行，自检先过 `scripts/check_selftest_log.sh`，`*_EXIT` 一律非判据。
+**提交条件（四者齐）**：①链接成功且 exe mtime 晚于本轮源码 mtime；②`orch[frac] PASS` + `PROFILES: PASS`（10 字段）+ `PARAM-GUARDS: PASS 20/20 exc=1 excsrv=1` + FAIL 0 + `RUN_EXIT=0`；③四族 `VERDICT: PASS`/`CHECK_EXIT=0`；④SMOKE 与 SMOKE-PRETTY 各 191/0、par/fair 0、哨兵 0、`check_gates` exit 0（当前基线 `cited=198 unresolved=0`，**198 是 F647c 收紧后的诚实值**）。
+**若 `orch[frac]` FAIL**：先读它在 FAIL 分支打印的 `plan=/rep=` 完整串再判断——三断言分别指向"没移动两处"、"frac=0 没复原"、"getter 与旋钮不同源"，不要凭第一反应改夹具。
+**余项队列**：F649（`/plugins` 的 `budget_gib` 实为 KV 缓存量；方案 C：改名 `kv_cache_gib` + 从 `model_residency_report()` 抽 `residency_budget_gib`/`residency_enabled`，未 prefill 时为 `null`，配 4 条状态迁移活体门）、F646b 残疑（唯一 name 探针 `_probe_f646b.py` 复核那次 400）、FR-06/FR-02（决策/重设计）、多卡与 GGUF 分片（缺第二设备）。
