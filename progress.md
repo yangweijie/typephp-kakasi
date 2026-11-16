@@ -2924,3 +2924,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **`scripts/check_selftest_log.sh`（新）**：判"日志是否算证据"（末节 `INT8-REPRO` + 若有则 `RUN_EXIT=0` + 行数≥动态下界 + FAIL 数 0）；命名文件=判定（exit 0/1），全历史扫描=报告。
 - **`scripts/check_gates.sh`**：前置自检完整性硬门；新增 **harness 判定硬门**（四族各取最新 `schema_<fam>_*.log`，须有 `VERDICT:` 且 `VERDICT: PASS` + `CHECK_EXIT=0`，否则 `HARNESS_RED` exit 1）。实测首轮即 `HARNESS_RED fam=bounds`，并在线拒判写入中的 `selftest_f646.log`（`SELFTEST_INCOMPLETE`，exit 1）。
 - **四份 `schema_*_run.sh`**：`RC=$?` 紧跟 python、日志写 `CHECK_EXIT=$RC`、末尾 `exit $RC`（在 `*_DONE` 之后，保留既有标记读取习惯）。此前脚本恒 exit 0 吞掉 python 状态 ⇒ `&&` 链与 `*_EXIT` 读数都不可能暴露失败。
+
+## F646（已验证，2026-11-16 15:39）：bounds 具名拒绝回归闭合——红了 7 轮的 harness 转绿
+- **判定行**：`BND_VERDICT=VERDICT: PASS … CHECK_EXIT=0`；`EXCL_CASE` 显示 `exclusive_bool_alone_refuse status=400 ok=True` 且正文已是 `schema keyword exclusiveMinimum/exclusiveMaximum (draft-4 boolean with no inclusive bound…)`；`exclusive_bool_served status=200 {"n":7}` 仍放行（更严对照未被打断）。
+- **其余三族**：required/count/pattern 全 `VERDICT: PASS` + `CHECK_EXIT=0`。
+- **自检**：911 行、`==RUN_EXIT=0==`、FAIL 0、`PROFILES: PASS`、`PARAM-GUARDS: PASS`（`pass=20/20 exc=1 excsrv=1`）。
+- **活梯**：SMOKE 191/0、SMOKE-PRETTY 191/0、par 0、fair 0、scaling 1.537×、哨兵 0、`check_gates 199/0` 且 exit 0。
+- **双向自证**：F647 的 harness 门在 `f645` bounds 上报 `HARNESS_RED`，在 `f646` bounds 上放行——同一门对同一族既能否决已知红又能确认转绿，说明它测的是判定行而非命名巧合。

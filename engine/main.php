@@ -12471,6 +12471,14 @@ function api_schema_guard_unsupported(string $body): string
         return "schema pattern with regex metacharacters";
     }
     if (api_schema_bounds_unsupported($sch) == 1) {
+        // F646: naming the offending keyword is part of the accepted-means-honored contract. Moving
+        // this guard out of the bounds-specific path used to flatten every case to the family
+        // string, which silently de-regressed the isolated draft-4 boolean refusal. Mirror the
+        // condition the predicate itself uses, so the wording and the verdict cannot drift apart.
+        if (preg_match('/"exclusive(?:Minimum|Maximum)"\s*:\s*true/', $sch) == 1
+            && api_schema_number_bounded_shape($sch) == "") {
+            return "schema keyword exclusiveMinimum/exclusiveMaximum (draft-4 boolean with no inclusive bound to tighten)";
+        }
         return "numeric bounds";
     }
     if (api_schema_choices_pure_bounds($sch) == 1) {
@@ -22923,13 +22931,23 @@ function main(): void
     $pgFmtOk = (strpos($pgFmt, "format") !== false && strpos($pgFmt, "request parameter") === false) ? 1 : 0;
     $pgDeep = api_schema_guard_unsupported('{"json_schema":{"name":"x","schema":{"type":"object","properties":{"a":{"type":"array","items":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"y":{"type":"string"}}}}}}}}}}');
     $pgDeepOk = strpos($pgDeep, "arrays nested") !== false ? 1 : 0;
+    // F646: the isolated draft-4 boolean must be refused BY KEYWORD NAME, and its served twin
+    // (boolean beside an inclusive bound) must stay claimable. Both halves matter: hoisting the
+    // guard flattened the first into a family string, and any over-eager naming could break the
+    // second.
+    $pgExc = api_schema_guard_unsupported('{"json_schema":{"name":"x","schema":{"type":"object","properties":{"n":{"type":"integer","exclusiveMinimum":true}}}}}');
+    $pgExcOk = strpos($pgExc, "exclusive") !== false ? 1 : 0;
+    $pgExcServable = api_schema_guard_unsupported('{"json_schema":{"name":"x","schema":{"type":"object","properties":{"n":{"type":"integer","minimum":5,"exclusiveMinimum":true}}}}}') == "" ? 1 : 0;
     echo "PARAM-GUARDS pass=" . $pgOk . "/" . $pgN . " tool=" . $pgToolOk . " kw=" . $pgKwOk
-        . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " bad=" . $pgBad . "\n";
-    if ($pgOk == $pgN && $pgToolOk == 1 && $pgKwOk == 1 && $pgFmtOk == 1 && $pgDeepOk == 1) {
-        echo "PARAM-GUARDS: PASS (neutral spellings accepted, schema-named lookalikes ignored, tool bounds still served)\n";
+        . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " exc=" . $pgExcOk
+        . " excsrv=" . $pgExcServable . " bad=" . $pgBad . "\n";
+    if ($pgOk == $pgN && $pgToolOk == 1 && $pgKwOk == 1 && $pgFmtOk == 1 && $pgDeepOk == 1
+        && $pgExcOk == 1 && $pgExcServable == 1) {
+        echo "PARAM-GUARDS: PASS (neutral spellings accepted, schema-named lookalikes ignored, tool bounds still served, exclusive bound named)\n";
     } else {
         echo "PARAM-GUARDS: FAIL ok=" . $pgOk . "/" . $pgN . " tool=" . $pgToolOk
-            . " kw=" . $pgKwOk . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " bad=" . $pgBad . "\n";
+            . " kw=" . $pgKwOk . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " exc=" . $pgExcOk
+            . " excsrv=" . $pgExcServable . " bad=" . $pgBad . "\n";
     }
 
     // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line
