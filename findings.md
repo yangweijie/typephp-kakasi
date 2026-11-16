@@ -3917,7 +3917,7 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 | 数组项的 schema 带值约束：**number 型整数/单侧/无整数小数网格**（`items:{"type":"number",…}`，整数值、单侧、或 ≤8 位小数网格） | **支持**（整数值/单侧逐元素走位；无整数区间走 F440–F456/F473/F512/F513 确定性小数单值；multipleOf 见下行） | `in_plan`/`in_int`/`in_one`/`in_multi`/`items_num_dec_ok`/`items_num_frac6_ok`（F462/F473/F512/F513） |
 | 数组项的 schema 带值约束：**integer/number 型 multipleOf**（`items:{"type":"integer"|"number",…,"multipleOf":M}`，键序任意，界可为 inclusive / exclusive 数值 / draft-4 布尔；M 整数，或小数 M 配 number 叶 inclusive 界（双侧或单侧）） | **支持**（无界逐元素后缀机制、每元素 %M==0；有界/单侧经**与单属性同一 shape 判定**折叠到区间内最小倍数、确定性单值；number 型整数 M＝整数倍数子集、小数 M＝小数网格折叠；unsat/无界 >999999999/小数 M 无界·exclusive·integer 叶/带其它约束键仍拒） | `im_unb`/`im_bnd`/`im_unsat`/`im_big`/`im_num`/`im_excl`/`im_excl_bool`/`im_excl_num`/`im_excl_kw`/`fm_items`/`items_mult_frac_ok`（F465/F466/F467/F469/F478） |
 | 数组项的 schema 带其他值约束（format、含元字符/未锚定的 pattern 等） | **显式 400**（写入器只发上述 items 形态；改前 200 且连形状都错） | `sf_itb`/`ap_bad`/`items_pattern_metachar_refuse`/`ib_excl_kw`/`ib_negmax`（F458/F461/F468/F477） |
-| tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 活体 `tool_req_subset` 200 |
+| tool 参数 schema 里的上述关键字 | **不由此路径判定**（走 tool 路径） | 单元 `PARAM-GUARDS` 的 tool= 断言（谓词对 tool 参数体返回空）+ 活体 `tool-beyond-grid-exact` 200（旧引用 tool_req_subset 自 F398 后已从夹具移除，见 F647c；此处不加反引号，因为表内反引号即被视为在引用的门名） |
 | oneOf / anyOf | **受限支持**：2–3 分支、首属性须 const、每分支 ≤2 属性 | `ONEOF`/`ROOT-ONEOF`/`ONEOF-GRAMMAR` |
 | $ref | 本地 `#/definitions|$defs` 或调用方注册表 | `REF`/`EXTREF`/`EXTREF-UNREG` |
 | allOf | 支持合并 | `ALLOF` |
@@ -5401,3 +5401,6 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 2. 加引号后 `engine/api_smoke_*.log` 与 `engine/api_smoke_pretty_*.log` 会**同时命中最新那份 pretty 日志**（`api_smoke_pretty_*` 本就匹配前一个模式），两条模式解析成同一文件 ⇒ 非 pretty 的 compact smoke 掉出 haystack，191 条服务态名字有一半可能失去证据。改法：对第一个模式 `grep -v pretty` 后再取 `head -1`。
 **验证方式**：不用整门（自检日志正被链写入，会先撞完整性判据），而是把 haystack 构造**单独跑**，断言 `files=8 distinct=8`、`grep -c api_smoke=2`，再 `bash -n`。⇒ 与本轮主题一致：**改动门本身也要有能立刻跑出结论的判据**。
 **遗留影响（须如实报告而非消音）**：收紧 haystack 后，若某些引用只在旧日志里成立，`unresolved` 会**如实升高**——那是"表格引用了当前不再产出的名字"的真漂移，要逐条改表或改门，**不许**为凑 0 把 glob 放宽回去。
+
+**F647c 续（同一轮实测）**：haystack 收紧到 8 份当前日志后，`unresolved` 只升高 **1** 项：`tool_req_subset`。追查：该夹具名只存在于 `schema_keywords_f398b.log`，在**任何当前夹具源码里都没有**⇒ F398 之后该活体用例已被移除，而支持表一直用它当证据。同轮把它改引为当前真在产出的记号（单元 `PARAM-GUARDS` 的 tool= 断言 + 活体 `tool-beyond-grid-exact`），实测 `cited=198 unresolved=0`。计数从 199 变 198 是**诚实结果**（少了一个不再存在的引用），不是门退化，不得为了让数字好看把 glob 放宽回去。
+**再补一个自伤坑（机制同类）**：第一次改表时我在括号注里写“旧引用 `tool_req_subset` 已移除”——反引号让提取器把这个**正在被宣告死亡的**名字重新当成一条活引用，unresolved 立刻回到 1。⇒ 表内反引号即“引用门名”的记号，说明历史时**不要加反引号**；凡“扫描文本找记号”的门，都要考虑**提及不等于主张**（mention/use 混淆）这一类误报来源。
