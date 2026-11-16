@@ -287,10 +287,13 @@ function api_plugins_select(string $text, string $fp): string
         }
         if ($f[1] == "*" || strpos($fp, $f[1]) !== false) {
             $wp = count($f) >= 6 ? $f[5] : "";
-            return $f[0] . "|" . $f[1] . "|" . $f[2] . "|" . $f[3] . "|" . $total . "|" . $wp;
+            $bg = count($f) >= 7 ? $f[6] : "";
+            $sb = count($f) >= 8 ? $f[7] : "";
+            $sl = count($f) >= 9 ? $f[8] : "";
+            return $f[0] . "|" . $f[1] . "|" . $f[2] . "|" . $f[3] . "|" . $total . "|" . $wp . "|" . $bg . "|" . $sb . "|" . $sl;
         }
     }
-    return "none||2|0|" . $total . "|";
+    return "none||2|0|" . $total . "|||";
 }
 
 function api_plugins_apply(): string
@@ -305,6 +308,13 @@ function api_plugins_apply(): string
         if (count($st) >= 6 && $st[5] != "") {
             model_set_weight_prec((int) $st[5]);
         }
+        // F644: optional budget_gib (field 7) and split config (fields 8,9).
+        if (count($st) >= 7 && $st[6] != "") {
+            model_set_budget_gib((float) $st[6]);
+        }
+        if (count($st) >= 9 && $st[7] != "" && $st[8] != "") {
+            model_set_split((int) $st[7], (int) $st[8]);
+        }
     }
     return $st[0] . "|" . $st[1] . "|" . model_attn_mode() . "|" . $st[3] . "|"
         . ($st[0] == "none" ? 0 : 1) . "|" . $st[4];
@@ -318,10 +328,15 @@ function api_plugins_json(): string
     $st = explode("|", api_plugins_select(api_plugins_text(), model_device_fingerprint(0)));
     $applied = $st[0] == "none" ? 0 : 1;
     $wpi = (count($st) >= 6 && $st[5] != "") ? $st[5] : "-1";
+    $bg  = (count($st) >= 7 && $st[6] != "") ? $st[6] : "";
+    $sb  = (count($st) >= 8 && $st[7] != "") ? $st[7] : "";
+    $sl  = (count($st) >= 9 && $st[8] != "") ? $st[8] : "";
     return "{\"profiles\":" . $st[4] . ",\"active\":\"" . api_esc($st[0]) . "\",\"match\":\""
         . api_esc($st[1]) . "\",\"device\":\"" . api_esc(model_device_fingerprint(0))
         . "\",\"attn_mode\":" . model_attn_mode() . ",\"kv_f16\":" . $st[3]
         . ",\"weight_prec\":" . model_weight_prec() . ",\"wprec_intent\":" . $wpi
+        . ",\"budget_gib\":" . model_kv_cache_gib() . ",\"budget_intent\":\"" . $bg . "\""
+        . ",\"split_backend\":" . model_attn_split_p() . ",\"split_intent\":{\"backend\":\"" . (isset($st[7]) ? $st[7] : "") . "\",\"layer\":\"" . (isset($st[8]) ? $st[8] : "") . "\"}"
         . ",\"applied\":" . $applied . "}";
 }
 
@@ -22908,18 +22923,28 @@ function main(): void
     $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
     $plB = api_plugins_select($plText, "some cpu");
     $plC = api_plugins_select("bad|line\n", "Arc");
-    $plOk1 = $plA == "arc|Arc|1|1|3|" ? 1 : 0;
-    $plOk2 = $plB == "last|*|2|0|3|" ? 1 : 0;
-    $plOk3 = $plC == "none||2|0|1|" ? 1 : 0;
+    // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line
+    // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
+    // Format: name|match|attn|kv|total|wp|bg|sb|sl (9 fields)
+    $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
+    $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
+    $plB = api_plugins_select($plText, "some cpu");
+    $plC = api_plugins_select("bad|line\n", "Arc");
+    $plOk1 = $plA == "arc|Arc|1|1|3||||" ? 1 : 0;
+    $plOk2 = $plB == "last|*|2|0|3|||" ? 1 : 0;
+    $plOk3 = $plC == "none||2|0|1|||" ? 1 : 0;
     // F642: 6th field (weight_prec) - a line with 6 fields should parse the 6th field
     $plD = api_plugins_select("w|Arc|0|1|note|0\n", "Arc");
-    $plOk4 = $plD == "w|Arc|0|1|1|0" ? 1 : 0;
-    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . "\n";
-    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1) {
-        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, weight_prec parsed)\n";
+    $plOk4 = $plD == "w|Arc|0|1|1|0|||" ? 1 : 0;
+    // F644: 7th, 8th, 9th fields (budget_gib, split_backend, split_layer)
+    $plE = api_plugins_select("e|Arc|1|1|note|0|1.5|0|5\n", "Arc");
+    $plOk5 = $plE == "e|Arc|1|1|1|0|1.5|0|5" ? 1 : 0;
+    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . "\n";
+    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1) {
+        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, weight_prec parsed, budget/split parsed)\n";
     } else {
-        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . " sel=" . $plA
-            . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . "\n";
+        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . " sel=" . $plA
+            . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour

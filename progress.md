@@ -2902,3 +2902,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F642（2026-11-15）：weight_prec 可选档案字段
 - **交付**：vendor_profiles.txt 第 6 字段 `weight_prec(0/1)`，`api_plugins_select` 解析，`api_plugins_apply` 条件调用 `model_set_weight_prec`，`/plugins` 报告 `weight_prec`/`wprec_intent`。
 - **门**：`PROFILES: PASS`（6 字段夹具 PASS）、`par-plugins-weight_prec` PASS；基线 191/0 双模式。
+
+## F644（2026-11-16）：FR-05 扩展 budget_gib 与 split 配置
+- **交付**：档案第 7-9 字段 `budget_gib`/`split_backend`/`split_layer`，选择/应用/报告全链路打通。
+- **门**：`PROFILES` 单测新增 7-9 字段夹具 PASS；`/plugins` 新增字段可见。

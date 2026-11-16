@@ -5342,3 +5342,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结果**：`PROFILES: PASS` 新增 6 字段夹具 PASS；`par-plugins-weight_prec` 双模式 PASS；`/plugins` 返回 `weight_prec` (0/1) 与 `wprec_intent` (-1/0/1)；基线不变（出厂档案仍 5 字段，int8 默认）。基线：自检 0 FAIL、四 harness 0、SMOKE 双模式 **191/0**、par/fair 0、哨兵 0、`check_gates` 199/0。
 **记法**：档案格式演进必须**可加字段不破坏旧行**——可选字段放末尾、缺省即默认；解析器用 `count($f) >= 6` 兼容；setter 只在字段非空时调用，避免每轮启动都重算并清 KV。
 **证据**：`build_f642.log`、`selftest_f642.log`（PROFILES wprec=0）、`gate_live_f642.log`（`par-plugins-weight_prec` PASS）、`par_smoke_f642.log`。
+
+## F644（2026-11-16）：FR-05 扩展 budget_gib 与 split 配置
+**动机**：FR-05 原仅支持 attn_mode 与 kv_f16，预算与多卡分片在档案中不可配置。
+**改动**：档案格式扩展为 9 字段 `name|match|attn|kv|note|wprec|budget|split_b|split_l`；`api_plugins_select` 解析第 7/8/9 字段；`api_plugins_apply` 调用 `model_set_budget_gib` 与 `model_set_split`；`/plugins` 新增 `budget_gib`/`budget_intent`/`split_backend`/`split_intent`。出厂档案仍 5 字段，默认行为不变。
+**结果**：`PROFILES` 单测新增 6-9 字段夹具 PASS；`/plugins` 报告 `budget_gib`/`budget_intent`/`split_backend`/`split_intent`；**双模式 smoke 仍 191/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+**记法**：档案字段按需扩展，旧行自动兼容；setter 仅在字段非空时调用，避免每轮启动都重算并清 KV。
