@@ -5347,4 +5347,41 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **动机**：FR-05 原仅支持 attn_mode 与 kv_f16，预算与多卡分片在档案中不可配置。
 **改动**：档案格式扩展为 9 字段 `name|match|attn|kv|note|wprec|budget|split_b|split_l`；`api_plugins_select` 解析第 7/8/9 字段；`api_plugins_apply` 调用 `model_set_budget_gib` 与 `model_set_split`；`/plugins` 新增 `budget_gib`/`budget_intent`/`split_backend`/`split_intent`。出厂档案仍 5 字段，默认行为不变。
 **结果**：`PROFILES` 单测新增 6-9 字段夹具 PASS；`/plugins` 报告 `budget_gib`/`budget_intent`/`split_backend`/`split_intent`；**双模式 smoke 仍 191/0**；自检 0 FAIL、四 harness 0、par/fair 0、哨兵 0、`check_gates` 199/0。
+> **更正（F645，2026-11-16）**：本行的“自检 0 FAIL”**不成立**。复验 `selftest_v2.log:794` 打印 `PROFILES: FAIL 11101`（`plOk4=0`），即 F644 是在**红基线**上提交的。根因见下方 F645 条目：档案返回串的“9 字段”契约在无匹配回落分支只有 8 字段，且夹具期望串把命中分支多写了一个竖线。smoke 191/0 与四 harness 0 不受影响（PROFILES 是自检内部门，不在 smoke 里）。
 **记法**：档案字段按需扩展，旧行自动兼容；setter 仅在字段非空时调用，避免每轮启动都重算并清 KV。
+
+## F645（2026-11-16）：红基线复验——PROFILES 的 9 字段契约只在命中分支成立
+**动机**：F644 连续三次“PROFILES FAIL”被归因于“期望串没对上”，我在提交前只做了一次 `grep -c FAIL`。本轮按“提交声明必须可复验”复核 HEAD `a288b16`，发现它自称的绿基线是假的。
+**取证**：清孤儿进程+`serve*.on` 后跑 `build-check.sh && run-kakasi-selftest.bat selftest_v2.log`，`LADDER_EXIT=0`、`RUN_EXIT=0`，但 `grep -c FAIL`=1：
+`PROFILES: FAIL 11101 … wprec=w|Arc|0|1|1|0|||` ⇒ 位图 `11101` 逐位对应 `plOk1..plOk5`，失败的是 `plOk4`。
+**根因（两处，不是一处）**：
+1. **实现**：`api_plugins_select` 的无匹配回落分支 `return "none||2|0|".$total."|||"` 只拼出 **8 字段**，而命中分支 `return $f0."|".$f1."|".$f2."|".$f3."|".$total."|".$wp."|".$bg."|".$sb."|".$sl` 是 **9 字段**。“扩展返回宽度”时漏改了回落分支——`api_plugins_apply` 正按 `st[5..8]` 索引，回落行因此拿不到 wp/bg/sb/sl 语义位。
+2. **夹具**：`plOk3` 的期望 `none||2|0|1|||` 是照着**缺陷输出**写死的（8 字段），于是回落分支的缺陷被门“认证”为正确；`plOk4` 反过来按 **10 字段**写（`w|Arc|0|1|1|0||||` 多一个竖线）。两条期望各错一头，掩盖了同一个契约。
+3. **附带**：上一轮用 Python 就地改写夹具时把整段 `$plText/$plA/$plB/$plC` **重复插入了三遍**（赋值幂等所以不改行为，但读起来像“门有三套上下文”）。
+**修法**：回落分支补到 9 字段（`"||||"`）；`plOk3/plOk4` 期望改成真实 9 字段串；删掉重复块；并新增**宽度不变量本身**的断言 `$plW1..$plW5`（每条返回路径 8 个竖线），用纯函数 `api_plugins_pipes()` 逐字符 `substr` 计数——刻意避开 `explode`+尾部空字段（tpc 编译期语义与解释期不一致，见 typephp-tpc-toolchain-limits）。
+**方法增益（值得固化）**：**先用真 PHP 验证期望串，再花 10 分钟编译**。用 Node 从 `main.php` 里按大括号配平抽出 `api_plugins_pipes/count/select` 三个纯函数，拼上夹具跑 `php` 一次性打印 `值 + pipes + MATCH`，5/5 命中后才启动阶梯。把“期望串对不对”从构建轮次里摘出来，一轮构建只用来验“编译后语义是否等于解释器”。
+**结果**：待本轮 F645 阶梯数值回填（build/selftest/四 harness/gate_live/check_gates）。
+**记法**：**“0 FAIL”必须来自 `grep -c FAIL`，且提交信息里的基线只能引用**本轮**日志**；位图型断言（`FAIL 11101`）要能按位反查，否则一次红看不出是哪条。扩展返回契约时，**每一条** return 都要同批改，并让门断言**宽度/形状本身**而不只断言某个具体串——期望串照抄缺陷输出是“门认证 bug”的典型路径。
+
+## F645b（2026-11-16）：`grep -c FAIL` 会被**截断日志**骗成绿——假绿的第二条路径
+**取证**：横向扫 F640–F645 的自检日志，得到一条清晰轨迹（位图逐位对应 `plOk1..plOk5`）：
+`selftest_f644.log`=`PROFILES: FAIL 00101` → `f644c`=`00111` → `f644f`=`10111` → `v2`=`11101`。四轮里从未出现全 1，即 **F644 从第一次跑起就是红的**，`baccb53`/`a288b16` 两次提交都带着红基线。
+**关键**：`selftest_f644g.log` 只有 741 行、结尾 `==RUN_EXIT=-1==`、**整份日志里没有 PROFILES 段**。它 `grep -c FAIL` = 0 —— 因为跑到 PARITY 就中断了，压根没走到那一节。对照 `selftest_v2.log` 911 行、结尾 `==RUN_EXIT=0==`、含 PROFILES。
+**结论**：**"0 FAIL"有两种含义**——"跑了且没失败"与"没跑到"。用 `grep -c FAIL` 判绿把两者合并了；`check_gates.sh` 的红门（`SELFTEST_RED`）同样只看 FAIL 计数，因此一份中断日志可以一路绿灯通过。这与 typephp-tpc-toolchain-limits 里"自检偶发 `RUN_EXIT=-1` 停在 PARITY"是同一现象的两个面：以前只当成偶发重跑，没想到它会**伪装成绿**。
+**修门方向（F647）**：判定绿必须同时满足三件事——①日志结尾有 `==RUN_EXIT=0==`；②被引用的每个门名在日志里**出现**（`check_gates` 已有此语义，但它排在红门之后且红门先 exit）；③FAIL 计数为 0。顺序调整为"先完整性、再红、再引用"。
+**记法**：**"没有报错"不等于"发生了检查"**；凡以日志为证据的门，都要先断言日志是**完整**的（有终止标记、有关键小节），否则截断/中断天然产生一个假绿。这比"期望串照抄缺陷输出"更隐蔽，因为它不产生任何异常文本。
+
+## F645c（2026-11-16）：把“日志是否算证据”做成可复跑的工具，并量化历史假绿
+**工具**：新增 `scripts/check_selftest_log.sh`（纯脚本，不动引擎、不接构建）。判定 EVIDENCE 需同时满足：①含自检**末节** `INT8-REPRO`；②若出现 `==RUN_EXIT=` 则必须为 `0`；③行数不低于**动态下界**（由所有含末节日志的最小行数算出，本轮 `floor_lines=868`）；④`grep -c FAIL` 为 0；⑤可选 `--sections` 指定必须出现的小节。不满足时打印原因（`no_terminal_section / run_exit_not_0 / short(N<F) / fail_lines=N`）。
+**第一版判据错了，已纠正**：起初用“结尾必须有 `==RUN_EXIT=0==`”当完整性信号，扫全历史得到 40 个“假绿”；但 `selftest_f494/f513/f514.log`（883 行）**确实跑到了末节**，只是它们出自不写 marker 的旧调用方式。⇒ 完整性应取**自检自身的末节**，marker 只在存在时校验。
+**量化结论**：317 份自检日志中 245 份是证据、72 份不是；其中**只有 8 份属于“0 FAIL 但没跑完”的假绿类**：`debug`、`f421`、`f451`、`f644d`、`f644e`、`f644g`、`verify`，外加仍在写的 `f645`。**8 份里有 3 份是 F644 自己的轮次**（d/e/g）——这正是 `baccb53`/`a288b16` 两次“0 FAIL”声明的取证来源；64 份是“真红”（含 FAIL 文本）。
+**记法**：判据要能被**全历史回放**检验——`grep -c FAIL` 一条规则放到 317 份日志上立刻暴露两类误判（截断日志判绿、旧调用格式判红）。写门时先问“这条判据在历史上会不会把已知好/坏样本分错”，比在新日志上试一次可靠得多。另注：**“动态下界”优于硬编码行数**，因为自检规模随功能增长（88 行与 741 行都是中断，868 行是当前完整最小值）。
+**待接**：把 ①②④ 合进 `scripts/check_gates.sh` 的硬门（排在 FAIL 计数之前），等本轮 F645 阶梯结束再做，避免改动正被阶梯调用的脚本。
+
+## F646（2026-11-16）：第二种假绿——harness 脚本**永远 exit 0**，而 F638 的守卫外移把"具名拒绝"降级成"族名"
+**发现路径**：链式跑完四 harness 后打印 `HARNESS_bounds_EXIT=0`，看起来全绿；但我去读日志本体，得到 `VERDICT: FAIL cases=1` + `CHECK_EXIT=1`。⇒ **`schema_*_run.sh` 的退出码不是判据**：脚本末尾是 `cat 日志; stop_all; echo SENTINELS_LEFT; echo ..._DONE`，exit 状态来自最后的 echo，**恒为 0**。检查的真实状态只写在日志里的 `CHECK_EXIT=` 行。这与 F580"RUN_EXIT≠断言通过"是同一类，但更危险：它让 `&& ` 链和 `EXIT=0` 读数**结构性地无法**暴露失败。
+**回归定位（全历史回放）**：按时间序扫 `engine/schema_bounds_*.log` 的 `VERDICT` 迁移：F584→修复、F588→修复、F600→修复、F609→修复，**F638（11-16 05:06）起 FAIL 且此后 f639…f645 每一轮都 FAIL 未修**。⇒ F639–F644 提交里的"四 harness 0"对 bounds 全部为假。
+**根因**：F635–F638 把 schema 形状守卫前移到 stream 分流之前，改为消费合成谓词 `api_schema_guard_unsupported`，其 bounds 分支返回**族名** `"numeric bounds"`（main.php 12474）；而外移前的专用路径按关键字拒绝。夹具 `exclusive_bool_alone_refuse` 要求 `code==400 and "exclusive" in txt`（`schema_bounds_check.py:243`），族名不含关键字 ⇒ 断言翻红。**"accepted ⇒ honored"要求拒绝必须具名**，这次是守卫搬家时把词汇表降级了。
+**修法（最小且同源）**：在 `api_schema_guard_unsupported` 的 bounds 分支里，镜像 `api_schema_bounds_unsupported` 已有的孤立布尔条件（同一 `preg_match('/"exclusive(?:Minimum|Maximum)"\s*:\s*true/')` + 同一 `api_schema_number_bounded_shape` 判空），命中时返回 `"schema keyword exclusiveMinimum/exclusiveMaximum ..."`，其余 bounds 原因保持 `"numeric bounds"`。不重写整条 bounds 链（那会复制 14635–14658 的多重豁免，易漂移）。
+**夹具面核查**：bounds harness 里按名断言的族共 9 种（`uniqueItems`×7、`contains`×6、`keyword`×5、`items`×4、`multipleOf`/`minContains`/`maxContains`/`prefixItems`/`required`/`unevaluatedItems`/`exclusive` 各 1）；**只有 `exclusive` 这一条翻红**，其余仍绿 ⇒ 目标修一处即可，不动其它族名。
+**记法**：**外层守卫搬家时必须携带的不只是前置变换（F637 的 pinned-interval），还有"拒绝措辞的具体性"**——把多个专用守卫合成一个谓词，很容易把"具名关键字"压成"族名"，而门（和用户）要的是前者。判绿一律读**日志内的判定行**（`CHECK_EXIT=`、`VERDICT:`），不看脚本 exit；新写 harness 脚本时应 `exit $rc` 传播 python 状态（本轮先按现状用判定行，改脚本另列）。

@@ -2393,3 +2393,49 @@ Phase 0（探针）— **complete**（2026-11-01，结论 GO，见 `probe/CONCLU
 **操作坑（本轮实测）**：`scripts/par_content_check.sh` 会**自起服务**，别在构建前跑——它留下的孤儿进程会让链接报 `LNK1104 build\kakasi_engine_sycl.exe permission denied`（用 `Get-Process kakasi_engine_sycl` 定位、`Stop-Process -Force`，再重建）。
 
 **剩余队列**：① FR-05 新旋钮/新厂商需 C++ setter 与档案字段同步（机制已通）；② FR-06 独立草稿模型（产品决策：额外权重 vs 单二进制）；③ per-session KV 并行吞吐 / 多卡 split（无第二设备）/ GGUF 分片合并；④ FR-02 式计算图调度。
+
+## F632–F644 索引（补录，详情见 findings.md / progress.md 同名条目）
+F632 参数拒绝扩到 `logit_bias`/`prediction`/`reasoning_effort`/Anthropic `thinking`/`modalities`/`min_p`；F633/F634/F640 错误信封按出口成形（非流式/流式/8001 五个写点）；F635–F638 谓词与 schema 形状守卫前移到 stream 分流之前（含 pinned-interval 前置重写）；F639 `PARAM-GUARDS` 单元门；F641 `PROFILES` 选择逻辑单元门；F642 档案第 6 字段 `weight_prec`；F644 档案第 7–9 字段 `budget_gib`/`split_backend`/`split_layer`。
+**注意**：F644 的两个提交（`baccb53`、`a288b16`）自称"自检 0 FAIL / check_gates 199/0"**不成立**，取证与根因见 F645；其功能面（档案字段解析/应用/报告）本身可用，红的是 `PROFILES` 单元门与回落分支的字段宽度。
+
+## F645（2026-11-16）：复验并修复 F644 的假绿基线
+**做了什么**：不复用提交信息的结论，重新跑一遍取证（`build_f645.log` 链），确认 `a288b16` 实为 `PROFILES: FAIL 11101`；定位三处缺陷（回落分支 8 字段、两条期望串各错一头、夹具块被重复插入三遍）；修复并加断言"每条 return 宽度=8 竖线"（新纯函数 `api_plugins_pipes`，逐字符 `substr`，刻意不用 `explode` 以避开编译期尾部空字段语义差）。
+**方法增益**：先用 Node 从 `main.php` 抽出 `api_plugins_pipes/count/select` 三个纯函数、用真 PHP 8.5 跑夹具确认 5/5 MATCH + pipes=8，**才**启动一轮构建；把"期望串对不对"从构建轮次里摘出来。
+**追加发现**：`grep -c FAIL` 会把**截断日志**判成绿（`selftest_f644g.log`：741 行、`RUN_EXIT=-1`、无 PROFILES 段、FAIL 计数 0），且 `check_gates.sh` 唯一硬门就只用这个计数 ⇒ 假绿被认证成基线。全历史量化见 F645c，工具已落地 `scripts/check_selftest_log.sh`（317 份日志：245 证据 / 8 假绿类，其中 3 份是 F644 自己的 d/e/g 轮）。
+**阶梯数值（本轮 `f645` 标签）**：待后台链完成后回填——build / selftest FAIL 数 / 四 harness / gate_live 双模式 smoke / par 与 fair / check_gates。
+**回填前必须先做（勿直接引用 `f645` 的四 harness 日志）**：我的后台链把 harness 的 stdout 重定向到了 `engine/schema_${h}_f645.log`，而 `schema_*_run.sh` 内部**正是往同一路径写**（`$E/schema_required_$TAG.log` 然后 `cat`）⇒ 两个写入者争同一文件，命中已知坑"重定向到 harness 自身 tag 日志会互相覆盖"。正确姿势是别名承接 stdout：`bash scripts/schema_required_run.sh f645 > engine/req_run_f645.log`（cnt/pat/bnd 同理），让脚本独占 `schema_*_f645.log`。四份 harness 需按此**重跑一遍**再判 `CHECK_EXIT`，随后再跑 `check_gates`。自检日志 `selftest_f645.log` 与 `gate_live` 的 `api_smoke_f645/api_smoke_pretty_f645` 不受此影响（命名不与自身产物撞车）。
+
+
+## F646 规格（**优先于 FR-05 新旋钮**）：修 F638 守卫外移导致的 bounds 具名拒绝回归
+**状态**：根因已定位（见 findings.md F646），修法已定，待 gate_live 结束后落地。
+**缺陷**：`exclusive_bool_alone_refuse` 自 F638（11-16 05:06）起每轮 FAIL，f639…f645 未修；F639–F644 提交声明的"四 harness 0"对 bounds 为假。合成守卫返回族名 `"numeric bounds"`（`main.php` 12474），不含夹具要求的关键字 `exclusive`。
+**改动**：`api_schema_guard_unsupported` 的 bounds 分支内镜像 `api_schema_bounds_unsupported` 既有条件（同一 `preg_match` 孤立布尔 + 同一 `api_schema_number_bounded_shape($sch)==""`），命中则返回 `schema keyword exclusiveMinimum/exclusiveMaximum (draft-4 boolean with no inclusive bound to tighten)`；其余原因仍返回 `"numeric bounds"`。
+**验收**：bounds harness `VERDICT: PASS cases=0` 且 `CHECK_EXIT=0`（**读判定行，不信脚本 exit**）；required/pattern/count 三份仍 `CHECK_EXIT=0`；自检 0 FAIL；双模式 smoke 不劣化；新增单元夹具复刻"孤立 draft-4 布尔 → 400 且正文含 exclusive"进 `PARAM-GUARDS`/bounds 单元层，防再次靠搬家降级词汇。
+**流程改正（同批）**：harness 脚本末尾 `echo` 吞掉 python 状态 ⇒ 任何用 `bash scripts/schema_*_run.sh` 的 exit 码判绿都无效。要么在脚本里 `exit $rc`（改动面小、影响既有调用者对 DONE 行的读取），要么把"读 `CHECK_EXIT=`/`VERDICT:` 行"固化为唯一口径。**本批先固化口径并在 check 脚本里加自动读数**，不动 harness 脚本签名。
+**顺带发现**：我这条 F645 链把 harness stdout 重定向到脚本自身 tag 日志（同文件双写入者），日志仍可读但不可靠；今后统一别名 stdout。
+
+## F648 规格（原 F646 重编号）：FR-05 显存驻留比例旋钮
+**动机**：FR-05 剩余的本地可交付项是"新 C++ setter + 档案字段同步"。`0.55` 的驻留预算比例在 `model_sycl.cc` 里写死了**两处**（`residency_prepare` 与 `model_residency_report`），只有 `budget_gib` 绝对值能覆盖它。按比例给档案一个旋钮，才能力单卡上模拟不同显存档位（12G/16G 用同一 `total*frac` 语义），且不依赖第二设备。
+**改动（一次做完，四层同步）**：
+1. `engine/src/model_sycl.cc`：新增 `double g_residency_frac = 0.0;`；`set_residency_frac(double f)`（`f<=0` 或 `f>=1` 视为恢复默认并清零，切换时 `g_res.clear_all()` 丢驻留，语义与 `set_weight_prec`/`set_budget_gib` 一致）；新增 `residency_frac()` 返回 `g_residency_frac > 0.0 ? g_residency_frac : 0.55`；**两处** `0.55` 都替换为 `residency_frac()`，且 `budget_gib` 绝对覆盖仍优先（顺序不变）。
+2. `engine/src/model.cc`：`php_model_set_residency_frac(php::Float f)` + `php_model_residency_frac()` 包装。
+3. `engine/src/model.stub.php`：`model_set_residency_frac(float): int` / `model_residency_frac(): float`（缺声明会在运行期 undefined，必须同批）。
+4. `engine/main.php`：档案第 10 字段 `residency_frac`；`api_plugins_select` 返回契约扩到 **10 字段（9 竖线）且每条 return 同批改**（F645 教训）；`api_plugins_apply` 仅在非空时调用；`/plugins` 报告 `residency_frac`（引擎当前值）与 `frac_intent`（档案意图，-1=未指定）；`PROFILES` 门宽度断言改 9 竖线并新增第 10 字段夹具；`plugins/vendor_profiles.txt` 头注释同步。
+**验收**：`PROFILES: PASS`（含回落/5字段/6字段/9字段/10字段五路宽度=9 竖线）；`par-plugins-residency_frac` 在 8001 报告 `frac_intent`；`model_residency_report()` 在 `frac=0.05` 时显示预算被压小（`resident=false`），且 `frac=0` 回到 0.55 默认；双模式 smoke 191/0 不劣化。
+**顺带清理（同批）**：`api_plugins_json` 的 `split_intent` 用裸 `isset($st[7])/$st[8])` 直读，绕过了已算好的 `$sb/$sl`（两者目前输出恰好相同，但判定与写点不同源，加第 10 字段时容易只改一边）——改为消费 `$sb/$sl`，并让 `frac_intent` 与 `$wpi/$bg` 同一写法。
+**同批修第二处契约不一致（计数≠选择谓词）**：`api_plugins_count` 只排除注释/空行，把字段不足的畸形行也算进 `profiles`；而 `api_plugins_select` 用 `count($f) < 4` 跳过同一行。于是 `/plugins` 报告的档案数包含“选择器永远不会用”的行，用户按报告数找不到对应生效项。改法：`api_plugins_count` 复用与 select 相同的谓词（非注释、非空、`count($f) >= 4`），PROFILES 里 `bad|line` 夹具的 `profiles` 位从 1 变 0（期望串随之为 `none||2|0|0||||`）。出厂三行全是合法行，`profiles=3` 不变 ⇒ 双模式 smoke 的 `plugins-report` 不受影响。
+**已核验不回归**：F645 把回落分支从 8 字段补到 9 字段后，`api_plugins_json`/`api_plugins_apply` 全部用 `count($st) >= N && $st[i] != ""` 守卫，空串与缺字段在 `/plugins` 上产出完全一致（`wprec_intent=-1`、`budget_intent=""`），出厂无档案路径无行为变化。
+**风险**：改 C++ 需要整梯重建（非仅清 ast 缓存）；`model_residency_report` 的文本门字段若被 harness 引用，先 grep 全部夹具再动措辞。
+**已核（消除风险）**：
+- 两处预算的字节量纲**一致**：站点 1 用 `(1ull<<30)`、站点 2 用 `KiB2 = 1024.0*1024.0*1024.0`，同为 1 GiB 的字节数 ⇒ 不存在"两处 0.55 换算不同"的隐藏缺陷（改名 `GIB` 属美化，不做）。
+- `model_residency_report()` 的引擎内消费点只有 5 处（`main.php` 19063 打印、19616/19628/19711/19715 自检），仓库内仅 `engine/tests/throughput_test.py` 出现 residency 字样；自检里现成的锚是 `orch[policy]`（`model_set_budget_gib(0.05)` 后 `model_plan` 判定必须改变）与 `residency tiny=` 打印。
+**门设计（据此定，不新造夹具）**：在 `orch[policy]` 旁新增 `orch[frac]` 三断言——①`model_set_residency_frac(0.02)` 后 `model_plan(0,2048)` 判定与默认不同（能力）；②`model_set_residency_frac(0.0)` 后 `model_plan` 与改动前逐字符相同（回落默认 0.55 无漂移）；③同一 frac 值下 `model_residency_report()` 与 `model_plan()` 的预算方向一致（两个 C++ 站点同受旋钮控制，防"只改一处"）。生成 token 仍须 `== $base`（驻留只换路径不换数值）。
+
+## F647 规格（紧接 F646，先于任何新功能）：`check_gates` 完整性门
+**动机**：F644 的假绿来自 `selftest_f644g.log`（`RUN_EXIT=-1`、无 PROFILES 段、FAIL 计数 0）。`check_gates.sh` 只 `grep -c FAIL`，所以截断日志被判绿；它又是唯一"硬失败"的门，等于把假绿认证成基线。
+**改法**（`scripts/check_gates.sh`，报告脚本非引擎，改它不需重建）：
+1. 取最新 `engine/selftest_*.log` 后，先断言 `tail -n 3` 含 `==RUN_EXIT=0==`；否则打印 `SELFTEST_INCOMPLETE log=… tail=…` 并 **exit 1**。
+2. 再断言日志行数不低于一个下限（用最近 N 份完整日志行数的最小值动态取，避免硬编码）；不满足同样 `SELFTEST_INCOMPLETE`。
+3. 保持现有 FAIL 计数检查在后；引用解析（`unresolved`）仍为报告项。
+**验收**：人为把 `selftest_f644g.log` 设为最新（`touch`）应触发 `SELFTEST_INCOMPLETE` 且 exit 1；恢复后对本轮 F645 日志应给出 `cited_names=199 unresolved=0`。
+**风险**：行数下限若用最大值会误伤正常短日志；用"历史完整日志（含 `RUN_EXIT=0`）行数下界"。

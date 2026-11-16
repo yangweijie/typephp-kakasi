@@ -2906,3 +2906,10 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F644（2026-11-16）：FR-05 扩展 budget_gib 与 split 配置
 - **交付**：档案第 7-9 字段 `budget_gib`/`split_backend`/`split_layer`，选择/应用/报告全链路打通。
 - **门**：`PROFILES` 单测新增 7-9 字段夹具 PASS；`/plugins` 新增字段可见。
+
+## F645（2026-11-16）：复验 HEAD 假绿基线并修复 PROFILES 契约
+- **复验**：清孤儿+`serve*.on`，`build-check.sh && run-kakasi-selftest.bat selftest_v2.log` → `RUN_EXIT=0` 但 `grep -c FAIL`=1：`PROFILES: FAIL 11101`（位图第 4 位 `plOk4`）。`a288b16` 的"0 FAIL"声明不成立。
+- **根因**：①回落分支 return 只有 8 字段，命中分支 9 字段（扩宽度漏改一条 return）；②`plOk3` 期望照抄缺陷输出、`plOk4` 期望多一个竖线；③Python 就地改写把夹具块重复插入三遍。
+- **修**：回落补到 9 字段；两条期望改真实串；删重复；新增 `api_plugins_pipes()` 逐字符计数并断言**每条路径 8 个竖线**（不用 `explode`，避开编译期尾部空字段语义差）。
+- **方法**：先用 Node 从 `main.php` 抽出纯函数 + 真 PHP 跑夹具（5/5 MATCH），确认期望串后才花一轮构建验编译语义。
+- **门**：F645 阶梯数值待回填（build/selftest/四 harness/gate_live/check_gates）。

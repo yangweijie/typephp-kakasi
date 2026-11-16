@@ -271,6 +271,18 @@ function api_plugins_count(string $text): int
 // Applies the first matching profile; returns "name|match|attn|kv16|applied|profiles".
 // F641: selection separated from the setters, so the matching rules (first match wins, wildcard
 // fallback, comment/blank/field-count skipping) are unit-testable without touching engine state.
+function api_plugins_pipes(string $s): int
+{
+    $n = 0;
+    $L = strlen($s);
+    for ($i = 0; $i < $L; $i++) {
+        if (substr($s, $i, 1) == "|") {
+            $n = $n + 1;
+        }
+    }
+    return $n;
+}
+
 function api_plugins_select(string $text, string $fp): string
 {
     $lines = explode("\n", $text);
@@ -296,7 +308,7 @@ function api_plugins_select(string $text, string $fp): string
         }
     }
     // F644: 9 fields for consistent parsing (name|match|attn|kv|total|wp|bg|sb|sl)
-    return "none||2|0|" . $total . "|||";
+    return "none||2|0|" . $total . "||||";
 }
 
 function api_plugins_apply(): string
@@ -22920,40 +22932,35 @@ function main(): void
             . " kw=" . $pgKwOk . " fmt=" . $pgFmtOk . " deep=" . $pgDeepOk . " bad=" . $pgBad . "\n";
     }
 
-    // PROFILES (F641): profile selection on synthetic text - first match wins, a non-matching line
-    // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
-    $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
-    $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
-    $plB = api_plugins_select($plText, "some cpu");
-    $plC = api_plugins_select("bad|line\n", "Arc");
     // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line
     // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
-    // Format: name|match|attn|kv|total|wp|bg|sb|sl (9 fields)
-    $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
-    $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
-    $plB = api_plugins_select($plText, "some cpu");
-    $plC = api_plugins_select("bad|line\n", "Arc");
-    // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line
-    // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
-    // Format: name|match|attn|kv|total|wp|bg|sb|sl (9 fields, 8 pipes)
+    // Return contract: exactly 9 fields (8 pipes) name|match|attn|kv|total|wp|bg|sb|sl on EVERY path,
+    // including the no-match fallback, so api_plugins_apply can index st[5..8] unconditionally.
     $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
     $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
     $plB = api_plugins_select($plText, "some cpu");
     $plC = api_plugins_select("bad|line\n", "Arc");
     $plOk1 = $plA == "arc|Arc|1|1|3||||" ? 1 : 0;
     $plOk2 = $plB == "last|*|2|0|3||||" ? 1 : 0;
-    $plOk3 = $plC == "none||2|0|1|||" ? 1 : 0;
-    // F642: 6th field (weight_prec) - a line with 6 fields should parse the 6th field
+    $plOk3 = $plC == "none||2|0|1||||" ? 1 : 0;
+    // F642: a 6-field line carries weight_prec and still yields 9 fields.
     $plD = api_plugins_select("w|Arc|0|1|note|0\n", "Arc");
-    $plOk4 = $plD == "w|Arc|0|1|1|0||||" ? 1 : 0;
-    // F644: 7th, 8th, 9th fields (budget_gib, split_backend, split_layer)
+    $plOk4 = $plD == "w|Arc|0|1|1|0|||" ? 1 : 0;
+    // F644: a full 9-field line carries budget_gib, split_backend, split_layer.
     $plE = api_plugins_select("e|Arc|1|1|note|0|1.5|0|5\n", "Arc");
     $plOk5 = $plE == "e|Arc|1|1|1|0|1.5|0|5" ? 1 : 0;
+    // The width invariant is the point of the contract, so assert it directly, one statement per case.
+    $plW1 = api_plugins_pipes($plA) == 8 ? 1 : 0;
+    $plW2 = api_plugins_pipes($plB) == 8 ? 1 : 0;
+    $plW3 = api_plugins_pipes($plC) == 8 ? 1 : 0;
+    $plW4 = api_plugins_pipes($plD) == 8 ? 1 : 0;
+    $plW5 = api_plugins_pipes($plE) == 8 ? 1 : 0;
+    $plWOk = $plW1 + $plW2 + $plW3 + $plW4 + $plW5;
     echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . "\n";
-    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1) {
-        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, weight_prec parsed, budget/split parsed)\n";
+    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1 && $plWOk == 5) {
+        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, 9-field width on every path)\n";
     } else {
-        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . " sel=" . $plA
+        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . " width=" . $plWOk . " sel=" . $plA
             . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . "\n";
     }
 

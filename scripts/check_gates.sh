@@ -22,6 +22,14 @@ if [ -z "$LOG" ]; then
   echo "NO_LOG: no engine/selftest_*.log found"
   exit 0
 fi
+# Completeness comes first: a self-test that aborts mid-file contains no FAIL text at all, so
+# judging redness alone certifies a truncated log as green. That is how F644 got committed on
+# selftest_f644g.log (741 lines, RUN_EXIT=-1, no PROFILES section, FAIL count 0).
+if ! bash "$R/scripts/check_selftest_log.sh" --sections "PROFILES PARAM-GUARDS" "$LOG" > /tmp/kakasi_cpl.txt 2>&1; then
+  echo "SELFTEST_INCOMPLETE log=$(basename "$LOG")"
+  grep -E '^(NOT_EVIDENCE|EVIDENCE|floor_lines)' /tmp/kakasi_cpl.txt | head -3
+  exit 1
+fi
 FAILS=$(grep -c 'FAIL' "$LOG")
 if [ "$FAILS" -gt 0 ]; then
   echo "SELFTEST_RED log=$(basename "$LOG") fail_lines=$FAILS"
