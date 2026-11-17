@@ -27,6 +27,10 @@ function model_stage_count(): int {}
 function model_stage_at(int $i): float {}
 function model_plan(int $backend, int $ctx): string {}
 function model_set_budget_gib(float $gib): int {}
+// F648: 0 restores the shipped 0.55 share of device memory for resident weights.
+function model_set_residency_frac(float $f): int {}
+function model_residency_frac(): float {}
+function model_residency_frac_intent(): float {}
 function model_set_kv_f16(int $on): int {}
 function model_kv_cache_gib(): float {}
 function model_set_weight_prec(int $p): int {}

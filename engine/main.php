@@ -271,6 +271,24 @@ function api_plugins_count(string $text): int
 // Applies the first matching profile; returns "name|match|attn|kv16|applied|profiles".
 // F641: selection separated from the setters, so the matching rules (first match wins, wildcard
 // fallback, comment/blank/field-count skipping) are unit-testable without touching engine state.
+function api_report_field(string $s, string $key): string
+{
+    // Reads "key=VALUE" out of the engine's plan/residency text. Deliberately a scan, not
+    // preg+groups: the assertion below compares only the field a knob controls, and a plain scan
+    // cannot silently match nothing the way an unguarded group index can.
+    $needle = $key . "=";
+    $i = strpos($s, $needle);
+    if ($i === false) {
+        return "";
+    }
+    $v = substr($s, $i + strlen($needle));
+    $j = strpos($v, " ");
+    if ($j === false) {
+        return $v;
+    }
+    return substr($v, 0, $j);
+}
+
 function api_plugins_pipes(string $s): int
 {
     $n = 0;
@@ -301,14 +319,16 @@ function api_plugins_select(string $text, string $fp): string
             $bg = count($f) >= 7 ? $f[6] : "";
             $sb = count($f) >= 8 ? $f[7] : "";
             $sl = count($f) >= 9 ? $f[8] : "";
-            // F644: ensure exactly 9 fields (8 pipes) for consistent parsing
+            $rf = count($f) >= 10 ? $f[9] : "";
+            // F644/F648: exactly 10 fields (9 pipes) on every path: name|match|attn|kv|total|wp|bg|sb|sl|frac
             $f0 = $f[0]; $f1 = $f[1]; $f2 = $f[2]; $f3 = $f[3];
             $wp = (string)$wp; $bg = (string)$bg; $sb = (string)$sb; $sl = (string)$sl;
-            return $f0 . "|" . $f1 . "|" . $f2 . "|" . $f3 . "|" . $total . "|" . $wp . "|" . $bg . "|" . $sb . "|" . $sl;
+            $rf = (string)$rf;
+            return $f0 . "|" . $f1 . "|" . $f2 . "|" . $f3 . "|" . $total . "|" . $wp . "|" . $bg . "|" . $sb . "|" . $sl . "|" . $rf;
         }
     }
-    // F644: 9 fields for consistent parsing (name|match|attn|kv|total|wp|bg|sb|sl)
-    return "none||2|0|" . $total . "||||";
+    // F644/F648: 10 fields (9 pipes) on the no-match path too, so st[5..9] always exist.
+    return "none||2|0|" . $total . "|||||";
 }
 
 function api_plugins_apply(): string
@@ -326,6 +346,12 @@ function api_plugins_apply(): string
         // F644: optional budget_gib (field 7) and split config (fields 8,9).
         if (count($st) >= 7 && $st[6] != "") {
             model_set_budget_gib((float) $st[6]);
+        }
+        // F648: the 10th field pins the resident share of device memory (0.05..0.95). Absent or
+        // empty keeps the shipped 0.55; like the other knobs it is applied only when asked for,
+        // because the setter drops residency and recomputes the plan.
+        if (count($st) >= 10 && $st[9] != "") {
+            model_set_residency_frac((float) $st[9]);
         }
         if (count($st) >= 9 && $st[7] != "" && $st[8] != "") {
             model_set_split((int) $st[7], (int) $st[8]);
@@ -346,12 +372,29 @@ function api_plugins_json(): string
     $bg  = (count($st) >= 7 && $st[6] != "") ? $st[6] : "";
     $sb  = (count($st) >= 8 && $st[7] != "") ? $st[7] : "";
     $sl  = (count($st) >= 9 && $st[8] != "") ? $st[8] : "";
+    // F649: the residency report is authoritative for what was actually applied; budget_gib used to
+    // be named as if it were the residency budget while reporting model_kv_cache_gib() (the KV cache
+    // footprint), and residency_budget_gib was absent. Rename the KV field and expose the residency
+    // budget as a separate number. residency_budget_gib is null (never 0) whenever residency_prepare
+    // has not run at least once, because g_res.budget really is 0 before the first generation and
+    // that must be told apart from a legitimately tiny residency share.
+    $rep = model_residency_report();
+    $resEn = api_report_field($rep, "enabled");
+    $resBud = api_report_field($rep, "budget");
+    $devGi = api_report_field($rep, "device");
+    // Strip unit suffix for JSON numbers.
+    $resBudJson = (substr($resBud, -3) == "GiB") ? substr($resBud, 0, strlen($resBud) - 3) : $resBud;
+    $devJson = (substr($devGi, -3) == "GiB") ? substr($devGi, 0, strlen($devGi) - 3) : $devGi;
     return "{\"profiles\":" . $st[4] . ",\"active\":\"" . api_esc($st[0]) . "\",\"match\":\""
         . api_esc($st[1]) . "\",\"device\":\"" . api_esc(model_device_fingerprint(0))
         . "\",\"attn_mode\":" . model_attn_mode() . ",\"kv_f16\":" . $st[3]
         . ",\"weight_prec\":" . model_weight_prec() . ",\"wprec_intent\":" . $wpi
-        . ",\"budget_gib\":" . model_kv_cache_gib() . ",\"budget_intent\":\"" . $bg . "\""
-        . ",\"split_backend\":" . model_attn_split_p() . ",\"split_intent\":{\"backend\":\"" . (isset($st[7]) ? $st[7] : "") . "\",\"layer\":\"" . (isset($st[8]) ? $st[8] : "") . "\"}"
+        . ",\"kv_cache_gib\":" . model_kv_cache_gib() . ",\"budget_intent\":\"" . $bg . "\""
+        . ",\"residency_enabled\":" . ($resEn == "1" ? 1 : 0)
+        . ",\"residency_budget_gib\":" . ($resEn == "1" ? $resBudJson : "null")
+        . ",\"device_gib\":" . ($devJson != "" ? $devJson : "null")
+        . ",\"split_backend\":" . model_attn_split_p() . ",\"split_intent\":{\"backend\":\"" . $sb . "\",\"layer\":\"" . $sl . "\"}"
+        . ",\"residency_frac\":" . model_residency_frac() . ",\"frac_intent\":\"" . (isset($st[9]) ? $st[9] : "") . "\""
         . ",\"applied\":" . $applied . "}";
 }
 
@@ -19642,6 +19685,62 @@ function main(): void
     } else {
         echo "  orch[policy] PASS -> " . $planPinned . "\n";
     }
+    // F648: the resident share is a vendor knob now. Three things must hold, and the second and
+    // third are the point: setting the fraction must move the plan, setting it back to 0 must
+    // restore the shipped plan BYTE FOR BYTE (no drift in the default), and both C++ budget sites
+    // (residency_prepare and plan) must move together - a change applied to only one of them would
+    // otherwise look fine on each site read alone.
+    // Sampling order is part of the assertion. g_res.budget - which is what the residency report
+    // prints as budget= - is only recomputed inside residency_prepare, i.e. by a generation pass.
+    // Reading the report before generating would compare a stale occupancy and the "both sites
+    // moved" claim could never be satisfied, so each report reading below is taken AFTER a pass.
+    model_set_residency_frac(0.0);
+    model_generate(0, $ids, 6);
+    $fracBase = model_plan(0, 2048);
+    $fracRepBase = model_residency_report();
+    model_set_residency_frac(0.02);
+    $fracPlan = model_plan(0, 2048);
+    $fracTok = model_generate(0, $ids, 6);
+    $fracRep = model_residency_report();
+    $fracVal = model_residency_frac();
+    $fracIntent = model_residency_frac_intent();
+    model_set_residency_frac(0.0);
+    model_generate(0, $ids, 6);
+    $fracBack = model_plan(0, 2048);
+    $fracRepBack = model_residency_report();
+    if (api_report_field($fracPlan, "budget") == api_report_field($fracBase, "budget")
+        || api_report_field($fracRep, "budget") == api_report_field($fracRepBase, "budget")) {
+        echo "  orch[frac] FAIL shrinking the share left a budget field unchanged\n";
+        echo "    plan=" . $fracPlan . "\n    rep=" . $fracRep . "\n";
+        $ofail++;
+    } else if (api_report_field($fracBack, "budget") != api_report_field($fracBase, "budget")
+        || api_report_field($fracBack, "strategy") != api_report_field($fracBase, "strategy")
+        || api_report_field($fracRepBack, "budget") != api_report_field($fracRepBase, "budget")) {
+        // Only the fields the knob controls have to come back identical. resident_now/used are
+        // live occupancy and legitimately differ after a forced streaming pass - asserting the
+        // whole string here fails for a reason that has nothing to do with the knob.
+        echo "  orch[frac] FAIL frac=0 did not restore the shipped budget/strategy\n";
+        echo "    base=" . api_report_field($fracBase, "budget") . "/"
+            . api_report_field($fracBase, "strategy")
+            . " back=" . api_report_field($fracBack, "budget") . "/"
+            . api_report_field($fracBack, "strategy")
+            . " rep=" . api_report_field($fracRepBase, "budget") . "->"
+            . api_report_field($fracRepBack, "budget") . "\n";
+        $ofail++;
+    } else if ($fracVal < 0.019 || $fracVal > 0.021 || $fracIntent < 0.019) {
+        echo "  orch[frac] FAIL getter disagrees with the knob: frac=" . $fracVal
+            . " intent=" . $fracIntent . "\n";
+        $ofail++;
+    } else if ($fracTok != $base) {
+        echo "  orch[frac] FAIL streaming share changed tokens frac=" . $fracTok . " base=" . $base . "\n";
+        $ofail++;
+    } else {
+        echo "  orch[frac] PASS share 0.55 -> 0.02 moved both sites ("
+            . api_report_field($fracBase, "budget") . " -> "
+            . api_report_field($fracPlan, "budget") . " plan, "
+            . api_report_field($fracRepBase, "budget") . " -> "
+            . api_report_field($fracRep, "budget") . " report), frac=0 restored both fields, tokens identical\n";
+    }
     if ($stream != $base || $back != $base) {
         echo "  orch[fallback] FAIL resident={$base} stream={$stream} restored={$back}\n";
         $ofail++;
@@ -22958,28 +23057,32 @@ function main(): void
     $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
     $plB = api_plugins_select($plText, "some cpu");
     $plC = api_plugins_select("bad|line\n", "Arc");
-    $plOk1 = $plA == "arc|Arc|1|1|3||||" ? 1 : 0;
-    $plOk2 = $plB == "last|*|2|0|3||||" ? 1 : 0;
-    $plOk3 = $plC == "none||2|0|1||||" ? 1 : 0;
-    // F642: a 6-field line carries weight_prec and still yields 9 fields.
+    $plOk1 = $plA == "arc|Arc|1|1|3|||||" ? 1 : 0;
+    $plOk2 = $plB == "last|*|2|0|3|||||" ? 1 : 0;
+    $plOk3 = $plC == "none||2|0|1|||||" ? 1 : 0;
+    // F642: a 6-field line carries weight_prec and still yields the full width.
     $plD = api_plugins_select("w|Arc|0|1|note|0\n", "Arc");
-    $plOk4 = $plD == "w|Arc|0|1|1|0|||" ? 1 : 0;
+    $plOk4 = $plD == "w|Arc|0|1|1|0||||" ? 1 : 0;
     // F644: a full 9-field line carries budget_gib, split_backend, split_layer.
     $plE = api_plugins_select("e|Arc|1|1|note|0|1.5|0|5\n", "Arc");
-    $plOk5 = $plE == "e|Arc|1|1|1|0|1.5|0|5" ? 1 : 0;
+    $plOk5 = $plE == "e|Arc|1|1|1|0|1.5|0|5|" ? 1 : 0;
+    // F648: a 10-field line carries residency_frac.
+    $plF = api_plugins_select("f|Arc|1|1|note|0|1.5|0|5|0.35\n", "Arc");
+    $plOk6 = $plF == "f|Arc|1|1|1|0|1.5|0|5|0.35" ? 1 : 0;
     // The width invariant is the point of the contract, so assert it directly, one statement per case.
-    $plW1 = api_plugins_pipes($plA) == 8 ? 1 : 0;
-    $plW2 = api_plugins_pipes($plB) == 8 ? 1 : 0;
-    $plW3 = api_plugins_pipes($plC) == 8 ? 1 : 0;
-    $plW4 = api_plugins_pipes($plD) == 8 ? 1 : 0;
-    $plW5 = api_plugins_pipes($plE) == 8 ? 1 : 0;
-    $plWOk = $plW1 + $plW2 + $plW3 + $plW4 + $plW5;
-    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . "\n";
-    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1 && $plWOk == 5) {
-        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, 9-field width on every path)\n";
+    $plW1 = api_plugins_pipes($plA) == 9 ? 1 : 0;
+    $plW2 = api_plugins_pipes($plB) == 9 ? 1 : 0;
+    $plW3 = api_plugins_pipes($plC) == 9 ? 1 : 0;
+    $plW4 = api_plugins_pipes($plD) == 9 ? 1 : 0;
+    $plW5 = api_plugins_pipes($plE) == 9 ? 1 : 0;
+    $plW6 = api_plugins_pipes($plF) == 9 ? 1 : 0;
+    $plWOk = $plW1 + $plW2 + $plW3 + $plW4 + $plW5 + $plW6;
+    echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . " frac=" . $plF . "\n";
+    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1 && $plOk6 == 1 && $plWOk == 6) {
+        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, 10-field width on every path)\n";
     } else {
-        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . " width=" . $plWOk . " sel=" . $plA
-            . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . "\n";
+        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . $plOk6 . " width=" . $plWOk . " sel=" . $plA
+            . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . " frac=" . $plF . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour

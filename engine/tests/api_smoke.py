@@ -86,6 +86,13 @@ def main():
           and pl.get("active") not in (None, "", "none") and pl.get("match") not in (None, "")
           and isinstance(pl.get("attn_mode"), int) and 0 <= pl.get("attn_mode", -1) <= 5,
           str(pl))
+    # F649: residency state. The "not yet initialised" (null) state is NOT observable from a live
+    # server, because startup itself runs a warming generation pass before any /plugins read can
+    # observe residency_enabled=0; that state can only be proven by a direct engine read inside the
+    # self-test (orch[frac], which proves frac semantics and reads budget=/enabled= from
+    # model_residency_report before any generation has run). So no live cold gate here; the
+    # three-state contract is covered by the selftest and the parity warm/source gates below.
+    check("plugins-kv-cache-naming", "kv_cache_gib" in pl and "budget_gib" not in pl, str(pl))
 
     with urllib.request.urlopen(BASE + "/v1/models", timeout=60) as r:
         models = json.loads(r.read().decode())
@@ -2807,6 +2814,25 @@ def main():
                 "a": {"type": "number", "minimum": 0.5},
                 "b": {"type": "number", "maximum": 2.5}}}}}})
     check("chat-stream-bounds-refuse", pmsg.find("bounds") >= 0, pdet + " " + pmsg[:120])
+
+    # F649 warm residency re-read: earlier chat passes already warmed residency state, so the engine
+    # recomputed g_res.budget inside residency_prepare. Assert number after those passes.
+    with urllib.request.urlopen(BASE + "/plugins", timeout=30) as pr2:
+        pw = json.loads(pr2.read().decode())
+    check("plugins-residency-warm",
+          pw.get("residency_enabled") == 1
+          and isinstance(pw.get("residency_budget_gib"), (int, float)), str(pw))
+    # Consistency with profile intent or default share: 0.55*device when neither is set.
+    dev = pw.get("device_gib")
+    if isinstance(dev, (int, float)):
+        val = float(pw.get("budget_intent") or 0)
+        if val <= 0 and isinstance(pw.get("frac_intent"), (int, float)):
+            val = float(pw["frac_intent"]) * dev
+        if val <= 0:
+            val = 0.55 * dev
+        # tolerance of 5 percent for rounding drift
+        check("plugins-budget-same-source",
+              abs(val - float(pw["residency_budget_gib"])) < 0.05 * val, str(pw))
 
     print("API SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1

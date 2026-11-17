@@ -133,6 +133,14 @@ namespace {
     Residency g_res;
     double g_dev_mem_gib = 0.0;
     double g_budget_override_gib = 0.0;   // >0 pins the residency budget (low-memory device)
+    double g_residency_frac = 0.0;        // F648: >0 replaces the 0.55 resident share; 0 = default
+    // Defined here, not next to the setters: this file's globals and residency planner live in the
+    // anonymous namespace (23-1062), while the exported setters are in namespace model proper.
+    // Declaring the getter only at namespace-model scope leaves the planner with an undefined
+    // anonymous-namespace symbol and the link fails with LNK2019.
+    double residency_frac() {
+        return (g_residency_frac > 0.0 && g_residency_frac < 1.0) ? g_residency_frac : 0.55;
+    }
     int g_wprec = 1;                      // resident big-tensor precision: 0 = f16, 1 = int8
     int g_sess_len = 0;                   // tokens consumed so far by the streaming session
     uint64_t g_sess_rng = 0;
@@ -950,8 +958,11 @@ namespace {
         g_dev_mem_gib = (double) total / (double) (1ull << 30);
         // Leave headroom for the KV cache, activations and driver allocations.
         // The orchestrator can shrink this to exercise the low-memory streaming path.
+        // F648: the default share is a knob now (vendor profiles), and the absolute GiB override
+        // still wins, so the two ways of shrinking residency keep one precedence order.
         const double frac = g_budget_override_gib > 0.0
-            ? (double) (g_budget_override_gib * (double) (1ull << 30)) / (double) total : 0.55;
+            ? (double) (g_budget_override_gib * (double) (1ull << 30)) / (double) total
+            : residency_frac();
         g_res.budget = (size_t) ((double) total * frac);
         plan_residency(g_res.budget);
     }
@@ -1097,7 +1108,7 @@ std::string plan(int backend, int ctx_tokens) {
     const int hd = NH > 0 ? D / NH : 0;
     const double kvbytes = 2.0 * (double) L * (double) ctx_tokens * (double) (hd * NKV) * 4.0;
     const double budget = g_budget_override_gib > 0.0
-        ? g_budget_override_gib * KiB2 : (double) total * 0.55;
+        ? g_budget_override_gib * KiB2 : (double) total * residency_frac();
     // Residency stores the big tensors as f16, so the footprint that must fit is about half the
     // f32 one (the rest of the bytes are small tensors that stay f32). Report both.
     const double wbytes16 = wbytes * 0.5;
@@ -1120,6 +1131,21 @@ void set_budget_gib(double gib) {
     g_budget_override_gib = gib < 0.0 ? 0.0 : gib;
     if (g_res.q) { g_res.clear_all(); g_res.q = nullptr; g_res.enabled = false; }
 }
+
+// F648: fraction of device memory the residency planner may keep weights in. Out-of-range or 0
+// restores the shipped 0.55. Like the other residency knobs it drops the plan so the next pass
+// rebuilds under the new share; only ever called from vendor-profile application at start-up.
+void set_residency_frac(double f) {
+    g_residency_frac = (f > 0.0 && f < 1.0) ? f : 0.0;
+    if (g_res.q) { g_res.clear_all(); g_res.q = nullptr; g_res.enabled = false; }
+}
+
+// Exported accessor for the effective share. The getter itself has to live in the anonymous
+// namespace because that is where the planner reads it, so this model-scope wrapper is what
+// php_model_residency_frac() calls; unqualified lookup finds the anonymous one in this TU.
+double residency_frac_effective() { return residency_frac(); }
+
+double get_residency_frac() { return g_residency_frac; }
 
 // KV precision knob (FR-18): 0 = f32, 1 = f16. Switching drops the cache so the next pass
 // rebuilds it at the new width; nothing else in the engine changes.

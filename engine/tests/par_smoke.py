@@ -158,6 +158,12 @@ def main():
     check("par-plugins", pj.get("applied") == 1 and pj.get("active") not in (None, "", "none"),
           str(pj))
 
+    # F649: residency state on the cooperative server must match 8000's three-state contract.
+    # The cold (null) state is not observable from a live server because startup warms residency
+    # before any /plugins read can observe it. The three-state contract is proven by the
+    # selftest orch[frac] gate which reads the report before any generation.
+    check("par-kv-cache-naming", "kv_cache_gib" in pj and "budget_gib" not in pj, str(pj))
+
     # F636: the cooperative server applies the same parameter set and schema-keyword rules as 8000.
     def par_refusal(body):
         try:
@@ -205,6 +211,23 @@ def main():
     check("par-plugins-weight_prec", pl.get("weight_prec") in (0, 1)
           and pl.get("wprec_intent") in (-1, 0, 1)
           and pl.get("profiles", 0) >= 3, str(pl))
+
+    # F649 parity: warm residency on the cooperative server too. Earlier passes in this run have
+    # already warmed residency state, so the budget must be a number and it must agree with the
+    # profile's intent - same three-state contract as port 8000.
+    with urllib.request.urlopen(BASE + "/plugins", timeout=30) as pr2:
+        pw = json.loads(pr2.read().decode())
+    check("par-residency-warm", pw.get("residency_enabled") == 1
+          and isinstance(pw.get("residency_budget_gib"), (int, float)), str(pw))
+    dev = pw.get("device_gib")
+    if isinstance(dev, (int, float)):
+        expected = float(pw.get("budget_intent") or 0)
+        if not expected and isinstance(pw.get("frac_intent"), (int, float)):
+            expected = float(pw["frac_intent"]) * dev
+        if not expected:
+            expected = 0.55 * dev
+        check("par-budget-same-source",
+              abs(float(pw["residency_budget_gib"]) - expected) < 0.05, str(pw))
 
     print("PAR SMOKE: " + ("PASS" if not fails else "%d FAILURE(S)" % len(fails)))
     return 0 if not fails else 1

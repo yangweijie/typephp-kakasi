@@ -28,6 +28,9 @@ int stage_count();
 double stage_at(int i);
 std::string plan(int backend, int ctx_tokens);
 void set_budget_gib(double gib);
+void set_residency_frac(double f);
+double residency_frac_effective();
+double get_residency_frac();
 void set_kv_f16(int on);
 int kv_f16();
 void set_weight_prec(int p);
@@ -128,6 +131,15 @@ php::Int php_model_set_budget_gib(php::Float gib) {
     model::set_budget_gib((double) gib);
     return php::Int(1);
 }
+// F648: fraction of device memory residency may keep weights in (0 restores 0.55). Returns the
+// effective fraction so the caller sees the same number the planner will use.
+php::Int php_model_set_residency_frac(php::Float f) {
+    model::set_residency_frac((double) f);
+    return php::Int(1);
+}
+php::Float php_model_residency_frac() { return php::Float(model::residency_frac_effective()); }
+php::Float php_model_residency_frac_intent() { return php::Float(model::get_residency_frac()); }
+
 php::Int php_model_set_kv_f16(php::Int on) {
     model::set_kv_f16((int) on);
     return php::Int(model::kv_f16());
