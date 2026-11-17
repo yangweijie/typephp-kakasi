@@ -5515,3 +5515,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **判别性验证（真跑打包件）**：把 `dist/` 整个复制到**另一个目录** `/c/git/c/pkgtest` 启动 exe 查 `/plugins` ⇒ `profiles:3, active:intel-arc`。再把**仓库里的档案临时移走**（`mv plugins/vendor_profiles.txt /tmp/`）重跑同一探针，**仍是 `profiles:3`** ⇒ 证明它读的是**包内的** `<exe>/plugins/vendor_profiles.txt`，而不是仍存在于开发机的绝对路径；随后恢复文件（16 行）。包产物实测含三件：exe、manifest（双哈希）、`plugins/vendor_profiles.txt`。
 **结果（`f656` 梯）**：BUILD_OK；自检 0 FAIL（含 `F656: PASS`）；四 harness `CHECK_EXIT=0`；SMOKE/PRETTY 各 **197/0**；par/fair 0、scaling 1.491×、哨兵 0；`check_gates 198/0`；`PACKAGE_OK` + `ARCHIVE_OK`。
 **记法**：**"开发机能跑"与"产物能跑"是两条验收线**——凡把运行期要读的文件路径**写死成开发机绝对路径**，就等于让打包件在别处静默降级。判别性做法：**把仓库那份挪走再跑包件**，读数不变才算真读了包内文件（否则"包里有文件"和"实际读了包里文件"分不清）。
+
+## F657（2026-11-17）：VERSION / 前缀缓存 / models 目录同样写死开发机路径——打包件的 `/health` 会报 `0.0.0`
+**缺陷（F656 的同类面）**：`api_engine_version()` 读 `C:/git/c/typephp-kakasi/VERSION`、前缀缓存三处写 `…/engine/api_prefix_*`、`models_dir()` 与 `cache` CLI 也指 `…/engine`。⇒ 打包件在别的机器上：**`/health` 报 `0.0.0`**（版本号对外可见地错）、缓存永远 miss、`models` 列表为空——全部**静默**。
+**修**：抽出两个解析器——`api_state_dir()`（读-写目录：**检出布局探测** `<exe>/../../engine` 存在 ⇒ 仍返回 `C:/git/c/typephp-kakasi/engine`，与改动前**完全一致**；否则返回 `<exe>/state`）与 `api_engine_file($rel,$abs)`（只读文件：`<exe>/rel` → `<exe>/../../rel` → 绝对兜底）。VERSION、`api_cache_path`/`api_cache_index_path`/slot 路径、`models_dir()`、`cache` CLI 的 `$cdir` 全部改走它们。`package.sh` 增补复制 `VERSION`、建 `state/`。
+**门**：自检 `F657` 断言 `state_dir != ""` 且 **`api_engine_version()` 等于 VERSION 文件内容**（FR-17"同源"属性，现在对打包树也成立）。实测 `state_dir=C:/git/c/typephp-kakasi/engine version=0.1.0 file=0.1.0` ⇒ 检出布局未被扰动。
+**判别性验证（真跑打包件）**：重新打包后把 dist 复制到 `/c/git/c/pkgtest`，**再把仓库里的 `VERSION` 移走**，启动包件查 `/health` ⇒ `{"status":"ok","model":"qwen2","version":"0.1.0"}`，`/plugins` 仍 `profiles:3` ⇒ 读的是包内 `<exe>/VERSION` 与 `<exe>/plugins/…`；随后恢复 VERSION（0.1.0）。包内实测五件：exe、`VERSION`、`manifest.txt`、`plugins/`、`state/`。
+**结果（`f657` 梯）**：BUILD_OK；自检 0 FAIL（`F656/F657: PASS`）；四 harness `CHECK_EXIT=0`；SMOKE/PRETTY 各 **197/0**；par/fair 0、scaling 1.556×、哨兵 0；`check_gates 198/0`；`PACKAGE_OK`+`ARCHIVE_OK`。
+**记法**：**"检出布局探测"比"到处改相对路径"安全**——先在开发树里证明"解析结果与改动前逐字一致"，再把同一函数用于打包树；否则一次"可移植化"很容易顺手改坏本机行为。判据用**移走仓库文件再跑包件**，读数不变才算真读包内。

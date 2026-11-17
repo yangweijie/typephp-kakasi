@@ -29,6 +29,10 @@ if [ ! -f "$PROFILES" ]; then
   exit 2
 fi
 cp "$PROFILES" "$OUT/plugins/vendor_profiles.txt" || exit 2
+# F657: the binary reads VERSION at runtime for /health, and keeps its caches under <exe>/state when
+# no development tree is present. Ship both, or a package reports 0.0.0 and loses its cache.
+cp VERSION "$OUT/VERSION" || exit 2
+mkdir -p "$OUT/state" || exit 2
 PROFILES_SUM=$(sha256sum "$PROFILES" | cut -d' ' -f1)
 HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 SUM=$(sha256sum "$EXE" | cut -d' ' -f1)

@@ -216,11 +216,46 @@ function api_list(string $inner): array
 // so a forbidden answer is not merely discouraged - it cannot be emitted. This is the real
 // counterpart to the json_object validator in F44.
 // "count|bytes" from a "name|bytes" listing (prefix-cache buckets).
+// F657: runtime files (VERSION, prefix cache, models) were addressed by the build machine's absolute
+// checkout path. A packaged binary then reads nothing and writes nowhere: /health reports 0.0.0 and
+// every cache lookup misses. The development layout is detected by the engine directory sitting two
+// levels above the image (binary lives in engine/build), which keeps this checkout's paths exactly
+// as before; otherwise the state lives in <exe>/state so a package is self-contained.
+function api_state_dir(): string
+{
+    $dir = backend_exe_dir();
+    if ($dir != "") {
+        $dev = $dir . "/../../engine";
+        if (file_exists($dev)) {
+            return "C:/git/c/typephp-kakasi/engine";
+        }
+        return $dir . "/state";
+    }
+    return "C:/git/c/typephp-kakasi/engine";
+}
+
+// Read-only file lookup next to the image first (packaged), then the dev layout, then absolute.
+function api_engine_file(string $rel, string $abs): string
+{
+    $dir = backend_exe_dir();
+    if ($dir != "") {
+        $a = $dir . "/" . $rel;
+        if (file_exists($a)) {
+            return $a;
+        }
+        $b = $dir . "/../../" . $rel;
+        if (file_exists($b)) {
+            return $b;
+        }
+    }
+    return $abs;
+}
+
 // F623: the served binary reports the version recorded in the repo's VERSION file, so a client can
 // tell which build answered and scripts/package.sh can name its artifact from the same source.
 function api_engine_version(): string
 {
-    $p = "C:/git/c/typephp-kakasi/VERSION";
+    $p = api_engine_file("VERSION", "C:/git/c/typephp-kakasi/VERSION");
     if (file_exists($p)) {
         $v = trim(file_get_contents($p));
         if ($v != "") {
@@ -456,7 +491,7 @@ function api_max_tokens(int $v): int
 // each other; the same prompt always maps to the same bucket.
 function api_cache_path(string $ids): string
 {
-    return "C:/git/c/typephp-kakasi/engine/api_prefix_b" . model_cache_key($ids, 64) . ".kv";
+    return api_state_dir() . "/api_prefix_b" . model_cache_key($ids, 64) . ".kv";
 }
 
 // F342: 2-way set-associative slot choice. A prompt has a primary bucket and an alternate one, and
@@ -468,7 +503,7 @@ function api_cache_path(string $ids): string
 // tokens because the engine still compares the stored prefix.
 function api_cache_index_path(): string
 {
-    return "C:/git/c/typephp-kakasi/engine/api_prefix_index.txt";
+    return api_state_dir() . "/api_prefix_index.txt";
 }
 
 // Owner fingerprint of one slot from the index text, or -1 when nothing recorded it. The scan keeps
@@ -554,7 +589,7 @@ function api_cache_pick(string $ids): string
         fwrite($o, "" . $slot . "|" . $fp . "|" . $tick . "\n");
         fclose($o);
     }
-    return "C:/git/c/typephp-kakasi/engine/api_prefix_b" . $slot . ".kv";
+    return api_state_dir() . "/api_prefix_b" . $slot . ".kv";
 }
 
 // Store only when the entry is worth keeping AND we are not clobbering a better prefix with a
@@ -18660,7 +18695,7 @@ function doctor(): void
 
 // `engine models <cmd>` (FR-10): import / list / rm over a local model directory, with an index
 // that records what each file actually is (re-loaded on import, not trusted from the name).
-function models_dir(): string { return "C:/git/c/typephp-kakasi/engine/models"; }
+function models_dir(): string { return api_state_dir() . "/models"; }
 
 // "i/N" when the name is a split-GGUF shard (model-00001-of-00002.gguf), else "".
 function api_shard_info(string $name): string
@@ -18848,7 +18883,7 @@ function models_cli(): void
     }
 
     if ($cmd == "cache") {
-        $cdir = "C:/git/c/typephp-kakasi/engine";
+        $cdir = api_state_dir();
         $listing = model_dir_files($cdir, ".kv");
         if ($arg == "clear") {
             $lines = explode("\n", $listing);
@@ -23156,6 +23191,21 @@ function main(): void
         echo "F656: PASS (vendor profiles resolved from the running image)\n";
     } else {
         echo "F656: FAIL path=" . $f656Path . " exe_dir=" . $f656Dir . "\n";
+    }
+
+    // F657: runtime files (VERSION, caches, models) resolve relative to the running image. In this
+    // checkout that must still be the engine directory, and the served version must equal the file's
+    // content - the FR-17 same-source property, now also true for a packaged tree.
+    $f657Vp = api_engine_file("VERSION", "C:/git/c/typephp-kakasi/VERSION");
+    $f657Want = file_exists($f657Vp) ? trim(file_get_contents($f657Vp)) : "";
+    $f657Dir = api_state_dir();
+    $f657Ver = api_engine_version();
+    $f657Ok = ($f657Want != "" && $f657Ver == $f657Want && $f657Dir != "") ? 1 : 0;
+    echo "F657 state_dir=" . $f657Dir . " version=" . $f657Ver . " file=" . $f657Want . "\n";
+    if ($f657Ok == 1) {
+        echo "F657: PASS (runtime files resolve from the image; served version equals the VERSION file)\n";
+    } else {
+        echo "F657: FAIL state_dir=" . $f657Dir . " version=" . $f657Ver . " file=" . $f657Want . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour

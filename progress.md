@@ -2963,3 +2963,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：新增 `backend_exe_dir()`（`GetModuleFileNameA`）；解析顺序 `<exe>/plugins` → `<exe>/../../plugins` → 绝对兜底；`package.sh` 复制档案进包并在 manifest 记 `profiles`/`profiles_sha256`（含打包副本哈希复核）。
 - **验证**：自检 `F656: PASS`（打印 exe 相对路径 + profiles=3）；**包件判别性实测**：dist 复制到 `/c/git/c/pkgtest` 跑 `/plugins`=profiles:3，再把仓库档案移走重跑仍 profiles:3 ⇒ 读的是包内文件。
 - **梯（f656）**：BUILD_OK、0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 197/0、par/fair 0、scaling 1.491×、哨兵 0、`check_gates 198/0`、PACKAGE_OK+ARCHIVE_OK。
+
+## F657（2026-11-17）：VERSION/缓存/models 路径改为镜像相对（检出布局逐字不变）
+- **缺陷**：`api_engine_version`/前缀缓存三处/`models_dir`/`cache` CLI 全指开发机绝对路径 ⇒ 打包件 `/health` 报 `0.0.0`、缓存永不命中。
+- **修**：`api_state_dir()`（`<exe>/../../engine` 存在即返回原开发路径，否则 `<exe>/state`）+ `api_engine_file()`（只读文件三段解析）；`package.sh` 复制 `VERSION` 并建 `state/`。
+- **验证**：`F657: PASS`（state_dir 与原路径一致、version==文件内容）；**包件判别**：移走仓库 `VERSION` 后包件 `/health` 仍 `version=0.1.0`、`/plugins` 仍 profiles:3。
+- **梯（f657）**：BUILD_OK、0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 197/0、par/fair 0、scaling 1.556×、哨兵 0、`check_gates 198/0`、PACKAGE_OK+ARCHIVE_OK。
