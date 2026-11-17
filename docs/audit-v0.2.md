@@ -752,3 +752,18 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 **F646b（进行中）**：普查守卫返回词汇 × 34 条族名断言后确认窄化条件；实测同一形状随 `max_tokens` 在 400（无界却报 `numeric bounds`）与 200（真被 writer 认领）之间切换，而既有活体夹具写成"400 具名 **或** 200 合规"的 OR 支路，故该路径的具名缺失**永不可见**。补三条单侧门（`mof/mofsrv/mofbound`）+ 一条无逃生支路的活体夹具。
 
 **F647 回归口径（当前基线，`f646` 实测）**：自检 911 行 0 FAIL、`PROFILES: PASS`、`PARAM-GUARDS: PASS`（`pass=20/20 exc=1 excsrv=1`）；四 harness 全 `VERDICT: PASS` + `CHECK_EXIT=0`（**bounds 由红转绿**）；SMOKE/SMOKE-PRETTY 各 191/0；8001 par/fair 0；scaling 1.537×；哨兵 0；`check_gates 199/0` 且 exit 0。
+
+## 审计增补（F648–F652，2026-11-17）——驻留比例旋钮落地、/plugins 报告纠偏、两处"同语义双入口"合并
+**FR-05 功能面（成立）**：F648 给厂商档案加第 10 字段 `residency_frac`（0.05..0.95，0=出厂 0.55）：`model_set_residency_frac`/`model_residency_frac`/`model_residency_frac_intent` 三个 native，`g_residency_frac` 与匿名层的 `residency_frac()` 供 `residency_prepare` 与 `plan()` **两个预算站点共用**（`budget_gib` 绝对覆盖优先级不变）。自检 `orch[frac]` 断言三件事：改比例须同时移动 plan 与 residency report 的 `budget=`、`frac=0` 后两串**逐字节复原**、生成 token 与驻留基线相同；实测 `13.94GiB → 0.51GiB`（25.34×0.55 与 ×0.02），算术与预期一致。档案宽度契约随之扩到 **10 字段 / 9 竖线**，`PROFILES` 门逐条断言。
+
+**F649 报告字段纠偏（成立）**：`/plugins` 的 `budget_gib` 一直报的是 `model_kv_cache_gib()`（KV 缓存占用）而非驻留预算——两者是不同量，却被相邻摆放成"意图/生效值"对。现改名 `kv_cache_gib`，新增 `residency_enabled`、`residency_budget_gib`（未 prefill 时 `null` 而非 0，区分"未准备/预算 0/预算很小"三态）、`device_gib`；8000/8001 各加 `*-residency-warm`、`*-budget-same-source`、`*-kv-cache-naming` 三门。**"冷态 null" 的活体门被移除**：实测服务器启动即已预热驻留，`/plugins` 永远看不到 `enabled=0`，该断言在活体上不可满足——三态契约改由自检 `orch[frac]` 在生成前读取来证明。
+
+**F651（成立）**：`api_plugins_count` 只跳空行/注释，而 `api_plugins_select` 还跳"字段<4"的行 ⇒ `/plugins` 的 `profiles` 数包含**永远不会被选中**的畸形行。现两者共用同一谓词；`PROFILES` 加计数门（混合文本计 1、三行合法文本计 3），`bad|line` 的回落 total 由 1 变 0。
+
+**F652（成立，且门经负向对照）**：`session_next` 在判 `r.empty()` **之前** `g_sess_len += 1`，而姊妹函数 `session_next_allowed` 早已实现"只有真正产出 KV 行的步才能前进"。修复后另加 `queue_for` 的 `in_range` 守卫（越界 backend id 原先直索设备表 = 未定义行为）。新自检门 `F652` 用越界 backend 强制 prefill 失败，断言 `session_len` 不变；**负向对照实测**：仅还原旧顺序时该门输出 `lenB=3` ⇒ FAIL，恢复后 `lenB=2` ⇒ PASS——新门在旧代码上复现了缺陷。
+
+**FR-05 插件（仍是决策/硬件题，本轮探索后撤回）**：F650 写出完整插件 ABI 草案（vtable+加载器+CUDA/HIP/Metal/SYCL/CPU 骨架）后**全部撤回**：本机无 CUDA/HIP/Metal SDK（编译、加载、算对三条验收线都不可达）、替换 `php_backend_*` 会移动 191/0 基线的真值来源且缺降级门、跨编译器 POD 布局与版本演进未拍板。撤回后重建+自检实测 `BUILD_OK`、912 行 0 FAIL。开工条件见 findings F650。
+
+**回归口径（当前基线，`f652` 实测）**：自检 912 行、`FAIL=0`、`RUN_EXIT=0`（`F652: PASS`、`PROFILES: PASS`、`PARAM-GUARDS: PASS`、`orch[frac] PASS`）；四 harness 全 `CHECK_EXIT=0`（bounds `VERDICT: PASS`）；SMOKE 与 SMOKE-PRETTY 各 **194/0**；8001 par/fair 0；scaling 1.554×；哨兵 0；`check_gates 198/0` 且 exit 0。
+
+**仍未闭合**：FR-05 插件（决策+硬件）；FR-06 独立草稿模型（决策）；FR-02 式计算图调度（重设计）；per-session KV 并行吞吐、SSD 前缀分桶深化；多卡 split、GGUF 分片合并（本机无第二设备）。
