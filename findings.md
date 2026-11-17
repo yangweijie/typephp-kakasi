@@ -5623,3 +5623,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`body_limit.py` 参数化（`PORT==8001` 用流式 body、SSE 判 200；新增 45 KB 用例：必须 400 且正文含 `slot capacity` 且**不含** `no user content`）。8001 的 45 KB 请求在**槽位容量检查**就被具名拒绝，因此该用例快（约 20 s）。
 **接线**：日志按端口分名（`body_limit_8000_<tag>` / `body_limit_8001_<tag>`），`gate_live` 两个退出码入闸，`check_gates` 对两个端口各取最新日志要求 `BODY-LIMIT: PASS`。
 **梯（f668）**：8000 五形状、8001 六形状均 PASS；自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.458×、哨兵 0、`check_gates 198/0` exit 0。
+
+## F669（2026-11-17）：未知路由与不可解析的 body 都由"no user content"背锅——补 404 与具名 400
+**缺陷（探针实测，两台服务器同形）**：`POST /v1/unknown`、`{"messages": [`（截断的 JSON）、`{"messages": "hi"}`（形状错）三种请求都回 **400 `no user content`**——状态码对但原因错，未知路由本该是 **404**。四类请求共用一个兜底文案，排查时会把客户端错误引向"没有用户内容"。
+**修复（8000 与 8001 各一份，按 F658b 的教训同轮修）**：
+1. `/v1/` 下不属于任何已服务端点的请求 ⇒ **404 `unknown endpoint: <path>（列出可服务端点）`**；
+2. body 首字符不是 `{`/`[`，或末字符不是 `}`/`]` ⇒ **400 `request body is not JSON…`**（截断的 `{"messages": [` 由此命中）；
+3. 出现 `"messages"` 但后面不是 `[` ⇒ **400 `messages must be an array of message objects`**。
+新增小函数 `api_req_path($req)` 取请求行里的路径（仅用于 404 点名）。检查插在根 HTML 分支之后、所有端点分支之前，因此不会遮住合法路由（`/v1/models` 等白名单排除）。
+**门 `endpoint_shape.py <port>`（两台各 5 例）**：`unknown_route` 404+`unknown endpoint`、`malformed_json` 400+`not JSON`、`messages_string` 400+`messages must be an array`、`empty_object` 仍 400+`no user content`（对照：合法 JSON 但无内容，文案不变）、`valid_chat` 200（8001 用流式 + SSE 判据）。日志按端口分名，两端口都入 `gate_live`/`check_gates`。
+**过程**：首版只查首字符，`{"messages": [` 仍落到 no-user-content ⇒ 门当场 FAIL；补末字符检查后通过。8001 的 `empty_object` 首跑 FAIL 是探针发成了非流式（8001 会先拒"streaming text only"），加 `stream:true` 后通过——**判据要对着该服务器真实可服务的形态发**。
+**梯（f669）**：两台 `ENDPOINT-SHAPE: PASS (5)`、自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.504×、哨兵 0、`check_gates 198/0` exit 0。

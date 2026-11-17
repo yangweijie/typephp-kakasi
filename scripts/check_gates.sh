@@ -67,6 +67,12 @@ if [ -z "$PLOG" ] || ! grep -q '^PAR SMOKE: PASS' "$PLOG" || ! grep -q 'PAR_EXIT
   exit 1
 fi
 for port in 8000 8001; do
+  EPLOG=$(ls -t "engine/endpoint_shape_${port}_"*.log 2>/dev/null | head -1)
+  if [ -z "$EPLOG" ] || ! grep -q '^ENDPOINT-SHAPE: PASS' "$EPLOG"; then
+    echo "ENDPOINT_SHAPE_RED port=$port log=$(basename "${EPLOG:-none}")"
+    [ -n "$EPLOG" ] && grep -m 4 'ENDPOINT-SHAPE' "$EPLOG"
+    exit 1
+  fi
   BLBLOG=$(ls -t "engine/body_limit_${port}_"*.log 2>/dev/null | head -1)
   if [ -z "$BLBLOG" ] || ! grep -q '^BODY-LIMIT: PASS' "$BLBLOG"; then
     echo "BODYL_RED port=$port log=$(basename "${BLBLOG:-none}")"

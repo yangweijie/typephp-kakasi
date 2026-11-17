@@ -13,6 +13,20 @@ function api_str(string $json, string $key): string
     return "";
 }
 
+// F669: the request target from the request line, used to name an unknown endpoint.
+function api_req_path(string $req): string
+{
+    $sp = strpos($req, " ");
+    if ($sp === false) {
+        return "";
+    }
+    $ep = strpos($req, " ", $sp + 1);
+    if ($ep === false) {
+        return "";
+    }
+    return substr($req, $sp + 1, $ep - $sp - 1);
+}
+
 // The LAST occurrence, which for "messages" is the newest turn.
 function api_str_last(string $json, string $key): string
 {
@@ -16039,6 +16053,40 @@ function api_serve_par(int $port): void
                 fclose($c);
                 continue;
             }
+            // F669: the same two parsing refusals and the unknown-route 404 as the main server.
+            if ($body != "" && strpos($req, "/v1/") !== false
+                && ((substr(trim($body), 0, 1) != "{" && substr(trim($body), 0, 1) != "[")
+                    || (substr(trim($body), -1) != "}" && substr(trim($body), -1) != "]"))) {
+                $payload = api_error_for_path($req, "{\"error\":{\"message\":\"request body is "
+                    . "not JSON: it must be a JSON object (or array)\","
+                    . "\"type\":\"invalid_request_error\"}}");
+                fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                fclose($c);
+                continue;
+            }
+            if ($body != "" && strpos($body, "\"messages\"") !== false
+                && preg_match('/"messages"\s*:\s*\[/', $body) != 1) {
+                $payload = api_error_for_path($req, "{\"error\":{\"message\":\"messages must be an "
+                    . "array of message objects\",\"type\":\"invalid_request_error\"}}");
+                fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                fclose($c);
+                continue;
+            }
+            if (strpos($req, "/v1/") !== false
+                && strpos($req, "/v1/chat/completions") === false
+                && strpos($req, "/v1/messages") === false
+                && strpos($req, "/v1/models") === false) {
+                $payload = api_error_for_path($req, "{\"error\":{\"message\":\"unknown endpoint: "
+                    . api_esc(api_req_path($req)) . " (this server serves /v1/chat/completions, "
+                    . "/v1/messages, /v1/messages/count_tokens and /v1/models)\","
+                    . "\"type\":\"invalid_request_error\"}}");
+                fwrite($c, "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                fclose($c);
+                continue;
+            }
             $body = api_json_compact($body);
             $body = api_schema_prefix_items($body);
             if ($body != "" && strpos($req, "/v1/messages") !== false) {
@@ -16821,6 +16869,34 @@ function api_serve(int $port): void
                 . "[{role:'user',content:document.getElementById('q').value}],max_tokens:64})});"
                 . "const j=await r.json();o.textContent=j.choices?j.choices[0].message.content:JSON.stringify(j);}"
                 . "</script>";
+        } else if ($body != "" && strpos($req, "/v1/") !== false
+                   && ((substr(trim($body), 0, 1) != "{" && substr(trim($body), 0, 1) != "[")
+                       || (substr(trim($body), -1) != "}" && substr(trim($body), -1) != "]"))) {
+            // F669: a body that is not JSON at all used to fall through to history parsing and be
+            // answered "no user content" - true status, wrong reason.
+            $payload = "{\"error\":{\"message\":\"request body is not JSON: it must be a JSON "
+                . "object (or array) and this one starts with '"
+                . substr(trim($body), 0, 1) . "'\",\"type\":\"invalid_request_error\"}}";
+            $status = "400 Bad Request";
+        } else if ($body != "" && strpos($body, "\"messages\"") !== false
+                   && preg_match('/"messages"\s*:\s*\[/', $body) != 1) {
+            // F669: "messages": "hi" is valid JSON but not the shape any exit accepts.
+            $payload = "{\"error\":{\"message\":\"messages must be an array of message objects\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "400 Bad Request";
+        } else if (strpos($req, "/v1/") !== false
+                   && strpos($req, "/v1/chat/completions") === false
+                   && strpos($req, "/v1/messages") === false
+                   && strpos($req, "/v1/responses") === false
+                   && strpos($req, "/v1/completions") === false
+                   && strpos($req, "/v1/models") === false) {
+            // F669: an unknown /v1 route answered "no user content" with 400; it is a 404.
+            $payload = "{\"error\":{\"message\":\"unknown endpoint: "
+                . api_esc(api_req_path($req))
+                . " (this server serves /v1/chat/completions, /v1/completions, /v1/messages, "
+                . "/v1/messages/count_tokens, /v1/responses, /v1/models)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "404 Not Found";
         } else if (strpos($req, "GET /health") !== false) {
             // Liveness/readiness probe: cheap, no model work.
             $payload = "{\"status\":\"ok\",\"model\":\"" . api_esc(gguf_meta_str("general.architecture")) . "\",\"version\":\"" . api_esc(api_engine_version()) . "\"}";

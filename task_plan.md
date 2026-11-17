@@ -2586,3 +2586,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F668（2026-11-17）：8001 读循环字节预算 + 413/400，门按端口双份
 **修复**：镜像 8000（4 MB 字节预算、空读 6 次、超限 413、超发不足 400，均先于 slot/schema）。
 **门**：`body_limit.py` 支持 8001（流式 + SSE 判据 + 45 KB 须报 `slot capacity` 拒绝）；日志 `body_limit_<port>_<tag>`，两端口都入 `gate_live`/`check_gates`。
+
+### F669（2026-11-17）：未知路由 404、不可解析 body 具名 400（两台同轮）
+**修复**：`/v1/` 未知端点 ⇒ 404 点名；首/末字符不是 `{`/`[`、`}`/`]` ⇒ 400 not JSON；`"messages"` 后不是 `[` ⇒ 400 messages-array。新增 `api_req_path()`。
+**门**：`endpoint_shape.py <port>` 五例（含 `empty_object` 文案不变的对照），两端口日志入 `gate_live`/`check_gates`。
