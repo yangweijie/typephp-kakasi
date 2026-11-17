@@ -106,6 +106,17 @@ def main():
           and isinstance(pl.get("split_state"), str)
           and pl.get("split_state", "").startswith("split")
           and "split_backend" not in pl, str(pl))
+    # F655: the remaining /plugins fields had no value assertion at all. One contract gate closes the
+    # sweep: every reported field must carry a value of the reported type, so a field that starts
+    # lying cannot ride along just because its key still exists.
+    si = pl.get("split_intent")
+    check("plugins-field-contract",
+          pl.get("kv_f16") in (0, 1)
+          and pl.get("wprec_intent") in (-1, 0, 1)
+          and isinstance(pl.get("device"), str) and pl.get("device") != ""
+          and isinstance(si, dict)
+          and isinstance(si.get("backend"), str) and isinstance(si.get("layer"), str),
+          str(pl))
 
     with urllib.request.urlopen(BASE + "/v1/models", timeout=60) as r:
         models = json.loads(r.read().decode())

@@ -2953,3 +2953,7 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：键名改 `attn_split_p`，新增 `split_state`（引擎真实状态串）；格式串改 `primary=b0`；档案第 8 字段名不变（那里确为后端索引）。
 - **门**：`*-split-fields` 断言 `attn_split_p>=1`、`split_state` 以 `split` 开头、**`split_backend` 键必须不存在**。
 - **梯（f654）**：BUILD_OK、自检 914 行 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 **196/0**、par/fair 0、scaling 1.581×、哨兵 0、`check_gates 198/0`。
+
+## F655（2026-11-17）：/plugins 字段契约门（收口）
+- **门**：`plugins-field-contract`/`par-field-contract` 断言 `kv_f16∈{0,1}`、`wprec_intent∈{-1,0,1}`、`device` 非空串、`split_intent` 含字符串 backend/layer。
+- **梯（f655 gate_live）**：SMOKE/PRETTY 各 **197/0**（+1）、par/fair 0、scaling 1.539×、哨兵 0。

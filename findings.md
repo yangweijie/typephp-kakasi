@@ -5501,3 +5501,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：8000/8001 各加 `*-split-fields`：`attn_split_p` 为 ≥1 的整数、`split_state` 以 `split` 开头、且**旧键 `split_backend` 不得再出现**（防回潮）。
 **结果（`f654` 梯）**：BUILD_OK；自检 **914 行 0 FAIL**；四 harness `CHECK_EXIT=0`（bounds PASS）；**SMOKE 与 SMOKE-PRETTY 各 196/0**；par/fair 0、scaling 1.581×、哨兵 0；`plugins-residency-frac`/`plugins-split-fields`/`par-residency-frac`/`par-split-fields` 四门全 PASS；`check_gates 198/0`。
 **记法**：**"改名"必须与"防回潮"同批**——只改键名而不在门里断言"旧键不存在"，下一次重构就可能悄悄把旧名带回来（F649 的 `*-kv-cache-naming` 用了同一手法，本轮沿用并显式化）。
+
+## F655（2026-11-17）：`/plugins` 字段契约门——收口"每个字段都要断言值"
+**背景**：F649/F651/F653/F654 逐个修掉了报告字段的错名与缺门，但还剩 `kv_f16`、`split_intent`、`device`（类型）以及 8000 侧的 `wprec_intent` 没有任何值断言。逐个补会继续碎片化，故用一个**字段契约门**收口。
+**门**：8000/8001 各加 `plugins-field-contract` / `par-field-contract`：`kv_f16 ∈ {0,1}`、`wprec_intent ∈ {-1,0,1}`、`device` 为非空字符串、`split_intent` 是含字符串 `backend`/`layer` 的对象。⇒ 连同先前各门，`/plugins` 的**全部字段**现在都有一个"断言其值"的门，而不只是"断言其存在"。
+**结果（`f655` gate_live）**：`SMOKE 197/0`、`SMOKE-PRETTY 197/0`（较 196 各 +1）、`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling 1.539×、哨兵 0；两条新门 PASS。
+**记法**：**同一类缺口逐个补完之后，要补一条"契约级"的伞门**——单字段门再好，也可能漏掉下一个新字段；把"类型/取值域"写成一条契约断言，新字段加入时更容易被这条伞门顺手覆盖（或至少迫使作者显式决定它归谁管）。

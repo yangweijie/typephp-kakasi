@@ -173,6 +173,15 @@ def main():
           and isinstance(pj.get("split_state"), str)
           and pj.get("split_state", "").startswith("split")
           and "split_backend" not in pj, str(pj))
+    # F655 parity: same field contract on the cooperative server.
+    si = pj.get("split_intent")
+    check("par-field-contract",
+          pj.get("kv_f16") in (0, 1)
+          and pj.get("wprec_intent") in (-1, 0, 1)
+          and isinstance(pj.get("device"), str) and pj.get("device") != ""
+          and isinstance(si, dict)
+          and isinstance(si.get("backend"), str) and isinstance(si.get("layer"), str),
+          str(pj))
 
     # F636: the cooperative server applies the same parameter set and schema-keyword rules as 8000.
     def par_refusal(body):
