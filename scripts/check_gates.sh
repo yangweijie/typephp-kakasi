@@ -66,6 +66,12 @@ if [ -z "$PLOG" ] || ! grep -q '^PAR SMOKE: PASS' "$PLOG" || ! grep -q 'PAR_EXIT
   [ -n "$PLOG" ] && grep -m 3 'FAIL\|PAR SMOKE\|PAR_EXIT' "$PLOG"
   exit 1
 fi
+BLBLOG=$(ls -t engine/body_limit_*.log 2>/dev/null | head -1)
+if [ -z "$BLBLOG" ] || ! grep -q '^BODY-LIMIT: PASS' "$BLBLOG"; then
+  echo "BODYL_RED log=$(basename "${BLBLOG:-none}")"
+  [ -n "$BLBLOG" ] && grep -m 4 'BODY-LIMIT' "$BLBLOG"
+  exit 1
+fi
 ABLOG=$(ls -t engine/par_abandon_*.log 2>/dev/null | head -1)
 if [ -z "$ABLOG" ] || ! grep -q '^PAR-ABANDON: PASS' "$ABLOG"; then
   echo "PARAB_RED log=$(basename "${ABLOG:-none}")"

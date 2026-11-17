@@ -5605,3 +5605,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`cache_persist.py` 增加 Anth 流式段落（第三种独立文本的 prompt）：冷 `cache<32`、热 `>32`、两次文本相同。
 **实测（f666，重建后）**：`anth_stream=(0,207,1)`——流式冷 0、热 207、文本一致；非流式段 `anth_cold=0 anth_warm=214` 不变；其余基线不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.465×、哨兵 0、`check_gates 198/0` exit 0）。
 **注**：新增的 trace 行会让 `spec_req.log` 多出 `mode=plain` 记录（同一日志已被 chat/anth 非流式共用），解析端按 `cache=` 区分即可。
+
+## F667（2026-11-17）：**请求体被静默截断**、空内容回 200、超大 body 直接断连——三个传输层缺陷一次收口
+**发现路径**：为验证"超长 prompt 怎么处理"而发了一段 10 KB 文本，得到 `200` + `{"error":{"message":"no user content"}}`——客户端按状态码看到的是成功。顺藤摸到三个独立缺陷：
+1. **截断**：8000 的 accept 后 socket **继承监听器的非阻塞模式**，`fread` 可能只拿到头部，而读循环在 `$more == ""` 时 **break** ⇒ 任何大于一个 TCP 分段的 body 被截断成"空内容"。8001 早被 F53 修成"设阻塞 + continue"，8000 从未同步。
+2. **状态码**：`$ids == ""` 分支只设 `$payload` 不设 `$status` ⇒ 空内容以 **200** 返回错误体（全仓扫描确认只此一处这样写）。
+3. **超大 body**：读循环的守卫按**次数**（9 × 32768）而不是**字节**计，而单次 socket 读实际只有 ~8 KB ⇒ 超过约 80 KB 的 body 被直接关闭连接，客户端看到 `ConnectionResetError`（实测 84 KB 即复现）。
+**修复**：①`stream_set_blocking($c,true)` + 2 s 超时，空读改为"计时等待"（6 次空读才放弃）；②给 `$ids==""` 补 `400`；③守卫改成**字节预算 4 MB**，`Content-Length` 超限时**具名 413**（并先非阻塞排空已到字节，避免 RST 毁掉响应）。
+**顺带查明的另一件事（不是缺陷）**：新前缀的大 prompt 很慢——20 KB≈47 s、50 KB≈138 s，而**同一 10 KB prompt 命中前缀缓存时 0.3–0.4 s**。这是 prefill 速度（~100–200 tok/s），不是本轮引入的回归；记录于此以免下次误判。
+**门 `body_limit.py`（8000 段、`stop_all` 之前运行）**：10 KB ⇒ 200+choices；声明 5 MB ⇒ `413` 且正文含 `too large`；声明超出实发 ⇒ `400` 含 `incomplete`；空 messages ⇒ `400`；空 body ⇒ `400`。首轮接线时我把门放在 `stop_all` 之后 ⇒ `Connection refused`，门自己报红（`GATE_FAIL … bodyl=1`），移回服务存活段后全绿。
+**梯（f667b）**：`BODY-LIMIT: PASS`、自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.535×、哨兵 0、`check_gates 198/0` exit 0。
+**教训**：①"状态码由分支自己设"是个容易漏的契约——扫一遍"设 payload 不设 status"就能发现同类；②读循环的守卫必须按**字节**计，按次数计在 socket 上等于按 8 KB/次；③探针拿到 200 但正文是 error 时必须当缺陷追，客户端只看状态码。

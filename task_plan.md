@@ -2577,3 +2577,8 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F666（2026-11-17）：Anth 流式缓存分支的可观测化 + 门
 **改动**：`/v1/messages` 流式分支补 `api_spec_req("plain", …, $anthCacheHit, ms)`（行为不变，只加观测）。
 **门**：`cache_persist.py` 第三段（独立文本）冷<32、热>32、文本一致；实测 `anth_stream=(0,207,1)`。
+
+### F667（2026-11-17）：8000 请求体截断 / 空内容 200 / 超大 body 断连
+**修复**：accept 后设阻塞+超时、空读计时等待（不再 break）；`$ids==""` 补 400；读守卫改字节预算 4 MB，超限具名 413（先排空防 RST）。
+**门**：`body_limit.py`（10 KB 200、5 MB 声明 413、超发不足 400、空 messages/空 body 400），接线于 8000 存活段、`BODY-LIMIT: PASS` 入闸。
+**记录**：大 prompt 慢是 prefill 速度（~100–200 tok/s），缓存命中 10 KB 仅 0.3–0.4 s。

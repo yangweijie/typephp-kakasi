@@ -5,7 +5,7 @@
 // enough; the escaped-quote alternative keeps content with quotes intact.
 function api_str(string $json, string $key): string
 {
-    $pat = "/\"" . $key . "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/";
+    $pat = "/\"" . $key . "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*+)\"/";
     $m = [];
     if (preg_match($pat, $json, $m)) {
         return $m[1];
@@ -16,7 +16,7 @@ function api_str(string $json, string $key): string
 // The LAST occurrence, which for "messages" is the newest turn.
 function api_str_last(string $json, string $key): string
 {
-    $pat = "/.*\"" . $key . "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/s";
+    $pat = "/.*\"" . $key . "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*+)\"/s";
     $m = [];
     if (preg_match($pat, $json, $m)) {
         return $m[1];
@@ -79,7 +79,7 @@ function api_stop_list(string $body): array
             return $out;
         }
     }
-    if (preg_match('/"stop"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $body, $m)) {
+    if (preg_match('/"stop"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $body, $m)) {
         $v = api_unesc($m[1]);
         if ($v != "") {
             $out[] = $v;
@@ -4463,7 +4463,7 @@ function api_top_leaves(string $block, int $maxN): string
         // must not count toward the leaf-shape heuristics below, or a pattern leaf reads as a
         // two-brace object and is dropped from the plan entirely. Strip the string contents first,
         // then count; the kind regexes still run on the raw value.
-        $valPlain = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '""', $val);
+        $valPlain = preg_replace('/"(?:[^"\\\\]|\\\\.)*+"/', '""', $val);
         $valBraces = substr_count($valPlain, "{");
         // Depth-1 leaves are flat objects: a nested object has more than its own opening brace.
         // A leaf holding an array of strings has exactly one extra brace (its items object), so
@@ -4584,7 +4584,7 @@ function api_top_leaves(string $block, int $maxN): string
                            && $mk != "s") {
                     $mk = "en:" . $mc[1];
                 } else if ($mk == "s"
-                           && preg_match('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $val, $mps) == 1
+                           && preg_match('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $val, $mps) == 1
                            && ($pSpec = api_schema_pattern_spec($mps[1])) != "") {
                     // F404: an anchored class/count pattern the flat mixed stepper can honour
                     // carries its segment spec in the plan (key:p:spec) - the stepper emits
@@ -5121,14 +5121,14 @@ function api_root_scalar_choices(string $body): array
         }
     }
     $schema = api_schema_strip_root_not($schema);
-    if (preg_match('/^\s*\{\s*[^{}]*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
+    if (preg_match('/^\s*\{\s*[^{}]*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
         $schema, $m) == 1) {
         $out[] = $m[1];
         return $out;
     }
     if (preg_match('/^\s*\{\s*[^{}]*"enum"\s*:\s*\[(.*?)\]/s', $schema, $m) == 1) {
         $vals = api_list($m[1]);
-        $bare = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '', $m[1]);
+        $bare = preg_replace('/"(?:[^"\\\\]|\\\\.)*+"/', '', $m[1]);
         $bare = str_replace(",", "", $bare);
         $bare = str_replace(" ", "", $bare);
         $bare = str_replace("\n", "", $bare);
@@ -9112,7 +9112,7 @@ function api_schema_flatten_choices(string $s): string
         // carrying only numeric bounds stay unclaimed (the anyOf bounds case is still fail-closed
         // work, not silently served here).
         $cc = [];
-        preg_match_all('/"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
+        preg_match_all('/"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
             $inner, $cc);
         for ($ci = 0; $ci < count($cc[1]); $ci++) {
             $vals = $vals == "" ? $cc[1][$ci] : $vals . "," . $cc[1][$ci];
@@ -9691,7 +9691,7 @@ function api_schema_candidates(string $tail): array
     // Pass 1: enum / const values (always strings).
     $pm = [];
     $n = preg_match_all('/"([A-Za-z0-9_\-]+)"\s*:\s*\{[^{}]*?"(?:enum|const)"\s*:\s*'
-        . '(\[[^\]]*\]|"(?:[^"\\\\]|\\\\.)*")/s', $tail, $pm);
+        . '(\[[^\]]*\]|"(?:[^"\\\\]|\\\\.)*+")/s', $tail, $pm);
     for ($i = 0; $i < $n; $i++) {
         $vals = [];
         $lit = $pm[2][$i];
@@ -11211,7 +11211,7 @@ function api_schema_not_props_ok(string $schema, string $sub, string $vp): int
             return 0;
         }
         $mm = [];
-        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false)\s*\}$/',
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9]+(?:\.[0-9]+)?|true|false)\s*\}$/',
             $one, $mm) == 1) {
             $lit2 = $mm[1];
             if (substr($lit2, 0, 1) == "\"") {
@@ -11368,7 +11368,7 @@ function api_schema_not_ok(string $schema): int
     }
     // F479: an escape-free string const carrying an out-of-charset character is never emitted.
     $mcs = [];
-    if (preg_match('/^\{\s*"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mcs) == 1) {
+    if (preg_match('/^\{\s*"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mcs) == 1) {
         if (strpos($mcs[1], "\\") === false) {
             if (api_charset_covers($mcs[1]) == 0) {
                 return 1;
@@ -11386,7 +11386,7 @@ function api_schema_not_ok(string $schema): int
     // emitted value can match it - every member carries an out-of-charset character.
     $mpp = [];
     if (preg_match('/^\{\s*(?:"type"\s*:\s*"string"\s*,\s*)?'
-        . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mpp) == 1
+        . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mpp) == 1
         && strpos($mpp[1], "\\") === false) {
         $malt = [];
         if (preg_match('#^\^\(?([A-Za-z0-9 _!@%&,:;=/?-]+(?:\|[A-Za-z0-9 _!@%&,:;=/?-]+)*)\)?\$$#',
@@ -11479,7 +11479,7 @@ function api_schema_contains_all_miss(string $schema): int
             $vals = explode("~", $aep[1]);
             $pre = '(?:"type"\s*:\s*"string"\s*,\s*)?';
             $mc = [];
-            if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mc) == 1
+            if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mc) == 1
                 && strpos($mc[1], "\\") === false) {
                 for ($i = 0; $i < count($vals); $i++) {
                     if ($vals[$i] == $mc[1]) {
@@ -11546,7 +11546,7 @@ function api_schema_contains_required(string $schema): string
     $dom = explode("~", $pp[1]);
     $need = "";
     $m = [];
-    if (preg_match('/^\{\s*"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $m) == 1) {
+    if (preg_match('/^\{\s*"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $m) == 1) {
         $need = $m[1];
     } else if (preg_match('/^\{\s*"enum"\s*:\s*\[([^\]]*)\]\s*\}$/', $sub, $m) == 1) {
         $allowed = api_list($m[1]);
@@ -11620,7 +11620,7 @@ function api_schema_contains_pattern_ok(string $schema): int
         return 0;
     }
     $m = [];
-    if (preg_match('/^\{\s*"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $m) != 1) {
+    if (preg_match('/^\{\s*"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $m) != 1) {
         return 0;
     }
     $plan = api_schema_array_enum($s);
@@ -11631,7 +11631,7 @@ function api_schema_contains_pattern_ok(string $schema): int
     if (count($pp) < 2 || substr($pp[1], 0, 1) != "~") {
         return 0;
     }
-    $pc = preg_match_all('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $s, $pm);
+    $pc = preg_match_all('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $s, $pm);
     if ($pc < 2) {
         return 0;
     }
@@ -11782,7 +11782,7 @@ function api_schema_contains_ok(string $schema): int
                     $specK = substr($aep[1], 1);
                     $mpc = [];
                     if (preg_match('/^\{\s*(?:"type"\s*:\s*"string"\s*,\s*)?'
-                        . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mpc) == 1) {
+                        . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mpc) == 1) {
                         $specS = api_schema_pattern_spec(api_unesc($mpc[1]));
                         if ($specS != "" && $specS == $specK) {
                             return 1;
@@ -11893,7 +11893,7 @@ function api_schema_dep_sub_satisfied(string $schema, string $sub): int
             return 0;
         }
         $mm = [];
-        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false)\s*\}$/',
+        if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9]+(?:\.[0-9]+)?|true|false)\s*\}$/',
             $one, $mm) == 1) {
             $lit2 = $mm[1];
             if (substr($lit2, 0, 1) == "\"") {
@@ -13415,7 +13415,7 @@ function api_schema_property_names_ok(string $schema): int
         return 0;
     }
     $mp = [];
-    $hasPattern = preg_match('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $sub, $mp) == 1;
+    $hasPattern = preg_match('/"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $sub, $mp) == 1;
     if ($hasPattern && (strlen($mp[1]) == 0 || strlen($mp[1]) > 200)) {
         return 0;
     }
@@ -13655,7 +13655,7 @@ function api_schema_leaf_guarantees(string $kind, string $sub): int
         $specK = substr($kind, 2);
         $mp = [];
         if (preg_match('/^\{\s*(?:"type"\s*:\s*"string"\s*,\s*)?'
-            . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mp) == 1) {
+            . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mp) == 1) {
             $specS = api_schema_pattern_spec(api_unesc($mp[1]));
             if ($specS != "" && $specS == $specK) {
                 return 1;
@@ -13715,7 +13715,7 @@ function api_schema_leaf_guarantees(string $kind, string $sub): int
     }
     $pre = '(?:"type"\s*:\s*"string"\s*,\s*)?';
     $mc = [];
-    if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mc) == 1) {
+    if (preg_match('/^\{\s*' . $pre . '"const"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mc) == 1) {
         $want = api_unesc($mc[1]);
         for ($i = 0; $i < count($vals); $i++) {
             if ($vals[$i] != $want) {
@@ -13744,7 +13744,7 @@ function api_schema_leaf_guarantees(string $kind, string $sub): int
         return 1;
     }
     $mp = [];
-    if (preg_match('/^\{\s*' . $pre . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"\s*\}$/', $sub, $mp) == 1) {
+    if (preg_match('/^\{\s*' . $pre . '"pattern"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"\s*\}$/', $sub, $mp) == 1) {
         if (strlen($mp[1]) < 1 || strlen($mp[1]) > 200) {
             return 0;
         }
@@ -13798,7 +13798,7 @@ function api_schema_pattern_props_ok(string $schema): int
         return 0;
     }
     $mp = [];
-    if (preg_match('/^\{\s*"((?:[^"\\\\]|\\\\.)*)"\s*:\s*\{/', $blk, $mp) != 1) {
+    if (preg_match('/^\{\s*"((?:[^"\\\\]|\\\\.)*+)"\s*:\s*\{/', $blk, $mp) != 1) {
         return 0;
     }
     if (strlen($mp[1]) == 0 || strlen($mp[1]) > 200) {
@@ -13858,7 +13858,7 @@ function api_schema_pattern_props_ok(string $schema): int
             }
             if ($pinPP != "") {
                 $mm = [];
-                if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9][0-9.eE+-]*|true|false)\s*\}$/',
+                if (preg_match('/^\{\s*(?:"type"\s*:\s*"[a-z]+"\s*,\s*)?"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9][0-9.eE+-]*|true|false)\s*\}$/',
                     $vblk, $mm) == 1) {
                     $litPP = $mm[1];
                     if (substr($litPP, 0, 1) == "\"") {
@@ -14097,7 +14097,7 @@ function api_schema_if_ok(string $schema): int
                     return 0;
                 }
                 $mc = [];
-                if (preg_match('/^\{\s*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9][0-9.eE+-]*|true|false)\s*\}$/',
+                if (preg_match('/^\{\s*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9][0-9.eE+-]*|true|false)\s*\}$/',
                     $kblk, $mc) == 1) {
                     $litC = $mc[1];
                     if (substr($litC, 0, 1) == "\"") {
@@ -15572,7 +15572,7 @@ function api_tool_result_contents(string $part): array
     $segs = explode("\"type\":\"tool_result\"", $part);
     for ($i = 1; $i < count($segs); $i++) {
         $cm = [];
-        if (preg_match('/"content"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $segs[$i], $cm)) {
+        if (preg_match('/"content"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $segs[$i], $cm)) {
             if ($cm[1] != "") {
                 $out[] = $cm[1];
             }
@@ -15584,7 +15584,7 @@ function api_tool_result_contents(string $part): array
                 $tsegs = explode("\"type\":\"text\"", $am[1]);
                 for ($k = 1; $k < count($tsegs); $k++) {
                     $tm = [];
-                    if (preg_match('/"text"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $tsegs[$k], $tm)) {
+                    if (preg_match('/"text"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $tsegs[$k], $tm)) {
                         $joined = $joined == "" ? $tm[1] : $joined . "\n" . $tm[1];
                     }
                 }
@@ -15702,7 +15702,7 @@ function api_system_text(string $body): string
     $segs = explode("\"type\":\"text\"", $rest);
     for ($i = 1; $i < count($segs); $i++) {
         $tm = [];
-        if (preg_match('/"text"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $segs[$i], $tm)) {
+        if (preg_match('/"text"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $segs[$i], $tm)) {
             if ($tm[1] != "") {
                 $out = $out == "" ? $tm[1] : $out . "\n" . $tm[1];
             }
@@ -15747,7 +15747,7 @@ function api_history(string $body): string
             $role = "system";
         }
         $cm = [];
-        $content = preg_match('/"content"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $parts[$i], $cm) ? $cm[1] : "";
+        $content = preg_match('/"content"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $parts[$i], $cm) ? $cm[1] : "";
         $turn = "";
         $advance = 1;
         if ($role == "tool") {
@@ -15765,7 +15765,7 @@ function api_history(string $body): string
                     break;
                 }
                 $cm2 = [];
-                $c2 = preg_match('/"content"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/', $parts[$j], $cm2) ? $cm2[1] : "";
+                $c2 = preg_match('/"content"\s*:\s*"((?:[^"\\\\]|\\\\.)*+)"/', $parts[$j], $cm2) ? $cm2[1] : "";
                 if ($c2 == "") {
                     break;
                 }
@@ -16652,6 +16652,13 @@ function api_serve(int $port): void
         if ($c === false || $c === $srv) {
             continue;   // idle tick: stay serving
         }
+        // F667: a socket accepted from a non-blocking listener is non-blocking too, so fread can
+        // return just the headers while the body is still in flight - and the loop below used to
+        // BREAK on that empty read, truncating any body larger than one segment. The request then
+        // answered "no user content" as if the client had sent nothing (measured with a 10 KB
+        // prompt). The 8001 server had already been fixed this way (F53); this one had not.
+        stream_set_blocking($c, true);
+        stream_set_timeout($c, 2);
         $req = fread($c, 32768);
         // Keep reading until the headers are complete AND the declared body has arrived. A single
         // fread can return just the headers; closing with unread body bytes makes Windows send
@@ -16662,22 +16669,53 @@ function api_serve(int $port): void
         if ($hdrEnd !== false && preg_match('/Content-Length:\s*([0-9]+)/i', $req, $cm)) {
             $wantLen = (int) $cm[1];
         }
-        $guard = 0;
-        while ($hdrEnd === false || strlen($req) < $hdrEnd + 4 + $wantLen) {
-            if ($guard++ > 8) {
-                break;                      // ~256 KB cap: refuse to grow without bound
+        // F667: the old guard counted ITERATIONS (9 x 32768, but a socket read returns ~8 KB), so a
+        // body past ~80 KB was dropped with a connection reset and no response at all. Budget by
+        // BYTES, and refuse an over-large declared body by name before waiting for it.
+        $bodyCap = 4194304;
+        $bodyOver = ($wantLen > $bodyCap) ? 1 : 0;
+        $stalls = 0;
+        while ($bodyOver == 0 && ($hdrEnd === false || strlen($req) < $hdrEnd + 4 + $wantLen)) {
+            if (strlen($req) > $bodyCap) {
+                break;                      // declared length lies: stop growing
             }
             $more = fread($c, 32768);
             if ($more == "") {
-                break;
+                // On a blocking socket this is a timeout tick, not end of body - keep waiting
+                // (bounded) instead of truncating the request.
+                if (++$stalls > 6) {
+                    break;
+                }
+                continue;
             }
+            $stalls = 0;
             $req = $req . $more;
             $hdrEnd = strpos($req, "\r\n\r\n");
             if ($hdrEnd !== false && $wantLen == 0 && preg_match('/Content-Length:\s*([0-9]+)/i', $req, $cm)) {
                 $wantLen = (int) $cm[1];
+                $bodyOver = ($wantLen > $bodyCap) ? 1 : 0;
             }
         }
         $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
+        // F667: a body shorter than its own Content-Length must be a named refusal, never a quiet
+        // "no user content" (or, worse, a 200) that leaves the client guessing.
+        $bodyHave = $hdrEnd === false ? 0 : strlen($req) - $hdrEnd - 4;
+        $bodyShort = ($hdrEnd !== false && $wantLen > 0 && $bodyHave < $wantLen && $bodyOver == 0) ? 1 : 0;
+        if ($bodyOver == 1) {
+            $body = "";
+            // Drain what already arrived (bounded): closing a socket with unread data makes
+            // Windows send RST, which can destroy the 413 before the client reads it.
+            stream_set_blocking($c, false);
+            $drain = 0;
+            while ($drain < 65536) {
+                $d = fread($c, 8192);
+                if ($d === "" || $d === false) {
+                    break;
+                }
+                $drain += strlen($d);
+            }
+            stream_set_blocking($c, true);
+        }
         $body = api_json_compact($body);
         $body = api_schema_strip_vacuous_unevalitems($body);
         $body = api_schema_prefix_items($body);
@@ -16712,8 +16750,22 @@ function api_serve(int $port): void
         $payload = "";
         $ctype = "application/json";
         $status = "200 OK";
+        // F667: an over-large or incomplete body is a named refusal before anything else looks at
+        // it - otherwise the request reads as empty content and the client learns nothing.
+        if ($bodyOver == 1) {
+            $payload = "{\"error\":{\"message\":\"request body too large: Content-Length "
+                . $wantLen . " exceeds the " . $bodyCap . "-byte limit "
+                . "(send a smaller prompt; long conversations belong in several turns)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "413 Payload Too Large";
+        } else if ($bodyShort == 1) {
+            $payload = "{\"error\":{\"message\":\"request body incomplete: Content-Length "
+                . $wantLen . " but only " . $bodyHave . " bytes arrived "
+                . "(resend the request or send a smaller body)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "400 Bad Request";
         // Local chat page on "/" (FR-09.2). Plain form + fetch, no build step, no CDN.
-        if (strpos($req, "/v1/") === false && strpos($req, "GET /health") === false
+        } else if (strpos($req, "/v1/") === false && strpos($req, "GET /health") === false
             && strpos($req, "GET /spec_stats") === false && strpos($req, "GET /plugins") === false) {
             $ctype = "text/html; charset=utf-8";
             $payload = "<!doctype html><meta charset=utf-8><title>Kakashi</title>"
@@ -16840,7 +16892,10 @@ function api_serve(int $port): void
             $schBody = strpos($body, "\"json_schema\"") !== false
                 ? api_json_object_after($body, "schema") : "";
             if ($ids == "") {
+                // F667: this branch never set a status, so a request with no usable user turn was
+                // answered 200 with an error body - a client checking the status saw success.
                 $payload = "{\"error\":{\"message\":\"no user content\",\"type\":\"invalid_request_error\"}}";
+                $status = "400 Bad Request";
             } else if (preg_match('/"n"\s*:\s*[0-9][0-9]*\s*[,}]/', $body) == 1
                        && api_request_n($body) > 1
                        && (strpos($body, "\"tools\"") !== false
@@ -17984,7 +18039,7 @@ function api_serve(int $port): void
                     // F543: a root-level enum of strings is a JSON string, not bare text; quote the
                     // constrained answers. Any bare token left after removing the quoted literals
                     // means the enum also carries numbers/booleans, which stay unquoted.
-                    $bare = preg_replace('/"(?:[^"\\\\]|\\\\.)*"/', '', $em[1]);
+                    $bare = preg_replace('/"(?:[^"\\\\]|\\\\.)*+"/', '', $em[1]);
                     $bare = str_replace(",", "", $bare);
                     $bare = str_replace(" ", "", $bare);
                     $bare = str_replace("\n", "", $bare);
@@ -18000,7 +18055,7 @@ function api_serve(int $port): void
                         $enumOut = api_constrained($ids, $evals, 24, $prefixCache);
                     }
                 } else if ($enumFlat == 1 && strpos($body, "\"properties\"") === false
-                    && preg_match('/"schema"\s*:\s*\{[^{}]*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
+                    && preg_match('/"schema"\s*:\s*\{[^{}]*"const"\s*:\s*("(?:[^"\\\\]|\\\\.)*+"|-?[0-9]+(?:\.[0-9]+)?|true|false|null)/',
                         api_schema_strip_root_not($body), $cm) == 1) {
                     // F543: a ROOT-level const is a one-value enum; the direct-child regex keeps a
                     // const nested in items/properties off this branch (top_str_const_ok regressed
