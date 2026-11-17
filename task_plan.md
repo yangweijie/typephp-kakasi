@@ -2564,3 +2564,8 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 **做法**：`value_ok(name, sse_text(...))` 对五个可服务用例按 schema 验值（enum 成员、界内整数、倍数、下界），三种 SSE 方言统一抽取；`value_ok` 纳入收集集与两两比对（值契约不一致也算分歧）。
 **负向对照**：单元级喂违约值（10 / 4 / "x" / 非 JSON）全部判 False，三方言拼接正确。
 **过程**：首版把 Responses 的字符串 `delta` 当 dict ⇒ 收集器崩溃即红；修复后 f663 全绿（8000 三传输 + 8001 各 13/13）。
+
+### F664（2026-11-17）：8001 弃流释放槽位的活体门 `par_abandon.py`
+**做法**：裸 socket 发长/短两段流，读少量即以 `SO_LINGER=0` 关闭（RST），每次之后一对并发短流须在 6 s 内都被服务；服务端日志可读到 `reason=client-gone`。
+**误读记录**：首版用 `http.client` 关闭测得 ~9 s 恢复，实为 400 token 自然生成时长；裸 socket + RST 实测 0.2 s。
+**接线**：`gate_live` 的 `PARAB_RC` 入闸；`check_gates` live 段要求 `PAR-ABANDON: PASS`。

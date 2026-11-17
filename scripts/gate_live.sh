@@ -130,6 +130,11 @@ fi
 python "$E/tests/par_smoke.py" 8001 > "$E/par_smoke_$TAG.log" 2>&1
 PAR_RC=$?
 echo "PAR_EXIT=$PAR_RC" >> "$E/par_smoke_$TAG.log"
+# F664: a client that walks away mid-stream must hand its slot back - otherwise the next concurrent
+# caller pays for a stream nobody reads.
+python "$E/tests/par_abandon.py" 8001 > "$E/par_abandon_$TAG.log" 2>&1
+PARAB_RC=$?
+echo "PARAB_EXIT=$PARAB_RC" >> "$E/par_abandon_$TAG.log"
 python "$E/tests/fairness_test.py" 8001 > "$E/fairness_$TAG.log" 2>&1
 FAIR_RC=$?
 echo "FAIR_EXIT=$FAIR_RC" >> "$E/fairness_$TAG.log"
@@ -162,8 +167,9 @@ if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ] \
    || [ "${PARITY8_RC:-1}" != "0" ] || [ "${PARITY1_RC:-1}" != "0" ] || [ "${PARITYC_RC:-1}" != "0" ] \
    || [ "${CACHEP_RC:-1}" != "0" ] \
    || [ "${PARITYA_RC:-1}" != "0" ] || [ "${PARITYR_RC:-1}" != "0" ] \
-   || [ "${PARITYCA_RC:-1}" != "0" ] || [ "${PARITYCR_RC:-1}" != "0" ]; then
-  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1} paritya=${PARITYA_RC:-1} parityr=${PARITYR_RC:-1} parityca=${PARITYCA_RC:-1} paritycr=${PARITYCR_RC:-1}"
+   || [ "${PARITYCA_RC:-1}" != "0" ] || [ "${PARITYCR_RC:-1}" != "0" ] \
+   || [ "${PARAB_RC:-1}" != "0" ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1} paritya=${PARITYA_RC:-1} parityr=${PARITYR_RC:-1} parityca=${PARITYCA_RC:-1} paritycr=${PARITYCR_RC:-1} parab=${PARAB_RC:-1}"
   exit 1
 fi
 echo GATE_LIVE_DONE tag=$TAG

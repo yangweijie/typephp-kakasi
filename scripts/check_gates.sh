@@ -66,6 +66,12 @@ if [ -z "$PLOG" ] || ! grep -q '^PAR SMOKE: PASS' "$PLOG" || ! grep -q 'PAR_EXIT
   [ -n "$PLOG" ] && grep -m 3 'FAIL\|PAR SMOKE\|PAR_EXIT' "$PLOG"
   exit 1
 fi
+ABLOG=$(ls -t engine/par_abandon_*.log 2>/dev/null | head -1)
+if [ -z "$ABLOG" ] || ! grep -q '^PAR-ABANDON: PASS' "$ABLOG"; then
+  echo "PARAB_RED log=$(basename "${ABLOG:-none}")"
+  [ -n "$ABLOG" ] && grep -m 3 'PAR-ABANDON' "$ABLOG"
+  exit 1
+fi
 FLOG=$(ls -t engine/fairness_*.log 2>/dev/null | head -1)
 if [ -z "$FLOG" ] || ! grep -q 'FAIRNESS: PASS' "$FLOG"; then
   echo "FAIR_RED log=$(basename "${FLOG:-none}")"

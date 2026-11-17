@@ -5585,3 +5585,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **过程**：首版 `sse_text` 把 Responses 的 `delta`（字符串）当 dict 用 ⇒ `AttributeError` 当场暴露（收集器崩溃即红），修成 `isinstance(d, dict)` 分支后三方言齐绿。
 **实测（f663）**：8000 三传输、8001 各 13/13，`value=True` 全绿（`bounds_ok`→`{"n":1}`、`mult_unb_ok`→`{"n":1000002}`）；两份 `tcompare` `PARITY: PASS (13 cases agree)`；`check_gates` exit 0。
 **梯（f663）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、par/fair 0、scaling 1.523×、哨兵 0、`check_gates 198/0` exit 0。
+
+## F664（2026-11-17）：8001 的"弃流释放槽位"第一次有活体门
+**缺口**：8001 两槽共享一个引擎，客户端中途关连接是**正常释放路径**（服务端记 `reason=client-gone`），但此前没有任何活体门：若槽位泄漏，下一对并发请求里的第二个会收到 503，替一个没人读的流买单。
+**机制（读码 + 实测）**：释放发生在"下一次写失败"时（`$w < 1 ⇒ srs=4`）。客户端停止读取后缓冲区有未读数据 ⇒ close 触发 RST ⇒ 服务端下一次写失败。实测服务端日志为 `SESSION par slot=A tokens=0/1 reason=client-gone`，**不是**推断。
+**过程中的一次误读（记录在案）**：首版探针用 `http.client` 读 180 字节即关，测得恢复要 ~9 s——那正是 400 token 生成的自然结束时间，看起来像"没检测"；换成裸 socket + `SO_LINGER=0` 并在服务端日志里看到 `client-gone` 后，确认检测在 **0.1–0.2 s** 内发生。⇒ **"恢复慢"必须先排除探针自身的关闭语义**，再怀疑服务端。
+**门**：`engine/tests/par_abandon.py`——长（400 token）与短（48 token）两段弃流各一次，每次之后**一对并发短流必须都被服务**（轮询 6 s 窗口）；`gate_live` 的 `PARAB_RC` 入闸；`check_gates` 要求最新 `par_abandon_*` 为 `PAR-ABANDON: PASS`。
+**实测（f664）**：`long=1 freed_after=0.2s short=1 freed_after=0.2s`；梯子其余不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.549×、哨兵 0、`check_gates 198/0` exit 0）。
