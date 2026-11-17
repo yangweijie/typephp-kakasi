@@ -19,8 +19,17 @@ if [ ! -f "$EXE" ]; then
   exit 2
 fi
 OUT=dist/typephp-kakasi-$VER-win64
-mkdir -p "$OUT" || exit 2
+mkdir -p "$OUT/plugins" || exit 2
 cp "$EXE" "$OUT/kakasi_engine_sycl.exe" || exit 2
+# F656: the engine resolves vendor profiles relative to the running image, so the file has to ship
+# next to the binary or a packaged install silently runs on shipped defaults.
+PROFILES=plugins/vendor_profiles.txt
+if [ ! -f "$PROFILES" ]; then
+  echo "NO_PROFILES $PROFILES"
+  exit 2
+fi
+cp "$PROFILES" "$OUT/plugins/vendor_profiles.txt" || exit 2
+PROFILES_SUM=$(sha256sum "$PROFILES" | cut -d' ' -f1)
 HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 SUM=$(sha256sum "$EXE" | cut -d' ' -f1)
 SIZE=$(stat -c %s "$EXE" 2>/dev/null)
@@ -32,11 +41,18 @@ SIZE=$(stat -c %s "$EXE" 2>/dev/null)
   echo "built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "sha256=$SUM"
   echo "size=$SIZE"
+  echo "profiles=plugins/vendor_profiles.txt"
+  echo "profiles_sha256=$PROFILES_SUM"
 } > "$OUT/manifest.txt" || exit 2
 # The packed copy must be the binary the manifest describes.
 PACKED=$(sha256sum "$OUT/kakasi_engine_sycl.exe" | cut -d' ' -f1)
 if [ "$PACKED" != "$SUM" ]; then
   echo "PACKAGE_HASH_MISMATCH packed=$PACKED built=$SUM"
+  exit 1
+fi
+PACKED_PROFILES=$(sha256sum "$OUT/plugins/vendor_profiles.txt" | cut -d' ' -f1)
+if [ "$PACKED_PROFILES" != "$PROFILES_SUM" ]; then
+  echo "PACKAGE_PROFILES_MISMATCH packed=$PACKED_PROFILES built=$PROFILES_SUM"
   exit 1
 fi
 echo "PACKAGE_OK dir=$OUT version=$VER sha256=$SUM size=$SIZE"

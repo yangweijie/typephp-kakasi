@@ -237,6 +237,21 @@ function api_engine_version(): string
 // which profile was applied, so a tuning file that never matched is visible instead of silent.
 function api_plugins_path(): string
 {
+    // F656: this used to be the build machine's absolute checkout path, so a packaged binary looked
+    // for the profile file on a machine that no longer had it - and said nothing. Resolve from the
+    // running image instead: <exe>/plugins/... for a packaged tree, then <exe>/../../plugins/... for
+    // the development layout (the binary lives under engine/build), the absolute path last.
+    $dir = backend_exe_dir();
+    if ($dir != "") {
+        $p = $dir . "/plugins/vendor_profiles.txt";
+        if (file_exists($p)) {
+            return $p;
+        }
+        $p2 = $dir . "/../../plugins/vendor_profiles.txt";
+        if (file_exists($p2)) {
+            return $p2;
+        }
+    }
     return "C:/git/c/typephp-kakasi/plugins/vendor_profiles.txt";
 }
 
@@ -23126,6 +23141,21 @@ function main(): void
         echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . $plOk6 . " width=" . $plWOk
             . " cnt.mixed=" . $plOkN . " cnt.valid=" . $plOkN2 . " sel=" . $plA
             . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . " frac=" . $plF . "\n";
+    }
+
+    // F656: the profile file must be located relative to the running image, not at a path baked into
+    // the build machine's checkout - otherwise a packaged binary silently runs on shipped defaults.
+    // Assert the resolution actually lands on the file the selector reads (three profiles).
+    $f656Path = api_plugins_path();
+    $f656Dir = backend_exe_dir();
+    $f656Txt = file_exists($f656Path) ? file_get_contents($f656Path) : "";
+    $f656Ok = ($f656Dir != "" && strpos($f656Path, "vendor_profiles.txt") !== false
+        && $f656Txt != "" && api_plugins_count($f656Txt) == 3) ? 1 : 0;
+    echo "F656 path=" . $f656Path . " exe_dir=" . $f656Dir . " profiles=" . api_plugins_count($f656Txt) . "\n";
+    if ($f656Ok == 1) {
+        echo "F656: PASS (vendor profiles resolved from the running image)\n";
+    } else {
+        echo "F656: FAIL path=" . $f656Path . " exe_dir=" . $f656Dir . "\n";
     }
 
     // SCHEMA-STRUCT (F426): the structural keyword set. dependentRequired/propertyNames have honour

@@ -2957,3 +2957,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 ## F655（2026-11-17）：/plugins 字段契约门（收口）
 - **门**：`plugins-field-contract`/`par-field-contract` 断言 `kv_f16∈{0,1}`、`wprec_intent∈{-1,0,1}`、`device` 非空串、`split_intent` 含字符串 backend/layer。
 - **梯（f655 gate_live）**：SMOKE/PRETTY 各 **197/0**（+1）、par/fair 0、scaling 1.539×、哨兵 0。
+
+## F656（2026-11-17）：档案路径改为镜像相对解析 + 打包自带档案
+- **缺陷**：`api_plugins_path()` 写死 `C:/git/c/typephp-kakasi/...`（开发机绝对路径，别处静默回落默认）；`package.sh` 不打包档案。
+- **修**：新增 `backend_exe_dir()`（`GetModuleFileNameA`）；解析顺序 `<exe>/plugins` → `<exe>/../../plugins` → 绝对兜底；`package.sh` 复制档案进包并在 manifest 记 `profiles`/`profiles_sha256`（含打包副本哈希复核）。
+- **验证**：自检 `F656: PASS`（打印 exe 相对路径 + profiles=3）；**包件判别性实测**：dist 复制到 `/c/git/c/pkgtest` 跑 `/plugins`=profiles:3，再把仓库档案移走重跑仍 profiles:3 ⇒ 读的是包内文件。
+- **梯（f656）**：BUILD_OK、0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 197/0、par/fair 0、scaling 1.491×、哨兵 0、`check_gates 198/0`、PACKAGE_OK+ARCHIVE_OK。

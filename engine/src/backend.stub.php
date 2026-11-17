@@ -11,3 +11,6 @@ function backend_last_error(): string {}
 function backend_validate(int $index): bool {}
 
 function backend_matmul_maxerr(int $index, int $n): float {}
+
+// F656: directory of the running binary ("" when it cannot be determined).
+function backend_exe_dir(): string {}

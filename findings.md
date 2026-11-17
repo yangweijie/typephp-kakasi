@@ -5507,3 +5507,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：8000/8001 各加 `plugins-field-contract` / `par-field-contract`：`kv_f16 ∈ {0,1}`、`wprec_intent ∈ {-1,0,1}`、`device` 为非空字符串、`split_intent` 是含字符串 `backend`/`layer` 的对象。⇒ 连同先前各门，`/plugins` 的**全部字段**现在都有一个"断言其值"的门，而不只是"断言其存在"。
 **结果（`f655` gate_live）**：`SMOKE 197/0`、`SMOKE-PRETTY 197/0`（较 196 各 +1）、`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling 1.539×、哨兵 0；两条新门 PASS。
 **记法**：**同一类缺口逐个补完之后，要补一条"契约级"的伞门**——单字段门再好，也可能漏掉下一个新字段；把"类型/取值域"写成一条契约断言，新字段加入时更容易被这条伞门顺手覆盖（或至少迫使作者显式决定它归谁管）。
+
+## F656（2026-11-17）：档案路径写死开发机绝对路径 ⇒ 打包产物永远读不到档案；包内也不带档案
+**缺陷（两条）**：①`api_plugins_path()` 返回 `C:/git/c/typephp-kakasi/plugins/vendor_profiles.txt`——**构建机的绝对路径**。产物一旦离开这台机器，档案查找必然失败，而失败是**静默**的（`api_plugins_text` 返回空 ⇒ 运行出厂默认），正是"字段/文件说一套、实际另一套"的典型。②`scripts/package.sh` 只装 `exe + manifest.txt`，既不带档案、也不在 manifest 记录它，所以**包本身也不可能自洽**。
+**修**：①`backend.cc` 加 `php_backend_exe_dir()`（Windows `GetModuleFileNameA` 取运行镜像目录），`api_plugins_path()` 按 **`<exe>/plugins/…`（打包布局）→ `<exe>/../../plugins/…`（开发布局，exe 在 engine/build）→ 原绝对路径兜底** 解析；②`package.sh` 把 `plugins/vendor_profiles.txt` 复制进包里并写入 manifest（`profiles=` 与 `profiles_sha256=`，且对**打包副本**再次校验哈希）。
+**门**：自检 `F656` 断言 `backend_exe_dir() != ""`、解析出的路径含 `vendor_profiles.txt`、文件存在且 `api_plugins_count == 3`。实测打印 `path=…engine/build/../../plugins/vendor_profiles.txt exe_dir=…engine/build profiles=3` ⇒ 走的是 **exe 相对分支**，不是绝对兜底。
+**判别性验证（真跑打包件）**：把 `dist/` 整个复制到**另一个目录** `/c/git/c/pkgtest` 启动 exe 查 `/plugins` ⇒ `profiles:3, active:intel-arc`。再把**仓库里的档案临时移走**（`mv plugins/vendor_profiles.txt /tmp/`）重跑同一探针，**仍是 `profiles:3`** ⇒ 证明它读的是**包内的** `<exe>/plugins/vendor_profiles.txt`，而不是仍存在于开发机的绝对路径；随后恢复文件（16 行）。包产物实测含三件：exe、manifest（双哈希）、`plugins/vendor_profiles.txt`。
+**结果（`f656` 梯）**：BUILD_OK；自检 0 FAIL（含 `F656: PASS`）；四 harness `CHECK_EXIT=0`；SMOKE/PRETTY 各 **197/0**；par/fair 0、scaling 1.491×、哨兵 0；`check_gates 198/0`；`PACKAGE_OK` + `ARCHIVE_OK`。
+**记法**：**"开发机能跑"与"产物能跑"是两条验收线**——凡把运行期要读的文件路径**写死成开发机绝对路径**，就等于让打包件在别处静默降级。判别性做法：**把仓库那份挪走再跑包件**，读数不变才算真读了包内文件（否则"包里有文件"和"实际读了包里文件"分不清）。

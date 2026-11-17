@@ -2,6 +2,9 @@
 #include <phpx.h>
 
 #include <string>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace kakasi {
 int device_count();
@@ -31,4 +34,20 @@ php::Bool php_backend_validate(php::Int index) {
 
 php::Float php_backend_matmul_maxerr(php::Int index, php::Int n) {
     return php::Float(kakasi::matmul_maxerr((int) index, (int) n));
+}
+
+// F656: the running image's own directory, so files the engine reads at start-up (vendor profiles)
+// can sit next to the binary instead of at a path baked into the build machine's checkout.
+php::Str php_backend_exe_dir() {
+#ifdef _WIN32
+    char buf[MAX_PATH];
+    DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return php::Str("");
+    std::string p(buf, (size_t) n);
+    size_t slash = p.find_last_of("\\/");
+    if (slash == std::string::npos) return php::Str("");
+    return php::Str(p.substr(0, slash));
+#else
+    return php::Str("");
+#endif
 }
