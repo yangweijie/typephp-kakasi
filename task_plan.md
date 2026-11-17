@@ -2569,3 +2569,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 **做法**：裸 socket 发长/短两段流，读少量即以 `SO_LINGER=0` 关闭（RST），每次之后一对并发短流须在 6 s 内都被服务；服务端日志可读到 `reason=client-gone`。
 **误读记录**：首版用 `http.client` 关闭测得 ~9 s 恢复，实为 400 token 自然生成时长；裸 socket + RST 实测 0.2 s。
 **接线**：`gate_live` 的 `PARAB_RC` 入闸；`check_gates` live 段要求 `PAR-ABANDON: PASS`。
+
+### F665（2026-11-17）：缓存门覆盖 Anthropic 非流式出口
+**做法**：`cache_persist.py` 增一段 `/v1/messages` 冷/热（独立文本、长 prompt），断言 `anth_cold<32`、`anth_warm>32`、两次正文相同。
+**误判记录**：共用 chat 文本 ⇒ "冷"仅 209 命中（前缀共享）；短 prompt ⇒ 不存（`promptN>=64` 规则）。

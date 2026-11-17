@@ -90,6 +90,18 @@ def last_cache(since):
     return None
 
 
+def ask_anth(prompt):
+    """F665: /v1/messages has its own cache call site (a different branch from chat), so reuse there
+    is a separate claim - it is measured, not assumed."""
+    body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 24}
+    req = urllib.request.Request("http://127.0.0.1:%d/v1/messages" % PORT,
+                                 data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as f:
+        resp = json.loads(f.read().decode())
+    return resp["content"][0]["text"]
+
+
 def ask(prompt, use_cache=None):
     body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 24, "temperature": 0}
     if use_cache is not None:
@@ -130,6 +142,15 @@ def main():
     cx = last_cache(since)
     y = ask(longer, use_cache=0)
     cy = last_cache(since)
+    # F665: the Anthropic exit has its own cache call site; a cold call there stores, the repeat
+    # must reuse and answer identically.
+    anth_prompt = ("Ledger sheet %d: the quarter closes with a column for freight, a column for "
+                   "duty paid, and a remark naming whoever countersigned the entry. " % int(time.time() + 1))
+    anth_prompt = anth_prompt * 5 + "Summarize the ledger sheet in one sentence."
+    d1 = ask_anth(anth_prompt)
+    cd1 = last_cache(since)
+    d2 = ask_anth(anth_prompt)
+    cd2 = last_cache(since)
     stop(p)
 
     same_ab = a == b
@@ -137,18 +158,22 @@ def main():
     same_xy = x == y
     ok = (c1 == 0 and c2 is not None and c2 > 32 and c3 is not None and c3 >= 32
           and same_ab and same_ac
-          and cx is not None and cx > 32 and cy == -2 and same_xy)
+          and cx is not None and cx > 32 and cy == -2 and same_xy
+          and cd1 is not None and cd1 < 32 and cd2 is not None and cd2 > 32 and d1 == d2)
     print("CACHE-PERSIST cold=%s warm=%s restart=%s partial=%s uncached=%s chars=%d"
           % (c1, c2, c3, cx, cy, len(prompt)))
+    print("CACHE-PERSIST anth_cold=%s anth_warm=%s anth_same=%d"
+          % (cd1, cd2, d1 == d2))
     print("CACHE-PERSIST same_process=%d after_restart=%d partial_matches_uncached=%d"
           % (same_ab, same_ac, same_xy))
     if ok:
-        print("CACHE-PERSIST: PASS (cold store, warm reuse, the same reuse after a restart, and a "
-              "partial hit answering exactly like the uncached path)")
+        print("CACHE-PERSIST: PASS (cold store, warm reuse, the same reuse after a restart, a "
+              "partial hit answering exactly like the uncached path, and the Anthropic exit "
+              "reusing too)")
         return 0
-    print("CACHE-PERSIST: FAIL cold=%r warm=%r restart=%r partial=%r uncached=%r "
+    print("CACHE-PERSIST: FAIL cold=%r warm=%r restart=%r partial=%r uncached=%r anth=(%r,%r) "
           "same_process=%d after_restart=%d partial_matches_uncached=%d"
-          % (c1, c2, c3, cx, cy, same_ab, same_ac, same_xy))
+          % (c1, c2, c3, cx, cy, cd1, cd2, same_ab, same_ac, same_xy))
     return 1
 
 

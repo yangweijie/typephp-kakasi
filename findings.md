@@ -5592,3 +5592,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **过程中的一次误读（记录在案）**：首版探针用 `http.client` 读 180 字节即关，测得恢复要 ~9 s——那正是 400 token 生成的自然结束时间，看起来像"没检测"；换成裸 socket + `SO_LINGER=0` 并在服务端日志里看到 `client-gone` 后，确认检测在 **0.1–0.2 s** 内发生。⇒ **"恢复慢"必须先排除探针自身的关闭语义**，再怀疑服务端。
 **门**：`engine/tests/par_abandon.py`——长（400 token）与短（48 token）两段弃流各一次，每次之后**一对并发短流必须都被服务**（轮询 6 s 窗口）；`gate_live` 的 `PARAB_RC` 入闸；`check_gates` 要求最新 `par_abandon_*` 为 `PAR-ABANDON: PASS`。
 **实测（f664）**：`long=1 freed_after=0.2s short=1 freed_after=0.2s`；梯子其余不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.549×、哨兵 0、`check_gates 198/0` exit 0）。
+
+### F665（2026-11-17）：缓存在 **Anthropic 出口**也有独立调用点——已用同一条门覆盖
+**为什么不是"顺带"**：`/v1/messages` 的非流式分支有自己的 `model_cache_prefill`/`model_cache_store` 调用（与 chat 分支不同的一处代码）。共享的是底层缓存，不是接线；F634 的教训正是"每出口都要各自验证"。
+**做法**：`cache_persist.py` 增加一段 Anthropic 非流式：**独立文本**的 prompt（换体裁与非随机串），冷 `cache<32`（不构成有意义的命中）、热 `>32`、两次正文相同。
+**两个自找的误判（都当场被门抓住）**：①首版让 anth 与 chat 共用同一段文本 ⇒ `anth_cold=209`——chat 存下的条目与 anth 的前缀足足重合 209 个 token，"冷"其实并不冷；改成独立文本后 `anth_cold=0`。②更早一次手测用**短 prompt**（<64 token）得到 `cache=0`，差点记成缺陷；实为 `api_cache_should_store` 的 `promptN >= 64` 规则（按设计不存短前缀）⇒ 夹具必须用长文本。
+**实测（f665）**：`cold=0 warm=214 restart=214 partial=209 uncached=-2 anth_cold=0 anth_warm=214`、`anth_same=1`；其余基线不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.571×、哨兵 0、`check_gates 198/0` exit 0）。
