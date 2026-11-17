@@ -167,6 +167,12 @@ def main():
     rf = pj.get("residency_frac")
     check("par-residency-frac", isinstance(rf, (int, float)) and 0 < rf <= 1
           and isinstance(pj.get("frac_intent"), str), str(pj))
+    # F654 parity: honest split reporting on the cooperative server too.
+    sp = pj.get("attn_split_p")
+    check("par-split-fields", isinstance(sp, int) and sp >= 1
+          and isinstance(pj.get("split_state"), str)
+          and pj.get("split_state", "").startswith("split")
+          and "split_backend" not in pj, str(pj))
 
     # F636: the cooperative server applies the same parameter set and schema-keyword rules as 8000.
     def par_refusal(body):

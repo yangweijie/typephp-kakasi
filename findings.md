@@ -5493,3 +5493,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修**：8000/8001 各加一条 `*-residency-frac`，断言**值本身**——`residency_frac` 是 (0, 1] 的数值（出厂 0.55），且 `frac_intent` 是字符串（随船档案不给意图 ⇒ 空串）。
 **结果（`f653` gate_live）**：`SMOKE 195/0`、`SMOKE-PRETTY 195/0`（较 194 各 +1，正是新门）、`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling 1.539×、哨兵 0；`plugins-residency-frac` 与 `par-residency-frac` 均 PASS；`check_gates 198/0`。
 **记法**：**"每个新字段都要有断言它的门，且断的是值不是键"**——只断言键名存在，字段报错值也照样绿。基线数字随门数增长（194→195），这是**诚实增长**，不是"绿得更久"。
+
+## F654（2026-11-17）：`split_backend` 报的不是后端——F649 同型缺陷的第二例
+**缺陷**：`/plugins` 的 `"split_backend"` 取 `model_attn_split_p()`，那是**注意力 split-KV 的分块数**（1=未分），与"层切分的目标后端索引"毫无关系；而紧邻的 `split_intent.backend` 才是档案里的后端索引。读者会把两个"backend"当成同一量对照——与 F649 的 `budget_gib`（报 KV 缓存量）完全同型。
+**旁证（顺手修）**：`model_split_state()` 的格式串写死 `primary=b?`，无论状态如何都打印一个问号，等于把"主设备"这个信息丢了——改为 `primary=b0`（本引擎 prefill 恒在 backend 0，切分只影响 `[layer, L)` 段）。
+**修**：报告键改名 `split_backend` → `attn_split_p`（名副其实），并新增 `split_state`（引擎真实切分状态串，无切分时为 `split off`）；`split_intent` 保持（档案意图）。**档案第 8 字段仍叫 `split_backend`**——那里它就是后端索引，是对的，不能跟着改。
+**门**：8000/8001 各加 `*-split-fields`：`attn_split_p` 为 ≥1 的整数、`split_state` 以 `split` 开头、且**旧键 `split_backend` 不得再出现**（防回潮）。
+**结果（`f654` 梯）**：BUILD_OK；自检 **914 行 0 FAIL**；四 harness `CHECK_EXIT=0`（bounds PASS）；**SMOKE 与 SMOKE-PRETTY 各 196/0**；par/fair 0、scaling 1.581×、哨兵 0；`plugins-residency-frac`/`plugins-split-fields`/`par-residency-frac`/`par-split-fields` 四门全 PASS；`check_gates 198/0`。
+**记法**：**"改名"必须与"防回潮"同批**——只改键名而不在门里断言"旧键不存在"，下一次重构就可能悄悄把旧名带回来（F649 的 `*-kv-cache-naming` 用了同一手法，本轮沿用并显式化）。

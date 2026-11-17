@@ -1220,7 +1220,7 @@ void set_split(int backend, int layer) {
 std::string split_state() {
     if (g_split_layer < 0 || g_split_backend < 0) return "split off";
     char buf[160];
-    std::snprintf(buf, sizeof(buf), "split primary=b? secondary=b%d layers=[%d,%d)",
+    std::snprintf(buf, sizeof(buf), "split primary=b0 secondary=b%d layers=[%d,%d)",
                   g_split_backend, g_split_layer, (int) gguf::meta_num("qwen2.block_count"));
     return std::string(buf);
 }

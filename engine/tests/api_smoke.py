@@ -98,6 +98,14 @@ def main():
     rf = pl.get("residency_frac")
     check("plugins-residency-frac", isinstance(rf, (int, float)) and 0 < rf <= 1
           and isinstance(pl.get("frac_intent"), str), str(pl))
+    # F654: split_backend used to report the attention chunk count, not a backend. Assert the honest
+    # pair instead: attn_split_p is an integer >= 1 (1 = attention not split) and split_state says
+    # which split mode the engine is in ("split off" when none).
+    sp = pl.get("attn_split_p")
+    check("plugins-split-fields", isinstance(sp, int) and sp >= 1
+          and isinstance(pl.get("split_state"), str)
+          and pl.get("split_state", "").startswith("split")
+          and "split_backend" not in pl, str(pl))
 
     with urllib.request.urlopen(BASE + "/v1/models", timeout=60) as r:
         models = json.loads(r.read().decode())

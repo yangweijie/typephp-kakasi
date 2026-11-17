@@ -2947,3 +2947,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **缺口**：`/plugins` 的 `residency_frac` 无任何活体断言，`frac_intent` 仅在期望值计算中被顺带引用。
 - **门**：8000/8001 各加 `*-residency-frac`，断言 `residency_frac ∈ (0,1]` 且 `frac_intent` 为字符串。
 - **梯（f653 gate_live）**：SMOKE/PRETTY 各 **195/0**（+1）、par/fair 0、scaling 1.539×、哨兵 0；`check_gates 198/0`。
+
+## F654（2026-11-17）：split 字段正名 + split_state + 防回潮门
+- **缺陷**：`split_backend` 实报 `model_attn_split_p()`（注意力分块数）；`model_split_state()` 格式串写死 `primary=b?`。
+- **修**：键名改 `attn_split_p`，新增 `split_state`（引擎真实状态串）；格式串改 `primary=b0`；档案第 8 字段名不变（那里确为后端索引）。
+- **门**：`*-split-fields` 断言 `attn_split_p>=1`、`split_state` 以 `split` 开头、**`split_backend` 键必须不存在**。
+- **梯（f654）**：BUILD_OK、自检 914 行 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 **196/0**、par/fair 0、scaling 1.581×、哨兵 0、`check_gates 198/0`。

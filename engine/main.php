@@ -400,7 +400,11 @@ function api_plugins_json(): string
         . ",\"residency_enabled\":" . ($resEn == "1" ? 1 : 0)
         . ",\"residency_budget_gib\":" . ($resEn == "1" ? $resBudJson : "null")
         . ",\"device_gib\":" . ($devJson != "" ? $devJson : "null")
-        . ",\"split_backend\":" . model_attn_split_p() . ",\"split_intent\":{\"backend\":\"" . $sb . "\",\"layer\":\"" . $sl . "\"}"
+        // F654: split_backend reported model_attn_split_p() - the attention chunk count - not a
+        // backend index, the same mislabelling F649 fixed for budget_gib. Name the quantity for what
+        // it is, and expose the engine's real layer-split state (which also reports "split off").
+        . ",\"attn_split_p\":" . model_attn_split_p() . ",\"split_state\":\"" . api_esc(model_split_state()) . "\""
+        . ",\"split_intent\":{\"backend\":\"" . $sb . "\",\"layer\":\"" . $sl . "\"}"
         . ",\"residency_frac\":" . model_residency_frac() . ",\"frac_intent\":\"" . (isset($st[9]) ? $st[9] : "") . "\""
         . ",\"applied\":" . $applied . "}";
 }
