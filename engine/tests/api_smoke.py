@@ -93,6 +93,11 @@ def main():
     # model_residency_report before any generation has run). So no live cold gate here; the
     # three-state contract is covered by the selftest and the parity warm/source gates below.
     check("plugins-kv-cache-naming", "kv_cache_gib" in pl and "budget_gib" not in pl, str(pl))
+    # F653: assert the resident share's VALUE, not just that the key exists. It must be a fraction
+    # in (0, 1]; the shipped profile sets no frac intent, so frac_intent stays the empty string.
+    rf = pl.get("residency_frac")
+    check("plugins-residency-frac", isinstance(rf, (int, float)) and 0 < rf <= 1
+          and isinstance(pl.get("frac_intent"), str), str(pl))
 
     with urllib.request.urlopen(BASE + "/v1/models", timeout=60) as r:
         models = json.loads(r.read().decode())

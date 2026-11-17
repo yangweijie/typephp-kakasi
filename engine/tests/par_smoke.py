@@ -163,6 +163,10 @@ def main():
     # before any /plugins read can observe it. The three-state contract is proven by the
     # selftest orch[frac] gate which reads the report before any generation.
     check("par-kv-cache-naming", "kv_cache_gib" in pj and "budget_gib" not in pj, str(pj))
+    # F653 parity: the resident share's value must be a fraction in (0, 1] and the intent a string.
+    rf = pj.get("residency_frac")
+    check("par-residency-frac", isinstance(rf, (int, float)) and 0 < rf <= 1
+          and isinstance(pj.get("frac_intent"), str), str(pj))
 
     # F636: the cooperative server applies the same parameter set and schema-keyword rules as 8000.
     def par_refusal(body):

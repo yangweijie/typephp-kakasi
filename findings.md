@@ -5487,3 +5487,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **负向对照（本轮实测，不是推理）**：仅把顺序改回旧的（保留 `queue_for` 守卫），重建后该门输出 `step=8948 bad=-1 lenA=2 lenB=3` ⇒ **`F652: FAIL`**；恢复修复后同一门输出 `lenB=2` ⇒ **`F652: PASS`**。⇒ **新门在旧代码上复现了已知缺陷**，这是本仓"新判据必须能在旧证据上复现已知失败"要求的当面执行。
 **结果（`f652` 梯）**：`BUILD_OK`；自检 912 行 **0 FAIL**（`F652: PASS`）；四 harness `CHECK_EXIT=0`（bounds `VERDICT: PASS`）；SMOKE 与 SMOKE-PRETTY 各 **194/0**；par/fair 0、scaling **1.554×**、哨兵 0；`check_gates 198/0` exit 0。
 **记法**：**"可从接口构造的失败"比"理论失败"值钱**——先前 F261 把此缺陷判为"PHP 不可构造、属 native 单测范畴"，而实际上只要允许传入一个越界 backend id，失败路径就从 PHP 可达；前提是先给越界 id 一个**良定义**的返回（否则构造手段本身是 UB）。**修缺陷时顺手把"构造手段"变安全，是让门成为可能的那一步**。
+
+## F653（2026-11-17）：给 `residency_frac` 补活体门——字段"存在"不等于"被断言"
+**缺口**：F648 给 `/plugins` 加了 `residency_frac`/`frac_intent`，F649 加了 `residency_enabled`/`residency_budget_gib`/`device_gib`，但活体门只覆盖了后三者（`*-kv-cache-naming` 断言键名、`*-residency-warm` 断言数值、`*-budget-same-source` 断言一致性）；**`residency_frac` 本体没有任何断言**，`frac_intent` 只在计算期望值时被顺带读到。这与当初 `budget_gib` 的处境完全同型（字段有、文档提、门没有 ⇒ 错了也没人知道）。
+**修**：8000/8001 各加一条 `*-residency-frac`，断言**值本身**——`residency_frac` 是 (0, 1] 的数值（出厂 0.55），且 `frac_intent` 是字符串（随船档案不给意图 ⇒ 空串）。
+**结果（`f653` gate_live）**：`SMOKE 195/0`、`SMOKE-PRETTY 195/0`（较 194 各 +1，正是新门）、`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling 1.539×、哨兵 0；`plugins-residency-frac` 与 `par-residency-frac` 均 PASS；`check_gates 198/0`。
+**记法**：**"每个新字段都要有断言它的门，且断的是值不是键"**——只断言键名存在，字段报错值也照样绿。基线数字随门数增长（194→195），这是**诚实增长**，不是"绿得更久"。

@@ -2942,3 +2942,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **门**：自检 `F652` —— 有效步后记 `lenA`，用越界后端 99 触发 prefill 失败，断言返回 -1 且 `lenB==lenA`。
 - **负向对照**：临时还原旧顺序重建，门输出 `lenB=3` ⇒ `F652: FAIL`；恢复后 `lenB=2` ⇒ `PASS`（新门复现已知缺陷）。
 - **梯（f652）**：BUILD_OK、自检 912 行 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 194/0、par/fair 0、scaling 1.554×、哨兵 0、`check_gates 198/0`。
+
+## F653（2026-11-17）：residency_frac 活体门（值断言）
+- **缺口**：`/plugins` 的 `residency_frac` 无任何活体断言，`frac_intent` 仅在期望值计算中被顺带引用。
+- **门**：8000/8001 各加 `*-residency-frac`，断言 `residency_frac ∈ (0,1]` 且 `frac_intent` 为字符串。
+- **梯（f653 gate_live）**：SMOKE/PRETTY 各 **195/0**（+1）、par/fair 0、scaling 1.539×、哨兵 0；`check_gates 198/0`。
