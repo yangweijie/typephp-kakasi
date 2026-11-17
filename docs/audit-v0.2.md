@@ -794,3 +794,5 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 **增补（F664，2026-11-17）——8001 弃流释放**：协作服务器的槽位释放此前无活体门。新门 `par_abandon.py` 用裸 socket 关闭（`SO_LINGER=0` ⇒ RST）弃掉长/短两段流，随后一对并发短流必须在 6 s 内都被服务；服务端日志同时给出 `reason=client-gone`（非推断）。实测释放 0.2 s。**过程更正**：首版探针用 `http.client` 关闭读到 ~9 s，实为 400 token 自然生成时长 ⇒ "恢复慢先排除探针关闭语义"。`gate_live`/`check_gates` 均已入闸；`f664` 基线不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.549×、哨兵 0、`check_gates 198/0`）。
 
 **增补（F665，2026-11-17）——缓存覆盖 Anthropic 出口**：`/v1/messages` 非流式有独立的缓存调用点，现由 `cache_persist.py` 的独立文本段落覆盖（冷<32、热>32、正文一致）。两次自找误判被门抓住：共用 chat 文本导致"冷"命中 209；短 prompt 低于 `promptN>=64` 的存储门槛。`f665` 实测 `anth_cold=0 anth_warm=214 anth_same=1`；基线不变。
+
+**增补（F666，2026-11-17）——Anthropic 流式缓存的观测与门**：该分支此前只把 `cache=` 打进服务端 stdout，缓存复用不可测（F379 同型）。现补一条 `SPECREQ mode=plain` 痕迹（不加行为改动），`cache_persist.py` 增第三段独立文本的冷/热断言。`f666` 实测 `anth_stream=(0,207)`、文本一致；基线不变（scaling 1.465× 本轮）；门已随 `CACHE-PERSIST: PASS` 入 `gate_live`/`check_gates`。

@@ -2573,3 +2573,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F665（2026-11-17）：缓存门覆盖 Anthropic 非流式出口
 **做法**：`cache_persist.py` 增一段 `/v1/messages` 冷/热（独立文本、长 prompt），断言 `anth_cold<32`、`anth_warm>32`、两次正文相同。
 **误判记录**：共用 chat 文本 ⇒ "冷"仅 209 命中（前缀共享）；短 prompt ⇒ 不存（`promptN>=64` 规则）。
+
+### F666（2026-11-17）：Anth 流式缓存分支的可观测化 + 门
+**改动**：`/v1/messages` 流式分支补 `api_spec_req("plain", …, $anthCacheHit, ms)`（行为不变，只加观测）。
+**门**：`cache_persist.py` 第三段（独立文本）冷<32、热>32、文本一致；实测 `anth_stream=(0,207,1)`。

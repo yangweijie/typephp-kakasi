@@ -102,6 +102,29 @@ def ask_anth(prompt):
     return resp["content"][0]["text"]
 
 
+def ask_anth_stream(prompt):
+    """F666: the streaming Anthropic branch has its own cache call site; it now records a trace line,
+    so reuse there can be measured like everywhere else."""
+    body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 24, "stream": True}
+    req = urllib.request.Request("http://127.0.0.1:%d/v1/messages" % PORT,
+                                 data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as f:
+        raw = f.read().decode()
+    out = []
+    for line in raw.splitlines():
+        if not line.startswith("data: "):
+            continue
+        try:
+            ev = json.loads(line[6:])
+        except Exception:
+            continue
+        d = ev.get("delta")
+        if isinstance(d, dict) and isinstance(d.get("text"), str):
+            out.append(d["text"])
+    return "".join(out)
+
+
 def ask(prompt, use_cache=None):
     body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 24, "temperature": 0}
     if use_cache is not None:
@@ -151,6 +174,13 @@ def main():
     cd1 = last_cache(since)
     d2 = ask_anth(anth_prompt)
     cd2 = last_cache(since)
+    sprompt = ("Stream ledger %d: the harbour office files one card per vessel, carrying the "
+               "tonnage, the flag and the date of the last inspection. " % int(time.time() + 2))
+    sprompt = sprompt * 5 + "Summarize the card in one sentence."
+    e1 = ask_anth_stream(sprompt)
+    ce1 = last_cache(since)
+    e2 = ask_anth_stream(sprompt)
+    ce2 = last_cache(since)
     stop(p)
 
     same_ab = a == b
@@ -159,11 +189,12 @@ def main():
     ok = (c1 == 0 and c2 is not None and c2 > 32 and c3 is not None and c3 >= 32
           and same_ab and same_ac
           and cx is not None and cx > 32 and cy == -2 and same_xy
-          and cd1 is not None and cd1 < 32 and cd2 is not None and cd2 > 32 and d1 == d2)
+          and cd1 is not None and cd1 < 32 and cd2 is not None and cd2 > 32 and d1 == d2
+          and ce1 is not None and ce1 < 32 and ce2 is not None and ce2 > 32 and e1 == e2)
     print("CACHE-PERSIST cold=%s warm=%s restart=%s partial=%s uncached=%s chars=%d"
           % (c1, c2, c3, cx, cy, len(prompt)))
-    print("CACHE-PERSIST anth_cold=%s anth_warm=%s anth_same=%d"
-          % (cd1, cd2, d1 == d2))
+    print("CACHE-PERSIST anth_cold=%s anth_warm=%s anth_same=%d anth_stream=(%s,%s,%d)"
+          % (cd1, cd2, d1 == d2, ce1, ce2, e1 == e2))
     print("CACHE-PERSIST same_process=%d after_restart=%d partial_matches_uncached=%d"
           % (same_ab, same_ac, same_xy))
     if ok:

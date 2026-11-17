@@ -17275,6 +17275,14 @@ function api_serve(int $port): void
                     }
                     echo "SESSION anth-stream tokens=" . $sent . " reason=" . $reason
                         . " seed=" . $seed . " cache=" . $anthCacheHit . "\n";
+                    // F666: this branch consulted the shared SSD cache but recorded nothing, so a
+                    // cache comparison could not tell reuse from a cold run (F379 found the same
+                    // hole on the chat plain branch). One trace line makes the streaming exit
+                    // measurable without reading the server's stdout.
+                    if ($prefixCache == 1) {
+                        api_spec_req("plain", 0, $maxTok, $sent, $anthCacheHit,
+                                     (microtime(true) - $tStart) * 1000.0);
+                    }
                     fclose($c);
                     continue;
                 }

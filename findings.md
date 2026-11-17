@@ -5598,3 +5598,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **做法**：`cache_persist.py` 增加一段 Anthropic 非流式：**独立文本**的 prompt（换体裁与非随机串），冷 `cache<32`（不构成有意义的命中）、热 `>32`、两次正文相同。
 **两个自找的误判（都当场被门抓住）**：①首版让 anth 与 chat 共用同一段文本 ⇒ `anth_cold=209`——chat 存下的条目与 anth 的前缀足足重合 209 个 token，"冷"其实并不冷；改成独立文本后 `anth_cold=0`。②更早一次手测用**短 prompt**（<64 token）得到 `cache=0`，差点记成缺陷；实为 `api_cache_should_store` 的 `promptN >= 64` 规则（按设计不存短前缀）⇒ 夹具必须用长文本。
 **实测（f665）**：`cold=0 warm=214 restart=214 partial=209 uncached=-2 anth_cold=0 anth_warm=214`、`anth_same=1`；其余基线不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.571×、哨兵 0、`check_gates 198/0` exit 0）。
+
+### F666（2026-11-17）：Anthropic **流式**缓存分支补上痕迹并纳入门（F379 同型的第三例）
+**缺陷**：`/v1/messages` 流式分支调用 `model_cache_prefill/store`，但**不写任何可解析记录**（只有 `SESSION anth-stream … cache=` 进服务端 stdout）⇒ 缓存复用在该出口不可测。F379 当年在 chat plain 分支上见过同一形态："无痕迹的分支会让对照静默测错对象"。
+**修复**：该分支在关闭连接前按 chat 的方式写一条 `api_spec_req("plain", …, $anthCacheHit, ms)`（仅当 `prefix_cache==1`）；这是**加观测不改行为**——决策与存储逻辑一行未动。
+**门**：`cache_persist.py` 增加 Anth 流式段落（第三种独立文本的 prompt）：冷 `cache<32`、热 `>32`、两次文本相同。
+**实测（f666，重建后）**：`anth_stream=(0,207,1)`——流式冷 0、热 207、文本一致；非流式段 `anth_cold=0 anth_warm=214` 不变；其余基线不变（自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.465×、哨兵 0、`check_gates 198/0` exit 0）。
+**注**：新增的 trace 行会让 `spec_req.log` 多出 `mode=plain` 记录（同一日志已被 chat/anth 非流式共用），解析端按 `cache=` 区分即可。
