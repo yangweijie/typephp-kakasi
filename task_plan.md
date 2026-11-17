@@ -2540,3 +2540,8 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F658b（2026-11-17）：8001 补上共享 schema 守卫；gate_live/check_gates 开始判 8001 三件
 **缺陷**：8001 `api_serve_par` 对 json_schema 只查关键字（uniqueItems 一类），bounds/pattern/深数组/嵌套上限全跳过 ⇒ 不可满足的 `[1,5]+multipleOf 7` 被当自由文本流式返回 200 "10"（实测，`f658` 首轮被我新加的 `par-bounds-keyword-named` 抓到）。同时暴露第二条假绿：`gate_live.sh` 打印 `PAR/FAIR/THRU_EXIT` 却不判，`PAR_EXIT=1` 仍 `exit 0`。
 **修复**：8001 改调 `api_schema_guard_unsupported($body)`；`gate_live` 末尾把 PAR/FAIR 退出码与 `THROUGHPUT: PASS` 行入闸；`check_gates` 增第三段读最新 par/fair/thru 日志。新门对 `f658` 旧日志自证为 `PAR_RED`（exit 1）。
+
+### F659（2026-11-17）：schema 一致性矩阵 `schema_parity.py`（两服务器同输入比对）
+**背景**：8000/8001 是两条独立 serve 链（F658b 的根因），守卫必须靠机制而非记忆保持同步。
+**做法**：13 例矩阵（服务/必拒各半，每例期望 200 或 400+关键字），`collect <port>` 在两台各收集一份 JSON，`compare` 逐例比 code 与具名性；`gate_live` 三处退出码入闸，`check_gates` live 段要求最新 `schema_parity_compare_*` 为 `PARITY: PASS`。
+**证据**：`f659` 首轮因脚本语法错 `GATE_FAIL parity=1`（门把"矩阵没跑成"判红）；`f659b` `PARITY: PASS (13 cases agree)`、`PARITY8/1/C_EXIT=0`、`check_gates` exit 0。

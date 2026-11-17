@@ -67,6 +67,13 @@ SMOKE_PRETTY=1 python "$E/tests/api_smoke.py" > "$E/api_smoke_pretty_$TAG.log" 2
 SMOKE_PRETTY_RC=$?
 echo "SMOKE_PRETTY_EXIT=$SMOKE_PRETTY_RC" >> "$E/api_smoke_pretty_$TAG.log"
 echo "SMOKE-PRETTY: PASS=$(grep -c 'PASS' "$E/api_smoke_pretty_$TAG.log") FAIL=$(grep -c 'FAIL' "$E/api_smoke_pretty_$TAG.log")"
+# F659: the 8000 and 8001 handlers are independent functions, so a schema guard added to one does
+# not reach the other - that is how F658b hid (8001 answered an unsatisfiable bounds schema as free
+# text while 8000 refused it). The same matrix runs on each server and the two collections are
+# compared, so drift between them is a first-class failure instead of an unnoticed hole.
+python "$E/tests/schema_parity.py" collect 8000 "$E/schema_parity_8000_$TAG.json" > "$E/schema_parity_8000_$TAG.log" 2>&1
+PARITY8_RC=$?
+echo "PARITY8_EXIT=$PARITY8_RC" >> "$E/schema_parity_8000_$TAG.log"
 # F351: the served speculation claim becomes a standing observation instead of a one-off
 # measurement - spec off vs spec on at equal temperature, plus the engine's own counters. Reported,
 # not asserted: the honest result so far is "runs, accepts, does not speed this workload up", and a
@@ -107,6 +114,14 @@ echo "FAIR_EXIT=$FAIR_RC" >> "$E/fairness_$TAG.log"
 # ("throughput is still shared") without ever measuring. Scales with the slots in the 8001 server.
 python "$E/tests/throughput_test.py" 8001 "${THRU_TOKENS:-60}" "${THRU_STREAMS:-2}" > "$E/throughput_$TAG.log" 2>&1
 echo "THRU_EXIT=$?" >> "$E/throughput_$TAG.log"
+# F659: the 8001 side of the parity matrix, then the comparison against the 8000 collection.
+python "$E/tests/schema_parity.py" collect 8001 "$E/schema_parity_8001_$TAG.json" > "$E/schema_parity_8001_$TAG.log" 2>&1
+PARITY1_RC=$?
+echo "PARITY1_EXIT=$PARITY1_RC" >> "$E/schema_parity_8001_$TAG.log"
+python "$E/tests/schema_parity.py" compare "$E/schema_parity_8000_$TAG.json" "$E/schema_parity_8001_$TAG.json" > "$E/schema_parity_compare_$TAG.log" 2>&1
+PARITYC_RC=$?
+echo "PARITYC_EXIT=$PARITYC_RC" >> "$E/schema_parity_compare_$TAG.log"
+echo "PARITY: $(grep '^PARITY:' "$E/schema_parity_compare_$TAG.log")"
 stop_all
 echo "PAR: $(tail -1 "$E/par_smoke_$TAG.log")"
 echo "FAIR: $(tail -1 "$E/fairness_$TAG.log")"
@@ -120,8 +135,9 @@ echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
 # THRU on its verdict line (that script has no exit status to trust).
 THRU_OK=$(grep -c 'THROUGHPUT: PASS' "$E/throughput_$TAG.log" 2>/dev/null)
 if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ] \
-   || [ "${PAR_RC:-0}" != "0" ] || [ "${FAIR_RC:-0}" != "0" ] || [ "${THRU_OK:-0}" -lt 1 ]; then
-  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0}"
+   || [ "${PAR_RC:-0}" != "0" ] || [ "${FAIR_RC:-0}" != "0" ] || [ "${THRU_OK:-0}" -lt 1 ] \
+   || [ "${PARITY8_RC:-1}" != "0" ] || [ "${PARITY1_RC:-1}" != "0" ] || [ "${PARITYC_RC:-1}" != "0" ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1}"
   exit 1
 fi
 echo GATE_LIVE_DONE tag=$TAG

@@ -76,6 +76,13 @@ if [ -z "$TLOG" ] || ! grep -q 'THROUGHPUT: PASS' "$TLOG"; then
   echo "THRU_RED log=$(basename "${TLOG:-none}")"
   exit 1
 fi
+# F659: both servers must answer the same schema matrix identically.
+SPLOG=$(ls -t engine/schema_parity_compare_*.log 2>/dev/null | head -1)
+if [ -z "$SPLOG" ] || ! grep -q '^PARITY: PASS' "$SPLOG"; then
+  echo "PARITY_RED log=$(basename "${SPLOG:-none}")"
+  [ -n "$SPLOG" ] && grep -m 5 'PARITY' "$SPLOG"
+  exit 1
+fi
 
 # A row may cite a self-test gate/field OR a served case, so the haystack is the newest self-test
 # plus the newest live harness logs. Newest only, deliberately: globbing every historical log

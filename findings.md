@@ -5549,3 +5549,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **修复**：8001 的 schema 判定改为直接调 `api_schema_guard_unsupported($body)`（关键字的输出格式与旧调用完全相同：`schema keyword <kw>`，故 `par-schema-keyword-refuse` 不受影响）。
 **第二条假绿（与缺陷同等重要）**：`gate_live.sh` 一直打印 `PAR_EXIT/FAIR_EXIT/THRU_EXIT`，但**末尾只检查 8000 的两个 smoke 退出码** ⇒ `PAR_EXIT=1` 时脚本仍 `exit 0`，整梯 `LADDER_EXIT=0`。修复：三者在 `gate_live` 末尾入闸（PAR/FAIR 用退出码，THRU 该脚本无退出状态，改判 `THROUGHPUT: PASS` 行）；`check_gates.sh` 增加第三段——最新 `par_smoke_*`/`fairness_*`/`throughput_*` 必须分别 `PAR SMOKE: PASS`+`PAR_EXIT=0`、`FAIRNESS: PASS`、`THROUGHPUT: PASS`。**新门自证**：加完后立刻对 `f658` 的旧日志跑 `check_gates`，输出 `PAR_RED log=par_smoke_f658.log` + 那条 FAIL 行并 `exit 1`——同一门先否决已知红，修复后再放行。
 **教训固化**：①"打印了退出码"≠"在判"——凡 `echo "*_EXIT=$?"` 必须同时出现在闸条件里，否则只是日志装饰；②给入口 A 加守卫时要 grep 该守护函数在**所有** serve 路径的调用点（8001 是独立函数，不会继承 8000 的 else-if 链）；③新增活体门的首轮就是它的自证轮——宁可它先红，也不要它从没跑对过。
+
+## F659（2026-11-17）：两服务器 schema 回答一致性矩阵（把 F658b 的"各自独立的守卫链"变成可回归的对象）
+**动机**：F658b 的根因不是某条判断写错，而是 **8000 与 8001 是两条独立函数**——守卫加在一台服务器上，另一台不会继承。靠人工"记得同步"不算机制。本轮把它们放进**同一张矩阵**：13 个 shape（可服务的 enum/界/无界倍数/单侧界/draft-4 布尔+包含界；必拒的不可满足倍数、不可满足排他、孤立布尔、`uniqueItems`、`contains`、元字符 pattern、三层对象数组），每例**声明期望**（200，或 400 且正文含指定关键字），先在两台服务器分别收集（`schema_parity.py collect <port> <json>`），再逐例**比对两台结果**（`compare`）——即使某条期望写错，也能抓住"两台不一致"。
+**口径**：比对的是**判定类与具名性**（code、named），不是正文——两台服务器的信封前缀本就不同（`request schema not supported:` vs `request not supported:`），正文里的"已支持面"叙述也不要求逐字一致；这是刻意的：契约是"同样拒绝/同样接受 + 同样点名"。
+**接线**：`gate_live.sh` 在 8000 段收集、8001 段收集并比对，三者（parity8/parity1/parityc）**入闸**；`check_gates.sh` 的 live 段新增"最新 `schema_parity_compare_*` 必须 `PARITY: PASS`"。
+**自证**：首轮 `f659` 整梯 `GATE_FAIL ... parity8=1 parity1=1 parityc=1`、`LADDER_EXIT=1`——原因是 parity 脚本自身有个括号写错（第 52 行 dict 少一个 `}`），**门按设计把"矩阵没跑成"判成红**（不是把没跑当绿）。修正后 `f659b`：`PARITY: PASS (13 cases agree across servers)`、`PARITY8_EXIT=0/1/0`、`GATE_LIVE_DONE`、`check_gates` exit 0。
+**教训**：①"新增一项检查"必须有**自己的失败模式**演示（这次是脚本语法错 + 期望不符都能让它红）；②我曾在本地用 `python -c ast.parse` 预检并报了 OK，实际运行却报语法错——**判据取真实运行的那次**，预检只当辅助；③跨入口的一致性只能由"同一输入喂两台并比对"证明，不能由"两台各自都有门"证明。
