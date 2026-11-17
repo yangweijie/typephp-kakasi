@@ -5571,3 +5571,9 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **实测（`f661`）**：`cold=0 warm=214 restart=214 partial=209 uncached=-2`、`same_process=1 after_restart=1 partial_matches_uncached=1` ⇒ 部分命中与全量重算回答一致。
 **口径**：`cache=-2` 是"未咨询缓存"的哨兵（服务端在非缓存分支显式写入），它与"命中 0 条"（file 不存在/无匹配）区分开；闸里同时断言 `cx>32`（真的复用了一段）与 `cy==-2`（对照组确实没走缓存），避免"两边都没缓存"这种假通过。
 **梯（f661）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0（日志中 `CACHE-PERSIST: PASS` 含部分命中项）、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.519×、哨兵 0、`check_gates 198/0` exit 0。
+
+## F662（2026-11-17）：同一 schema 矩阵扩到三种传输拼写——判拒/判受必须一致
+**动机**：F634 的 fail-open 是"某条传输没接上守卫"；F659 的矩阵只覆盖 OpenAI chat 拼写（`response_format.json_schema`）。同一语义在三条传输里键名不同：chat `response_format` / Anthropic `output_format` / Responses `text.format`。守卫读的是翻译后的 json_schema 标记，理论上一致，但"理论上"正是 F634 骗过所有人的地方。
+**做法**：`schema_parity.py collect <port> <out> [chat|anth|resp]` 复用同一 13 例表，仅换信封与路径（`/v1/chat/completions`、`/v1/messages`、`/v1/responses`，统一 `stream:true`；实测两种备用传输都支持流式）；把 Anthropic/Responses 的收集分别与 chat 收集**逐例比对**（code + 具名性）。`gate_live` 的 4 个新增退出码（anth/resp 收集 + 两份比对）入闸；`check_gates` live 段新增两条 `schema_parity_tcompare_{anth,resp}_*` 必须 `PARITY: PASS`。
+**实测（f662）**：三条传输各 13/13 期望成立，两份比对均 `PARITY: PASS (13 cases agree)`（f662 日志里写的是旧措辞 "… across servers"；比对器输出随后统一为中性措辞，仅字符串改动，`py_compile` 通过）。
+**梯（f662）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS`、`PARITYCA/CR_EXIT=0`、par/fair 0、scaling 1.553×、哨兵 0、`check_gates 198/0` exit 0。

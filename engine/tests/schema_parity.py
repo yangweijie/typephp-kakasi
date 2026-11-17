@@ -54,12 +54,27 @@ CASES = [
 ]
 
 
-def post(port, name, schema):
-    body = {"messages": [{"role": "user", "content": "Answer."}], "max_tokens": 32,
-            "temperature": 0, "stream": True,
-            "response_format": {"type": "json_schema", "json_schema": {"name": "sp_" + name,
-                                                                       "schema": schema}}}
-    req = urllib.request.Request("http://127.0.0.1:%d/v1/chat/completions" % port,
+PATHS = {"chat": "/v1/chat/completions", "anth": "/v1/messages", "resp": "/v1/responses"}
+
+
+def post(port, name, schema, transport="chat"):
+    # F662: the same schema travels under a different key on each transport (response_format /
+    # output_format / text.format). The guards read the translated json_schema marker, so the
+    # verdict must be the same everywhere - a transport that answers instead of refusing is the
+    # F634-class fail-open.
+    if transport == "anth":
+        body = {"messages": [{"role": "user", "content": "Answer."}], "max_tokens": 32,
+                "stream": True, "output_format": {"type": "json_schema", "schema": schema}}
+    elif transport == "resp":
+        body = {"input": "Answer.", "max_output_tokens": 32, "stream": True,
+                "text": {"format": {"type": "json_schema", "name": "sp_" + name,
+                                    "schema": schema}}}
+    else:
+        body = {"messages": [{"role": "user", "content": "Answer."}], "max_tokens": 32,
+                "temperature": 0, "stream": True,
+                "response_format": {"type": "json_schema", "json_schema": {
+                    "name": "sp_" + name, "schema": schema}}}
+    req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, PATHS[transport]),
                                  data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
@@ -70,11 +85,11 @@ def post(port, name, schema):
         return e.code, e.read().decode()
 
 
-def collect(port, out):
+def collect(port, out, transport="chat"):
     rows = []
     bad = 0
     for name, schema, expect, kw in CASES:
-        code, text = post(port, name, schema)
+        code, text = post(port, name, schema, transport)
         named = (kw in text) if kw else True
         ok = (code == expect) and named
         if not ok:
@@ -84,7 +99,8 @@ def collect(port, out):
         print("%-20s port=%d code=%s expect=%s named=%s ok=%s text=%s"
               % (name, port, code, expect, named, ok, text[:110].replace("\n", " ")))
     json.dump(rows, open(out, "w"), indent=1)
-    print("PARITY-COLLECT port=%d ok=%d bad=%d out=%s" % (port, len(CASES) - bad, bad, out))
+    print("PARITY-COLLECT port=%d transport=%s ok=%d bad=%d out=%s"
+          % (port, transport, len(CASES) - bad, bad, out))
     return 0 if bad == 0 else 1
 
 
@@ -103,17 +119,17 @@ def compare(a, b):
             bad += 1
             print("PARITY-DIFF %-20s a=(%s named=%s) b=(%s named=%s)"
                   % (x["name"], x["code"], x["named"], y["code"], y["named"]))
-    print("PARITY: " + ("PASS (%d cases agree across servers)" % len(ra)
+    print("PARITY: " + ("PASS (%d cases agree)" % len(ra)
                         if bad == 0 else "FAIL diverged=%d" % bad))
     return 0 if bad == 0 else 1
 
 
 def main(argv):
     if len(argv) >= 4 and argv[1] == "collect":
-        return collect(int(argv[2]), argv[3])
+        return collect(int(argv[2]), argv[3], argv[4] if len(argv) > 4 else "chat")
     if len(argv) >= 4 and argv[1] == "compare":
         return compare(argv[2], argv[3])
-    print("usage: schema_parity.py collect <port> <out.json> | compare <a.json> <b.json>")
+    print("usage: schema_parity.py collect <port> <out.json> [chat|anth|resp] | compare <a.json> <b.json>")
     return 2
 
 

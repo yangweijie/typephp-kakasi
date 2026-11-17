@@ -1,0 +1,15 @@
+enum_ok              port=8001 code=200 expect=200 named=True ok=True text=data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"qwen2","choices":[{"index":0,"delta":{"cont
+bounds_ok            port=8001 code=200 expect=200 named=True ok=True text=data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"qwen2","choices":[{"index":0,"delta":{"cont
+bounds_mult_unsat    port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: numeric bounds cannot be honoured on this shape: schema keyword mu
+bounds_frac_unsat    port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: numeric bounds cannot be honoured on this shape: schema keyword mu
+excl_unsat           port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: numeric bounds cannot be honoured on this shape: schema keyword ex
+excl_bool_alone      port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: schema keyword exclusiveMinimum/exclusiveMaximum (draft-4 boolean 
+excl_bool_served     port=8001 code=200 expect=200 named=True ok=True text=data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"qwen2","choices":[{"index":0,"delta":{"cont
+unique_items         port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: schema keyword uniqueItems","type":"invalid_request_error"}}
+contains_kw          port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: schema keyword contains","type":"invalid_request_error"}}
+pattern_meta         port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: schema pattern with regex metacharacters","type":"invalid_request_
+deep_obj_array       port=8001 code=400 expect=400 named=True ok=True text={"error":{"message":"request not supported: arrays nested three or more levels deep with object elements","typ
+mult_unb_ok          port=8001 code=200 expect=200 named=True ok=True text=data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"qwen2","choices":[{"index":0,"delta":{"cont
+onedf_bounds_only    port=8001 code=200 expect=200 named=True ok=True text=data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"qwen2","choices":[{"index":0,"delta":{"cont
+PARITY-COLLECT port=8001 transport=chat ok=13 bad=0 out=C:/git/c/typephp-kakasi/engine/schema_parity_8001_f662.json
+PARITY1_EXIT=0

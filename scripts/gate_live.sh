@@ -74,6 +74,22 @@ echo "SMOKE-PRETTY: PASS=$(grep -c 'PASS' "$E/api_smoke_pretty_$TAG.log") FAIL=$
 python "$E/tests/schema_parity.py" collect 8000 "$E/schema_parity_8000_$TAG.json" > "$E/schema_parity_8000_$TAG.log" 2>&1
 PARITY8_RC=$?
 echo "PARITY8_EXIT=$PARITY8_RC" >> "$E/schema_parity_8000_$TAG.log"
+# F662: the same matrix through the Anthropic and Responses spellings (output_format / text.format).
+# The guards read the translated json_schema marker, so a transport that answers instead of refusing
+# is the F634-class fail-open - and that class only ever showed up per transport.
+python "$E/tests/schema_parity.py" collect 8000 "$E/schema_parity_anth_8000_$TAG.json" anth > "$E/schema_parity_anth_8000_$TAG.log" 2>&1
+PARITYA_RC=$?
+echo "PARITYA_EXIT=$PARITYA_RC" >> "$E/schema_parity_anth_8000_$TAG.log"
+python "$E/tests/schema_parity.py" collect 8000 "$E/schema_parity_resp_8000_$TAG.json" resp > "$E/schema_parity_resp_8000_$TAG.log" 2>&1
+PARITYR_RC=$?
+echo "PARITYR_EXIT=$PARITYR_RC" >> "$E/schema_parity_resp_8000_$TAG.log"
+python "$E/tests/schema_parity.py" compare "$E/schema_parity_8000_$TAG.json" "$E/schema_parity_anth_8000_$TAG.json" > "$E/schema_parity_tcompare_anth_$TAG.log" 2>&1
+PARITYCA_RC=$?
+echo "PARITYCA_EXIT=$PARITYCA_RC" >> "$E/schema_parity_tcompare_anth_$TAG.log"
+python "$E/tests/schema_parity.py" compare "$E/schema_parity_8000_$TAG.json" "$E/schema_parity_resp_8000_$TAG.json" > "$E/schema_parity_tcompare_resp_$TAG.log" 2>&1
+PARITYCR_RC=$?
+echo "PARITYCR_EXIT=$PARITYCR_RC" >> "$E/schema_parity_tcompare_resp_$TAG.log"
+echo "PARITY-TRANSPORTS: $(grep -m1 '^PARITY:' "$E/schema_parity_tcompare_anth_$TAG.log") / $(grep -m1 '^PARITY:' "$E/schema_parity_tcompare_resp_$TAG.log")"
 # F351: the served speculation claim becomes a standing observation instead of a one-off
 # measurement - spec off vs spec on at equal temperature, plus the engine's own counters. Reported,
 # not asserted: the honest result so far is "runs, accepts, does not speed this workload up", and a
@@ -144,8 +160,10 @@ THRU_OK=$(grep -c 'THROUGHPUT: PASS' "$E/throughput_$TAG.log" 2>/dev/null)
 if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ] \
    || [ "${PAR_RC:-0}" != "0" ] || [ "${FAIR_RC:-0}" != "0" ] || [ "${THRU_OK:-0}" -lt 1 ] \
    || [ "${PARITY8_RC:-1}" != "0" ] || [ "${PARITY1_RC:-1}" != "0" ] || [ "${PARITYC_RC:-1}" != "0" ] \
-   || [ "${CACHEP_RC:-1}" != "0" ]; then
-  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1}"
+   || [ "${CACHEP_RC:-1}" != "0" ] \
+   || [ "${PARITYA_RC:-1}" != "0" ] || [ "${PARITYR_RC:-1}" != "0" ] \
+   || [ "${PARITYCA_RC:-1}" != "0" ] || [ "${PARITYCR_RC:-1}" != "0" ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1} paritya=${PARITYA_RC:-1} parityr=${PARITYR_RC:-1} parityca=${PARITYCA_RC:-1} paritycr=${PARITYCR_RC:-1}"
   exit 1
 fi
 echo GATE_LIVE_DONE tag=$TAG

@@ -2555,3 +2555,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F661（2026-11-17）：缓存**部分命中**的正确性门（对照组逐字比对）
 **做法**：重启后的同一进程里，对"旧前缀+更长后缀"的 prompt 各发一次（默认缓存 vs `prefix_cache:0`），要求两次正文**逐字节相同**；同时断言命中数 `>32` 且对照组日志为 `cache=-2`（未咨询哨兵），排除"两边都没缓存"的假通过。
 **实测**：`partial=209 uncached=-2 partial_matches_uncached=1`。
+
+### F662（2026-11-17）：矩阵覆盖三传输拼写（chat / Anthropic output_format / Responses text.format）
+**做法**：`schema_parity.py` 增加 `transport` 参数，13 例表不变；anth/resp 各收集一份并与 chat 逐例比对（code+具名性）；`gate_live` 四个新退出码入闸，`check_gates` 要求两份 `tcompare` 为 `PARITY: PASS`。
+**实测**：13/13 三传输一致；`PARITY: PASS` ×2（措辞随后中性化，纯字符串改动）。

@@ -1,0 +1,6 @@
+CACHE-PERSIST debug phase1_new=1
+CACHE-PERSIST debug phase2_new=2
+CACHE-PERSIST cold=0 warm=214 restart=214 partial=209 uncached=-2 chars=867
+CACHE-PERSIST same_process=1 after_restart=1 partial_matches_uncached=1
+CACHE-PERSIST: PASS (cold store, warm reuse, the same reuse after a restart, and a partial hit answering exactly like the uncached path)
+CACHEP_EXIT=0

@@ -84,6 +84,14 @@ if [ -z "$CPLOG" ] || ! grep -q '^CACHE-PERSIST: PASS' "$CPLOG"; then
   exit 1
 fi
 # F659: both servers must answer the same schema matrix identically.
+for fam in anth resp; do
+  TLOG2=$(ls -t "engine/schema_parity_tcompare_${fam}_"*.log 2>/dev/null | head -1)
+  if [ -z "$TLOG2" ] || ! grep -q '^PARITY: PASS' "$TLOG2"; then
+    echo "PARITY_TRANSPORT_RED fam=$fam log=$(basename "${TLOG2:-none}")"
+    [ -n "$TLOG2" ] && grep -m 5 'PARITY' "$TLOG2"
+    exit 1
+  fi
+done
 SPLOG=$(ls -t engine/schema_parity_compare_*.log 2>/dev/null | head -1)
 if [ -z "$SPLOG" ] || ! grep -q '^PARITY: PASS' "$SPLOG"; then
   echo "PARITY_RED log=$(basename "${SPLOG:-none}")"
