@@ -23056,10 +23056,34 @@ function main(): void
             . " excsrv=" . $pgExcServable . " bad=" . $pgBad . "\n";
     }
 
+    // F652: a step that produced no KV rows must not advance the session position. The
+    // unconstrained path used to increment before checking the result, so a failed prefill left a
+    // phantom row that every later write and KV snapshot inherited. The failure is triggered by an
+    // out-of-range backend id, which queue_for now rejects explicitly instead of indexing past the
+    // device list - so this assertion is discriminating: with the old ordering lenB would be lenA+1.
+    $f652Ok = 0;
+    $f652Ids = tok_encode("Hello");
+    if (model_session_start(0, $f652Ids) == 0) {
+        $f652Step = model_session_next(0, 0.0, 1.0);
+        $f652LenA = model_session_len();
+        $f652Bad = model_session_next(99, 0.0, 1.0);
+        $f652LenB = model_session_len();
+        if ($f652Bad == -1 && $f652LenB == $f652LenA) {
+            $f652Ok = 1;
+        }
+        echo "F652 step=" . $f652Step . " bad=" . $f652Bad . " lenA=" . $f652LenA
+            . " lenB=" . $f652LenB . "\n";
+    }
+    if ($f652Ok == 1) {
+        echo "F652: PASS (a failed step leaves the session position unchanged)\n";
+    } else {
+        echo "F652: FAIL (a failed step advanced the session position)\n";
+    }
+
     // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line
     // falls through to the wildcard, and comment/blank/short lines are skipped. No engine state.
-    // Return contract: exactly 9 fields (8 pipes) name|match|attn|kv|total|wp|bg|sb|sl on EVERY path,
-    // including the no-match fallback, so api_plugins_apply can index st[5..8] unconditionally.
+    // Return contract: exactly 10 fields (9 pipes) name|match|attn|kv|total|wp|bg|sb|sl|frac on EVERY
+    // path, including the no-match fallback, so api_plugins_apply can index st[5..9] unconditionally.
     $plText = "# comment\n\narc|Arc|1|1|note\narc2|Arc|3|0|second\nlast|*|2|0|fallback\n";
     $plA = api_plugins_select($plText, "Intel(R) Arc(TM) B390");
     $plB = api_plugins_select($plText, "some cpu");

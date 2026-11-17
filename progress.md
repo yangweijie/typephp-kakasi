@@ -2936,3 +2936,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **交付**：`api_plugins_count` 改用与 `api_plugins_select` 相同的谓词（非空/非注释/字段≥4），`/plugins` 的 `profiles` 不再把畸形短行算进去。
 - **门**：`PROFILES` 加 `cnt.mixed=1`、`cnt.valid=3` 两条；`plC` 回落期望 total 位 1→0。期望串先用真 PHP 验过；出厂档案仍计 3，活体门（≥2/≥3）不受影响。
 - **梯（f651）**：BUILD_OK、自检 912 行 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 **194/0**、par/fair 0、scaling 1.594×、哨兵 0、`check_gates 198/0`。
+
+## F652（2026-11-17）：失败步不再推进会话位置（含越界 guard 与判别性门）
+- **修**：`session_next` 改为 `if (r.empty()) return -1; g_sess_len += 1;`，与 `session_next_allowed` 的既有规则一致；`queue_for` 加 `in_range` 守卫（越界返回 nullptr，原先是对设备表的未定义索引）。
+- **门**：自检 `F652` —— 有效步后记 `lenA`，用越界后端 99 触发 prefill 失败，断言返回 -1 且 `lenB==lenA`。
+- **负向对照**：临时还原旧顺序重建，门输出 `lenB=3` ⇒ `F652: FAIL`；恢复后 `lenB=2` ⇒ `PASS`（新门复现已知缺陷）。
+- **梯（f652）**：BUILD_OK、自检 912 行 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 194/0、par/fair 0、scaling 1.554×、哨兵 0、`check_gates 198/0`。

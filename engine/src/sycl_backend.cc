@@ -90,6 +90,13 @@ int device_count() { return (int) raw_devices().size(); }
 
 // Shared with ops_sycl.cc (both are icx TUs): hand out the persistent validated queue.
 sycl::queue* queue_for(int index) {
+    // F652: acquire() indexes raw_devices() directly, so an out-of-range backend id would read past
+    // the device list. Callers pass ids from code, but the failure path itself must be well-defined:
+    // an invalid id has to come back as "no queue", not as undefined behaviour.
+    if (!in_range(index)) {
+        g_error = "backend index out of range";
+        return nullptr;
+    }
     Slot* slot = acquire(index);
     return slot ? slot->q.get() : nullptr;
 }

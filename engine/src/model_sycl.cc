@@ -2302,8 +2302,11 @@ int session_next(int backend, double temp, double top_p) {    int nk = 0;
     const int eos = (int) gguf::meta_num("tokenizer.ggml.eos_token_id");
     if (eos > 0 && next == eos) return -1;
     const std::vector<double> r = prefill_top1(backend, std::vector<int>{next}, -1, g_sess_len);
-    g_sess_len += 1;
     if (r.empty()) return -1;
+    // F652: advance only after a step that actually produced KV rows, matching session_next_allowed.
+    // Incrementing first left a phantom position on the failure path, so every later write and every
+    // KV snapshot inherited an offset with no row behind it.
+    g_sess_len += 1;
     return next;
 }
 

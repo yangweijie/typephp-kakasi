@@ -5478,3 +5478,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **期望先验证**：三条选择串 + 三个计数（mixed=1 / valid=3 / badOnly=0）**先用真 PHP 跑过**再上构建；出厂的 `vendor_profiles.txt` 在新谓词下仍计 **3**，因此 `plugins-report`（≥2）与 `par-plugins-weight_prec`（≥3）两条活体门不受影响。
 **结果（`f651` 梯）**：`BUILD_OK`；自检 912 行 **0 FAIL**、`PROFILES: PASS … count uses the selector predicate`；四 harness `CHECK_EXIT=0`（bounds `VERDICT: PASS`）；**SMOKE 与 SMOKE-PRETTY 各 194/0**；`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling **1.594×**、`SENTINELS_LEFT=0`；`check_gates 198/0` 且 exit 0。
 **记法**：**同一个语义的两个入口必须共用一条谓词**——"选择器跳过什么"与"报告数统计什么"分头实现时，差集就是用户看到的谎言。这类不一致没有运行期报错，只能靠**给计数本身设门**（而不是只给选择结果设门）暴露。
+
+## F652（2026-11-17）：流式会话的失败步会推进位置（幽灵行），并给出**判别性门**
+**缺陷**：`session_next` 在 `prefill_top1` 之后**先** `g_sess_len += 1` **再**判 `r.empty()`；而它的姊妹函数 `session_next_allowed` 早已把规则写成注释并正确实现——"Only a step that actually produced KV rows may advance the position"。⇒ 任何 prefill 失败（后端不可用、尺寸非法）都会留下一个**没有行支撑的位置**，此后每次 KV 写入与快照都偏移一格。这是"两个入口对同一语义各行其是"的又一例（F651 的姊妹问题，但这次在 C++ 侧）。
+**同时修好一个潜在越界**：`queue_for(int)` 直接调 `acquire()`，而 `acquire` 用 `raw_devices()[(size_t) index]` 索引设备表、**没有 `in_range` 守卫**。旧代码里传入越界 backend id 就是未定义行为。现在 `queue_for` 先判范围，越界返回 `nullptr` 并置 `g_last_error="backend index out of range"`——这也让"prefill 失败"成为**可从 PHP 构造**的状态。
+**门（关键：它能判别新旧）**：自检里
+`model_session_start(0, tok_encode("Hello"))` → 一步有效 `session_next(0,…)` → 记 `lenA=model_session_len()` → `session_next(99,…)`（越界后端 ⇒ prefill 失败 ⇒ 返回 -1）→ 记 `lenB`；断言 `bad==-1 && lenB==lenA`。
+**负向对照（本轮实测，不是推理）**：仅把顺序改回旧的（保留 `queue_for` 守卫），重建后该门输出 `step=8948 bad=-1 lenA=2 lenB=3` ⇒ **`F652: FAIL`**；恢复修复后同一门输出 `lenB=2` ⇒ **`F652: PASS`**。⇒ **新门在旧代码上复现了已知缺陷**，这是本仓"新判据必须能在旧证据上复现已知失败"要求的当面执行。
+**结果（`f652` 梯）**：`BUILD_OK`；自检 912 行 **0 FAIL**（`F652: PASS`）；四 harness `CHECK_EXIT=0`（bounds `VERDICT: PASS`）；SMOKE 与 SMOKE-PRETTY 各 **194/0**；par/fair 0、scaling **1.554×**、哨兵 0；`check_gates 198/0` exit 0。
+**记法**：**"可从接口构造的失败"比"理论失败"值钱**——先前 F261 把此缺陷判为"PHP 不可构造、属 native 单测范畴"，而实际上只要允许传入一个越界 backend id，失败路径就从 PHP 可达；前提是先给越界 id 一个**良定义**的返回（否则构造手段本身是 UB）。**修缺陷时顺手把"构造手段"变安全，是让门成为可能的那一步**。
