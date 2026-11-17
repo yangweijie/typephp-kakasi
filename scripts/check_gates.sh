@@ -76,6 +76,13 @@ if [ -z "$TLOG" ] || ! grep -q 'THROUGHPUT: PASS' "$TLOG"; then
   echo "THRU_RED log=$(basename "${TLOG:-none}")"
   exit 1
 fi
+# F660: the SSD prefix cache must survive a restart with identical output.
+CPLOG=$(ls -t engine/cache_persist_*.log 2>/dev/null | head -1)
+if [ -z "$CPLOG" ] || ! grep -q '^CACHE-PERSIST: PASS' "$CPLOG"; then
+  echo "CACHEP_RED log=$(basename "${CPLOG:-none}")"
+  [ -n "$CPLOG" ] && grep -m 4 'CACHE-PERSIST' "$CPLOG"
+  exit 1
+fi
 # F659: both servers must answer the same schema matrix identically.
 SPLOG=$(ls -t engine/schema_parity_compare_*.log 2>/dev/null | head -1)
 if [ -z "$SPLOG" ] || ! grep -q '^PARITY: PASS' "$SPLOG"; then

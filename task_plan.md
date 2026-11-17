@@ -2545,3 +2545,9 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 **背景**：8000/8001 是两条独立 serve 链（F658b 的根因），守卫必须靠机制而非记忆保持同步。
 **做法**：13 例矩阵（服务/必拒各半，每例期望 200 或 400+关键字），`collect <port>` 在两台各收集一份 JSON，`compare` 逐例比 code 与具名性；`gate_live` 三处退出码入闸，`check_gates` live 段要求最新 `schema_parity_compare_*` 为 `PARITY: PASS`。
 **证据**：`f659` 首轮因脚本语法错 `GATE_FAIL parity=1`（门把"矩阵没跑成"判红）；`f659b` `PARITY: PASS (13 cases agree)`、`PARITY8/1/C_EXIT=0`、`check_gates` exit 0。
+
+### F660（2026-11-17）：前缀缓存的跨进程活体门 `cache_persist.py`
+**缺口**：缓存"重启后仍命中"只有自检的进程内证据，活体零覆盖。
+**做法**：用 plain 分支每个请求都会写的 `SPECREQ … cache=<n>` 作为确定性信号：冷=0（`cache_prefill` 无文件返回 0，`should_store(0,≥64)=1` 会存盘）、热>32、杀进程重启后同值、正文逐字节一致。门自管两次引擎生命周期，前置清空 `api_prefix_b*.kv`（gitignore、可再生成）。
+**自证**：首版行数切片 off-by-one 读成 `None` ⇒ 门 FAIL（对"没读到证据"敏感）；修正后 PASS（`cold=0 warm=214 restart=214`）。
+**接线**：`gate_live` 的 `CACHEP_RC` 入闸；`check_gates` live 段要求 `CACHE-PERSIST: PASS`。

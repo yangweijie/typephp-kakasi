@@ -5556,3 +5556,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **接线**：`gate_live.sh` 在 8000 段收集、8001 段收集并比对，三者（parity8/parity1/parityc）**入闸**；`check_gates.sh` 的 live 段新增"最新 `schema_parity_compare_*` 必须 `PARITY: PASS`"。
 **自证**：首轮 `f659` 整梯 `GATE_FAIL ... parity8=1 parity1=1 parityc=1`、`LADDER_EXIT=1`——原因是 parity 脚本自身有个括号写错（第 52 行 dict 少一个 `}`），**门按设计把"矩阵没跑成"判成红**（不是把没跑当绿）。修正后 `f659b`：`PARITY: PASS (13 cases agree across servers)`、`PARITY8_EXIT=0/1/0`、`GATE_LIVE_DONE`、`check_gates` exit 0。
 **教训**：①"新增一项检查"必须有**自己的失败模式**演示（这次是脚本语法错 + 期望不符都能让它红）；②我曾在本地用 `python -c ast.parse` 预检并报了 OK，实际运行却报语法错——**判据取真实运行的那次**，预检只当辅助；③跨入口的一致性只能由"同一输入喂两台并比对"证明，不能由"两台各自都有门"证明。
+
+## F660（2026-11-17）：SSD 前缀缓存的**跨进程**承诺第一次有活体门（且缓存本身是对的）
+**缺口**：自检 `PREFIXCACHE` 只证明**同一进程内** store→reuse；而缓存落在状态目录、用户真正依赖的承诺是"**重启后**同一前缀仍复用且输出不变"。此前 `engine/tests/` 里没有任何 `prefix_cache` 的活体夹具（grep 为空），文档里的"已启用全+部分命中"全靠自检背书。
+**可观测信号（不靠计时）**：非流式 plain 解码分支对每个请求都会 `api_spec_req("plain",…, $cacheHit, ms)` 写一行 `SPECREQ mode=plain … cache=<匹配 token 数>` 到 `engine/spec_req.log`；`model_cache_prefill` 冷启动返回 **0**（不是 -1——-1 只在后端/prefill 失败时出现），`api_cache_should_store(0, promptN≥64)==1` ⇒ 首次请求**会**存盘。所以闸条件可以是确定性的：冷=0、热>32、重启后同值、三次正文逐字节相同。
+**新门 `engine/tests/cache_persist.py`**（由 `gate_live` 在 8000 段后调用，自管两次引擎生命周期）：清空 `api_prefix_b*.kv`+索引（gitignore 内，可再生成），冷请求 → 同进程重复 → 杀进程重启后再请求；解析每次的新增日志行取 `cache=`。实测 `cold=0 warm=214 restart=214 same_process=1 after_restart=1` ⇒ **SSD 条目在第二个进程里命中了 214 个 prompt token，三段回答完全一致**。
+**过程（自证两次）**：①第一版把 `split("\n")` 的长度当行数，文件尾换行多出一个空元素 ⇒ 切片永远跳过**最新一行**，冷/重启读成 `None`——门当场 FAIL，证明它对"没读到证据"是敏感的；修正为 `len-1` 后 PASS。②`gate_live` 的 `echo` 原本 `tail -1` 取到的是后追加的 `CACHEP_EXIT` 行，改成 `grep -m1 '^CACHE-PERSIST:'`（debug/数值行不以 `CACHE-PERSIST:` 开头，不会误取）。
+**接线**：`gate_live` 的 `CACHEP_RC` 入闸；`check_gates` live 段新增"最新 `cache_persist_*` 必须 `CACHE-PERSIST: PASS`"。
+**梯（f660）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHEP_EXIT=0`（`cold=0 warm=214 restart=214`）、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.507×、哨兵 0、`check_gates 198/0` exit 0。

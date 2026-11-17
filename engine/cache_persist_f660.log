@@ -1,0 +1,6 @@
+CACHE-PERSIST debug phase1_new=1
+CACHE-PERSIST debug phase2_new=2
+CACHE-PERSIST cold=0 warm=214 restart=214 chars=867
+CACHE-PERSIST same_process=1 after_restart=1
+CACHE-PERSIST: PASS (cold store, warm reuse, and the same reuse after a restart with identical output)
+CACHEP_EXIT=0

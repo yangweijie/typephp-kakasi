@@ -93,6 +93,13 @@ python "$E/tests/spec_greedy_probe.py" 8000 128 - sampled > "$E/spec_sampled_$TA
 echo "SPEC-PROBE greedy  : $(grep speedup "$E/spec_greedy_$TAG.log" | head -1) | $(grep 'SPEC-GREEDY:' "$E/spec_greedy_$TAG.log")"
 echo "SPEC-PROBE sampled : $(grep speedup "$E/spec_sampled_$TAG.log" | head -1) | $(grep 'SPEC-GREEDY:' "$E/spec_sampled_$TAG.log")"
 stop_all
+# F660: the SSD prefix cache had no live gate at all - the self-test only proves reuse inside one
+# process, while the promise is that a restart reuses the same KV. This runs its own two engine
+# lives on 8000 (cold store, warm hit, restart hit) and compares the three answers.
+python "$E/tests/cache_persist.py" > "$E/cache_persist_$TAG.log" 2>&1
+CACHEP_RC=$?
+echo "CACHEP_EXIT=$CACHEP_RC" >> "$E/cache_persist_$TAG.log"
+echo "CACHE-PERSIST: $(grep -m1 '^CACHE-PERSIST:' "$E/cache_persist_$TAG.log")"
 
 # ---------- 8001: two-slot streaming parity + fairness ----------
 printf 'on' > "$E/serve.par.on"
@@ -136,8 +143,9 @@ echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
 THRU_OK=$(grep -c 'THROUGHPUT: PASS' "$E/throughput_$TAG.log" 2>/dev/null)
 if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ] \
    || [ "${PAR_RC:-0}" != "0" ] || [ "${FAIR_RC:-0}" != "0" ] || [ "${THRU_OK:-0}" -lt 1 ] \
-   || [ "${PARITY8_RC:-1}" != "0" ] || [ "${PARITY1_RC:-1}" != "0" ] || [ "${PARITYC_RC:-1}" != "0" ]; then
-  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1}"
+   || [ "${PARITY8_RC:-1}" != "0" ] || [ "${PARITY1_RC:-1}" != "0" ] || [ "${PARITYC_RC:-1}" != "0" ] \
+   || [ "${CACHEP_RC:-1}" != "0" ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1}"
   exit 1
 fi
 echo GATE_LIVE_DONE tag=$TAG
