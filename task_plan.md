@@ -2582,3 +2582,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 **修复**：accept 后设阻塞+超时、空读计时等待（不再 break）；`$ids==""` 补 400；读守卫改字节预算 4 MB，超限具名 413（先排空防 RST）。
 **门**：`body_limit.py`（10 KB 200、5 MB 声明 413、超发不足 400、空 messages/空 body 400），接线于 8000 存活段、`BODY-LIMIT: PASS` 入闸。
 **记录**：大 prompt 慢是 prefill 速度（~100–200 tok/s），缓存命中 10 KB 仅 0.3–0.4 s。
+
+### F668（2026-11-17）：8001 读循环字节预算 + 413/400，门按端口双份
+**修复**：镜像 8000（4 MB 字节预算、空读 6 次、超限 413、超发不足 400，均先于 slot/schema）。
+**门**：`body_limit.py` 支持 8001（流式 + SSE 判据 + 45 KB 须报 `slot capacity` 拒绝）；日志 `body_limit_<port>_<tag>`，两端口都入 `gate_live`/`check_gates`。

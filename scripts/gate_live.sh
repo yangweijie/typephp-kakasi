@@ -69,10 +69,10 @@ echo "SMOKE_PRETTY_EXIT=$SMOKE_PRETTY_RC" >> "$E/api_smoke_pretty_$TAG.log"
 echo "SMOKE-PRETTY: PASS=$(grep -c 'PASS' "$E/api_smoke_pretty_$TAG.log") FAIL=$(grep -c 'FAIL' "$E/api_smoke_pretty_$TAG.log")"
 # F667: bodies must arrive whole (the reader used to truncate past ~8 KB and answer "no user
 # content"), an incomplete body must be a named 400, and an over-large one a named 413.
-python "$E/tests/body_limit.py" 8000 > "$E/body_limit_$TAG.log" 2>&1
+python "$E/tests/body_limit.py" 8000 > "$E/body_limit_8000_$TAG.log" 2>&1
 BODYL_RC=$?
-echo "BODYL_EXIT=$BODYL_RC" >> "$E/body_limit_$TAG.log"
-echo "BODY-LIMIT: $(grep -m1 '^BODY-LIMIT:' "$E/body_limit_$TAG.log")"
+echo "BODYL_EXIT=$BODYL_RC" >> "$E/body_limit_8000_$TAG.log"
+echo "BODY-LIMIT: $(grep -m1 '^BODY-LIMIT:' "$E/body_limit_8000_$TAG.log")"
 # F659: the 8000 and 8001 handlers are independent functions, so a schema guard added to one does
 # not reach the other - that is how F658b hid (8001 answered an unsatisfiable bounds schema as free
 # text while 8000 refused it). The same matrix runs on each server and the two collections are
@@ -141,6 +141,10 @@ echo "PAR_EXIT=$PAR_RC" >> "$E/par_smoke_$TAG.log"
 python "$E/tests/par_abandon.py" 8001 > "$E/par_abandon_$TAG.log" 2>&1
 PARAB_RC=$?
 echo "PARAB_EXIT=$PARAB_RC" >> "$E/par_abandon_$TAG.log"
+# F668: the same body contract on the cooperative server - whole arrival, named 413/400 refusals.
+python "$E/tests/body_limit.py" 8001 > "$E/body_limit_8001_$TAG.log" 2>&1
+BODYL1_RC=$?
+echo "BODYL1_EXIT=$BODYL1_RC" >> "$E/body_limit_8001_$TAG.log"
 python "$E/tests/fairness_test.py" 8001 > "$E/fairness_$TAG.log" 2>&1
 FAIR_RC=$?
 echo "FAIR_EXIT=$FAIR_RC" >> "$E/fairness_$TAG.log"
@@ -174,8 +178,8 @@ if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ] \
    || [ "${CACHEP_RC:-1}" != "0" ] \
    || [ "${PARITYA_RC:-1}" != "0" ] || [ "${PARITYR_RC:-1}" != "0" ] \
    || [ "${PARITYCA_RC:-1}" != "0" ] || [ "${PARITYCR_RC:-1}" != "0" ] \
-   || [ "${PARAB_RC:-1}" != "0" ] || [ "${BODYL_RC:-1}" != "0" ]; then
-  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1} paritya=${PARITYA_RC:-1} parityr=${PARITYR_RC:-1} parityca=${PARITYCA_RC:-1} paritycr=${PARITYCR_RC:-1} parab=${PARAB_RC:-1} bodyl=${BODYL_RC:-1}"
+   || [ "${PARAB_RC:-1}" != "0" ] || [ "${BODYL_RC:-1}" != "0" ]    || [ "${BODYL1_RC:-1}" != "0" ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0} parity8=${PARITY8_RC:-1} parity1=${PARITY1_RC:-1} parityc=${PARITYC_RC:-1} cachep=${CACHEP_RC:-1} paritya=${PARITYA_RC:-1} parityr=${PARITYR_RC:-1} parityca=${PARITYCA_RC:-1} paritycr=${PARITYCR_RC:-1} parab=${PARAB_RC:-1} bodyl=${BODYL_RC:-1} bodyl1=${BODYL1_RC:-1}"
   exit 1
 fi
 echo GATE_LIVE_DONE tag=$TAG

@@ -5616,3 +5616,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门 `body_limit.py`（8000 段、`stop_all` 之前运行）**：10 KB ⇒ 200+choices；声明 5 MB ⇒ `413` 且正文含 `too large`；声明超出实发 ⇒ `400` 含 `incomplete`；空 messages ⇒ `400`；空 body ⇒ `400`。首轮接线时我把门放在 `stop_all` 之后 ⇒ `Connection refused`，门自己报红（`GATE_FAIL … bodyl=1`），移回服务存活段后全绿。
 **梯（f667b）**：`BODY-LIMIT: PASS`、自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.535×、哨兵 0、`check_gates 198/0` exit 0。
 **教训**：①"状态码由分支自己设"是个容易漏的契约——扫一遍"设 payload 不设 status"就能发现同类；②读循环的守卫必须按**字节**计，按次数计在 socket 上等于按 8 KB/次；③探针拿到 200 但正文是 error 时必须当缺陷追，客户端只看状态码。
+
+### F668（同日）：8001 读循环同型的**40 KB 截断**收口（F667 的兄弟缺陷）
+**缺陷**：8001 的读守卫虽已按 F53 设了阻塞与 `continue`，但守卫仍是**次数**（`$guard > 4` ≈ 5 × ~8 KB ≈ 40 KB）⇒ 45 KB 的 body 被截断成"no user content"（错误原因），而不是它真正的原因（"prompt plus max_tokens exceeds the slot capacity"）。同一个 8000 缺陷的两个副本，只修一个就是又一轮"两条链各自漂移"。
+**修复**：8001 读循环镜像 8000：字节预算 4 MB、空读计数（6 次）而非总次数、`Content-Length` 超限具名 **413**（先非阻塞排空已到字节防 RST）、`$bodyShort` 具名 **400 incomplete**；两者都在任何 slot/schema 工作之前短路。
+**门**：`body_limit.py` 参数化（`PORT==8001` 用流式 body、SSE 判 200；新增 45 KB 用例：必须 400 且正文含 `slot capacity` 且**不含** `no user content`）。8001 的 45 KB 请求在**槽位容量检查**就被具名拒绝，因此该用例快（约 20 s）。
+**接线**：日志按端口分名（`body_limit_8000_<tag>` / `body_limit_8001_<tag>`），`gate_live` 两个退出码入闸，`check_gates` 对两个端口各取最新日志要求 `BODY-LIMIT: PASS`。
+**梯（f668）**：8000 五形状、8001 六形状均 PASS；自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.458×、哨兵 0、`check_gates 198/0` exit 0。

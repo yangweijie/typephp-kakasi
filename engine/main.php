@@ -15978,25 +15978,67 @@ function api_serve_par(int $port): void
             if ($hdrEnd !== false && preg_match('/Content-Length:\s*([0-9]+)/i', $req, $cm)) {
                 $wantLen = (int) $cm[1];
             }
-            $guard = 0;
-            while ($hdrEnd === false || strlen($req) < $hdrEnd + 4 + $wantLen) {
-                if ($guard++ > 4) {
+            // F668: the guard counted ITERATIONS (5 x 32768, but a socket read returns ~8 KB), so a
+            // body past ~40 KB was truncated into "no user content". Budget by BYTES like the 8000
+            // reader, and refuse an over-large declared body by name instead of a reset.
+            $bodyCap = 4194304;
+            $bodyOver = ($wantLen > $bodyCap) ? 1 : 0;
+            $stalls = 0;
+            while ($bodyOver == 0 && ($hdrEnd === false || strlen($req) < $hdrEnd + 4 + $wantLen)) {
+                if (strlen($req) > $bodyCap) {
                     break;
                 }
                 $more = fread($c, 32768);
                 if ($more == "") {
                     // The body may still be in flight when the headers arrived alone. Wait
-                    // (bounded by $guard) instead of treating the request as complete - the same
-                    // class of bug as F53 on the main server.
+                    // (bounded) instead of treating the request as complete - the same class of
+                    // bug as F53 on the main server.
+                    if (++$stalls > 6) {
+                        break;
+                    }
                     continue;
                 }
+                $stalls = 0;
                 $req = $req . $more;
                 $hdrEnd = strpos($req, "\r\n\r\n");
                 if ($hdrEnd !== false && $wantLen == 0 && preg_match('/Content-Length:\s*([0-9]+)/i', $req, $cm)) {
                     $wantLen = (int) $cm[1];
+                    $bodyOver = ($wantLen > $bodyCap) ? 1 : 0;
                 }
             }
             $body = $hdrEnd === false ? "" : substr($req, $hdrEnd + 4);
+            $bodyHave = $hdrEnd === false ? 0 : strlen($req) - $hdrEnd - 4;
+            $bodyShort = ($hdrEnd !== false && $wantLen > 0 && $bodyHave < $wantLen && $bodyOver == 0) ? 1 : 0;
+            if ($bodyOver == 1) {
+                $body = "";
+                stream_set_blocking($c, false);
+                $drain = 0;
+                while ($drain < 65536) {
+                    $d = fread($c, 8192);
+                    if ($d === "" || $d === false) {
+                        break;
+                    }
+                    $drain += strlen($d);
+                }
+                stream_set_blocking($c, true);
+            }
+            // F668: an over-large or incomplete body is a named refusal before any slot or schema
+            // work looks at it.
+            if ($bodyOver == 1 || $bodyShort == 1) {
+                $payload = $bodyOver == 1
+                    ? ("{\"error\":{\"message\":\"request body too large: Content-Length " . $wantLen
+                       . " exceeds the " . $bodyCap . "-byte limit (send a smaller prompt)\","
+                       . "\"type\":\"invalid_request_error\"}}")
+                    : ("{\"error\":{\"message\":\"request body incomplete: Content-Length " . $wantLen
+                       . " but only " . $bodyHave . " bytes arrived\","
+                       . "\"type\":\"invalid_request_error\"}}");
+                $code = $bodyOver == 1 ? "413 Payload Too Large" : "400 Bad Request";
+                $payload = api_error_for_path($req, $payload);
+                fwrite($c, "HTTP/1.1 " . $code . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+                fclose($c);
+                continue;
+            }
             $body = api_json_compact($body);
             $body = api_schema_prefix_items($body);
             if ($body != "" && strpos($req, "/v1/messages") !== false) {

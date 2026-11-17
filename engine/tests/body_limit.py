@@ -18,9 +18,16 @@ URL = "http://127.0.0.1:%d/v1/chat/completions" % PORT
 SENT = "The archive records every shipment with the harbour, the tonnage and the duty paid. "
 
 
+PAR = (PORT == 8001)
+
+
 def post(prompt, max_tokens=8):
     body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
             "temperature": 0}
+    if PAR:
+        # The cooperative server serves streamed text only.
+        body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens,
+                "stream": True}
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
@@ -37,10 +44,20 @@ def main():
 
     # A: ~10 KB prompt - the size that used to be truncated.
     code, raw = post(SENT * 120)
-    served = code == 200 and '"choices"' in raw
+    served = code == 200 and ('data: ' in raw if PAR else '"choices"' in raw)
     rows.append(("body_10kb", code, served))
     ok += 1 if served else 0
     bad += 0 if served else 1
+
+    if PAR:
+        # 45 KB body: past the old 5-iteration cap, and past the slot capacity - the point is that
+        # the WHOLE body now arrives, so the refusal names the slot limit instead of "no user
+        # content" (which is what a truncated read produced).
+        code, raw = post(SENT * 540)
+        named = code == 400 and "slot capacity" in raw and "no user content" not in raw
+        rows.append(("body_45kb", code, named))
+        ok += 1 if named else 0
+        bad += 0 if named else 1
 
     # B: a declared body past the 4 MB cap - refused by name, not by a connection reset.
     s = socket.create_connection(("127.0.0.1", PORT), timeout=60)
@@ -95,7 +112,7 @@ def main():
     bad += 0 if named else 1
 
     # D: empty messages - no usable user turn.
-    body = {"messages": [], "max_tokens": 4}
+    body = {"messages": [], "max_tokens": 4, "stream": True} if PAR else {"messages": [], "max_tokens": 4}
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     try:
