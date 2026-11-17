@@ -278,7 +278,7 @@ def main():
     for i in range(40):
         deep = {"type": "object", "properties": {"k%d" % i: deep}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1500, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deep", "schema": deep, "strict": True}}})
     dtxt = r["choices"][0]["message"]["content"]
@@ -304,7 +304,7 @@ def main():
     for i in range(40):
         deepE = {"type": "object", "properties": {"k%d" % i: deepE}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1500, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepe", "schema": deepE, "strict": True}}})
     etxt = r["choices"][0]["message"]["content"]
@@ -328,7 +328,7 @@ def main():
     for i in range(40):
         deepN = {"type": "object", "properties": {"k%d" % i: deepN}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1500, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepn", "schema": deepN, "strict": True}}})
     ntxt = r["choices"][0]["message"]["content"]
@@ -351,7 +351,7 @@ def main():
     for i in range(40):
         deepC = {"type": "object", "properties": {"k%d" % i: deepC}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1500, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepc", "schema": deepC, "strict": True}}})
     ctxt = r["choices"][0]["message"]["content"]
@@ -375,7 +375,7 @@ def main():
     for i in range(40):
         deepP = {"type": "object", "properties": {"k%d" % i: deepP}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1500, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepp", "schema": deepP, "strict": True}}})
     ptxt = r["choices"][0]["message"]["content"]
@@ -399,7 +399,7 @@ def main():
     for i in range(40):
         deepB = {"type": "object", "properties": {"k%d" % i: deepB}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1500, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepb", "schema": deepB, "strict": True}}})
     btxt = r["choices"][0]["message"]["content"]
@@ -424,7 +424,7 @@ def main():
     for i in range(40):
         deepM = {"type": "object", "properties": {"k%d" % i: deepM}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1600, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepm", "schema": deepM, "strict": True}}})
     mtxt = r["choices"][0]["message"]["content"]
@@ -450,7 +450,7 @@ def main():
     for i in range(40):
         deepF = {"type": "object", "properties": {"k%d" % i: deepF}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepf", "schema": deepF, "strict": True}}})
     ftxt = r["choices"][0]["message"]["content"]
@@ -477,7 +477,7 @@ def main():
     for i in range(40):
         deepA = {"type": "object", "properties": {"k%d" % i: deepA}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepa", "schema": deepA, "strict": True}}})
     atxt = r["choices"][0]["message"]["content"]
@@ -503,7 +503,7 @@ def main():
     for i in range(40):
         deepN2 = {"type": "object", "properties": {"k%d" % i: deepN2}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepn2", "schema": deepN2, "strict": True}}})
     n2txt = r["choices"][0]["message"]["content"]
@@ -530,7 +530,7 @@ def main():
     for i in range(40):
         deepB2 = {"type": "object", "properties": {"k%d" % i: deepB2}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepb2", "schema": deepB2, "strict": True}}})
     b2txt = r["choices"][0]["message"]["content"]
@@ -557,7 +557,7 @@ def main():
     for i in range(40):
         deepU = {"type": "object", "properties": {"k%d" % i: deepU}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepu", "schema": deepU, "strict": True}}})
     utxt = r["choices"][0]["message"]["content"]
@@ -582,7 +582,7 @@ def main():
     for i in range(40):
         deepU2 = {"type": "object", "properties": {"k%d" % i: deepU2}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepu2", "schema": deepU2, "strict": True}}})
     u2txt = r["choices"][0]["message"]["content"]
@@ -608,7 +608,7 @@ def main():
     for i in range(40):
         deepU3 = {"type": "object", "properties": {"k%d" % i: deepU3}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepu3", "schema": deepU3, "strict": True}}})
     u3txt = r["choices"][0]["message"]["content"]
@@ -638,7 +638,7 @@ def main():
     for i in range(40):
         deepO = {"type": "object", "properties": {"k%d" % i: deepO}}
     r = post("/v1/chat/completions", {"messages": [{"role": "user", "content": "The capital of France is"}],
-                                      "max_tokens": 1700, "seed": 5,
+                                      "max_tokens": 512, "seed": 5,
                                       "response_format": {"type": "json_schema", "json_schema": {
                                           "name": "deepo", "schema": deepO, "strict": True}}})
     otxt = r["choices"][0]["message"]["content"]

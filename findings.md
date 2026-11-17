@@ -5645,3 +5645,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`endpoint_shape.py` 增至 9 例：新增 `get_on_chat`（405 + 正文 `method not allowed` + `Allow: POST` 头）、`post_on_health`（405 + `Allow: GET`）、`delete_models`（405）、`get_models`（200 对照）；两台均 PASS。
 **梯（f670）**：两台 `ENDPOINT-SHAPE: PASS (9)`、自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.527×、哨兵 0、`check_gates 198/0` exit 0。
 **记法**：`Allow` 不是装饰——它是 405 的可执行部分；HEAD 走 GET 的判定、由**写点**抑制 body，避免每个分支各自记得"HEAD 不发 body"。
+
+## F671（2026-11-17）：`max_tokens` 的静默代换——0/−1 变 64、513+ 变 512，却回 200
+**缺陷（探针实测）**：`api_max_tokens()` 对 ≤0 返回 **64**、对 >512 截到 **512**，都用 200 返回，调用方无从得知请求没被兑现；`max_output_tokens: 0` 同样被接受。与 F627（n 越界曾静默夹到 1）同型，是"接受即兑现"的又一次违反。
+**修复**：在参数守卫（`api_choice_params_unsupported`，两台服务器共用）对 `max_tokens` / `max_output_tokens` 做范围判定：**1..512 之外具名 400**（消息带 `(1..512)`）；`api_max_tokens()` 的夹取保留，只服务内部按计算值给预算的调用点（工具骨架、深度闭合预算等）。
+**连带修正（首轮梯子当场抓到）**：`schema_bounds_check.py` 的 `deep200_cold_first_ok` 曾传 `max_tokens: 4096`——它一直靠静默夹取跑在 512 上（深度闭合靠的是内部预算，不是请求值）。改成 512 并更新注释；`api_smoke.py` 里 15 处 1500/1600/1700 同样改为 512（它们只是"要长一点"，同样从未真正拿到超过 512）。
+**门**：`endpoint_shape.py` 新增 `max_tokens_zero` / `max_tokens_over`（513）/ `max_tokens_huge`（100000）与 8000 侧 `max_output_zero`，均为 400 且正文点名；两台现分别 13/12 例全 PASS。
+**梯（f671b）**：两台阶梯全绿（SMOKE/PRETTY 197/0、四 harness `CHECK_EXIT=0`、`PARITY: PASS (13)`、`CACHE-PERSIST: PASS`、8001 12 例、par/fair 0、scaling 1.499×、哨兵 0、`check_gates 198/0`）。
+**记法**：静默代换必须在**请求边界**拒绝；内部夹取可以留，但两者要分清——夹具里出现"越界值也能过"时，先问它靠的是哪一层。

@@ -2594,3 +2594,8 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F670（2026-11-17）：方法一致性 405 + Allow（两台同轮）+ HEAD 无 body
 **修复**：`api_req_method()`；链首判方法三类（未知方法 / POST 页面 / GET API），405 带路径相关的 `Allow`；8000 写点加 `Allow` 头与 HEAD 抑制 body。
 **门**：`endpoint_shape.py` 9 例（新增 get_on_chat+Allow、post_on_health+Allow、delete_models、get_models 对照），两台 PASS。
+
+### F671（2026-11-17）：max_tokens / max_output_tokens 越界具名 400
+**修复**：参数守卫对 1..512 之外具名拒绝（两台共用）；`api_max_tokens` 保留给内部预算。
+**连带**：`deep200_cold_first_ok` 4096→512、`api_smoke` 15 处 1500/1600/1700→512（此前全靠静默夹取）。
+**门**：`endpoint_shape.py` 增 4 例（0/513/100000/`max_output_tokens:0`），两台 13/12 例 PASS。

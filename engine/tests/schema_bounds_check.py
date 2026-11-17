@@ -104,9 +104,10 @@ def deep200_ok(code, txt):
 
 cases = [
     # F534: the cold-start oracle - the FIRST schema request after server start must assemble a
-    # 200-level object in one attempt (F208-F226 returned an empty body here). 4096 tokens because
-    # the assembled object is ~3900 characters.
-    ("deep200_cold_first_ok", "The capital of France is", deep200_schema(), deep200_ok, 4096),
+    # 200-level object in one attempt (F208-F226 returned an empty body here). The assembled object
+    # is ~3900 characters, but the request cap is 512 tokens and the deep-schema route carries its
+    # own closing budget - F671 made 4096 a named refusal instead of a silent clamp.
+    ("deep200_cold_first_ok", "The capital of France is", deep200_schema(), deep200_ok, 512),
     # F535: past the 256-level descent the route must refuse instead of answering through a shallow
     # detector (F534 showed that answer was a silent violation).
     ("deep260_refuse", "The capital of France is", deep_schema(260),

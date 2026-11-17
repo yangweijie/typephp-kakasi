@@ -12572,6 +12572,22 @@ function api_choice_params_unsupported(string $body): string
         && (int) $m[1] > 1) {
         return "best_of";
     }
+    // F671: api_max_tokens substitutes 64 for a non-positive value and clamps anything above 512,
+    // so a caller asking for 0 got 64 tokens and one asking for 100000 got 512 - both answered 200
+    // as if the request had been honoured. Refuse the range instead; the clamp stays for internal
+    // callers that pass computed budgets.
+    if (preg_match('/"max_tokens"\s*:\s*(-?[0-9]+)\s*[,}]/', $body, $m) == 1) {
+        $mtv = (int) $m[1];
+        if ($mtv < 1 || $mtv > 512) {
+            return "max_tokens (1..512)";
+        }
+    }
+    if (preg_match('/"max_output_tokens"\s*:\s*(-?[0-9]+)\s*[,}]/', $body, $m) == 1) {
+        $motv = (int) $m[1];
+        if ($motv < 1 || $motv > 512) {
+            return "max_output_tokens (1..512)";
+        }
+    }
     return "";
 }
 

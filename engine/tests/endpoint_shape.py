@@ -90,6 +90,20 @@ def main():
 
     msg = [{"role": "user", "content": "Say one word."}]
     body = {"messages": msg, "max_tokens": 4, "stream": True} if PAR else {"messages": msg, "max_tokens": 4}
+    # F671: max_tokens outside 1..512 used to be substituted (0 and -1 became 64, 513+ became 512)
+    # with a 200, so the caller was told the request had been honoured.
+    mt = '{"messages": [{"role": "user", "content": "Hi."}], "max_tokens": %d%s}'
+    st = ', "stream": true' if PAR else ''
+    code, text = raw("/v1/chat/completions", mt % (0, st))
+    case("max_tokens_zero", code, text, "400", "max_tokens")
+    code, text = raw("/v1/chat/completions", mt % (513, st))
+    case("max_tokens_over", code, text, "400", "max_tokens")
+    code, text = raw("/v1/chat/completions", mt % (100000, st))
+    case("max_tokens_huge", code, text, "400", "max_tokens")
+    if not PAR:
+        code, text = raw("/v1/responses", '{"input": "Hi.", "max_output_tokens": 0}')
+        case("max_output_zero", code, text, "400", "max_output_tokens")
+
     code, text = raw("/v1/models", "", "GET")
     case("get_models", code, text, "200", "")
 
