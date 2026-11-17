@@ -767,3 +767,5 @@ Human: A dog is playing in the park.`（下一轮文本） | 同上 |
 **回归口径（当前基线，`f652` 实测）**：自检 912 行、`FAIL=0`、`RUN_EXIT=0`（`F652: PASS`、`PROFILES: PASS`、`PARAM-GUARDS: PASS`、`orch[frac] PASS`）；四 harness 全 `CHECK_EXIT=0`（bounds `VERDICT: PASS`）；SMOKE 与 SMOKE-PRETTY 各 **194/0**；8001 par/fair 0；scaling 1.554×；哨兵 0；`check_gates 198/0` 且 exit 0。
 
 **仍未闭合**：FR-05 插件（决策+硬件）；FR-06 独立草稿模型（决策）；FR-02 式计算图调度（重设计）；per-session KV 并行吞吐、SSD 前缀分桶深化；多卡 split、GGUF 分片合并（本机无第二设备）。
+
+**增补（F653–F654，同日）**：①**F653** 给 `residency_frac` 补活体门——它此前是"字段有、文档提、门没有"（与 `budget_gib` 同型），现 8000/8001 各断言其**值**∈(0,1] 且 `frac_intent` 为字符串；②**F654** 发现 `split_backend` 实报 `model_attn_split_p()`（注意力分块数）而非后端索引——F649 同型缺陷第二例；改名 `attn_split_p` 并新增 `split_state`（引擎真实切分状态），顺手修掉 `model_split_state()` 里写死的 `primary=b?`；门同时断言**旧键不得出现**以防回潮。**基线更新（`f654` 实测）**：SMOKE 与 SMOKE-PRETTY 各 **196/0**（较 194 的两条增量即 F653/F654 新增门），其余口径同上节不变。
