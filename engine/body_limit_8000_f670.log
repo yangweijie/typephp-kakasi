@@ -1,0 +1,7 @@
+body_10kb        code=200 ok=True
+oversize         code=HTTP/1.1 413 ok=True
+short_body       code=HTTP/1.1 400 ok=True
+empty_messages   code=400 ok=True
+empty_body       code=400 ok=True
+BODY-LIMIT: PASS (5 shapes served or refused by name)
+BODYL_EXIT=0

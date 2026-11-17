@@ -2590,3 +2590,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F669（2026-11-17）：未知路由 404、不可解析 body 具名 400（两台同轮）
 **修复**：`/v1/` 未知端点 ⇒ 404 点名；首/末字符不是 `{`/`[`、`}`/`]` ⇒ 400 not JSON；`"messages"` 后不是 `[` ⇒ 400 messages-array。新增 `api_req_path()`。
 **门**：`endpoint_shape.py <port>` 五例（含 `empty_object` 文案不变的对照），两端口日志入 `gate_live`/`check_gates`。
+
+### F670（2026-11-17）：方法一致性 405 + Allow（两台同轮）+ HEAD 无 body
+**修复**：`api_req_method()`；链首判方法三类（未知方法 / POST 页面 / GET API），405 带路径相关的 `Allow`；8000 写点加 `Allow` 头与 HEAD 抑制 body。
+**门**：`endpoint_shape.py` 9 例（新增 get_on_chat+Allow、post_on_health+Allow、delete_models、get_models 对照），两台 PASS。

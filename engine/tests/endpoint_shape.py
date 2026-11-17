@@ -14,11 +14,11 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 PAR = (PORT == 8001)
 
 
-def raw(path, body):
+def raw(path, body, method="POST"):
     s = socket.create_connection(("127.0.0.1", PORT), timeout=120)
     b = body.encode()
-    head = ("POST %s HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
-            "Content-Length: %d\r\nConnection: close\r\n\r\n" % (path, len(b))).encode()
+    head = ("%s %s HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
+            "Content-Length: %d\r\nConnection: close\r\n\r\n" % (method, path, len(b))).encode()
     s.sendall(head + b)
     out = b""
     s.settimeout(120)
@@ -73,8 +73,26 @@ def main():
     code, text = raw("/v1/chat/completions", '{"stream": true}' if PAR else "{}")
     case("empty_object", code, text, "400", "no user content")
 
+    # F670: methods. A wrong method used to be answered as an empty body (GET on a chat route was
+    # "no user content"; POST /health served the HTML page).
+    code, text = raw("/v1/chat/completions", "", "GET")
+    case("get_on_chat", code, text, "405", "method not allowed")
+    if "Allow: POST" not in text:
+        rows.append(("get_on_chat_allow", code, False))
+        bad += 1
+    code, text = raw("/health", "", "POST")
+    case("post_on_health", code, text, "405", "method not allowed")
+    if "Allow: GET" not in text:
+        rows.append(("post_on_health_allow", code, False))
+        bad += 1
+    code, text = raw("/v1/models/x", "", "DELETE")
+    case("delete_models", code, text, "405", "method not allowed")
+
     msg = [{"role": "user", "content": "Say one word."}]
     body = {"messages": msg, "max_tokens": 4, "stream": True} if PAR else {"messages": msg, "max_tokens": 4}
+    code, text = raw("/v1/models", "", "GET")
+    case("get_models", code, text, "200", "")
+
     code, text = post_json("/v1/chat/completions", body)
     served = code == "200" and ("data: " in text if PAR else '"choices"' in text)
     rows.append(("valid_chat", code, served))

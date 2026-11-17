@@ -13,6 +13,16 @@ function api_str(string $json, string $key): string
     return "";
 }
 
+// F670: the method from the request line, for method conformance (405 + Allow).
+function api_req_method(string $req): string
+{
+    $sp = strpos($req, " ");
+    if ($sp === false || $sp > 10) {
+        return "";
+    }
+    return substr($req, 0, $sp);
+}
+
 // F669: the request target from the request line, used to name an unknown endpoint.
 function api_req_path(string $req): string
 {
@@ -16087,6 +16097,33 @@ function api_serve_par(int $port): void
                 fclose($c);
                 continue;
             }
+            // F670: the same method conformance as the main server.
+            $mth = api_req_method($req);
+            $allow = "";
+            $mBad = 0;
+            if ($mth != "GET" && $mth != "HEAD" && $mth != "POST") {
+                $mBad = 1;
+                $allow = strpos($req, "/v1/models") !== false
+                    ? "GET" : (strpos($req, "/v1/") !== false ? "POST" : "GET");
+            } else if ($mth == "POST" && strpos($req, "/v1/") === false) {
+                $mBad = 1;
+                $allow = "GET";
+            } else if (($mth == "GET" || $mth == "HEAD") && strpos($req, "/v1/") !== false
+                       && strpos($req, "/v1/models") === false) {
+                $mBad = 1;
+                $allow = "POST";
+            }
+            if ($mBad == 1) {
+                $payload = api_error_for_path($req, "{\"error\":{\"message\":\"method not allowed: "
+                    . api_esc($mth) . " on " . api_esc(api_req_path($req)) . " (allowed: "
+                    . api_esc($allow) . ")\",\"type\":\"invalid_request_error\"}}");
+                fwrite($c, "HTTP/1.1 405 Method Not Allowed\r\nAllow: " . $allow
+                         . "\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                         . "Content-Length: " . strlen($payload) . "\r\n\r\n"
+                         . ($mth == "HEAD" ? "" : $payload));
+                fclose($c);
+                continue;
+            }
             $body = api_json_compact($body);
             $body = api_schema_prefix_items($body);
             if ($body != "" && strpos($req, "/v1/messages") !== false) {
@@ -16840,6 +16877,33 @@ function api_serve(int $port): void
         $payload = "";
         $ctype = "application/json";
         $status = "200 OK";
+        $allow = "";
+        // F670: method conformance. The API routes are POST, the probes/pages are GET, and a wrong
+        // method used to be answered as if the body were empty (GET on a chat route gave "no user
+        // content", POST /health served the HTML page). 405 says what is wrong, Allow says what to
+        // do instead. HEAD is treated as GET all the way to the writer, which suppresses the body.
+        $mth = api_req_method($req);
+        if ($mth != "GET" && $mth != "HEAD" && $mth != "POST") {
+            $allow = strpos($req, "/v1/models") !== false
+                ? "GET" : (strpos($req, "/v1/") !== false ? "POST" : "GET");
+            $payload = "{\"error\":{\"message\":\"method not allowed: " . api_esc($mth)
+                . " on " . api_esc(api_req_path($req)) . " (allowed: " . api_esc($allow) . ")\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "405 Method Not Allowed";
+        } else if ($mth == "POST" && strpos($req, "/v1/") === false) {
+            $payload = "{\"error\":{\"message\":\"method not allowed: POST on "
+                . api_esc(api_req_path($req)) . " (this page is GET)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "405 Method Not Allowed";
+            $allow = "GET";
+        } else if (($mth == "GET" || $mth == "HEAD") && strpos($req, "/v1/") !== false
+                   && strpos($req, "/v1/models") === false) {
+            $payload = "{\"error\":{\"message\":\"method not allowed: " . api_esc($mth)
+                . " on " . api_esc(api_req_path($req)) . " (this route is POST)\","
+                . "\"type\":\"invalid_request_error\"}}";
+            $status = "405 Method Not Allowed";
+            $allow = "POST";
+        } else
         // F667: an over-large or incomplete body is a named refusal before anything else looks at
         // it - otherwise the request reads as empty content and the client learns nothing.
         if ($bodyOver == 1) {
@@ -18854,8 +18918,13 @@ function api_serve(int $port): void
 
         // F633: one writer decides the error envelope, so every 400/503 above follows the outlet.
         $payload = api_error_for_path($req, $payload);
-        fwrite($c, "HTTP/1.1 " . $status . "\r\nContent-Type: " . $ctype . "\r\nConnection: close\r\n"
-                 . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
+        // F670: Allow names what the route accepts on a 405; HEAD gets the headers of its GET and
+        // no body (the Content-Length still describes what a GET would have returned).
+        fwrite($c, "HTTP/1.1 " . $status . "\r\n"
+                 . ($allow != "" ? "Allow: " . $allow . "\r\n" : "")
+                 . "Content-Type: " . $ctype . "\r\nConnection: close\r\n"
+                 . "Content-Length: " . strlen($payload) . "\r\n\r\n"
+                 . ($mth == "HEAD" ? "" : $payload));
         fclose($c);
     }
 }

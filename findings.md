@@ -5634,3 +5634,14 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门 `endpoint_shape.py <port>`（两台各 5 例）**：`unknown_route` 404+`unknown endpoint`、`malformed_json` 400+`not JSON`、`messages_string` 400+`messages must be an array`、`empty_object` 仍 400+`no user content`（对照：合法 JSON 但无内容，文案不变）、`valid_chat` 200（8001 用流式 + SSE 判据）。日志按端口分名，两端口都入 `gate_live`/`check_gates`。
 **过程**：首版只查首字符，`{"messages": [` 仍落到 no-user-content ⇒ 门当场 FAIL；补末字符检查后通过。8001 的 `empty_object` 首跑 FAIL 是探针发成了非流式（8001 会先拒"streaming text only"），加 `stream:true` 后通过——**判据要对着该服务器真实可服务的形态发**。
 **梯（f669）**：两台 `ENDPOINT-SHAPE: PASS (5)`、自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.504×、哨兵 0、`check_gates 198/0` exit 0。
+
+## F670（2026-11-17）：HTTP 方法一致性——405 + `Allow`，HEAD 不发 body
+**缺陷（探针实测）**：`GET /v1/chat/completions` 回 **400 `no user content`**（形状对不上但原因错）、`POST /health` **回 200 HTML 聊天页**（探针被当成页面请求）、`POST /` 同样 200 HTML、`HEAD /health` 回完整体。对客户端而言，"用错方法"与"请求有毛病"被混为一谈。
+**修复（两台同轮）**：新增 `api_req_method()`；在分发链**最前**判定：
+- 非 GET/HEAD/POST ⇒ 405，`Allow` 按路径给（`/v1/models*` ⇒ GET，其余 `/v1/` ⇒ POST，页面 ⇒ GET）；
+- POST 落在非 `/v1/` 路径（health/spec_stats/plugins/根页）⇒ 405 `Allow: GET`；
+- GET/HEAD 落在除 `/v1/models` 外的 `/v1/` 路由 ⇒ 405 `Allow: POST`。
+8000 的写点增加 `Allow` 头与 **HEAD 抑制 body**（Content-Length 仍描述 GET 会返回的字节数，RFC 语义）。
+**门**：`endpoint_shape.py` 增至 9 例：新增 `get_on_chat`（405 + 正文 `method not allowed` + `Allow: POST` 头）、`post_on_health`（405 + `Allow: GET`）、`delete_models`（405）、`get_models`（200 对照）；两台均 PASS。
+**梯（f670）**：两台 `ENDPOINT-SHAPE: PASS (9)`、自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS (13)`、par/fair 0、scaling 1.527×、哨兵 0、`check_gates 198/0` exit 0。
+**记法**：`Allow` 不是装饰——它是 405 的可执行部分；HEAD 走 GET 的判定、由**写点**抑制 body，避免每个分支各自记得"HEAD 不发 body"。
