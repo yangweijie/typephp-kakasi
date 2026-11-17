@@ -5459,3 +5459,15 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门设计**：`cold-null` 断言未生成时 `residency_budget_gib=None` 且 `residency_enabled=0` 和 `device_gib` 数值；`warm` 在生成后断言 `residency_enabled=1` 且值为数值；`same-source` 断言该值与档案同源一致：`budget_intent` 存在→≈ `float(budget_intent)`；否则 `frac_intent` 存在→≈ `float(frac_intent) * device_gib`；都缺省→≈ `0.55 * device_gib`。三条门都检查 null/0/small 三态不混淆。
 **默认 0.55 验证**：`orch[frac]` 自检打印 `13.94GiB -> 0.51GiB`（25.34GiB×0.55=13.94、×0.02=0.51）算术一致 ✓
 **残影**：`api_plugins_apply` 调用 `model_set_residency_frac((float) $st[9])` 当 `$st[9]` 为空时跳过 ✓ 不报错；未跑 `apply` 时 `residency_frac=0.55` 出厂默认 ✓
+
+## F650（2026-11-17）：FR-05 厂商后端插件的**探索与停车**——设计已成形，但本机不可验证，代码全部撤回
+**动机**：FR-05 的原始意图是"厂商调优内核插件"（类比 ggml `GGML_BACKEND_DL`）：CUDA/HIP/Metal 各一个动态加载插件，SYCL 作为可移植基线。已有 `vendor_profiles.txt` 只覆盖"同一后端上的旋钮"，没有覆盖"另一个后端"。
+**本轮做了什么（探索）**：写出了一套完整的插件 ABI 草案——`plugin_interface.h`（`KakasiPluginGetVTable(api_version)` 入口 + 设备管理/张量/GEMM/attention/elementwise/softmax/norm/KV cache/sampling/model/forward 的 C 函数指针表 + `PluginCapability` 位标记 + `DeviceType`），`plugin_manager.{h,cc}`（`LoadLibraryExA`/`dlopen` 双分支加载、按 API 版本校验、按设备类型查找、目录扫描），以及 CUDA(`cublasGemmEx`)/HIP(`rocblas_gemm_ex`)/Metal(MPS)/SYCL/CPU 五个后端的 vtable 骨架；并在 `project.yml` + `build-kakasi.bat` 里试接条件编译。
+**为什么全部撤回（四条硬理由，按严重度）**：
+1. **本机没有任何一个厂商 SDK**：`where nvcc` 不存在、`hip/hip_runtime.h` 不存在、`Metal/Metal.hpp` 不存在。三个非 SYCL 后端在本机**无法编译更无法运行**，任何"已实现"的说法都只能是空壳。
+2. **接缝会让基线失守**：把 `php_backend_*` 的实现从 `backend.cc` 换成插件分派，会让已绿的 191/0 双模式 smoke 与自检全部改真值来源；而插件加载失败时的降级路径**没有门**（"加载不了就回退 SYCL"会把插件缺陷变成静默降级）。
+3. **踩到一个真实的构建坑（值得记）**：我改 `build-kakasi.bat` 时把 SYCL/CPU/plugin 的 `icx` 编译行**整段删掉了**（只留了 CUDA/HIP/Metal 的条件块），于是 `tpc` 报 `Precompiled project object not found: cpu_backend.obj`——**编译脚本的"删除型编辑"会让一个仍在 `objects:` 列表里的 obj 消失，错误出现在 tpc 阶段而不是编译阶段**，很具误导性。另一个：`backend_unified.cc` 与 `backend.cc` 同时定义 `php_backend_*` ⇒ 链接期重复符号；新胶水文件必须**替换**旧文件而不是并列。
+4. **ABI 决策未定**：插件要跨编译器边界（MSVC 主程序 + NVCC/HIPCC/Metal 工具链各编各的），`std::vector`/`std::string` 不能过界；草案里已退回 C 风格 POD + 裸指针，但**结构体布局与版本演进策略**（增字段怎么办）没有拍板，属于"先写规格再写实现"的范畴。
+**撤回动作**：`git checkout -- engine/project.yml scripts/build-kakasi.bat`；删除 `engine/src/backend_unified.cc`、`engine/src/plugins/`、`test_compile.bat`。撤回后**重建并自检实测 `BUILD_OK` + 912 行 / 0 FAIL / `RUN_EXIT=0`**（`build_f650.log`、`selftest_f650.log`）——确认撤回没有留下半截。
+**记法**：**"缺硬件"不是借口，"无法验证"才是判据**——本轮的设计稿在纸面上自洽，但三条验收线（编译、加载、算对）在无 SDK 的机器上一条都走不通；这种情况下把它留在树里就是**半成品**，与本仓"不留半成品"的纪律冲突。⇒ 正确动作是**撤回 + 留规格**，而不是留一堆注释齐全的空壳。
+**下一步（FR-05 真正的开工条件）**：①先写插件 ABI 规格（POD 布局、版本号、能力位、缺失能力时的**显式**拒绝而非静默降级）；②在**有 NVIDIA 或 AMD 卡**的机器上先做**单个后端**的最小闭环（加载→枚举设备→一次 GEMM 对参考），再谈多后端；③接入前给基线加"插件路径与内建路径 logits 漂移"门（阈值同 f16 5.7e-6），否则无法证明插件没改变算术。
