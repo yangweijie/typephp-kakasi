@@ -261,9 +261,16 @@ function api_plugins_count(string $text): int
     $n = 0;
     for ($i = 0; $i < count($lines); $i++) {
         $ln = trim($lines[$i]);
-        if ($ln != "" && substr($ln, 0, 1) != "#") {
-            $n++;
+        if ($ln == "" || substr($ln, 0, 1) == "#") {
+            continue;
         }
+        // F651: same predicate as api_plugins_select. Counting a short line here while the selector
+        // skips it reported profiles that can never be applied - the number in /plugins has to be
+        // the number of lines the selector would actually consider.
+        if (count(explode("|", $ln)) < 4) {
+            continue;
+        }
+        $n++;
     }
     return $n;
 }
@@ -23059,7 +23066,13 @@ function main(): void
     $plC = api_plugins_select("bad|line\n", "Arc");
     $plOk1 = $plA == "arc|Arc|1|1|3|||||" ? 1 : 0;
     $plOk2 = $plB == "last|*|2|0|3|||||" ? 1 : 0;
-    $plOk3 = $plC == "none||2|0|1|||||" ? 1 : 0;
+    $plOk3 = $plC == "none||2|0|0|||||" ? 1 : 0;
+    // F651: the reported profile count has to be the number of lines the SELECTOR would consider, so
+    // a malformed short line must not inflate it. "bad|line" has two fields and is skipped by
+    // selection, hence total=0 above; a mix of one selectable and one malformed line must count 1.
+    $pgMixed = "# c\nv|Arc|1|1|note\nbad|line\n";
+    $plOkN = api_plugins_count($pgMixed) == 1 ? 1 : 0;
+    $plOkN2 = api_plugins_count($plText) == 3 ? 1 : 0;
     // F642: a 6-field line carries weight_prec and still yields the full width.
     $plD = api_plugins_select("w|Arc|0|1|note|0\n", "Arc");
     $plOk4 = $plD == "w|Arc|0|1|1|0||||" ? 1 : 0;
@@ -23078,10 +23091,12 @@ function main(): void
     $plW6 = api_plugins_pipes($plF) == 9 ? 1 : 0;
     $plWOk = $plW1 + $plW2 + $plW3 + $plW4 + $plW5 + $plW6;
     echo "PROFILES sel=" . $plA . " fallback=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . " frac=" . $plF . "\n";
-    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1 && $plOk6 == 1 && $plWOk == 6) {
-        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, 10-field width on every path)\n";
+    if ($plOk1 == 1 && $plOk2 == 1 && $plOk3 == 1 && $plOk4 == 1 && $plOk5 == 1 && $plOk6 == 1 && $plWOk == 6
+        && $plOkN == 1 && $plOkN2 == 1) {
+        echo "PROFILES: PASS (first match wins, wildcard falls back, comment/blank/short lines skipped, 10-field width on every path, count uses the selector predicate)\n";
     } else {
-        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . $plOk6 . " width=" . $plWOk . " sel=" . $plA
+        echo "PROFILES: FAIL " . $plOk1 . $plOk2 . $plOk3 . $plOk4 . $plOk5 . $plOk6 . " width=" . $plWOk
+            . " cnt.mixed=" . $plOkN . " cnt.valid=" . $plOkN2 . " sel=" . $plA
             . " fb=" . $plB . " empty=" . $plC . " wprec=" . $plD . " extra=" . $plE . " frac=" . $plF . "\n";
     }
 

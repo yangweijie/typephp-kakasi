@@ -2931,3 +2931,8 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **自检**：911 行、`==RUN_EXIT=0==`、FAIL 0、`PROFILES: PASS`、`PARAM-GUARDS: PASS`（`pass=20/20 exc=1 excsrv=1`）。
 - **活梯**：SMOKE 191/0、SMOKE-PRETTY 191/0、par 0、fair 0、scaling 1.537×、哨兵 0、`check_gates 199/0` 且 exit 0。
 - **双向自证**：F647 的 harness 门在 `f645` bounds 上报 `HARNESS_RED`，在 `f646` bounds 上放行——同一门对同一族既能否决已知红又能确认转绿，说明它测的是判定行而非命名巧合。
+
+## F651（2026-11-17）：profiles 计数与选择谓词同源
+- **交付**：`api_plugins_count` 改用与 `api_plugins_select` 相同的谓词（非空/非注释/字段≥4），`/plugins` 的 `profiles` 不再把畸形短行算进去。
+- **门**：`PROFILES` 加 `cnt.mixed=1`、`cnt.valid=3` 两条；`plC` 回落期望 total 位 1→0。期望串先用真 PHP 验过；出厂档案仍计 3，活体门（≥2/≥3）不受影响。
+- **梯（f651）**：BUILD_OK、自检 912 行 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 **194/0**、par/fair 0、scaling 1.594×、哨兵 0、`check_gates 198/0`。

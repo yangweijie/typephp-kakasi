@@ -5471,3 +5471,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **撤回动作**：`git checkout -- engine/project.yml scripts/build-kakasi.bat`；删除 `engine/src/backend_unified.cc`、`engine/src/plugins/`、`test_compile.bat`。撤回后**重建并自检实测 `BUILD_OK` + 912 行 / 0 FAIL / `RUN_EXIT=0`**（`build_f650.log`、`selftest_f650.log`）——确认撤回没有留下半截。
 **记法**：**"缺硬件"不是借口，"无法验证"才是判据**——本轮的设计稿在纸面上自洽，但三条验收线（编译、加载、算对）在无 SDK 的机器上一条都走不通；这种情况下把它留在树里就是**半成品**，与本仓"不留半成品"的纪律冲突。⇒ 正确动作是**撤回 + 留规格**，而不是留一堆注释齐全的空壳。
 **下一步（FR-05 真正的开工条件）**：①先写插件 ABI 规格（POD 布局、版本号、能力位、缺失能力时的**显式**拒绝而非静默降级）；②在**有 NVIDIA 或 AMD 卡**的机器上先做**单个后端**的最小闭环（加载→枚举设备→一次 GEMM 对参考），再谈多后端；③接入前给基线加"插件路径与内建路径 logits 漂移"门（阈值同 f16 5.7e-6），否则无法证明插件没改变算术。
+
+## F651（2026-11-17）：`/plugins` 的 `profiles` 计数与选择谓词不同源
+**缺陷**：`api_plugins_count` 只跳过空行与注释行，而 `api_plugins_select` 用 `count($f) < 4` 跳过字段不足的行。于是 `/plugins` 报的 `profiles` 数**包含选择器永远不会考虑的行**——一个 `bad|line`（2 字段）会被计数，却永远不会被选中或应用。读者按报告数核对"生效档案"必然对不上。
+**修**：`api_plugins_count` 采用与选择器**同一条**谓词（非空、非注释、字段数 ≥ 4）。`PROFILES` 自检同轮加两条计数门：合成文本 `# c\nv|Arc|1|1|note\nbad|line\n` 必须计 **1**（而不是 2），三行合法文本必须计 **3**；`bad|line` 单独作为文本时回落串的 total 位从 1 变 **0**（期望随之改 `none||2|0|0|||||`）。
+**期望先验证**：三条选择串 + 三个计数（mixed=1 / valid=3 / badOnly=0）**先用真 PHP 跑过**再上构建；出厂的 `vendor_profiles.txt` 在新谓词下仍计 **3**，因此 `plugins-report`（≥2）与 `par-plugins-weight_prec`（≥3）两条活体门不受影响。
+**结果（`f651` 梯）**：`BUILD_OK`；自检 912 行 **0 FAIL**、`PROFILES: PASS … count uses the selector predicate`；四 harness `CHECK_EXIT=0`（bounds `VERDICT: PASS`）；**SMOKE 与 SMOKE-PRETTY 各 194/0**；`PAR_EXIT=0`、`FAIR_EXIT=0`、scaling **1.594×**、`SENTINELS_LEFT=0`；`check_gates 198/0` 且 exit 0。
+**记法**：**同一个语义的两个入口必须共用一条谓词**——"选择器跳过什么"与"报告数统计什么"分头实现时，差集就是用户看到的谎言。这类不一致没有运行期报错，只能靠**给计数本身设门**（而不是只给选择结果设门）暴露。
