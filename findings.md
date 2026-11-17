@@ -5577,3 +5577,11 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **做法**：`schema_parity.py collect <port> <out> [chat|anth|resp]` 复用同一 13 例表，仅换信封与路径（`/v1/chat/completions`、`/v1/messages`、`/v1/responses`，统一 `stream:true`；实测两种备用传输都支持流式）；把 Anthropic/Responses 的收集分别与 chat 收集**逐例比对**（code + 具名性）。`gate_live` 的 4 个新增退出码（anth/resp 收集 + 两份比对）入闸；`check_gates` live 段新增两条 `schema_parity_tcompare_{anth,resp}_*` 必须 `PARITY: PASS`。
 **实测（f662）**：三条传输各 13/13 期望成立，两份比对均 `PARITY: PASS (13 cases agree)`（f662 日志里写的是旧措辞 "… across servers"；比对器输出随后统一为中性措辞，仅字符串改动，`py_compile` 通过）。
 **梯（f662）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、`PARITY: PASS`、`PARITYCA/CR_EXIT=0`、par/fair 0、scaling 1.553×、哨兵 0、`check_gates 198/0` exit 0。
+
+## F663（2026-11-17）：一致性矩阵的 200 也必须有值契约——"接受"不等于"兑现"
+**缺口（自指）**：F658b 已证 8001 会把不可服务 schema 当自由文本回 200；F659/F662 的矩阵只比 **status + 具名性**，于是"200 但值是 `10`（越界）"这种**静默违约**仍能通过。项目教条是"accepted ⇒ honored"，门却没测 honored。
+**做法**：`schema_parity.py` 对每个 200 的用例**解析流式正文并按 schema 校验值**：`enum_ok`∈{paris,lyon}、`bounds_ok`∈[1,5] 且为整数、`excl_bool_served`≥5、`mult_unb_ok` 是 3 的倍数、`onedf_bounds_only`≥1。解析器覆盖三种 SSE 方言（chat `choices[0].delta.content` / Anthropic `delta.text` / Responses `delta` 为字符串）。`value_ok` 写进收集集，**两台服务器比较时也纳入**（值契约不一致同样算分歧）。
+**负向对照（单元级，先做代价最低的自证）**：`value_ok("bounds_ok", '{"n":10}')` → False、`{"n":3}` → True、`mult_unb_ok '{"n":4}'` → False、`enum_ok '{"c":"x"}'` → False、非 JSON → False；三种 SSE 方言拼接分别得 `{"n":2}` / `AB` / `{}`。
+**过程**：首版 `sse_text` 把 Responses 的 `delta`（字符串）当 dict 用 ⇒ `AttributeError` 当场暴露（收集器崩溃即红），修成 `isinstance(d, dict)` 分支后三方言齐绿。
+**实测（f663）**：8000 三传输、8001 各 13/13，`value=True` 全绿（`bounds_ok`→`{"n":1}`、`mult_unb_ok`→`{"n":1000002}`）；两份 `tcompare` `PARITY: PASS (13 cases agree)`；`check_gates` exit 0。
+**梯（f663）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHE-PERSIST: PASS`、par/fair 0、scaling 1.523×、哨兵 0、`check_gates 198/0` exit 0。

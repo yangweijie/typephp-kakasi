@@ -57,6 +57,59 @@ CASES = [
 PATHS = {"chat": "/v1/chat/completions", "anth": "/v1/messages", "resp": "/v1/responses"}
 
 
+def sse_text(raw):
+    """Concatenate the text deltas of any of the three SSE dialects."""
+    out = []
+    for line in raw.split("\n"):
+        if not line.startswith("data: "):
+            continue
+        payload = line[6:].strip()
+        if payload == "[DONE]":
+            continue
+        try:
+            ev = json.loads(payload)
+        except Exception:
+            continue
+        d = ev.get("delta")
+        if isinstance(d, dict):
+            if isinstance(d.get("content"), str):
+                out.append(d["content"])
+            elif isinstance(d.get("text"), str):
+                out.append(d["text"])
+        elif isinstance(d, str):
+            out.append(d)
+        ch = ev.get("choices")
+        if isinstance(ch, list) and ch and isinstance(ch[0].get("delta"), dict):
+            c = ch[0]["delta"].get("content")
+            if isinstance(c, str):
+                out.append(c)
+    return "".join(out)
+
+
+def value_ok(name, text):
+    """F663: a 200 is only honest if the streamed value satisfies the schema. Each served case
+    states what "honoured" means; parsing the streamed text is the only way to see it."""
+    try:
+        obj = json.loads(text)
+    except Exception:
+        return False, "not-json:" + text[:60]
+    if name == "enum_ok":
+        return obj.get("c") in ("paris", "lyon"), text[:60]
+    if name == "bounds_ok":
+        v = obj.get("n")
+        return isinstance(v, int) and 1 <= v <= 5, text[:60]
+    if name == "excl_bool_served":
+        v = obj.get("n")
+        return isinstance(v, int) and v >= 5, text[:60]
+    if name == "mult_unb_ok":
+        v = obj.get("n")
+        return isinstance(v, int) and v % 3 == 0, text[:60]
+    if name == "onedf_bounds_only":
+        v = obj.get("n")
+        return isinstance(v, int) and v >= 1, text[:60]
+    return True, ""
+
+
 def post(port, name, schema, transport="chat"):
     # F662: the same schema travels under a different key on each transport (response_format /
     # output_format / text.format). The guards read the translated json_schema marker, so the
@@ -91,13 +144,17 @@ def collect(port, out, transport="chat"):
     for name, schema, expect, kw in CASES:
         code, text = post(port, name, schema, transport)
         named = (kw in text) if kw else True
-        ok = (code == expect) and named
+        vok, vdet = (True, "")
+        if code == 200:
+            vok, vdet = value_ok(name, sse_text(text))
+        ok = (code == expect) and named and vok
         if not ok:
             bad += 1
         rows.append({"name": name, "code": code, "expect": expect, "keyword": kw,
-                     "named": named, "ok": ok, "text": text[:400]})
-        print("%-20s port=%d code=%s expect=%s named=%s ok=%s text=%s"
-              % (name, port, code, expect, named, ok, text[:110].replace("\n", " ")))
+                     "named": named, "value_ok": vok, "ok": ok, "text": text[:400]})
+        print("%-20s port=%d code=%s expect=%s named=%s value=%s ok=%s text=%s"
+              % (name, port, code, expect, named, vok, ok,
+                 (vdet or text[:110]).replace("\n", " ")))
     json.dump(rows, open(out, "w"), indent=1)
     print("PARITY-COLLECT port=%d transport=%s ok=%d bad=%d out=%s"
           % (port, transport, len(CASES) - bad, bad, out))
@@ -115,10 +172,12 @@ def compare(a, b):
         # Compare the CLASS and the naming, not the text: the two servers wrap refusals in their own
         # envelopes ("request schema not supported: ..." vs "request not supported: ..."), and the
         # text itself may mention supported surfaces differently.
-        if x["name"] != y["name"] or x["code"] != y["code"] or x["named"] != y["named"]:
+        if (x["name"] != y["name"] or x["code"] != y["code"] or x["named"] != y["named"]
+                or x.get("value_ok") != y.get("value_ok")):
             bad += 1
-            print("PARITY-DIFF %-20s a=(%s named=%s) b=(%s named=%s)"
-                  % (x["name"], x["code"], x["named"], y["code"], y["named"]))
+            print("PARITY-DIFF %-20s a=(%s named=%s value=%s) b=(%s named=%s value=%s)"
+                  % (x["name"], x["code"], x["named"], x.get("value_ok"),
+                     y["code"], y["named"], y.get("value_ok")))
     print("PARITY: " + ("PASS (%d cases agree)" % len(ra)
                         if bad == 0 else "FAIL diverged=%d" % bad))
     return 0 if bad == 0 else 1

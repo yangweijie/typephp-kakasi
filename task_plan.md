@@ -2559,3 +2559,8 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 ### F662（2026-11-17）：矩阵覆盖三传输拼写（chat / Anthropic output_format / Responses text.format）
 **做法**：`schema_parity.py` 增加 `transport` 参数，13 例表不变；anth/resp 各收集一份并与 chat 逐例比对（code+具名性）；`gate_live` 四个新退出码入闸，`check_gates` 要求两份 `tcompare` 为 `PARITY: PASS`。
 **实测**：13/13 三传输一致；`PARITY: PASS` ×2（措辞随后中性化，纯字符串改动）。
+
+### F663（2026-11-17）：矩阵 200 用例加值校验（accepted ⇒ honored 落到门上）
+**做法**：`value_ok(name, sse_text(...))` 对五个可服务用例按 schema 验值（enum 成员、界内整数、倍数、下界），三种 SSE 方言统一抽取；`value_ok` 纳入收集集与两两比对（值契约不一致也算分歧）。
+**负向对照**：单元级喂违约值（10 / 4 / "x" / 非 JSON）全部判 False，三方言拼接正确。
+**过程**：首版把 Responses 的字符串 `delta` 当 dict ⇒ 收集器崩溃即红；修复后 f663 全绿（8000 三传输 + 8001 各 13/13）。
