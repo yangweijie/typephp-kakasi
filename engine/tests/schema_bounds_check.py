@@ -476,9 +476,16 @@ cases = [
      and isinstance(val_of(txt, "n"), int) and val_of(txt, "n") <= 49),
     # No integer satisfies 5 < n < 6: unsatisfiable for an integer leaf, so it must be refused
     # rather than served by a generator that ignores the exclusive bounds.
+    # F658: the body must NAME the keywords the schema carries - family name alone was what let a
+    # multipleOf refusal go unnamed for months. One-sided assertions, no OR escape.
     ("excl_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "exclusiveMinimum": 5, "exclusiveMaximum": 6}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 400 and "numeric bounds" in txt
+     and "exclusiveMinimum/exclusiveMaximum" in txt),
+    ("bnd_name_mult_refuse", "Give the number.",
+     {"type": "object", "properties": {"n": {"type": "integer", "minimum": 1, "maximum": 5, "multipleOf": 7}}},
+     lambda code, txt: code == 400 and "numeric bounds" in txt
+     and "multipleOf" in txt and "minimum/maximum" in txt),
     # F423: both an inclusive and an exclusive bound on the same side - the STRICTER governs, so the
     # looser inclusive bound no longer shadows a stricter exclusive one.
     ("mix_strict_min", "Give the number.",
@@ -497,7 +504,8 @@ cases = [
     # n >= 5 AND n < 5 is empty: unsatisfiable, so it must be refused.
     ("mix_unsatisfiable", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "integer", "minimum": 5, "exclusiveMaximum": 5}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 400 and "numeric bounds" in txt
+     and "minimum/maximum" in txt and "exclusiveMaximum" in txt),
     # F505: a multiplier beyond the forced-suffix width is served by the constant 0 - a multiple
     # of every M - instead of being refused.
     ("num_mult_unb_huge_ok", "Give the number.",
@@ -836,7 +844,7 @@ cases = [
     # No multiple of 0.3 lies in [1, 1.1]: unsatisfiable, stays refused.
     ("num_mult_frac_unsat_refuse", "Give the number.",
      {"type": "object", "properties": {"n": {"type": "number", "minimum": 1, "maximum": 1.1, "multipleOf": 0.3}}},
-     lambda code, txt: code == 400 and "numeric bounds" in txt),
+     lambda code, txt: code == 400 and "numeric bounds" in txt and "multipleOf" in txt),
     # F496: an INTEGER leaf folds a fractional multiplier through its reduced numerator - integer
     # multiples of p/q are exactly the multiples of p. 0.3 -> multiples of 3, 1.5 -> multiples of 3.
     # The candidates tier enumerates the same filtered set (its old literal prefix read 0.3 as 0).

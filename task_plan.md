@@ -2530,3 +2530,13 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 **结论**：`vendor_profiles.txt` 已覆盖"同后端旋钮"，但 FR-05 原意为"跨厂商后端插件"。本轮写出完整插件 ABI 草案（vtable + 加载器 + 五后端骨架）后**全部撤回**，理由：本机无 CUDA/HIP/Metal SDK（编译/加载/算对三条验收线都不可达）、替换 `php_backend_*` 会让 191/0 基线改真值来源且缺降级门、ABI 跨编译器边界与版本演进策略未拍板。撤回后重建+自检实测 `BUILD_OK`、912 行 0 FAIL。
 **顺带记两个构建坑**：①在 `build-kakasi.bat` 里删掉某段 `icx` 编译行、却把对应 `.obj` 留在 `project.yml` 的 `objects:` 里 ⇒ 报错出现在 `tpc` 阶段的 `Precompiled project object not found`，看起来像"文件丢了"；②新胶水文件与旧文件**并列**会产生重复 `php_*` 符号，必须替换。
 **开工条件（三件齐再做）**：①插件 ABI 规格（POD 布局/版本/能力位/缺能力时显式拒绝）；②有 NVIDIA 或 AMD 卡的机器上先做单后端最小闭环（加载→设备→一次 GEMM 对参考）；③基线加"插件 vs 内建 logits 漂移"门（f16 阈值 5.7e-6）。
+
+## F658（2026-11-17）：bounds 拒绝按关键字具名，两服务器共用一段理由
+**缺口**：`numeric bounds` 族名拒绝不含关键字，而 8001 同族拒绝是一大段点名文字 ⇒ 同一请求两种说法；调用方无从得知是哪个约束不可服务（F646 只修了孤立 draft-4 布尔一例）。
+**实现**：`api_schema_bounds_reason($schema)`——谓词先判（`==1` 才继续），再按关键字**在场性**（`multipleOf`/`minimum`/`maximum`/`exclusive*`）分类；理由保留族名子串。8000 外层守卫与 8001 遗留链同用此函数。分类不镜像谓词分支（14 个 `return 1;`，镜像即 F646b 之坑）。
+**证据方法**：构建前用解释器 `require engine/main.php` 直跑五形状，确认"理由空 ⇔ 谓词 0"。
+**门**：自检 `BND-NAME`；bounds harness 三处收紧为单侧关键字断言 + 新增 `bnd_name_mult_refuse`；8001 `par-bounds-keyword-named`。
+
+### F658b（2026-11-17）：8001 补上共享 schema 守卫；gate_live/check_gates 开始判 8001 三件
+**缺陷**：8001 `api_serve_par` 对 json_schema 只查关键字（uniqueItems 一类），bounds/pattern/深数组/嵌套上限全跳过 ⇒ 不可满足的 `[1,5]+multipleOf 7` 被当自由文本流式返回 200 "10"（实测，`f658` 首轮被我新加的 `par-bounds-keyword-named` 抓到）。同时暴露第二条假绿：`gate_live.sh` 打印 `PAR/FAIR/THRU_EXIT` 却不判，`PAR_EXIT=1` 仍 `exit 0`。
+**修复**：8001 改调 `api_schema_guard_unsupported($body)`；`gate_live` 末尾把 PAR/FAIR 退出码与 `THROUGHPUT: PASS` 行入闸；`check_gates` 增第三段读最新 par/fair/thru 日志。新门对 `f658` 旧日志自证为 `PAR_RED`（exit 1）。

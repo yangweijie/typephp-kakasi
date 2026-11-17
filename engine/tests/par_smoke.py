@@ -202,6 +202,17 @@ def main():
                                           "tags": {"type": "array", "items": {"type": "string"},
                                                    "uniqueItems": True}}}}}})
     check("par-schema-keyword-refuse", pmsg.find("uniqueItems") >= 0, pdet + " " + pmsg[:120])
+    # F658: both servers now render a bounds refusal through one classifier, so the 8001 body must
+    # name the keyword too - not just the family.
+    pmsg, pdet = par_refusal({"messages": [{"role": "user", "content": "Give the number."}],
+                              "max_tokens": 48, "stream": True,
+                              "response_format": {"type": "json_schema", "json_schema": {
+                                  "name": "bndname", "schema": {
+                                      "type": "object", "properties": {
+                                          "n": {"type": "integer", "minimum": 1,
+                                                "maximum": 5, "multipleOf": 7}}}}}})
+    check("par-bounds-keyword-named", pmsg.find("multipleOf") >= 0
+          and pmsg.find("numeric bounds") >= 0, pdet + " " + pmsg[:200])
 
     # F640: par errors follow the outlet envelope too - its own writers bypassed F633's transform,
     # so /v1/messages got the OpenAI-shaped body here.

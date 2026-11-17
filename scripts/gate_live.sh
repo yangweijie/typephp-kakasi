@@ -98,9 +98,11 @@ if ! wait_health 8001 40; then
   exit 3
 fi
 python "$E/tests/par_smoke.py" 8001 > "$E/par_smoke_$TAG.log" 2>&1
-echo "PAR_EXIT=$?" >> "$E/par_smoke_$TAG.log"
+PAR_RC=$?
+echo "PAR_EXIT=$PAR_RC" >> "$E/par_smoke_$TAG.log"
 python "$E/tests/fairness_test.py" 8001 > "$E/fairness_$TAG.log" 2>&1
-echo "FAIR_EXIT=$?" >> "$E/fairness_$TAG.log"
+FAIR_RC=$?
+echo "FAIR_EXIT=$FAIR_RC" >> "$E/fairness_$TAG.log"
 # Aggregate throughput of N concurrent streams vs one - the number the plan has been asserting
 # ("throughput is still shared") without ever measuring. Scales with the slots in the 8001 server.
 python "$E/tests/throughput_test.py" 8001 "${THRU_TOKENS:-60}" "${THRU_STREAMS:-2}" > "$E/throughput_$TAG.log" 2>&1
@@ -112,8 +114,14 @@ echo "THRU: $(grep -E 'scaling|THROUGHPUT:' "$E/throughput_$TAG.log" | tr '\n' '
 echo "SENTINELS_LEFT=$(ls "$E"/*.on 2>/dev/null | wc -l)"
 # F596: a failing smoke suite must fail the gate - the FAIL counts were previously printed while
 # the script still exited 0, which let red ladders look green.
-if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ]; then
-  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0}"
+# F658b: the same held for the 8001 trio. PAR_EXIT=1 was printed on f658 - the cooperative server
+# had answered an unsatisfiable bounds schema - and this script still exited 0 because only the
+# 8000 exits were checked. The three 8001 results gate here now: PAR and FAIR on their exit codes,
+# THRU on its verdict line (that script has no exit status to trust).
+THRU_OK=$(grep -c 'THROUGHPUT: PASS' "$E/throughput_$TAG.log" 2>/dev/null)
+if [ "${SMOKE_RC:-0}" != "0" ] || [ "${SMOKE_PRETTY_RC:-0}" != "0" ] \
+   || [ "${PAR_RC:-0}" != "0" ] || [ "${FAIR_RC:-0}" != "0" ] || [ "${THRU_OK:-0}" -lt 1 ]; then
+  echo "GATE_FAIL smoke_rc=${SMOKE_RC:-0} smoke_pretty_rc=${SMOKE_PRETTY_RC:-0} par_rc=${PAR_RC:-0} fair_rc=${FAIR_RC:-0} thru_ok=${THRU_OK:-0}"
   exit 1
 fi
 echo GATE_LIVE_DONE tag=$TAG

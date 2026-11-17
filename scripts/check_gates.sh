@@ -57,6 +57,26 @@ for fam in required count pattern bounds; do
     exit 1
   fi
 done
+# F658b: the cooperative server's results are gates too. It shares the writers, so its smoke says
+# whether a shape the engine cannot honour is refused there as well - until F658b PAR_EXIT=1 was
+# printed and ignored and gate_live still exited 0. Newest logs only, same rule as the harnesses.
+PLOG=$(ls -t engine/par_smoke_*.log 2>/dev/null | head -1)
+if [ -z "$PLOG" ] || ! grep -q '^PAR SMOKE: PASS' "$PLOG" || ! grep -q 'PAR_EXIT=0' "$PLOG"; then
+  echo "PAR_RED log=$(basename "${PLOG:-none}")"
+  [ -n "$PLOG" ] && grep -m 3 'FAIL\|PAR SMOKE\|PAR_EXIT' "$PLOG"
+  exit 1
+fi
+FLOG=$(ls -t engine/fairness_*.log 2>/dev/null | head -1)
+if [ -z "$FLOG" ] || ! grep -q 'FAIRNESS: PASS' "$FLOG"; then
+  echo "FAIR_RED log=$(basename "${FLOG:-none}")"
+  exit 1
+fi
+TLOG=$(ls -t engine/throughput_*.log 2>/dev/null | head -1)
+if [ -z "$TLOG" ] || ! grep -q 'THROUGHPUT: PASS' "$TLOG"; then
+  echo "THRU_RED log=$(basename "${TLOG:-none}")"
+  exit 1
+fi
+
 # A row may cite a self-test gate/field OR a served case, so the haystack is the newest self-test
 # plus the newest live harness logs. Newest only, deliberately: globbing every historical log
 # (~1400 files, 43KB of paths and climbing toward the process argument limit) lets a citation be

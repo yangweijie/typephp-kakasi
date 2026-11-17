@@ -12583,7 +12583,8 @@ function api_schema_guard_unsupported(string $body): string
             && api_schema_number_bounded_shape($sch) == "") {
             return "schema keyword exclusiveMinimum/exclusiveMaximum (draft-4 boolean with no inclusive bound to tighten)";
         }
-        return "numeric bounds";
+        // F658: the remaining refusals name the keywords the schema actually carries.
+        return api_schema_bounds_reason($sch);
     }
     if (api_schema_choices_pure_bounds($sch) == 1) {
         return "oneOf/anyOf branches carrying only numeric bounds";
@@ -14875,6 +14876,38 @@ function api_schema_bounds_unsupported(string $body): int
     return 0;
 }
 
+// F658: the outer guard used to render every bounds refusal as the family name, so a `multipleOf`
+// refusal never said `multipleOf` while the 8001 chain named every keyword it covers - the same
+// request, two different bodies. The predicate above stays the sole judge of WHAT is refused;
+// this function only classifies WHICH keywords the refused schema carries, by presence, so a later
+// branch change cannot make the wording claim a reason the verdict did not use. Empty return is the
+// servable side, mirroring the predicate.
+function api_schema_bounds_reason(string $schema): string
+{
+    if (api_schema_bounds_unsupported($schema) != 1) {
+        return "";
+    }
+    $kws = "";
+    if (strpos($schema, "\"multipleOf\"") !== false) {
+        $kws = "multipleOf";
+    }
+    if (strpos($schema, "\"minimum\"") !== false || strpos($schema, "\"maximum\"") !== false) {
+        $kws = $kws == "" ? "minimum/maximum" : $kws . ",minimum/maximum";
+    }
+    if (strpos($schema, "\"exclusiveMinimum\"") !== false || strpos($schema, "\"exclusiveMaximum\"") !== false) {
+        $kws = $kws == "" ? "exclusiveMinimum/exclusiveMaximum" : $kws . ",exclusiveMinimum/exclusiveMaximum";
+    }
+    if ($kws == "") {
+        $kws = "numeric bounds";
+    }
+    return "numeric bounds cannot be honoured on this shape: schema keyword " . $kws
+        . " has no writer for it (served: a single integer property with any-span inclusive "
+        . "bounds, exclusive bounds converted to the adjacent integer, fractional bounds rounded "
+        . "inward, a multipleOf inside those bounds emitted as the smallest multiple, an unbounded "
+        . "integer/number multipleOf up to 999999 emitted as a forced suffix; several properties "
+        . "need every leaf to be an integer with its own multipleOf)";
+}
+
 // F404: expand a class body into its character set - bare safe characters and a-z/0-9/A-Z ranges
 // with both ends in the same family. Negation, metacharacters and unsafe characters (quote,
 // backslash, colon, tilde, pipe, comma - anything that could break the JSON string, the plan
@@ -16065,10 +16098,12 @@ Connection: close
                 // the same parameter set and schema keywords instead of streaming under them.
                 $parWhy = api_param_unsupported($body);
                 if ($parWhy == "" && strpos($body, "\"json_schema\"") !== false) {
-                    $parKw = api_schema_keywords_unsupported(api_json_object_after($body, "schema"));
-                    if ($parKw != "") {
-                        $parWhy = "schema keyword " . $parKw;
-                    }
+                    // F658b: keyword-only checking let a schema no writer can honour through to
+                    // FREE streamed text - measured: integer [1,5] with multipleOf 7 (no multiple
+                    // exists in the interval) answered 200 with "10", violating both keywords.
+                    // The outer guard is the shared claim predicate, so this server refuses
+                    // exactly the shapes 8000 refuses instead of answering them unconstrained.
+                    $parWhy = api_schema_guard_unsupported($body);
                 }
                 if ($parWhy != "") {
                     $bad = 2;
@@ -16864,7 +16899,10 @@ function api_serve(int $port): void
                 // instead. F405/F419: the honoured set is wider now, so the message names it - a
                 // single integer property with bounds of any sign and any span, either side
                 // missing; what remains is float bounds and multi-property bounds.
-                $payload = "{\"error\":{\"message\":\"numeric bounds are honoured on a single integer property with minimum/maximum or exclusiveMinimum/exclusiveMaximum of any sign (any span); exclusive bounds convert to the adjacent integer bound (the smallest integer above an exclusive minimum, the largest below an exclusive maximum), fractional bounds on an integer leaf round inward, and an interval containing no integer is refused; multipleOf inside those bounds is served as the smallest multiple, and an interval containing no multiple is refused; an unbounded multipleOf up to 999999 is served by a forced suffix whose width follows the multiplier, and one above that is refused; a multipleOf on a schema with more than one property, or on a number (non-integer) leaf, is not supported; the draft-4 boolean spelling (exclusiveMinimum/exclusiveMaximum:true) is not supported; a non-integer number leaf with fractional bounds and multi-property bounds are not supported\",\"type\":\"invalid_request_error\"}}";
+                // F658: this chain and the outer guard now share one reason text, so the same
+                // request cannot be told two different things depending on which server answers.
+                $payload = "{\"error\":{\"message\":\"" . api_schema_bounds_reason($schBody)
+                    . "\",\"type\":\"invalid_request_error\"}}";
                 $status = "400 Bad Request";
             } else if (api_schema_deep_array_object($schBody) == 1) {
                 // F598: no writer serves three-deep arrays of objects; answering prose here used
@@ -23132,6 +23170,31 @@ function main(): void
         echo "F652: PASS (a failed step leaves the session position unchanged)\n";
     } else {
         echo "F652: FAIL (a failed step advanced the session position)\n";
+    }
+
+    // F658: a refused bounds shape must name the keywords it actually carries, not just the family.
+    // Classification is by keyword presence AFTER the predicate refuses, so the predicate stays the
+    // only judge and the empty/non-empty sides mirror it exactly. Each condition is its own
+    // statement: tpc stores long && chains in a giant function unreliably (F580 lesson).
+    $bndNameMult = api_schema_bounds_reason('{"properties":{"n":{"type":"integer","minimum":1,"maximum":5,"multipleOf":7}}}');
+    $bndNameFrac = api_schema_bounds_reason('{"properties":{"n":{"type":"number","minimum":1,"maximum":1.1,"multipleOf":0.3}}}');
+    $bndNameExc = api_schema_bounds_reason('{"properties":{"n":{"type":"integer","exclusiveMinimum":5,"exclusiveMaximum":6}}}');
+    $bndNameOk = api_schema_bounds_reason('{"properties":{"n":{"type":"integer","minimum":1,"maximum":5}}}');
+    $bndNameOk2 = api_schema_bounds_reason('{"properties":{"n":{"type":"number","multipleOf":0.7}}}');
+    $bndNameGate = 1;
+    if (strpos($bndNameMult, "numeric bounds") === false) { $bndNameGate = 0; }
+    if (strpos($bndNameMult, "multipleOf") === false) { $bndNameGate = 0; }
+    if (strpos($bndNameMult, "minimum/maximum") === false) { $bndNameGate = 0; }
+    if (strpos($bndNameFrac, "multipleOf") === false) { $bndNameGate = 0; }
+    if (strpos($bndNameExc, "exclusiveMinimum/exclusiveMaximum") === false) { $bndNameGate = 0; }
+    if ($bndNameOk != "") { $bndNameGate = 0; }
+    if ($bndNameOk2 != "") { $bndNameGate = 0; }
+    echo "BND-NAME mult=[" . $bndNameMult . "] exc=[" . $bndNameExc . "] served=[" . $bndNameOk
+        . "][" . $bndNameOk2 . "]\n";
+    if ($bndNameGate == 1) {
+        echo "BND-NAME: PASS (refusals name the keywords carried, servable shapes give no reason)\n";
+    } else {
+        echo "BND-NAME: FAIL (a refusal fell back to an unnamed or wrongly named reason)\n";
     }
 
     // PROFILES (F641/F644): profile selection on synthetic text - first match wins, a non-matching line

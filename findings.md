@@ -5534,3 +5534,18 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 3. **没有测试模型就没有闭环**：本机只有一个 0.5B 权重；"用同一模型当草稿器"只能证明机制（接受率必然=自草稿，收益≈0），不能证明收益。
 **结论（本轮交付的是决策而非代码）**：FR-06 在**当前硬件与权重条件下**只能做到"机制验证"，做不到"收益验证"；而本仓纪律是"指标必须由实测背书"。⇒ **建议：先由用户拍板路线①（额外小权重）**，并允许下载一个 135M–0.5B 同族草稿模型；在此之前不动引擎。此条与 F650（插件）同属"缺硬件/缺决策"，**不是遗漏**。
 **可复用的量化口径**：以后任何草稿器改动，都拿 `gate_live` 的 `drafts/accepted/verifies` 三元组做基线对比（本基线 36/13/6），不要用"感觉更快"。
+
+## F658（2026-11-17）：界拒绝按关键字具名——把"族名"换成"关键字"的分类器，两个服务器共用同一段理由
+**缺陷（含一次自我更正）**：8000 的**外层守卫**（`api_schema_guard_unsupported`）对 bounds 族只回族名 `"numeric bounds"`，而同一函数**更后**还有一条 `api_schema_bounds_unsupported` 分支（F397 起）回一大段点名 `minimum/maximum/exclusive…/multipleOf` 的文字——同一服务器两处措辞不一致，外层先命中时关键字就丢了。**我最初写成本条时把这段长文字误记在 8001 上**；实测（F658b）表明 8001 **根本没有 bounds 守卫**，它把该 schema 直接当自由流式文本回答（见下）。F646 只修了"孤立 draft-4 布尔"一例，其余仍无关键字 ⇒ 调用方无法知道是哪个约束不可服务。
+**做法**：新增 `api_schema_bounds_reason(string $schema): string`——**先问谓词**（`api_schema_bounds_unsupported()==1` 才继续），**再按关键字在场性分类**（`strpos` 查 `"multipleOf"`/`"minimum"`/`"maximum"`/`"exclusive*"`，三者齐全时按顺序拼接）。理由里**保留族名子串**，因此既有约 20 条只断言族名的夹具不改也照过；措辞与判决不会各走各路的原因：分类不看谓词内部走了哪条分支，只报"schema 里有什么关键字"，谓词若改变受理面，具名只会跟着请求内容变，不会宣称一个没用到的理由。8000 外层守卫与 8001 遗留链**都改为返回这同一个函数**，两条链自此不可能再各说各话。
+**为什么不复制谓词的分支**：谓词有 14 个 `return 1;`，镜像条件就是 F646b 的坑（抄局部条件会让夹具与实现同时"看着有理"）；关键字在场性是**与判定链无关的单一事实**。
+**先在解释器里验期望串**（F645 教训）：`php -r` 直接 `require engine/main.php`（全文件只有函数定义）跑五个形状，得到 `mult_unsat/frac_unsat/excl_unsat` 均 `pred=1` 且理由含对应关键字、`served_int/served_mult` 均 `pred=0` 且理由为空——**空/非空与谓词逐例同向**，把"期望对不对"从构建里摘出来。
+**门**：自检新增 `BND-NAME`（三条拒绝 + 两条可服务对照，逐项单语句，打印实际理由串）；bounds harness 三条**单侧**断言收紧（`excl_unsatisfiable` 须含 `exclusiveMinimum/exclusiveMaximum`、`num_mult_frac_unsat_refuse` 须含 `multipleOf`、`mix_unsatisfiable` 须含 `minimum/maximum` 与 `exclusiveMaximum`），新增 `bnd_name_mult_refuse`（整数界 `[1,5]` + `multipleOf:7` ⇒ 400 且同时含 `multipleOf`/`minimum/maximum`）；8001 新增 `par-bounds-keyword-named`。**无一例写成"或"**，避免 F646b 那种逃生支路。
+**边界**：分类只报关键字，不宣称"这个关键字就是唯一原因"——理由里写的是 "schema keyword <kws> has no writer for it"，即"该 shape 上的这些约束没有写出器"，与判定一致。
+
+### F658b（同日）：8001 的 schema 守卫只查关键字 ⇒ 不可服务的 bounds schema 被当自由文本回答（实测 200 "10"）
+**发现路径**：F658 为 8001 加的门 `par-bounds-keyword-named` 在首轮阶梯（`f658`）**FAIL**——不是夹具问题，是协作服务器**真的**接受了"整数 `[1,5]` + `multipleOf 7`"（区间内无 7 的倍数，语义上不可满足），流式返回 200、正文 `1` `0` 两个 chunk。
+**机制**：`api_serve_par`（8001）在参数/关键字判定处只调 `api_schema_keywords_unsupported`（uniqueItems 一类），**从不调** `api_schema_bounds_unsupported`/pattern/深数组/嵌套上限——而这些正是 8000 外层 `api_schema_guard_unsupported` 的内容。写方集合两服务器共享 ⇒ 8000 无写方认领的 shape 在 8001 同样无人认领，只能是自由文本。**这是 F600/F601 同类的 fail-open 第三次出现在新入口，且这次是"新加的守卫没同步到另一台服务器"。**
+**修复**：8001 的 schema 判定改为直接调 `api_schema_guard_unsupported($body)`（关键字的输出格式与旧调用完全相同：`schema keyword <kw>`，故 `par-schema-keyword-refuse` 不受影响）。
+**第二条假绿（与缺陷同等重要）**：`gate_live.sh` 一直打印 `PAR_EXIT/FAIR_EXIT/THRU_EXIT`，但**末尾只检查 8000 的两个 smoke 退出码** ⇒ `PAR_EXIT=1` 时脚本仍 `exit 0`，整梯 `LADDER_EXIT=0`。修复：三者在 `gate_live` 末尾入闸（PAR/FAIR 用退出码，THRU 该脚本无退出状态，改判 `THROUGHPUT: PASS` 行）；`check_gates.sh` 增加第三段——最新 `par_smoke_*`/`fairness_*`/`throughput_*` 必须分别 `PAR SMOKE: PASS`+`PAR_EXIT=0`、`FAIRNESS: PASS`、`THROUGHPUT: PASS`。**新门自证**：加完后立刻对 `f658` 的旧日志跑 `check_gates`，输出 `PAR_RED log=par_smoke_f658.log` + 那条 FAIL 行并 `exit 1`——同一门先否决已知红，修复后再放行。
+**教训固化**：①"打印了退出码"≠"在判"——凡 `echo "*_EXIT=$?"` 必须同时出现在闸条件里，否则只是日志装饰；②给入口 A 加守卫时要 grep 该守护函数在**所有** serve 路径的调用点（8001 是独立函数，不会继承 8000 的 else-if 链）；③新增活体门的首轮就是它的自证轮——宁可它先红，也不要它从没跑对过。
