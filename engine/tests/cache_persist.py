@@ -90,8 +90,10 @@ def last_cache(since):
     return None
 
 
-def ask(prompt):
+def ask(prompt, use_cache=None):
     body = {"messages": [{"role": "user", "content": prompt}], "max_tokens": 24, "temperature": 0}
+    if use_cache is not None:
+        body["prefix_cache"] = use_cache
     req = urllib.request.Request(URL, data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=300) as f:
@@ -119,20 +121,34 @@ def main():
     p = start()
     c = ask(prompt)
     c3 = last_cache(since)
+    # F661: a PARTIAL hit must answer exactly like the uncached path. The longer prompt shares the
+    # whole stored prefix, so the cache serves part of it and the engine prefills the rest; any
+    # off-by-one in the reused rows would change the continuation. prefix_cache:0 is the control
+    # and records cache=-2 ("not consulted"), which keeps the two runs distinguishable.
+    longer = prompt + " Also name the supervisor on duty."
+    x = ask(longer)
+    cx = last_cache(since)
+    y = ask(longer, use_cache=0)
+    cy = last_cache(since)
     stop(p)
 
     same_ab = a == b
     same_ac = a == c
+    same_xy = x == y
     ok = (c1 == 0 and c2 is not None and c2 > 32 and c3 is not None and c3 >= 32
-          and same_ab and same_ac)
-    print("CACHE-PERSIST cold=%s warm=%s restart=%s chars=%d" % (c1, c2, c3, len(prompt)))
-    print("CACHE-PERSIST same_process=%d after_restart=%d" % (same_ab, same_ac))
+          and same_ab and same_ac
+          and cx is not None and cx > 32 and cy == -2 and same_xy)
+    print("CACHE-PERSIST cold=%s warm=%s restart=%s partial=%s uncached=%s chars=%d"
+          % (c1, c2, c3, cx, cy, len(prompt)))
+    print("CACHE-PERSIST same_process=%d after_restart=%d partial_matches_uncached=%d"
+          % (same_ab, same_ac, same_xy))
     if ok:
-        print("CACHE-PERSIST: PASS (cold store, warm reuse, and the same reuse after a restart "
-              "with identical output)")
+        print("CACHE-PERSIST: PASS (cold store, warm reuse, the same reuse after a restart, and a "
+              "partial hit answering exactly like the uncached path)")
         return 0
-    print("CACHE-PERSIST: FAIL cold=%r warm=%r restart=%r same_process=%d after_restart=%d"
-          % (c1, c2, c3, same_ab, same_ac))
+    print("CACHE-PERSIST: FAIL cold=%r warm=%r restart=%r partial=%r uncached=%r "
+          "same_process=%d after_restart=%d partial_matches_uncached=%d"
+          % (c1, c2, c3, cx, cy, same_ab, same_ac, same_xy))
     return 1
 
 

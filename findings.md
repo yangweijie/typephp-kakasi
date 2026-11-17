@@ -5564,3 +5564,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **过程（自证两次）**：①第一版把 `split("\n")` 的长度当行数，文件尾换行多出一个空元素 ⇒ 切片永远跳过**最新一行**，冷/重启读成 `None`——门当场 FAIL，证明它对"没读到证据"是敏感的；修正为 `len-1` 后 PASS。②`gate_live` 的 `echo` 原本 `tail -1` 取到的是后追加的 `CACHEP_EXIT` 行，改成 `grep -m1 '^CACHE-PERSIST:'`（debug/数值行不以 `CACHE-PERSIST:` 开头，不会误取）。
 **接线**：`gate_live` 的 `CACHEP_RC` 入闸；`check_gates` live 段新增"最新 `cache_persist_*` 必须 `CACHE-PERSIST: PASS`"。
 **梯（f660）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0、`CACHEP_EXIT=0`（`cold=0 warm=214 restart=214`）、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.507×、哨兵 0、`check_gates 198/0` exit 0。
+
+### F661（同日）：部分命中的**正确性**——与关闭缓存的对照组逐字相同
+**为什么需要**：F660 证明的是"整段前缀命中后输出不变"；用户实际遇到的是**部分命中**（新 prompt 共享一段旧前缀、后面更长）。复用行数若有 off-by-one，续写就会从错误位置开始，而"命中数>0"完全不报错。
+**做法**：在同一个**重启后的**进程里，对 `P + " Also name the supervisor on duty."` 连发两次：一次默认 `prefix_cache:1`（命中 209/214 个已存 token），一次 `prefix_cache:0`（走非缓存分支，日志记 `cache=-2` 作哨兵）。**两次回答必须逐字节相同**——这把"复用对不对"从"有没有命中"里分出来。
+**实测（`f661`）**：`cold=0 warm=214 restart=214 partial=209 uncached=-2`、`same_process=1 after_restart=1 partial_matches_uncached=1` ⇒ 部分命中与全量重算回答一致。
+**口径**：`cache=-2` 是"未咨询缓存"的哨兵（服务端在非缓存分支显式写入），它与"命中 0 条"（file 不存在/无匹配）区分开；闸里同时断言 `cx>32`（真的复用了一段）与 `cy==-2`（对照组确实没走缓存），避免"两边都没缓存"这种假通过。
+**梯（f661）**：自检 0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 197/0（日志中 `CACHE-PERSIST: PASS` 含部分命中项）、`PARITY: PASS (13 cases)`、par/fair 0、scaling 1.519×、哨兵 0、`check_gates 198/0` exit 0。

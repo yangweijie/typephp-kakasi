@@ -2551,3 +2551,7 @@ $fracBack=plan; $fracRepBack=report;                           // 同理，回�
 **做法**：用 plain 分支每个请求都会写的 `SPECREQ … cache=<n>` 作为确定性信号：冷=0（`cache_prefill` 无文件返回 0，`should_store(0,≥64)=1` 会存盘）、热>32、杀进程重启后同值、正文逐字节一致。门自管两次引擎生命周期，前置清空 `api_prefix_b*.kv`（gitignore、可再生成）。
 **自证**：首版行数切片 off-by-one 读成 `None` ⇒ 门 FAIL（对"没读到证据"敏感）；修正后 PASS（`cold=0 warm=214 restart=214`）。
 **接线**：`gate_live` 的 `CACHEP_RC` 入闸；`check_gates` live 段要求 `CACHE-PERSIST: PASS`。
+
+### F661（2026-11-17）：缓存**部分命中**的正确性门（对照组逐字比对）
+**做法**：重启后的同一进程里，对"旧前缀+更长后缀"的 prompt 各发一次（默认缓存 vs `prefix_cache:0`），要求两次正文**逐字节相同**；同时断言命中数 `>32` 且对照组日志为 `cache=-2`（未咨询哨兵），排除"两边都没缓存"的假通过。
+**实测**：`partial=209 uncached=-2 partial_matches_uncached=1`。
