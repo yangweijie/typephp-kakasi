@@ -20164,14 +20164,10 @@ function main(): void
     $gen3 = model_set_seg_split("0:0|1:9|2:18");
     $seg3State = model_seg_split_state();
     $s3 = model_generate(0, $ids, 6);
-    // F675 Stage 2 contract (hard gate, green): the N-segment PARSER + routing + shape
-    // contract. The two-segment "b0:[0,s)+bX:[s,L)" shape must re-route to the dedicated
-    // g_kv2 fast path and stay bit-equivalent (orch[split] above already proves the 12-point
-    // case; the 9-point 2-seg is the same fast path). A malformed shape (first segment not
-    // at 0) is refused. The generic N>=3 runtime (per-segment KV/rope/scratch + host
-    // boundary handoff) runs and is deterministic, but its per-segment persistent-KV history
-    // is not yet bit-equivalent to the dedicated fast path from layer 10 on (F675 l10), so
-    // N>=3 TOKEN parity is REPORTED, not asserted, until that is closed.
+    // F675 Stage 2 contract (hard gate): the N-segment PARSER + routing + shape contract.
+    // The two-segment "b0:[0,s)+bX:[s,L)" shape re-routes to the dedicated g_kv2 fast path
+    // and stays bit-equivalent (orch[split] proves the 12-point case; the 9-point 2-seg is
+    // the same fast path). A malformed shape (first segment not at 0) is refused.
     $segBad = model_set_seg_split("0:5|1:9");
     model_set_split(-1, -1);
     $segOffState = model_seg_split_state();
@@ -20185,14 +20181,17 @@ function main(): void
 ";
         $ofail++;
     }
-    // N>=3 token parity: REPORT ONLY (known gap, F675 l10) - a future change that closes the
-    // per-segment persistent-KV parity should flip this to a gate.
-    $parityOk = ($s3 == $base);
-    echo ($parityOk
-        ? "  orch[split3] PASS 3 segments produced identical ids
-"
-        : "  orch[split3] PENDING 3-seg base={$base} s3={$s3} (per-layer diff at l10, F675)
-");
+    // N>=3 token parity (hard gate, F675): the generic 3-segment path must produce the SAME
+    // ids as the unsplit engine — the same output-equivalence contract orch[split] holds for
+    // the two-segment fast path.
+    if ($s3 == $base) {
+        echo "  orch[split3] PASS 3 segments b0[0,9)+b1[9,18)+b2[18,24) produced identical ids
+";
+    } else {
+        echo "  orch[split3] FAIL base={$base} s3={$s3} err=" . model_last_error() . "
+";
+        $ofail++;
+    }
         // F675 Stage 1: the buffer_type contract's own gate. The residency and split probes above
     // exercised all three memory classes - b0, b1, and the shared host staging buffer - so the
     // shared ledger must name all of them. Byte counts may be zero here (the split probe freed

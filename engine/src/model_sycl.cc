@@ -2372,11 +2372,16 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             // layer - the same invariant as the dedicated two-device path (g_kv2). Prefix
             // rows [0, pos) were written by this same split in the previous pass, and
             // this pass's rows are written as each layer runs.
+            // The handoff fires ONLY at a segment boundary: every layer of a segment reads
+            // and writes that segment's own running state in place, so re-copying the
+            // previous segment's state on every layer would clobber the just-finished
+            // layer's output with a stale pre-boundary state (the l10 divergence F675 hit).
+            int prevSk = -1;
             for (int l = 0; l < L; ++l) {
                 const int sk = segOf(l);
                 SegRT& sg = g_seg[(size_t) sk];
                 sycl::queue& ql = *sg.q;
-                if (sk > 0) {
+                if (sk > 0 && sk != prevSk) {
                     const size_t hb = (size_t) T * (size_t) D * sizeof(float);
                     sycl::queue& prevQ = *g_seg[(size_t) (sk - 1)].q;
                     prevQ.memcpy(handoff.p, g_seg[(size_t) (sk - 1)].xs, hb);
@@ -2384,6 +2389,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                     ql.memcpy(sg.xs, handoff.p, hb);
                     ql.wait_and_throw();
                 }
+                prevSk = sk;
                 const KVCache& layerKv = (sk == 0) ? g_kv : g_seg_kv[(size_t) sk].kv;
                 seg_step = 3 + l;   // layer l
                                 if (!run_layer(ql, sg.xs, sg.hs,

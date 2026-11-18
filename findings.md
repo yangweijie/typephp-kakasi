@@ -36,12 +36,16 @@
 
 ## F675 实施记录（2026-11-18→19）
 - **Stage 1（buffer_type 契约）已落地并验证**：新增 `engine/src/buffer.{h,cc}`（`BufferType` 抽象 + 每设备 `DeviceBufferType` + pinned `HostBufferType` + 共享分配 **Ledger**，经 `model_buffer_report()` 暴露"谁拥有哪些字节"）；`model_sycl.cc` 里 24 处裸 `sycl::malloc_device`/`sycl::free` 全部改走 `alloc_bt`/`free_bt`。`BUFFER-LEDGER: PASS anomalies=0`，`build_f675s1f` 全绿（`gate_live f675s1` GATE_LIVE_DONE，`check_gates` 198/0）。提交 `53729bd`。
-- **Stage 2（N 段连续层计划）脚手架已落地，契约门绿，N≥3 数值等价缺口已定位**：
+- **Stage 2（N 段连续层计划）已落地并验证（含 N≥3 位等价）**：
   - 新增 `model_set_seg_split("b:from|…")` / `model_seg_split_state()` 桥；两段式 "b0:[0,s)+bX:[s,L)" 形状**复路由到既有 `g_kv2` 快路径**（位等价，`orch[split]` 不变），其余形状走**泛化逐段运行时**：每个非主段有自己的 queue + 逐 pass 隐状态/rope/score scratch（经 buffer_type）+ **持久化逐段稠密 KV**（`g_seg_kv`，按 F265 keep-rows 危险处理），段间边界走 host buffer_type 手交。
-  - **契约门 `orch[seg-contract]: PASS`（绿）**：解析/路由/形状读回/坏形状拒绝/释放→off。
-  - **N≥3 token 等价仍红，已定位为 `orch[split3] PENDING`（只报不断言）**：逐层 |x| 追踪显示 3 段 `b0|b1|b2` 与两段快路径在 **l0–l9 完全一致、l10 起分叉**（l10 b2=5666.40 vs fast=5705.26）。同设备 3 段 `b1|b1` 与 b2 形状逐位相同 ⇒ 泛化运行时**自身确定性正确**，缺陷在**逐段持久 KV 历史与快路径的跨 pass 复用语义**（l10 是段 1 的第二段层，其 KV 前缀来自前一个 pass 写入、跨段/跨设备搬运的历史行）。这是"把裸指针收敛进契约/计划"之后**尚未闭合的一小块**，诚实标注为 PENDING，未冒充已达成。
-  - 已清理全部临时诊断（`seg_trace`/`g_lx` 逐层追踪 + `model_lx_*` 桥 + main.php 诊断块），保持工作树干净。
-- **Stage 3（op 图调度器）未开工**，依赖 Stage 2 N≥3 数值等价收口。
+  - **契约门 `orch[seg-contract]: PASS`**：解析/路由/形状读回/坏形状拒绝/释放→off。
+  - **N≥3 token 等价门 `orch[split3]: PASS`（3 段 b0[0,9)+b1[9,18)+b2[18,24) 产 id 与未拆分一致）**。根因诊断过程与记法教训：
+    - 首次红：token 6 起 id 与未拆分基线分叉；`BUFFER-LEDGER anomalies=2`（临时诊断后消失）。逐层 |x| 追踪（l0–l9 三条路径逐位一致，l10 起泛化路径 vs 快路径分叉）⇒ 缺陷在泛化运行时自身，且 b2 与 `b1|b1` 同形状逐位相同 ⇒ **与第三设备无关**。
+    - **根因 = 段边界手交写错**：泛化循环把"上一段状态→本段"的手交挂在了**每个 sk>0 的层**（`if (sk>0) prevQ→host→ql`），而不是**仅段边界**。于是 l10（sk=1 的第二层）重复从 `g_seg[0].xs`（=x.p，仍是 layer-8 后的状态）拷贝进 `g_seg[1].xs`，**把 layer 9 的输出盖掉**，layer 10 在错误的输入上跑。快路径只在其唯一的 `handoff_before(l)` 边界手交，因此正确。
+    - **修复 = 手交只在段边界**（`sk != prevSk`），逐段内部层在各自段的状态上就地跑。一行修复，N≥3 等价转绿。
+    - 另一个必要的旁路：泛化拆分激活期间 **residency 必须整体旁路**（`keepable` 加 `!g_seg_active`）——否则非主段的权重会进主设备的 g_res 注册表，下个 clear_all 会在 b0 队列上 free b1/b2 指针（跨设备 free → SYCL abort），且主设备驻留权重指针会被跨段 kernel 解引用（错误 token）。
+  - 记法：**"段边界手交"与"快路径唯一边界手交"是同一个不变量**——每段的运行状态就地更新，只有跨越段边界时才需要把状态搬到新段的设备上；把这条写错会在每个非主段层都产生状态回退。
+- **Stage 3（op 图调度器）未开工**，可在 Stage 2 收口后推进。
 - 记法（踩坑）：`alloc_bt`/`free_bt` 取**可变** `BufferType*`（虚函数非 const）；`KVCache::k/v` 是 `vector<void*>`，逐段分配器须用 `vector<void*>`；tpc 的 `getAbsolutePath` 拒绝缺失的 stub 文件——`buffer.cc`（纯 cl TU）进 `project.yml sources`、不需要 stub；`SegmentSplit` 是匿名命名空间类型，跨 setter 赋值要用 `SegmentSplit{}`；`g_seg_active` 期间必须让 residency 走 bypass（`keepable` 加 `!g_seg_active`），否则主设备驻留权重会被跨段 kernel 解引用。
 
 ## F673 · FR-05 profile budget naming correction (2026-11-18)
