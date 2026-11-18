@@ -2,6 +2,7 @@
 // Tokens arrive as "785,6722,..." and results leave as scalars: php::Array indexing
 // would need phpx APIs that the docs don't pin down, and a string is already proven.
 #include <phpx.h>
+#include "gguf.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -14,6 +15,7 @@ namespace model {
 std::string last_error();
 std::string residency_report();
 std::string buffer_report();
+
 double top_logit();
 double second_logit();
 double expect_logit();
@@ -82,6 +84,8 @@ double kv_cache_gib();
 void set_split(int backend, int layer);
 std::string split_state();
 std::string layer_placement(int layers, int primary, int secondary, int split_layer);
+int set_seg_split(const std::string& spec, int L);
+std::string seg_split_state();
 std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, int expect_id, int pos);
 std::vector<int> generate(int backend, std::vector<int> ids, int n_new);
 std::vector<int> generate_sampled(int backend, std::vector<int> ids, int n_new,
@@ -301,6 +305,14 @@ php::Str php_model_split_state() { return php::Str(model::split_state()); }
 php::Str php_model_layer_placement(php::Int layers, php::Int primary, php::Int secondary, php::Int split_layer) {
     return php::Str(model::layer_placement((int) layers, (int) primary, (int) secondary, (int) split_layer));
 }
+// F675 Stage 2: the N-segment placement bridge. The L used for shape validation is the
+// model's block count, read through the loader so the PHP side cannot pass a stale one.
+php::Int php_model_set_seg_split(php::Str spec) {
+    const std::string s(spec.data(), spec.length());
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    return php::Int(model::set_seg_split(s, L));
+}
+php::Str php_model_seg_split_state() { return php::Str(model::seg_split_state()); }
 
 // Directory-style model folder: "" when the path is not a directory, "!" when it is one
 // without exactly one .gguf, otherwise the single .gguf's path. Directory listing is not

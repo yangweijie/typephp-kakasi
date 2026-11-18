@@ -83,6 +83,10 @@ function model_cache_prefill(int $backend, string $tokens, string $path): int {}
 function model_device_fingerprint(int $backend): string {}
 function model_set_split(int $backend, int $layer): int {}
 function model_split_state(): string {}
+// F675 Stage 2: apply an N-segment placement "b:from|b:from|..."; returns 1 on success.
+function model_set_seg_split(string $spec): int {}
+// "seg off" when no generic N-segment split is active, otherwise the segment list.
+function model_seg_split_state(): string {}
 function model_layer_placement(int $layers, int $primary, int $secondary, int $split_layer): string {}
 // "" = not a directory; "!N" = directory with N .gguf files (N != 1); else the .gguf path.
 function model_dir_gguf(string $dir): string {}

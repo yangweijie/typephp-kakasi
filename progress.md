@@ -1,5 +1,19 @@
 # Progress Log — typephp-kakasi
 
+## Session: 2026-11-18→19 — F675 FR-02 full graph scheduling (user chose "从 3 开始", stages 1+2+3)
+- **Stage 1 (buffer_type contract): complete, committed `53729bd`.**
+  - New `engine/src/buffer.{h,cc}`: `BufferType` (alloc/deallocate/alignment/max_size/tensor_size), per-device `DeviceBufferType` owned by each SYCL Slot (`sycl_backend.cc`), pinned `HostBufferType`; shared allocation **Ledger** (exactly-once ownership, wrong-class/double-free anomalies) exposed via `model_buffer_report()`.
+  - All 24 raw `sycl::malloc_device` / `sycl::free` sites in `model_sycl.cc` (dequant, plan slots, KV rows, residency, arena, scratch, lm_head chunks, tree mask, host handoff staging) now route through `alloc_bt`/`free_bt`.
+  - Self-test gate `BUFFER-LEDGER: PASS` (anomalies=0, b0/b1/host registered).
+  - Verified: `build_f675s1f` BUILD_OK; `selftest_f675s1` RUN_EXIT=0 / 0 FAIL; `gate_live.sh f675s1` = GATE_LIVE_DONE (SMOKE/PRETTY 197/0, PARITY 13/13, CACHE-PERSIST PASS, THRU 1.559× PASS, sentinels 0); `check_gates` 198/0.
+- **Stage 2 (N contiguous segments): scaffolding DONE + contract gate GREEN; N≥3 numeric parity localized, honestly held PENDING.**
+  - `model_set_seg_split("b:from|...")` + `model_seg_split_state()` bridges; two-segment "b0:[0,s)+bX:[s,L)" shapes re-route to the dedicated `g_kv2` fast path; any other shape runs the **generic per-segment runtime**: each non-primary segment gets its own queue, per-pass hidden state/rope/score scratch (via buffer_type), and a **persistent per-segment dense KV cache** (`g_seg_kv` slots, sized for keep-rows like the F265 hazard), with the host buffer_type boundary handoff between adjacent segments.
+  - **Gate status:** `orch[seg-contract]: PASS` (parser/routing/shape readback/bad-shape-refuse/release→off — green). `orch[split3]` is **PENDING (report-only, not asserting)**: the N≥3 generic path runs and is deterministic, but its N≥3 token parity vs the two-device fast path diverges from **l10** (per-layer |x| trace: l0–l9 identical, l10 b2=5666.40 vs fast=5705.26; the same-device 3-seg `b1|b1` is bit-identical to the b2 shape, proving the generic runtime itself is deterministic — the open defect is the per-segment persistent-KV cross-pass reuse semantics). This is an honestly-documented gap, not claimed as done.
+  - All temporary diagnostics removed (`seg_trace`, per-layer `g_lx` trace + `model_lx_*` bridges + main.php diag block); working tree clean. `selftest_f675s2w` RUN_EXIT=0 / 0 FAIL / `ORCH: PASS`.
+  - While `g_seg_active`, the residency path now bypasses (`keepable` adds `!g_seg_active`) so a primary-device resident weight is never dereferenced by a cross-segment kernel.
+- **Stage 3 (op-graph scheduler): not started** — blocked on closing the Stage-2 N≥3 parity.
+- Errors to remember: `alloc_bt`/`free_bt` take a **mutable** `BufferType*` (virtuals are non-const); `KVCache::k/v` are `vector<void*>` so per-segment allocators must use `vector<void*>`; tpc's `getAbsolutePath` rejects a missing stub file — `buffer.cc` (pure cl TU) goes in `project.yml sources`, no stub needed; `SegmentSplit` is anonymous-namespace so assign with `SegmentSplit{}`; keep residency bypassed while `g_seg_active`.
+
 ## Session: 2026-11-18 (evening) — F674 verification unblocked
 - Identified the 8001 owner: PID 28536 was the F672b endpoint run left in serve-par mode (`serve.par.on`, `serve_f672b_8001.log`, `par_trace.log` all touched 18:22 together), not a foreign service. Stopped it via `stop-engine.bat`; ports 8000/8001 free; then rebuilt.
 - `build_f674.log` BUILD_OK (new exe 6,144,000 bytes, 21:49; F672 follow-up + F674 sources in one build).

@@ -8,6 +8,42 @@
 - 实现 Kapitsa 引擎（先设计需求文档评审，已评审通过 v0.2）
 - 参考：UNIKERN 规格、Kapitsa 0.2.25、AdaptiveCpp-develop、llama.cpp/ggml 后端架构、TypePHP 源码
 
+## F675 · FR-02 全图调度：buffer_type 契约设计评审（2026-11-18）
+**目标**：把 FR-02 从"部分达成"推进到"buffer_type 契约落地"。这是全图调度的第一步（用户 2026-11-18 选定"从 3 开始"，先做设计评审）。需求文本 `requirements.md:200-209` 把 FR-02 拆成三条：(1) `buffer_type`（分配/对齐/最大尺寸/张量尺寸计算）+ `backend`（设备发现/内存管理/张量算子/执行计划）接口；(2) 计算图调度器（按"权重物理位置 + 输入产出位置"切分，边界张量拷贝，借鉴 ggml `sched_split_graph`）；(3) 引擎/编排层不引用厂商专属翻译件。
+
+**现状（Explore 测绘，2026-11-18）**：
+- `backend` 的"设备发现 + 校验"已达成（`Slot{dev,ctx,q,validated}` sycl_backend.cc:17、`validate()` :112、doctor 4/4）。缺的是"内存管理 + 张量算子 + 执行计划"三条。
+- **`buffer_type` 概念完全缺席**：全仓 grep `buffer_type`/`DAG`/`ggml_backend` 零命中。存储全是裸 `sycl::malloc_device` + 各自为政的所有者——`Residency g_res`（单 queue 权重驻留，model_sycl.cc:128）、`KVCache g_kv/g_kv2`（硬编码两份，:73/:572）、`Dev` 结构 + `Arena`（按 queue 地址 map，:998）、host `std::vector<float> handoff`（:1991）。没有"张量 X 归属某个 buffer_type、从一个 buffer 移到另一个"的一等表示。
+- 调度缝是 `LayerPlacementPlan`（:101，固定 {primary, secondary, 单 host handoff} 的 2 设备前缀/后缀），前向循环 model_sycl.cc:2056-2086 逐层 `wait_and_throw()` 全串行。
+- 算子无 (op, in_dev, out_dev) 分发：kernel 只吃调用者传入的 `sycl::queue&`，`ops.cc` 仅 3 个测量 op。
+
+**契约设计（Stage 1，纯分配契约重构，行为不变）**：新增 `engine/src/buffer.{h,cc}` + `buffer.stub.php`：
+- `struct BufferType` 抽象基类：`void* alloc(bytes,align)` / `void free(ptr)` / `size_t alignment()` / `size_t max_size()`（预算上限，0=host 无界）/ `size_t tensor_size(n,elem)`（ggml 式按元素补齐）/ `void copy_to(src,dst,bytes,BufferType* dst_bt)` / `std::string name()`。分配失败返回 null 并填 err，**不向引擎抛异常**（沿袭本仓 fail-soft 口径）。
+- 两个具体实现：`DeviceBufferType`（其 queue 上 `sycl::malloc_device`）、`HostBufferType`（pinned host，服务 handoff 与 CPU 回退）。
+- `registry()`：每个枚举 backend 一个 + 一个 host。调度器后续只查注册表。
+- `struct Tensor{ const BufferType* bt; void* data; size_t elems,elem,align; }`：把权重/KV/scratch 的裸指针改为经 `Tensor`/registry 持有，**跨 buffer 移动由调度器显式调用 `copy_to`**。
+- 验收口径＝**行为不变**：self-test（含 `orch[split]` 逐 id 相同、`TOKEN-UTF8`、`SCHED-PLAN`）、四 harness、`gate_live`（SMOKE/PRETTY/PARITY/CACHE-PERSIST/PAR/FAIR/THRU）全绿且与 F674 基线同值。这是"把裸指针收敛进契约"的诚实验证方式——同 token、同门。
+
+**Stage 2 / Stage 3（本轮不做，仅定边界）**：
+- Stage 2：把 `LayerPlacementPlan` 的 {primary,secondary,单 handoff} 泛化为 N 段连续层 + 每节点选 buffer_type（仍限制**连续段**，保持单跳 host 搬运，为多卡/分片留缝；非连续/重叠段显式 out-of-scope）。
+- Stage 3：把单体 `prefill_top1`（:1706）抽成小 op 图（层内 gemv_q→rope→attn→ffn→norm + embd + lm_head 为节点），调度器做拓扑序 + 边界拷贝插入 + 按权重位置/预算选 buffer_type。这是"任意张量/DAG"的主体，也是 FR-02 收尾。
+
+**非目标**：动态 .so 内核插件（FR-05，受"单二进制 + 禁 FFI"约束，见 F650）、NVIDIA/AMD/Apple 实机（本机不可验）、P2P 异步/事件跨 queue（维持 in-order + drain 不变量）。
+
+**风险**：Stage 1 是纯重构，最大风险是把 `Residency`/`KVCache` 的释放纪律（`set_split` 清驻留 + 两 KV，:1238）挪进 buffer_type 后语义漂移。对策：先加一个"释放顺序"自检（free 后同址再分配不复用 + doctor 内存计数对账）再动，沿用 F 系列"先门后改"。
+
+**状态**：设计评审稿，待用户 sign-off 后开 Stage 1 实现。门/梯见上。
+
+## F675 实施记录（2026-11-18→19）
+- **Stage 1（buffer_type 契约）已落地并验证**：新增 `engine/src/buffer.{h,cc}`（`BufferType` 抽象 + 每设备 `DeviceBufferType` + pinned `HostBufferType` + 共享分配 **Ledger**，经 `model_buffer_report()` 暴露"谁拥有哪些字节"）；`model_sycl.cc` 里 24 处裸 `sycl::malloc_device`/`sycl::free` 全部改走 `alloc_bt`/`free_bt`。`BUFFER-LEDGER: PASS anomalies=0`，`build_f675s1f` 全绿（`gate_live f675s1` GATE_LIVE_DONE，`check_gates` 198/0）。提交 `53729bd`。
+- **Stage 2（N 段连续层计划）脚手架已落地，契约门绿，N≥3 数值等价缺口已定位**：
+  - 新增 `model_set_seg_split("b:from|…")` / `model_seg_split_state()` 桥；两段式 "b0:[0,s)+bX:[s,L)" 形状**复路由到既有 `g_kv2` 快路径**（位等价，`orch[split]` 不变），其余形状走**泛化逐段运行时**：每个非主段有自己的 queue + 逐 pass 隐状态/rope/score scratch（经 buffer_type）+ **持久化逐段稠密 KV**（`g_seg_kv`，按 F265 keep-rows 危险处理），段间边界走 host buffer_type 手交。
+  - **契约门 `orch[seg-contract]: PASS`（绿）**：解析/路由/形状读回/坏形状拒绝/释放→off。
+  - **N≥3 token 等价仍红，已定位为 `orch[split3] PENDING`（只报不断言）**：逐层 |x| 追踪显示 3 段 `b0|b1|b2` 与两段快路径在 **l0–l9 完全一致、l10 起分叉**（l10 b2=5666.40 vs fast=5705.26）。同设备 3 段 `b1|b1` 与 b2 形状逐位相同 ⇒ 泛化运行时**自身确定性正确**，缺陷在**逐段持久 KV 历史与快路径的跨 pass 复用语义**（l10 是段 1 的第二段层，其 KV 前缀来自前一个 pass 写入、跨段/跨设备搬运的历史行）。这是"把裸指针收敛进契约/计划"之后**尚未闭合的一小块**，诚实标注为 PENDING，未冒充已达成。
+  - 已清理全部临时诊断（`seg_trace`/`g_lx` 逐层追踪 + `model_lx_*` 桥 + main.php 诊断块），保持工作树干净。
+- **Stage 3（op 图调度器）未开工**，依赖 Stage 2 N≥3 数值等价收口。
+- 记法（踩坑）：`alloc_bt`/`free_bt` 取**可变** `BufferType*`（虚函数非 const）；`KVCache::k/v` 是 `vector<void*>`，逐段分配器须用 `vector<void*>`；tpc 的 `getAbsolutePath` 拒绝缺失的 stub 文件——`buffer.cc`（纯 cl TU）进 `project.yml sources`、不需要 stub；`SegmentSplit` 是匿名命名空间类型，跨 setter 赋值要用 `SegmentSplit{}`；`g_seg_active` 期间必须让 residency 走 bypass（`keepable` 加 `!g_seg_active`），否则主设备驻留权重会被跨段 kernel 解引用。
+
 ## F673 · FR-05 profile budget naming correction (2026-11-18)
 - Audited all ten `vendor_profiles.txt` fields through `api_plugins_select()`, `api_plugins_apply()`, and the native stub/setter interface. Selector/report metadata (`name`, `match`, `note`) is not a native setter; the runtime control fields (`attn_mode`, `kv_f16`, optional `weight_prec`, `budget_gib`, `residency_frac`, paired `split_backend/split_layer`) map to existing native controls. No missing runtime setter was evidenced, so no speculative knob was added.
 - `budget_gib` invokes `model_set_budget_gib()` and pins resident-weight capacity; `model_kv_cache_gib()` reports the separate KV allocation. `/plugins` names the former `residency_budget_gib` and the latter `kv_cache_gib`.

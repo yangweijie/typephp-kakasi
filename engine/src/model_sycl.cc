@@ -119,7 +119,6 @@ namespace {
     struct SegRT {
         sycl::queue* q = nullptr;
         int backend = -1;
-        KVCache kv;                 // this segment's cache; segment 0 aliases g_kv
         float* xs = nullptr;       // running hidden state on this segment
         float* hs = nullptr;       // per-layer scratch
         float* dCos = nullptr;
@@ -136,16 +135,17 @@ namespace {
             if (scores) { buf::free_bt(btp, scores, 0); scores = nullptr; }
             if (part) { buf::free_bt(btp, part, 0); part = nullptr; }
         }
-        void clear() {
-            free_scratch(nullptr);
-            kv.free_all();
-            q = nullptr; backend = -1; xs = nullptr; hs = nullptr;
-            if (xs) { /* freed below with the pass's own queue bookkeeping */ }
-            xs = nullptr; hs = nullptr; kv_layers = 0;
-        }
     };
+    // Persistent per-segment KV slots, index-aligned with g_seg_split: they survive across
+    // passes exactly like the dedicated g_kv2 (the prefix rows they hold are what the
+    // next pass's attention reads). Per-pass scratch (hidden state, rope, score buffers)
+    // is allocated and freed inside each pass.
+    struct SegKvSlot {
+        int backend = -1;
+        KVCache kv;
+    };
+    std::vector<SegKvSlot> g_seg_kv;
     std::vector<SegRT> g_seg;
-
     struct LayerPlacementPlan {
         std::vector<int> backend;
         int secondary_backend = -1;
@@ -919,7 +919,11 @@ namespace {
         const size_t need = (size_t) numel * sizeof(float);
         // Residency keeps a single device's footprint, so it is bypassed while the layer split
         // is active; every weight streams on its own device instead.
-        const bool keepable = g_res.enabled && g_split_layer < 0 &&
+        // Residency keeps a single device's footprint, so it is bypassed while ANY split is
+        // active (dedicated two-device or the generic N-segment one): weights for a layer on
+        // a second device must stream on THAT device, and a tensor kept on the primary device
+        // must never be handed to a kernel running elsewhere.
+        const bool keepable = g_res.enabled && g_split_layer < 0 && !g_seg_active &&
                               g_keep_plan.find(idx) != g_keep_plan.end();
         if (keepable && need > (1u << 20)) {
             if (g_wprec == 1) {
@@ -1322,6 +1326,8 @@ double kv_cache_gib() {
 // Layer-range offload (FR-18): layers [layer, L) run on `backend`, the rest on the device the
 // caller passes to prefill. Disable with layer < 0. Residency is single-device, so it is
 // dropped here and every weight streams on whichever device owns its layer.
+void set_split(int backend, int layer);  // defined below; set_seg_split's two-segment shape re-enters it
+
 // F675 Stage 2: apply an N-segment placement. The string is "b:from|b:from|..." - each
 // segment names a backend and the first layer it owns; segments must be contiguous, in
 // ascending order, and cover [0, L). The exact "b0:[0,s) + b1:[s,L)" two-segment shape
@@ -1329,6 +1335,64 @@ double kv_cache_gib() {
 // (g_seg_active), which allocates its own per-segment KV/rope/scratch each pass.
 // Returns 1 on success (including the no-op single-segment split), 0 on a malformed
 // string, an uncovered gap, or a segment on an unavailable device.
+// Per-segment KV: dense like the dedicated second-device cache - every non-primary
+// segment owns the full [0, L) row set so the layer loop's dense `kv.k[l]` indexing
+// stays uniform. Attention over rows a segment does not own reads zeroed scratch on
+// a fresh prefix and its own stored rows afterwards.
+bool ensure_seg_kv(SegKvSlot& slot, int L, sycl::queue& q, int need_rows, int dkv,
+                   int keep_rows, bool f16) {
+    if (slot.kv.backend == slot.backend && slot.kv.cap >= need_rows
+        && slot.kv.f16 == f16 && (int) slot.kv.k.size() == L) return true;
+    if (keep_rows > slot.kv.cap || slot.kv.f16 != f16) keep_rows = 0;
+    const int cap = std::max(need_rows, KV_MIN_CAP);
+    const size_t bytes = (size_t) cap * (size_t) dkv * (f16 ? sizeof(sycl::half) : sizeof(float));
+    buf::BufferType* btp = kakasi::buffer_type_for_queue(&q);
+    if (!btp) return false;
+    std::vector<void*> nk, nv;
+    for (int l = 0; l < L; ++l) {
+        char* pk = (char*) buf::alloc_bt(btp, bytes);
+        char* pv = pk ? (char*) buf::alloc_bt(btp, bytes) : nullptr;
+        if (!pk || !pv) {
+            for (void* pp : nk) if (pp) buf::free_bt(btp, pp, bytes);
+            for (void* pp : nv) if (pp) buf::free_bt(btp, pp, bytes);
+            return false;
+        }
+        nk.push_back((void*) pk); nv.push_back((void*) pv);
+    }
+    if (keep_rows > 0 && (int) slot.kv.k.size() == L) {
+        const size_t keep = (size_t) keep_rows * (size_t) dkv *
+            (slot.kv.f16 ? sizeof(sycl::half) : sizeof(float));
+        for (int l = 0; l < L; ++l) {
+            q.memcpy(nk[(size_t) l], slot.kv.k[(size_t) l], keep);
+            q.memcpy(nv[(size_t) l], slot.kv.v[(size_t) l], keep);
+        }
+        q.wait_and_throw();
+    }
+    slot.kv.free_all();
+    slot.kv.q = &q; slot.kv.backend = slot.backend; slot.kv.cap = cap; slot.kv.len = keep_rows;
+    slot.kv.dkv = dkv; slot.kv.f16 = f16;
+    slot.kv.k = std::move(nk); slot.kv.v = std::move(nv);
+    return true;
+}
+
+
+void seg_split_release() {
+    for (auto& slot : g_seg_kv) {
+        slot.kv.free_all();
+    }
+    g_seg_kv.clear();
+    for (auto& sg : g_seg) {
+        buf::BufferType* btp = sg.q ? kakasi::buffer_type_for_queue(sg.q) : nullptr;
+        sg.free_scratch(btp);
+        if (btp) {
+            if (sg.xs) { buf::free_bt(btp, sg.xs, 0); sg.xs = nullptr; }
+            if (sg.hs) { buf::free_bt(btp, sg.hs, 0); sg.hs = nullptr; }
+        }
+        sg.q = nullptr; sg.backend = -1; sg.kv_layers = 0;
+    }
+    g_seg.clear();
+}
+
 int set_seg_split(const std::string& spec, int L) {
     if (L <= 0) return 0;
     std::vector<std::pair<int, int>> segs;
@@ -1348,11 +1412,12 @@ int set_seg_split(const std::string& spec, int L) {
         segs.push_back({b, from});
         i = (bar == std::string::npos) ? spec.size() : bar + 1;
     }
-    if (segs.empty() || segs.size() > (size_t) kakasi::device_count()) return 0;
+    if (segs.empty() || segs.size() > 8) return 0;   // more segments than devices can own
+    if (segs.front().second != 0) return 0;
     for (size_t k = 1; k < segs.size(); ++k) {
-        if (segs[k].second != segs[k - 1].second + segs[k - 1].first) return 0;
+        if (segs[k].second <= segs[k - 1].second) return 0;   // empty / backwards
     }
-    if (segs.front().second != 0 || segs.back().second + (int) segs.back().first != L) return 0;
+    if (segs.back().second >= L) return 0;                    // last segment empty
     for (const auto& sg : segs) {
         if (!kakasi::queue_for(sg.first)) { g_err = "segment backend " + std::to_string(sg.first)
                                                  + " unavailable"; return 0; }
@@ -1360,23 +1425,26 @@ int set_seg_split(const std::string& spec, int L) {
     // The dedicated two-device fast path: first segment on b0, exactly one other
     // backend after it. Everything else is generic.
     if (segs.size() == 2 && segs[0].first == 0) {
-        g_seg_active = false;
-        g_seg_split = {};
-        g_seg.clear();
-        set_split(segs[1].first, segs[1].second);
+        set_split(segs[1].first, segs[1].second);   // releases generic state, arms fast path
         return 1;
     }
+    seg_split_release();
     g_split_backend = -1;
     g_split_layer = -1;
+    g_res.clear_all(); g_res.q = nullptr; g_res.enabled = false;
+    g_kv.free_all();
+    g_kv2.free_all();
     g_seg_active = true;
     g_seg_split.backend.clear();
     g_seg_split.start.clear();
+    g_seg_kv.clear();
     for (const auto& sg : segs) {
         g_seg_split.backend.push_back(sg.first);
         g_seg_split.start.push_back(sg.second);
+        SegKvSlot slot;
+        slot.backend = sg.first;
+        g_seg_kv.push_back(slot);
     }
-    g_seg.clear();
-    g_kv.free_all();
     return 1;
 }
 
@@ -1392,6 +1460,9 @@ std::string seg_split_state() {
 }
 
 void set_split(int backend, int layer) {
+    seg_split_release();
+    g_seg_active = false;
+    g_seg_split = SegmentSplit{};
     if (layer < 0 || backend < 0) {
         g_split_backend = -1;
         g_split_layer = -1;
@@ -1405,18 +1476,6 @@ void set_split(int backend, int layer) {
     g_kv.free_all();
     g_kv2.free_all();
     if (!g_kv.f16 && g_kv2.f16) g_kv.f16 = g_kv2.f16;
-    // Entering or leaving the two-device fast path releases the generic segment state.
-    g_seg_active = false;
-    g_seg_split = {};
-    for (auto& sg : g_seg) {
-        buf::BufferType* btp = sg.q ? kakasi::buffer_type_for_queue(sg.q) : nullptr;
-        sg.kv.free_all();
-        if (sg.xs) { buf::free_bt(btp, sg.xs, 0); sg.xs = nullptr; }
-        if (sg.hs) { buf::free_bt(btp, sg.hs, 0); sg.hs = nullptr; }
-        sg.free_scratch(btp);
-        sg.q = nullptr; sg.backend = -1;
-    }
-    g_seg.clear();
 }
 
 std::string split_state() {
@@ -2010,9 +2069,14 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // One transformer layer on a chosen device. `xp` is the running hidden state, `hp` the
         // per-layer scratch, and `kv` the cache that lives on that same device - all of the
         // second device's state is separate, which is what makes the split sound.
+        // Optional dense K/V row tables for the generic N-segment path: when given, the
+        // layer reads and writes K/V through kRows[l] / vRows[l] (the owning segment's dense
+        // rows) instead of the `kv` cache's own array. Plain and two-device paths pass
+        // nulls, so their dense `kv.k[l]` indexing is byte-for-byte unchanged.
         auto run_layer = [&](sycl::queue& ql, float* xp, float* hp, KVCache& kv,
                              const float* cosp, const float* sinp, float* sc, float* pc,
-                             int l, bool trace) -> bool {
+                             int l, bool trace,
+                             void* const* kRows = nullptr, void* const* vRows = nullptr) -> bool {
             const std::string p = "blk." + std::to_string(l) + ".";
             Wt anw = load_weight(ql, p + "attn_norm.weight", (uint64_t) D);
             if (!anw.p) return false;
@@ -2049,22 +2113,24 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             rope(ql, att.p, T, NH, HD, cosp, sinp);
             rope(ql, kt.p, T, NKV, HD, cosp, sinp);
 
+            void* Kst = kRows ? kRows[(size_t) l] : (void*) kv.k[(size_t) l];
+            void* Vst = vRows ? vRows[(size_t) l] : (void*) kv.v[(size_t) l];
             if (planned) {
                 // F359: every row lands in its own slot, so the two conversations never share a
                 // cache row even before the mask is applied.
                 if (kv.f16) {
-                    kv_store_slots(ql, kt.p, (sycl::half*) kv.k[(size_t) l], T, DKV, g_plan.d_slot);
-                    kv_store_slots(ql, vt.p, (sycl::half*) kv.v[(size_t) l], T, DKV, g_plan.d_slot);
+                    kv_store_slots(ql, kt.p, (sycl::half*) Kst, T, DKV, g_plan.d_slot);
+                    kv_store_slots(ql, vt.p, (sycl::half*) Vst, T, DKV, g_plan.d_slot);
                 } else {
-                    kv_store_slots(ql, kt.p, (float*) kv.k[(size_t) l], T, DKV, g_plan.d_slot);
-                    kv_store_slots(ql, vt.p, (float*) kv.v[(size_t) l], T, DKV, g_plan.d_slot);
+                    kv_store_slots(ql, kt.p, (float*) Kst, T, DKV, g_plan.d_slot);
+                    kv_store_slots(ql, vt.p, (float*) Vst, T, DKV, g_plan.d_slot);
                 }
             } else if (kv.f16) {
-                kv_store(ql, kt.p, (sycl::half*) kv.k[(size_t) l], T, DKV, pos);
-                kv_store(ql, vt.p, (sycl::half*) kv.v[(size_t) l], T, DKV, pos);
+                kv_store(ql, kt.p, (sycl::half*) Kst, T, DKV, pos);
+                kv_store(ql, vt.p, (sycl::half*) Vst, T, DKV, pos);
             } else {
-                kv_store(ql, kt.p, (float*) kv.k[(size_t) l], T, DKV, pos);
-                kv_store(ql, vt.p, (float*) kv.v[(size_t) l], T, DKV, pos);
+                kv_store(ql, kt.p, (float*) Kst, T, DKV, pos);
+                kv_store(ql, vt.p, (float*) Vst, T, DKV, pos);
             }
 
             Dev ao(&ql, (size_t) T * D);
@@ -2075,32 +2141,34 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             // round trip and buys nothing (measured: L=8 was 3% SLOWER than the score cache), so
             // short ranges fall through to the mode-0 path and are then bit-identical to it.
             const bool useSplit = (g_attn_mode == 2) && (pc != nullptr) && (splitP > 1);
+            const char* Krd = (const char*) (kRows ? kRows[(size_t) l] : (void*) kv.k[(size_t) l]);
+            const char* Vrd = (const char*) (vRows ? vRows[(size_t) l] : (void*) kv.v[(size_t) l]);
             if (kv.f16) {
                 if (useSplit) {
-                    attention_split(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
-                                    (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD,
+                    attention_split(ql, att.p, (const sycl::half*) Krd,
+                                    (const sycl::half*) Vrd, T, pos, NH, NKV, HD,
                                     scale, ao.p, pc, splitP, partStride,
                                     planned ? nullptr : g_tree_mask,
                                     planned ? g_plan.d_lo : nullptr,
                                     planned ? g_plan.d_hi : nullptr);
                 } else {
-                    attention(ql, att.p, (const sycl::half*) kv.k[(size_t) l],
-                              (const sycl::half*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale,
+                    attention(ql, att.p, (const sycl::half*) Krd,
+                              (const sycl::half*) Vrd, T, pos, NH, NKV, HD, scale,
                               ao.p, sc, scoreRows,
                               planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
                               planned ? g_plan.d_hi : nullptr);
                 }
             } else {
                 if (useSplit) {
-                    attention_split(ql, att.p, (const float*) kv.k[(size_t) l],
-                                    (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD,
+                    attention_split(ql, att.p, (const float*) Krd,
+                                    (const float*) Vrd, T, pos, NH, NKV, HD,
                                     scale, ao.p, pc, splitP, partStride,
                                     planned ? nullptr : g_tree_mask,
                                     planned ? g_plan.d_lo : nullptr,
                                     planned ? g_plan.d_hi : nullptr);
                 } else {
-                    attention(ql, att.p, (const float*) kv.k[(size_t) l],
-                              (const float*) kv.v[(size_t) l], T, pos, NH, NKV, HD, scale,
+                    attention(ql, att.p, (const float*) Krd,
+                              (const float*) Vrd, T, pos, NH, NKV, HD, scale,
                               ao.p, sc, scoreRows,
                               planned ? nullptr : g_tree_mask, planned ? g_plan.d_lo : nullptr,
                               planned ? g_plan.d_hi : nullptr);
@@ -2233,6 +2301,143 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             }
         }
 
+        // F675 Stage 2: the generic N-segment path. The two-device fast path above owns the
+        // g_kv2 + s2bt shape; any other active segment split gives every non-primary segment
+        // its own queue, hidden state, rope tables, score scratch and dense KV cache, all
+        // through the buffer_type contract. Segment 0 aliases the primary x/h and g_kv; the
+        // last segment's running state is handed back to x before the final norm and lm_head.
+        if (g_seg_active && !splitActive) {
+            int seg_step = 0;
+            try {
+            g_seg.assign(g_seg_split.backend.size(), SegRT());
+            const size_t nSeg = g_seg_split.backend.size();
+            // Segment 0 is the primary device: it aliases x/h and g_kv, so only the
+            // non-primary segments need queues and per-pass buffers.
+            for (size_t k = 0; k < nSeg; ++k) {
+                SegRT& sg = g_seg[k];
+                sg.backend = g_seg_split.backend[k];
+                if (k == 0) {
+                    sg.q = &q;
+                    sg.xs = x.p;
+                    sg.hs = h.p;
+                    continue;
+                }
+                sg.q = kakasi::queue_for(sg.backend);
+                if (!sg.q) {
+                    g_err = "segment backend " + std::to_string(sg.backend) + " unavailable";
+                    return {};
+                }
+                // Persistent KV slot (survives across passes, like g_kv2): segment k keeps
+                // rows [0, pos) that its own layers wrote in earlier passes.
+                SegKvSlot& slot = g_seg_kv[(size_t) k];
+                const int keep = (slot.kv.backend == sg.backend && slot.kv.f16 == g_kv.f16)
+                                 ? std::min(pos, slot.kv.cap) : 0;
+                seg_step = 1;   // KV alloc
+                if (!ensure_seg_kv(slot, L, *sg.q, pos + T, DKV, keep, g_kv.f16)) {
+                    g_err = "segment KV allocation failed";
+                    return {};
+                }
+                seg_step = 2;   // per-pass scratch
+                // Per-pass buffers: allocated now, freed at pass end on success AND on the
+                // error returns below are not reached because every alloc failure returns
+                // before any buffer is handed to the caller; the RAII-style pair free at the
+                // bottom of the success path covers the normal case.
+                buf::BufferType* btp = kakasi::buffer_type_for_queue(sg.q);
+                if (!btp) { g_err = "segment memory class unavailable"; return {}; }
+                sg.xs = (float*) buf::alloc_bt(btp, (size_t) T * (size_t) D * sizeof(float));
+                sg.hs = (float*) buf::alloc_bt(btp, (size_t) T * (size_t) D * sizeof(float));
+                sg.dCos = (float*) buf::alloc_bt(btp, ctab.size() * sizeof(float));
+                sg.dSin = sg.dCos ? (float*) buf::alloc_bt(btp, stab.size() * sizeof(float)) : nullptr;
+                sg.scores = sg.dSin ? (float*) buf::alloc_bt(btp,
+                    (size_t) T * (size_t) NH * (size_t) scoreRows * sizeof(float)) : nullptr;
+                sg.part = sg.scores ? (float*) buf::alloc_bt(btp,
+                    (size_t) T * (size_t) NH * (size_t) splitP * (size_t) partStride * sizeof(float)) : nullptr;
+                if (!sg.xs || !sg.hs || !sg.dCos || !sg.dSin || !sg.scores || !sg.part) {
+                    g_err = "segment scratch allocation failed";
+                    return {};
+                }
+                sg.q->memcpy(sg.dCos, ctab.data(), sizeof(float) * ctab.size());
+                sg.q->memcpy(sg.dSin, stab.data(), sizeof(float) * stab.size());
+                sg.q->wait_and_throw();
+                arena_reset(*sg.q);
+            }
+            // Segment owning a layer: the first whose start is <= the layer.
+            const auto segOf = [&](int layer) {
+                size_t k = 0;
+                while (k + 1 < g_seg_split.start.size()
+                       && g_seg_split.start[k + 1] <= layer) ++k;
+                return (int) k;
+            };
+            // Each layer's K/V lives in the PERSISTENT cache of the segment that owns that
+            // layer - the same invariant as the dedicated two-device path (g_kv2). Prefix
+            // rows [0, pos) were written by this same split in the previous pass, and
+            // this pass's rows are written as each layer runs.
+            for (int l = 0; l < L; ++l) {
+                const int sk = segOf(l);
+                SegRT& sg = g_seg[(size_t) sk];
+                sycl::queue& ql = *sg.q;
+                if (sk > 0) {
+                    const size_t hb = (size_t) T * (size_t) D * sizeof(float);
+                    sycl::queue& prevQ = *g_seg[(size_t) (sk - 1)].q;
+                    prevQ.memcpy(handoff.p, g_seg[(size_t) (sk - 1)].xs, hb);
+                    prevQ.wait_and_throw();
+                    ql.memcpy(sg.xs, handoff.p, hb);
+                    ql.wait_and_throw();
+                }
+                const KVCache& layerKv = (sk == 0) ? g_kv : g_seg_kv[(size_t) sk].kv;
+                seg_step = 3 + l;   // layer l
+                                if (!run_layer(ql, sg.xs, sg.hs,
+                               const_cast<KVCache&>(layerKv),
+                               sk == 0 ? dCos : sg.dCos, sk == 0 ? dSin : sg.dSin,
+                               sk == 0 ? scores.p : sg.scores, sk == 0 ? part.p : sg.part,
+                               l, sk == 0,
+                               nullptr, nullptr)) {
+                    return {};
+                }
+                // One drain per layer bounds the arena reset - the same discipline the
+                // two-device path applies to its secondary queue.
+                ql.wait_and_throw();
+                arena_reset(ql);
+            }
+            // F675 cross-pass KV invariant (the exact gap the 2-seg fast path meets with
+            // its per-layer sync): every layer's K/V row lives in the cache of the segment
+            // that OWNS that layer. The next pass's segment 0 attends layers [0, s) and
+            // reads g_kv, so this pass's freshly written rows [pos, pos+T) must land in
+            // The last segment's running state must land on the caller's device: the final
+            // norm and lm_head run on the primary queue, like the two-device path.
+            if (nSeg > 1) {
+                SegRT& last = g_seg[nSeg - 1];
+                seg_step = 90;
+                const size_t hb2 = (size_t) T * (size_t) D * sizeof(float);
+                last.q->memcpy(handoff.p, last.xs, hb2);
+                last.q->wait_and_throw();
+                q.memcpy(x.p, handoff.p, hb2);
+                q.wait_and_throw();
+            }
+            // Per-pass buffers die with the pass; the persistent KV slots stay.
+            for (size_t k = 1; k < nSeg; ++k) {
+                SegRT& sg = g_seg[k];
+                seg_step = 95;
+                buf::BufferType* btp = kakasi::buffer_type_for_queue(sg.q);
+                if (btp) {
+                    if (sg.xs) { buf::free_bt(btp, sg.xs, 0); sg.xs = nullptr; }
+                    if (sg.hs) { buf::free_bt(btp, sg.hs, 0); sg.hs = nullptr; }
+                    sg.free_scratch(btp);
+                }
+            }
+            g_seg.clear();
+            seg_step = 99;
+            } catch (const sycl::exception& e) {
+                g_err = std::to_string(seg_step) + std::string(" segment pass sycl: ") + e.what();
+                return {};
+            } catch (const std::exception& e) {
+                g_err = std::to_string(seg_step) + std::string(" segment pass: ") + e.what();
+                return {};
+            } catch (...) {
+                g_err = std::to_string(seg_step) + std::string(" segment pass (non-std throw)");
+                return {};
+            }
+        } else {
         // Slots from the previous pass's lm_head loop are finished (that loop waits on every
         // chunk), so the bump pointer can start clean.
         arena_reset(q);
@@ -2262,6 +2467,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 q2.wait_and_throw();
                 arena_reset(q2);
             }
+        }
         }
         if (splitActive) {
             const size_t hb2 = (size_t) T * (size_t) D * sizeof(float);
