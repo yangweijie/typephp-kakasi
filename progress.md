@@ -1,5 +1,33 @@
 # Progress Log — typephp-kakasi
 
+## Session: 2026-11-18 (evening) — F674 verification unblocked
+- Identified the 8001 owner: PID 28536 was the F672b endpoint run left in serve-par mode (`serve.par.on`, `serve_f672b_8001.log`, `par_trace.log` all touched 18:22 together), not a foreign service. Stopped it via `stop-engine.bat`; ports 8000/8001 free; then rebuilt.
+- `build_f674.log` BUILD_OK (new exe 6,144,000 bytes, 21:49; F672 follow-up + F674 sources in one build).
+- `selftest_f674.log`: RUN_EXIT=0, 0 FAIL, new `SCHED-PLAN: PASS` (off/mid/first/last/end plan shapes), `orch[split] PASS` identical-ids gate kept, `TOKEN-UTF8: PASS bytes=22 charset_ids=408`, `TOKENIZER: PASS (20 cases)`.
+- `gate_live.sh f674` chain running (8000 → stop → 8001, one engine process at a time).
+- **Gate chain result:** `GATE_LIVE_DONE tag=f674`, exit 0 — SMOKE/PRETTY **197/0**, BODY-LIMIT PASS, PARITY-TRANSPORTS 13/13, CACHE-PERSIST PASS, endpoint-shape 8000/8001 both PASS (incl. new `utf8_zh_enum`/`utf8_plain_response`), PAR/FAIR exit 0, THRU scaling **1.543×** PASS, sentinels 0.
+- `check_gates.sh`: log=selftest_f674.log **198 cited / 0 unresolved**.
+- Files touched this session: `build_f674.log` (new, repo root), `engine/selftest_f674.log`, gate-live tag-`f674` logs; no source edits.
+
+## Session: 2026-11-18 — F674 scheduler slice (implementation pending verification)
+- Added native `LayerPlacementPlan`, used by the real forward layer loop to select per-layer backend and the sole contiguous boundary handoff; `split_state()` reports from the same plan.
+- Exposed a narrow `model_layer_placement()` bridge for deterministic self-test coverage; assertions cover off, interior, first-layer, last-layer, and split-at-end cases. Existing `orch[split]` remains the end-to-end output-equivalence assertion.
+- FR-02 remains partial: this placement plan is only a contiguous layer-range scheduler seam; it is not a `buffer_type` contract or arbitrary tensor/DAG scheduler.
+- **Verification blocked safely:** process PID 28536 (`kakasi_engine_sycl.exe`, started 2026-11-18 18:22 local) owns 127.0.0.1:8001. I did not kill it or overwrite the shared build output. Recheck owner/service state before rebuilding; build/selftest/output-equivalence are not yet verified.
+
+## Session: 2026-11-18 — F673 profile audit
+- **Status:** completed; configuration comment corrected, no C++ feature change.
+- Audited profile parsing, start-up application, stubs/native setters, reporting JSON, and both server smoke checks. `name/match/note` are selection/report metadata; all runtime control fields map to existing setters. No concrete missing runtime control justified a new setter.
+- Corrected `plugins/vendor_profiles.txt` `budget_gib` description: it is resident-weight budget; KV allocation is separately reported as `kv_cache_gib`. Recorded the audit and scope limitation in `docs/audit-v0.2.md` and `findings.md`.
+- A broad grep invocation using `**` errored on regex syntax; retried with explicit file paths. No code or data was affected by the failed search.
+
+## Session: 2026-11-18 — F672 UTF-8 token decoding
+- **Status:** implementation and validation complete; changes remain uncommitted.
+- Replaced visible-token-only output conversion with shared GPT-2 byte-level inverse decoding in `engine/src/gguf.cc`; wired ordinary generated text and the constrained-vocabulary filter to it.
+- Added a UTF-8 self-test using Chinese, emoji, newline, and ASCII; updated the endpoint-shape gate to send literal UTF-8 and verify normal Chinese output plus Chinese/emoji enum values.
+- Evidence from the preceding session: `TOKEN-UTF8: PASS bytes=22`, `TOKENIZER: PASS (20 cases vs llama-tokenize)`, `check_gates.sh` cited 198 names / 0 unresolved; `endpoint_shape.py` passed on 8000 (15 cases) and 8001 (14 cases). The later final rebuild and both endpoint checks also passed.
+- Follow-up closure: the self-test now directly asserts every UTF-8 token ID belongs to `gguf_charset_ids` and that decoding round-trips exactly (`TOKEN-UTF8: PASS bytes=22 charset_ids=408`). Rebuilt and reran the full self-test (`TOKENIZER: PASS (20 cases vs llama-tokenize)`, no FAIL, `RUN_EXIT=0`), endpoint-shape gates on 8000/8001 (15/14 cases), and `check_gates.sh` (198 cited / 0 unresolved).
+
 ## Session: 2026-11-01
 
 ### 阶段：需求评审 + 计划冻结（Phase 0 前）

@@ -23,6 +23,7 @@ std::string meta_str(const std::string& key);
 // String arrays (tokenizer.ggml.tokens / .merges), fully retained at load.
 int arr_size(const std::string& key);
 std::string arr_at(const std::string& key, int i);
+std::string token_decode(int id);
 // Direct access for callers that scan a whole array; arr_at copies and re-looks-up per call.
 const std::vector<std::string>* arr_ptr(const std::string& key);
 

@@ -3,7 +3,7 @@
 # owns. Fields: name|match|attn_mode|kv_f16|note|weight_prec(optional 0/1)|budget_gib(optional float)|split_backend(optional int)|split_layer(optional int)|residency_frac(optional float 0.05..0.95)
 # attn_mode: 0 score-cache, 1 three-pass, 2 split-KV (default). kv_f16: 1 = f16 KV, 0 = f32.
 # weight_prec: 0 = f16 weights, 1 = int8 weights. If absent, engine default is used.
-# budget_gib: KV cache budget in GiB (float). If absent, engine default is used.
+# budget_gib: resident-weight budget in GiB (float). If absent, engine derives it from device memory.
 # split_backend: target backend index for model split (int). split_layer: first layer index to offload (int).
 # Both split_backend and split_layer must be present together to take effect.
 # The first line whose `match` occurs in the device fingerprint wins; `*` matches anything, so keep

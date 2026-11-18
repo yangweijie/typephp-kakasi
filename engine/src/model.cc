@@ -80,6 +80,7 @@ std::string device_fingerprint(int backend);
 double kv_cache_gib();
 void set_split(int backend, int layer);
 std::string split_state();
+std::string layer_placement(int layers, int primary, int secondary, int split_layer);
 std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, int expect_id, int pos);
 std::vector<int> generate(int backend, std::vector<int> ids, int n_new);
 std::vector<int> generate_sampled(int backend, std::vector<int> ids, int n_new,
@@ -295,6 +296,9 @@ php::Int php_model_set_split(php::Int backend, php::Int layer) {
     return php::Int(1);
 }
 php::Str php_model_split_state() { return php::Str(model::split_state()); }
+php::Str php_model_layer_placement(php::Int layers, php::Int primary, php::Int secondary, php::Int split_layer) {
+    return php::Str(model::layer_placement((int) layers, (int) primary, (int) secondary, (int) split_layer));
+}
 
 // Directory-style model folder: "" when the path is not a directory, "!" when it is one
 // without exactly one .gguf, otherwise the single .gguf's path. Directory listing is not

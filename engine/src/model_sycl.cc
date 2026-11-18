@@ -98,6 +98,29 @@ namespace {
     int g_split_layer = -1;
     constexpr int KV_MIN_CAP = 512;
 
+    struct LayerPlacementPlan {
+        std::vector<int> backend;
+        int secondary_backend = -1;
+        int handoff_layer = -1;
+
+        int backend_for(int layer) const { return backend[(size_t) layer]; }
+        bool handoff_before(int layer) const { return layer == handoff_layer; }
+    };
+
+    LayerPlacementPlan make_layer_placement_plan(int layers, int primary, int secondary, int split_layer) {
+        LayerPlacementPlan plan;
+        if (layers > 0) plan.backend.assign((size_t) layers, primary);
+        if (layers > 0 && primary >= 0 && secondary >= 0 && secondary != primary
+            && split_layer >= 0 && split_layer < layers) {
+            plan.secondary_backend = secondary;
+            plan.handoff_layer = split_layer;
+            for (int layer = split_layer; layer < layers; ++layer) {
+                plan.backend[(size_t) layer] = secondary;
+            }
+        }
+        return plan;
+    }
+
     // Lazy weight residency: a dequantized tensor is uploaded once and kept, instead of
     // being re-read and re-dequantized on every decode step. The budget is a fraction of
     // the device's memory; past that, tensors fall back to temporary buffers. This is also
@@ -1069,6 +1092,17 @@ namespace {
 
 std::string last_error() { return g_err; }
 
+std::string layer_placement(int layers, int primary, int secondary, int split_layer) {
+    const LayerPlacementPlan plan = make_layer_placement_plan(layers, primary, secondary, split_layer);
+    std::string out;
+    for (size_t i = 0; i < plan.backend.size(); ++i) {
+        if (i != 0) out += ",";
+        out += std::to_string(plan.backend[i]);
+    }
+    out += "|handoff=" + std::to_string(plan.handoff_layer);
+    return out;
+}
+
 std::string residency_report() {
     char buf[256];
     std::snprintf(buf, sizeof(buf),
@@ -1218,10 +1252,13 @@ void set_split(int backend, int layer) {
 }
 
 std::string split_state() {
-    if (g_split_layer < 0 || g_split_backend < 0) return "split off";
+    const int layers = (int) gguf::meta_num("qwen2.block_count");
+    const LayerPlacementPlan plan = make_layer_placement_plan(layers, 0, g_split_backend,
+                                                               g_split_layer);
+    if (plan.secondary_backend < 0) return "split off";
     char buf[160];
     std::snprintf(buf, sizeof(buf), "split primary=b0 secondary=b%d layers=[%d,%d)",
-                  g_split_backend, g_split_layer, (int) gguf::meta_num("qwen2.block_count"));
+                  plan.secondary_backend, plan.handoff_layer, layers);
     return std::string(buf);
 }
 
@@ -1938,13 +1975,17 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             return true;
         };
 
-        // Layer-range offload: [0, splitAt) on the primary device, [splitAt, L) on the second.
-        // The hidden state crosses through host memory once, and once more at the end for the
-        // final norm and lm_head - a few hundred KB per step, the price of using both devices.
-        const int splitAt = (g_split_layer >= 0 && g_split_backend >= 0) ? g_split_layer : L;
-        sycl::queue* q2p = (splitAt < L) ? kakasi::queue_for(g_split_backend) : nullptr;
-        if (splitAt < L && !q2p) { g_err = "split backend unavailable"; return {}; }
-        const bool splitActive = (splitAt < L && q2p);
+        // Layer-range offload: each layer's backend and the single boundary handoff come from
+        // one placement plan; weights and KV remain owned by that backend's existing resources.
+        const LayerPlacementPlan placement = make_layer_placement_plan(L, backend, g_split_backend,
+                                                                        g_split_layer);
+        sycl::queue* q2p = placement.secondary_backend >= 0
+            ? kakasi::queue_for(placement.secondary_backend) : nullptr;
+        if (placement.secondary_backend >= 0 && !q2p) {
+            g_err = "split backend unavailable";
+            return {};
+        }
+        const bool splitActive = q2p != nullptr;
         sycl::queue& q2 = splitActive ? *q2p : q;
         Dev xs(&q2, (size_t) T * D, true), hs(&q2, (size_t) T * D, true);
         std::vector<float> handoff((size_t) T * D);
@@ -2012,8 +2053,8 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         if (splitActive) arena_reset(q2);
 
         for (int l = 0; l < L; ++l) {
-            const bool on2 = splitActive && l >= splitAt;
-            if (on2 && l == splitAt) {
+            const bool on2 = splitActive && placement.backend_for(l) == placement.secondary_backend;
+            if (on2 && placement.handoff_before(l)) {
                 q.memcpy(handoff.data(), x.p, sizeof(float) * handoff.size());
                 q.wait_and_throw();
                 q2.memcpy(xs.p, handoff.data(), sizeof(float) * handoff.size());

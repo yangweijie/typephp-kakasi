@@ -15468,8 +15468,8 @@ function api_esc(string $s): string
     return $s;
 }
 
-// Decode generated ids to text. Control tokens are dropped by ID shape (their vocab strings are
-// the <|...|> markers), and the byte-level space/newline symbols are turned back into whitespace.
+// Decode generated ids to UTF-8 text. Control tokens are dropped by ID shape (their vocab strings
+// are the <|...|> markers), and GPT-2 byte-level symbols are mapped back to their source bytes.
 function api_text(string $idsCsv): string
 {
     $out = "";
@@ -15478,8 +15478,7 @@ function api_text(string $idsCsv): string
         if (strpos($s, "<|") !== false) {
             continue;
         }
-        $s = str_replace("Ġ", " ", $s);
-        $s = str_replace("Ċ", "\n", $s);
+        $s = gguf_token_decode((int) $t);
         $out = $out . $s;
     }
     return $out;
@@ -19610,6 +19609,20 @@ function main(): void
             $tfails++;
         }
     }
+    $utf8Text = "中文 🙂 🎉\nASCII";
+    $utf8Ids = tok_encode($utf8Text);
+    $utf8CharsetIds = gguf_charset_ids($utf8Text);
+    $utf8Back = "";
+    $utf8Fail = $utf8Ids == "" || $utf8CharsetIds == "";
+    foreach (explode(",", $utf8Ids) as $utf8Id) {
+        if (strpos("," . $utf8CharsetIds . ",", "," . $utf8Id . ",") === false) {
+            $utf8Fail = true;
+        }
+        $utf8Back .= gguf_token_decode((int) $utf8Id);
+    }
+    $utf8Fail = $utf8Fail || $utf8Back != $utf8Text;
+    echo $utf8Fail ? "TOKEN-UTF8: FAIL ids=" . $utf8Ids . " got=" . $utf8Back . "\n"
+        : "TOKEN-UTF8: PASS bytes=" . strlen($utf8Back) . " charset_ids=" . count(explode(",", $utf8CharsetIds)) . "\n";
     echo $tfails == 0 ? "TOKENIZER: PASS ({$tcaseN} cases vs llama-tokenize)\n"
         : "TOKENIZER: {$tfails} FAILURE(S)\n";
 
@@ -20113,6 +20126,20 @@ function main(): void
         echo "  orch[fallback] PASS streaming path produced identical tokens (6 steps)\n";
     }
     echo "  residency tiny=" . $repOff . "\n";
+    $placeOff = model_layer_placement(4, 0, -1, -1);
+    $placeMid = model_layer_placement(4, 0, 1, 2);
+    $placeFirst = model_layer_placement(4, 0, 1, 0);
+    $placeLast = model_layer_placement(4, 0, 1, 3);
+    $placeEnd = model_layer_placement(4, 0, 1, 4);
+    $placeFail = 0;
+    if ($placeOff != "0,0,0,0|handoff=-1") $placeFail++;
+    if ($placeMid != "0,0,1,1|handoff=2") $placeFail++;
+    if ($placeFirst != "1,1,1,1|handoff=0") $placeFail++;
+    if ($placeLast != "0,0,0,1|handoff=3") $placeFail++;
+    if ($placeEnd != "0,0,0,0|handoff=-1") $placeFail++;
+    echo $placeFail == 0 ? "  SCHED-PLAN: PASS off={$placeOff} mid={$placeMid} first={$placeFirst} last={$placeLast} end={$placeEnd}\n"
+        : "  SCHED-PLAN: FAIL off={$placeOff} mid={$placeMid} first={$placeFirst} last={$placeLast} end={$placeEnd}\n";
+    if ($placeFail != 0) $ofail++;
     // CPU+GPU heterogeneous offload: layers [0,12) on the Arc GPU, [12,24) on the CPU. The
     // only assertion that matters is that the split engine is the SAME engine - identical ids.
     $rc = model_set_split(1, 12);

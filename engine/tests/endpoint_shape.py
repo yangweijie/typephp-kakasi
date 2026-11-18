@@ -37,7 +37,7 @@ def raw(path, body, method="POST"):
 
 
 def post_json(path, body, stream=False):
-    data = json.dumps(body).encode()
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request("http://127.0.0.1:%d%s" % (PORT, path), data=data,
                                  headers={"Content-Type": "application/json"})
     try:
@@ -111,6 +111,59 @@ def main():
     served = code == "200" and ("data: " in text if PAR else '"choices"' in text)
     rows.append(("valid_chat", code, served))
     if served:
+        ok += 1
+    else:
+        bad += 1
+
+    schema = {
+        "messages": [{"role": "user", "content": "选一个城市名。"}],
+        "max_tokens": 48,
+        "temperature": 0,
+        "response_format": {"type": "json_schema", "json_schema": {
+            "name": "zh_city", "schema": {"type": "object", "properties": {
+                "city": {"type": "string", "enum": ["北京", "上海", "广州"]},
+                "icon": {"type": "string", "enum": ["🎉", "🌟"]}},
+                "required": ["city", "icon"]}}}}
+    if PAR:
+        schema["stream"] = True
+    code, text = post_json("/v1/chat/completions", schema)
+    try:
+        if PAR:
+            content = "".join(json.loads(line[6:])["choices"][0]["delta"].get("content", "")
+                              for line in text.splitlines()
+                              if line.startswith("data: ") and line[6:] != "[DONE]")
+        else:
+            content = json.loads(text)["choices"][0]["message"]["content"]
+        value = json.loads(content)
+        good = (code == "200" and value.get("city") in ["北京", "上海", "广州"]
+                and value.get("icon") in ["🎉", "🌟"])
+    except (ValueError, KeyError, TypeError):
+        content = text[:160]
+        good = False
+    rows.append(("utf8_zh_enum", code, good))
+    if good:
+        ok += 1
+    else:
+        bad += 1
+
+    plain = {"messages": [{"role": "user", "content": "用中文回答：北京在哪里？"}],
+             "max_tokens": 32, "temperature": 0}
+    if PAR:
+        plain["stream"] = True
+    code, text = post_json("/v1/chat/completions", plain)
+    try:
+        if PAR:
+            content = "".join(json.loads(line[6:])["choices"][0]["delta"].get("content", "")
+                              for line in text.splitlines()
+                              if line.startswith("data: ") and line[6:] != "[DONE]")
+        else:
+            content = json.loads(text)["choices"][0]["message"]["content"]
+        good = code == "200" and any("\u4e00" <= char <= "\u9fff" for char in content)
+    except (ValueError, KeyError, TypeError):
+        content = text[:160]
+        good = False
+    rows.append(("utf8_plain_response", code, good))
+    if good:
         ok += 1
     else:
         bad += 1

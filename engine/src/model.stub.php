@@ -81,6 +81,7 @@ function model_cache_prefill(int $backend, string $tokens, string $path): int {}
 function model_device_fingerprint(int $backend): string {}
 function model_set_split(int $backend, int $layer): int {}
 function model_split_state(): string {}
+function model_layer_placement(int $layers, int $primary, int $secondary, int $split_layer): string {}
 // "" = not a directory; "!N" = directory with N .gguf files (N != 1); else the .gguf path.
 function model_dir_gguf(string $dir): string {}
 // "name|bytes" lines for files in dir ending with ext.

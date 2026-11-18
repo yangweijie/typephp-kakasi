@@ -8,6 +8,26 @@
 - 实现 Kapitsa 引擎（先设计需求文档评审，已评审通过 v0.2）
 - 参考：UNIKERN 规格、Kapitsa 0.2.25、AdaptiveCpp-develop、llama.cpp/ggml 后端架构、TypePHP 源码
 
+## F673 · FR-05 profile budget naming correction (2026-11-18)
+- Audited all ten `vendor_profiles.txt` fields through `api_plugins_select()`, `api_plugins_apply()`, and the native stub/setter interface. Selector/report metadata (`name`, `match`, `note`) is not a native setter; the runtime control fields (`attn_mode`, `kv_f16`, optional `weight_prec`, `budget_gib`, `residency_frac`, paired `split_backend/split_layer`) map to existing native controls. No missing runtime setter was evidenced, so no speculative knob was added.
+- `budget_gib` invokes `model_set_budget_gib()` and pins resident-weight capacity; `model_kv_cache_gib()` reports the separate KV allocation. `/plugins` names the former `residency_budget_gib` and the latter `kv_cache_gib`.
+- Corrected `plugins/vendor_profiles.txt` line 6 from “KV cache budget” to “resident-weight budget”; audit-v0.2.md records this as a configuration-contract correction, not as new FR-05 plugin implementation.
+- A broad grep attempt with glob pattern `**` failed with a regex parse error; repeated the lookup using the concrete `plugins/vendor_profiles.txt` path. This did not modify files.
+
+## F672 · UTF-8 decoding for byte-level BPE tokens (2026-11-18)
+- GGUF vocabulary entries encode GPT-2 byte symbols, not output UTF-8 directly. A single-token visible-symbol replacement loses arbitrary bytes and corrupts CJK/emoji text.
+- `gguf::token_decode(id)` applies the inverse byte-to-symbol mapping and is shared by ordinary API text output and `gguf_charset_ids`, so constrained-vocabulary filtering examines decoded UTF-8 bytes rather than only `Ġ`/`Ċ` substitutions.
+- Self-test round-trips `中文 🙂 🎉\nASCII`; observed `TOKEN-UTF8: PASS bytes=22`. Tokenizer oracle remains 20/20.
+- Endpoint checks submit literal UTF-8 (`ensure_ascii=False`) and validate plain Chinese output and Chinese/emoji enum results: 8000 15 cases, 8001 14 cases; unified `check_gates.sh`: 198 cited names, 0 unresolved.
+- Free-form string schema smoke could not directly test the charset path: the endpoint explicitly rejects `minLength` (and the attempted Unicode `pattern` form) as unsupported. Next strengthen with a direct engine self-test for UTF-8 charset candidate IDs instead of misrepresenting API coverage.
+
+## F674 · Explicit placement plan for contiguous layer split (2026-11-18)
+- FR-02 audit still says partial: no `buffer_type` abstraction or arbitrary tensor/DAG scheduler exists. Current split is a contiguous layer range and must not be reported as full graph scheduling.
+- Added native `LayerPlacementPlan`: each layer names its backend and the one boundary layer that requires the existing host handoff. The actual forward loop now uses this plan to select device queues, KV, scratch, and the handoff point; `split_state()` uses the same planner.
+- Self-test exposes plan values and asserts disabled, interior, first-layer, last-layer, and split-at-end configurations. Existing `orch[split]` keeps the same-token comparison against unsplit execution.
+- A currently running `kakasi_engine_sycl.exe` owned port 8001 (PID 28536); `serve.par.on`, `serve_f672b_8001.log`, and `par_trace.log` were updated together at 18:22:33–38 local, identifying it as the prior F672b endpoint run rather than an unrelated old service. **Unblocked 2026-11-18 (evening):** stopped it via `stop-engine.bat`, then `build_f674.log` BUILD_OK (exe 6,144,000 bytes) and `selftest_f674.log` RUN_EXIT=0 / 0 FAIL with `SCHED-PLAN: PASS` and `orch[split] PASS`; full `gate_live.sh f674` chain GATE_LIVE_DONE (SMOKE/PRETTY 197/0, PARITY 13/13, CACHE-PERSIST PASS, PAR/FAIR exit 0, THRU scaling 1.543× PASS, sentinels 0); `check_gates.sh` 198 cited / 0 unresolved.
+- One broad Grep call tried an unsupported wildcard literal for a path and failed; no files were affected. Subsequent searches used direct file paths.
+
 ## Research Findings
 
 ### F1 · TypePHP 调 C++ 是原生链接，非 FFI（已核实，关键）

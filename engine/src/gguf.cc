@@ -348,10 +348,49 @@ const std::vector<std::string>* arr_ptr(const std::string& key) {
 }
 
 std::string token_at(int id) {
-
     auto it = g_meta_arr.find("tokenizer.ggml.tokens");
     if (it == g_meta_arr.end() || id < 0 || id >= (int) it->second.size()) return "";
     return it->second[(size_t) id];
+}
+
+std::string token_decode(int id) {
+    const std::string encoded = token_at(id);
+    std::string out;
+    for (size_t i = 0; i < encoded.size();) {
+        const unsigned char lead = (unsigned char) encoded[i];
+        uint32_t cp;
+        size_t width;
+        if (lead < 0x80) { cp = lead; width = 1; }
+        else if ((lead & 0xE0) == 0xC0 && i + 1 < encoded.size()) {
+            cp = ((uint32_t) (lead & 0x1F) << 6) | ((unsigned char) encoded[i + 1] & 0x3F);
+            width = 2;
+        } else if ((lead & 0xF0) == 0xE0 && i + 2 < encoded.size()) {
+            cp = ((uint32_t) (lead & 0x0F) << 12)
+                | ((uint32_t) ((unsigned char) encoded[i + 1] & 0x3F) << 6)
+                | ((unsigned char) encoded[i + 2] & 0x3F);
+            width = 3;
+        } else if ((lead & 0xF8) == 0xF0 && i + 3 < encoded.size()) {
+            cp = ((uint32_t) (lead & 0x07) << 18)
+                | ((uint32_t) ((unsigned char) encoded[i + 1] & 0x3F) << 12)
+                | ((uint32_t) ((unsigned char) encoded[i + 2] & 0x3F) << 6)
+                | ((unsigned char) encoded[i + 3] & 0x3F);
+            width = 4;
+        } else {
+            out.append(encoded, i, 1);
+            ++i;
+            continue;
+        }
+        if ((cp >= 33 && cp <= 126) || (cp >= 161 && cp <= 172) || (cp >= 174 && cp <= 255)) {
+            out.push_back((char) cp);
+        } else if (cp >= 256 && cp <= 323) {
+            const uint32_t index = cp - 256;
+            out.push_back((char) (index < 33 ? index : (index < 67 ? 127 + index - 33 : 173)));
+        } else {
+            out.append(encoded, i, width);
+        }
+        i += width;
+    }
+    return out;
 }
 
 double meta_num(const std::string& key) {
@@ -419,8 +458,9 @@ php::Int php_gguf_tensor_offset(php::Int i) { return php::Int(gguf::tensor_offse
 
 php::Str php_gguf_meta_str(php::Str key) { return php::Str(gguf::meta_str(std::string(key.data(), key.length()))); }
 php::Str php_gguf_token_str(php::Int id) { return php::Str(gguf::token_at((int) id)); }
+php::Str php_gguf_token_decode(php::Int id) { return php::Str(gguf::token_decode((int) id)); }
 // Token ids whose decoded text is non-empty, contains no control marker ("<|"), and uses only
-// bytes from `charset` (Ġ/Ċ are decoded to space/newline first). This is the vocabulary side of
+// bytes from `charset` after GPT-2 byte-level decoding. This is the vocabulary side of
 // constrained string decoding: the caller can then only pick tokens inside that set.
 php::Str php_gguf_charset_ids(php::Str charset) {
     const std::string set((const char*) charset.data(), charset.length());
@@ -432,17 +472,7 @@ php::Str php_gguf_charset_ids(php::Str charset) {
     for (size_t i = 0; i < toks->size(); ++i) {
         const std::string& t = (*toks)[i];
         if (t.empty()) continue;
-        std::string dec;
-        for (size_t j = 0; j < t.size();) {
-            const unsigned char c = (unsigned char) t[j];
-            if (c == 0xC4 && j + 1 < t.size()) {
-                const unsigned char d = (unsigned char) t[j + 1];
-                if (d == 0xA0) { dec += ' '; j += 2; continue; }
-                if (d == 0x8A) { dec += '\n'; j += 2; continue; }
-            }
-            dec += (char) c;
-            j += 1;
-        }
+        const std::string dec = gguf::token_decode((int) i);
         if (dec.find("<|") != std::string::npos) continue;
         bool ok = true;
         for (size_t j = 0; j < dec.size(); ++j) {
