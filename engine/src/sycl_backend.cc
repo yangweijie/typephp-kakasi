@@ -19,6 +19,35 @@ namespace {
         std::shared_ptr<sycl::context> ctx;
         std::unique_ptr<sycl::queue> q;
         bool validated = false;
+        std::unique_ptr<buf::BufferType> bt;  // F675 Stage 1: this device's memory class
+    };
+
+    // F675 Stage 1: a BufferType whose allocations land on ONE device's queue. It owns the
+    // allocation call but not the device - the Slot outlives it and keeps the queue warm.
+    struct DeviceBufferType final : buf::BufferType {
+        sycl::queue& q;
+        int index;
+        size_t max_bytes = 0;
+        DeviceBufferType(sycl::queue& qq, int idx, size_t maxb) : q(qq), index(idx), max_bytes(maxb) {}
+        void* alloc(size_t bytes) override {
+            try {
+                return bytes ? sycl::malloc_device<char>(bytes, q) : nullptr;
+            } catch (...) {
+                return nullptr;
+            }
+        }
+        void deallocate(void* p, size_t) override {
+            if (p) sycl::free(p, q);
+        }
+        size_t alignment() const override { return buf::ROW_ALIGN; }
+        size_t max_size() const override { return max_bytes; }
+        size_t tensor_size(size_t elems, size_t elem_bytes) const override {
+            const size_t raw = elems * elem_bytes;
+            return (raw + buf::ROW_ALIGN - 1) & ~(buf::ROW_ALIGN - 1);
+        }
+        std::string name() const override {
+            return "b" + std::to_string(index);
+        }
     };
 
     std::string g_error;
@@ -61,6 +90,12 @@ namespace {
             // per-operator drains were removed (findings F25/F26/F31).
             slot->q = std::make_unique<sycl::queue>(*slot->ctx, slot->dev,
                                                    sycl::property::queue::in_order{});
+            // F675 Stage 1: this device's memory class, bounded by its own global memory so
+            // the ledger can report a per-class ceiling. The bt outlives nothing here - the
+            // Slot owns it and the queue is the single place its allocations are served.
+            const size_t mem = slot->dev.get_info<sycl::info::device::global_mem_size>();
+            slot->bt = std::make_unique<DeviceBufferType>(*slot->q, index, mem);
+            buf::ledger().register_bt(slot->bt.get());
             // Warm the device: force runtime/module setup before any real work.
             float* probe_buf = sycl::malloc_device<float>(1, *slot->q);
             slot->q->single_task([=] { probe_buf[0] = 1.0f; });
@@ -107,6 +142,29 @@ std::string device_name(int index) {
 }
 
 std::string last_error() { return g_error; }
+
+// F675 Stage 1: the device's buffer_type. Acquiring the slot warms it, so handing the
+// buffer_type back IS the "backend available" check - the scheduler can consult one call
+// for both the queue and the memory class of a device.
+buf::BufferType* buffer_type_for(int index) {
+    if (!in_range(index)) {
+        g_error = "backend index out of range";
+        return nullptr;
+    }
+    Slot* slot = acquire(index);
+    return slot ? slot->bt.get() : nullptr;
+}
+
+// The model layer holds a sycl::queue& most of the time (kernels take one), not a backend
+// index, so the contract has to be reachable from either. A queue that does not belong to
+// one of our slots is not one of our memory classes.
+buf::BufferType* buffer_type_for_queue(const sycl::queue* q) {
+    if (!q) return nullptr;
+    for (const auto& slot : slots()) {
+        if (slot && slot->q.get() == q) return slot->bt.get();
+    }
+    return nullptr;
+}
 
 // saxpy with a known answer: proves this device can run a kernel AND land results in host memory.
 bool validate(int index) {

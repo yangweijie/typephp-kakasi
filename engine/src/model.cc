@@ -13,6 +13,7 @@
 namespace model {
 std::string last_error();
 std::string residency_report();
+std::string buffer_report();
 double top_logit();
 double second_logit();
 double expect_logit();
@@ -110,6 +111,7 @@ std::vector<int> parse_ids(const std::string& csv) {
 
 php::Str php_model_last_error() { return php::Str(model::last_error()); }
 php::Str php_model_residency_report() { return php::Str(model::residency_report()); }
+php::Str php_model_buffer_report() { return php::Str(model::buffer_report()); }
 php::Float php_model_top_logit() { return php::Float(model::top_logit()); }
 php::Float php_model_second_logit() { return php::Float(model::second_logit()); }
 php::Float php_model_expect_logit() { return php::Float(model::expect_logit()); }

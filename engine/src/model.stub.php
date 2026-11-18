@@ -5,6 +5,8 @@
 function model_last_error(): string {}
 
 function model_residency_report(): string {}
+// F675 Stage 1: "anomalies=N b0:3.1MiB|host:0.0MiB" - who owns which bytes, from the ledger.
+function model_buffer_report(): string {}
 
 function model_top_logit(): float {}
 

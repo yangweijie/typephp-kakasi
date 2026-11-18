@@ -20152,6 +20152,20 @@ function main(): void
         echo "  orch[split] FAIL resident={$base} split={$sgen} err=" . model_last_error() . "\n";
         $ofail++;
     }
+        // F675 Stage 1: the buffer_type contract's own gate. The residency and split probes above
+    // exercised all three memory classes - b0, b1, and the shared host staging buffer - so the
+    // shared ledger must name all of them. Byte counts may be zero here (the split probe freed
+    // every KV row on exit), so the assertions are the class registry plus the anomaly
+    // counter: a pointer freed from the wrong buffer_type, or twice, would be a release-
+    // discipline error and the gate fails on it.
+    $bufRep = model_buffer_report();
+    $bufBad = (strpos($bufRep, "anomalies=0") !== 0
+        || strpos($bufRep, "b0:") === false
+        || strpos($bufRep, "b1:") === false
+        || strpos($bufRep, "host:") === false);
+    echo $bufBad ? "  BUFFER-LEDGER: FAIL {$bufRep}\n"
+        : "  BUFFER-LEDGER: PASS {$bufRep}\n";
+    if ($bufBad) $ofail++;
     echo $ofail == 0 ? "ORCH: PASS\n" : "ORCH: {$ofail} FAILURE(S)\n";
     $acc = $pv[0];
     $lp32 = [];

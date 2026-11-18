@@ -5,6 +5,7 @@
 
 #include "gguf.h"
 #include "sycl_backend.h"
+#include "buffer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -85,8 +86,10 @@ namespace {
                 // Queued kernels may still read these rows (resizing, backend switch, KV mode
                 // switch). Drain before the memory goes back to the driver.
                 q->wait_and_throw();
-                for (void* p : k) if (p) sycl::free(p, *q);
-                for (void* p : v) if (p) sycl::free(p, *q);
+                buf::BufferType* btp = kakasi::buffer_type_for_queue(q);
+                const size_t rb = (size_t) cap * (size_t) dkv * elem();
+                for (void* pp : k) if (pp) buf::free_bt(btp, pp, rb);
+                for (void* pp : v) if (pp) buf::free_bt(btp, pp, rb);
             }
             k.clear(); v.clear();
             q = nullptr; cap = 0; len = 0; backend = -1;
@@ -97,6 +100,51 @@ namespace {
     int g_split_backend = -1;          // second device for layers [g_split_layer, L)
     int g_split_layer = -1;
     constexpr int KV_MIN_CAP = 512;
+
+    // F675 Stage 2: N contiguous segments. A segment split is a list of
+    // (backend, first_layer); segments run in start order, are contiguous, and cover
+    // every layer. The two-segment "primary b0 + one second" shape keeps its dedicated
+    // fast path (g_kv2 and the decode-side per-backend mirrors all live on it); a shape
+    // that needs more than two segments - or does not start on b0 - takes this generic
+    // path, where every segment owns its own KV, rope tables, scratch and hidden state,
+    // and the boundary handoff walks the shared host buffer_type the way the two-device
+    // path already does.
+    struct SegmentSplit {
+        std::vector<int> backend;
+        std::vector<int> start;    // ascending
+    };
+    SegmentSplit g_seg_split;
+    bool g_seg_active = false;
+
+    struct SegRT {
+        sycl::queue* q = nullptr;
+        int backend = -1;
+        KVCache kv;                 // this segment's cache; segment 0 aliases g_kv
+        float* xs = nullptr;       // running hidden state on this segment
+        float* hs = nullptr;       // per-layer scratch
+        float* dCos = nullptr;
+        float* dSin = nullptr;
+        float* scores = nullptr;
+        float* part = nullptr;
+        int kv_layers = 0;         // layers this segment owns
+        void free_scratch(buf::BufferType* btp) {
+            // Ownership is proven by the ledger (exactly-once, right class); byte sizes
+            // are recorded at alloc time, so 0 on the free side matches the residency
+            // and KV-row convention.
+            if (dCos) { buf::free_bt(btp, dCos, 0); dCos = nullptr; }
+            if (dSin) { buf::free_bt(btp, dSin, 0); dSin = nullptr; }
+            if (scores) { buf::free_bt(btp, scores, 0); scores = nullptr; }
+            if (part) { buf::free_bt(btp, part, 0); part = nullptr; }
+        }
+        void clear() {
+            free_scratch(nullptr);
+            kv.free_all();
+            q = nullptr; backend = -1; xs = nullptr; hs = nullptr;
+            if (xs) { /* freed below with the pass's own queue bookkeeping */ }
+            xs = nullptr; hs = nullptr; kv_layers = 0;
+        }
+    };
+    std::vector<SegRT> g_seg;
 
     struct LayerPlacementPlan {
         std::vector<int> backend;
@@ -139,16 +187,20 @@ namespace {
         void clear_all() {
             if (q) {
                 q->wait_and_throw();   // queued kernels may still read the kept tensors
-                for (auto& kv : keep) sycl::free(kv.second, *q);
-                for (auto& kv : keep_h) sycl::free(kv.second, *q);
+                buf::BufferType* btp = kakasi::buffer_type_for_queue(q);
+                // Byte sizes are recorded at alloc time (alloc_bt); the free side only
+                // proves ownership (which buffer_type a pointer belongs to, exactly-once).
+                for (auto& kv : keep) buf::free_bt(btp, kv.second, 0);
+                for (auto& kv : keep_h) buf::free_bt(btp, kv.second, 0);
                 for (auto& kv : keep_q) {
-                    sycl::free(kv.second.first, *q);
-                    sycl::free(kv.second.second, *q);
+                    buf::free_bt(btp, kv.second.first, 0);
+                    buf::free_bt(btp, kv.second.second, 0);
                 }
             }
             for (auto& kv : temp) {
                 kv.second->wait_and_throw();
-                sycl::free(kv.first, *kv.second);
+                buf::BufferType* btp = kakasi::buffer_type_for_queue(kv.second);
+                buf::free_bt(btp, kv.first, 0);
             }
             keep.clear(); keep_h.clear(); keep_q.clear(); temp.clear(); used = 0;
         }
@@ -256,10 +308,18 @@ namespace {
 
     // ---- device helpers -------------------------------------------------------
 
+    // F675 Stage 1: the memory classes this pass runs through. `dev_bt` resolves the
+    // buffer_type that owns a queue - every device allocation and deallocation in this
+    // file goes through it, so "who owns these bytes" is answerable from the ledger.
+    // `host_bt` is the shared host staging class used by the boundary handoff.
+    buf::BufferType* dev_bt(sycl::queue& q) { return kakasi::buffer_type_for_queue(&q); }
+    buf::BufferType& host_bt() { return buf::host(); }
+
     // Dequantizes a whole tensor's raw bytes into a fresh device float buffer.
     float* dequant_device(sycl::queue& q, const std::vector<uint8_t>& raw, uint32_t dtype, uint64_t numel) {
-        uint8_t* dRaw = sycl::malloc_device<uint8_t>(raw.size(), q);
-        float* dOut = sycl::malloc_device<float>(numel, q);
+        buf::BufferType* btp = dev_bt(q);
+        uint8_t* dRaw = btp ? (uint8_t*) buf::alloc_bt(btp, raw.size()) : nullptr;
+        float* dOut = dRaw ? (float*) buf::alloc_bt(btp, numel * sizeof(float)) : nullptr;
         q.memcpy(dRaw, raw.data(), raw.size());
         q.wait_and_throw();
 
@@ -334,7 +394,7 @@ namespace {
             }
         });
         q.wait_and_throw();
-        sycl::free(dRaw, q);
+        buf::free_bt(btp, dRaw, raw.size());
         return dOut;
     }
 
@@ -546,9 +606,10 @@ namespace {
     bool plan_upload(sycl::queue& q) {
         const size_t n = g_plan.slot.size();
         if (n == 0) return false;
-        g_plan.d_slot = sycl::malloc_device<int>(n, q);
-        g_plan.d_lo = sycl::malloc_device<int>(n, q);
-        g_plan.d_hi = sycl::malloc_device<int>(n, q);
+        buf::BufferType* btp = dev_bt(q);
+        g_plan.d_slot = btp ? (int*) buf::alloc_bt(btp, n * sizeof(int)) : nullptr;
+        g_plan.d_lo = g_plan.d_slot ? (int*) buf::alloc_bt(btp, n * sizeof(int)) : nullptr;
+        g_plan.d_hi = g_plan.d_lo ? (int*) buf::alloc_bt(btp, n * sizeof(int)) : nullptr;
         if (!g_plan.d_slot || !g_plan.d_lo || !g_plan.d_hi) { plan_free(q); return false; }
         q.memcpy(g_plan.d_slot, g_plan.slot.data(), n * sizeof(int));
         q.memcpy(g_plan.d_lo, g_plan.lo.data(), n * sizeof(int));
@@ -558,9 +619,10 @@ namespace {
     }
 
     void plan_free(sycl::queue& q) {
-        if (g_plan.d_slot) { sycl::free(g_plan.d_slot, q); g_plan.d_slot = nullptr; }
-        if (g_plan.d_lo) { sycl::free(g_plan.d_lo, q); g_plan.d_lo = nullptr; }
-        if (g_plan.d_hi) { sycl::free(g_plan.d_hi, q); g_plan.d_hi = nullptr; }
+        buf::BufferType* btp = dev_bt(q);
+        if (g_plan.d_slot) { buf::free_bt(btp, g_plan.d_slot, (size_t) g_plan.slot.size() * sizeof(int)); g_plan.d_slot = nullptr; }
+        if (g_plan.d_lo) { buf::free_bt(btp, g_plan.d_lo, (size_t) g_plan.lo.size() * sizeof(int)); g_plan.d_lo = nullptr; }
+        if (g_plan.d_hi) { buf::free_bt(btp, g_plan.d_hi, (size_t) g_plan.hi.size() * sizeof(int)); g_plan.d_hi = nullptr; }
     }
 
     // Allocate (or grow) the per-layer cache. The prefill path and the prefix-cache loader must
@@ -574,12 +636,15 @@ namespace {
         if (keep_rows > g_kv.cap) keep_rows = g_kv.cap;
         const int cap = std::max(need_rows, KV_MIN_CAP);
         const size_t bytes = (size_t) cap * (size_t) dkv * g_kv.elem();
+        buf::BufferType* btp = dev_bt(q);
         std::vector<char*> nk;
         std::vector<char*> nv;
         for (int l = 0; l < layers; ++l) {
-            nk.push_back(sycl::malloc_device<char>(bytes, q));
-            nv.push_back(sycl::malloc_device<char>(bytes, q));
-            if (!nk.back() || !nv.back()) return false;
+            char* pk = btp ? (char*) buf::alloc_bt(btp, bytes) : nullptr;
+            char* pv = pk ? (char*) buf::alloc_bt(btp, bytes) : nullptr;
+            nk.push_back(pk);
+            nv.push_back(pv);
+            if (!pk || !pv) return false;
         }
         if (keep_rows > 0 && (int) g_kv.k.size() == layers) {
             const size_t keep = (size_t) keep_rows * (size_t) dkv * g_kv.elem();
@@ -859,17 +924,19 @@ namespace {
         if (keepable && need > (1u << 20)) {
             if (g_wprec == 1) {
                 const uint64_t nb = (numel + 63u) / 64u;
-                int8_t* pq = sycl::malloc_device<int8_t>(numel, q);
-                float* ps = sycl::malloc_device<float>(nb, q);
+                buf::BufferType* btp = dev_bt(q);
+                int8_t* pq = btp ? (int8_t*) buf::alloc_bt(btp, numel) : nullptr;
+                float* ps = pq ? (float*) buf::alloc_bt(btp, nb * sizeof(float)) : nullptr;
                 to_int8(q, p, pq, ps, numel);
-                sycl::free(p, q);
+                buf::free_bt(btp, p, numel * sizeof(float));
                 g_res.keep_q[idx] = {pq, ps};
                 g_res.used += (size_t) numel + (size_t) nb * sizeof(float);
                 return {pq, ps, 2};
             }
-            sycl::half* ph = sycl::malloc_device<sycl::half>(numel, q);
+            buf::BufferType* btp2 = dev_bt(q);
+            sycl::half* ph = btp2 ? (sycl::half*) buf::alloc_bt(btp2, numel * sizeof(sycl::half)) : nullptr;
             to_half(q, p, ph, numel);
-            sycl::free(p, q);
+            buf::free_bt(btp2, p, numel * sizeof(float));
             g_res.keep_h[idx] = ph;
             g_res.used += (size_t) numel * sizeof(sycl::half);
             return {ph, nullptr, 1};
@@ -900,7 +967,8 @@ namespace {
         auto it = g_res.temp.find(p);
         if (it == g_res.temp.end()) return;
         it->second->wait_and_throw();
-        sycl::free(p, *it->second);
+        buf::BufferType* btp = kakasi::buffer_type_for_queue(it->second);
+        buf::free_bt(btp, p, 0);
         g_res.temp.erase(it);
     }
 
@@ -1007,7 +1075,8 @@ namespace {
     float* arena_acquire(sycl::queue& q, size_t count) {
         Arena& a = g_arena[(const void*) &q];
         if (count > Arena::BLK) {
-            float* p = sycl::malloc_device<float>(count, q);
+            buf::BufferType* btp = dev_bt(q);
+            float* p = btp ? (float*) buf::alloc_bt(btp, count * sizeof(float)) : nullptr;
             a.oversized.push_back(p);
             return p;
         }
@@ -1018,7 +1087,8 @@ namespace {
         const size_t in_block = off % Arena::BLK;
         if (in_block + count > Arena::BLK) off += Arena::BLK - in_block;
         while (off + count > a.cap()) {
-            a.blocks.push_back(sycl::malloc_device<float>(Arena::BLK, q));
+            buf::BufferType* btp = dev_bt(q);
+            a.blocks.push_back(btp ? (float*) buf::alloc_bt(btp, Arena::BLK * sizeof(float)) : nullptr);
         }
         a.used = off + count;
         return a.blocks[off / Arena::BLK] + (off % Arena::BLK);
@@ -1028,7 +1098,8 @@ namespace {
     void arena_reset(sycl::queue& q) {
         Arena& a = g_arena[(const void*) &q];
         a.used = 0;
-        for (float* p : a.oversized) sycl::free(p, q);
+        buf::BufferType* btp = dev_bt(q);
+        for (float* p : a.oversized) buf::free_bt(btp, p, 0);
         a.oversized.clear();
     }
 
@@ -1041,7 +1112,12 @@ namespace {
         explicit Dev(sycl::queue* qq, size_t count, bool own = false) : q(qq), owned(own) {
             n = count;
             if (count == 0) return;
-            p = own ? sycl::malloc_device<float>(count, *qq) : arena_acquire(*qq, count);
+            if (own) {
+                buf::BufferType* btp = dev_bt(*qq);
+                p = btp ? (float*) buf::alloc_bt(btp, count * sizeof(float)) : nullptr;
+            } else {
+                p = arena_acquire(*qq, count);
+            }
             // No zeroing, deliberately. Every buffer built here is immediately and fully
             // written by the kernel that follows: gemm assigns every in-bounds output element
             // (accumulator starts in registers, not in Y), rmsnorm writes range(T,D), attention
@@ -1052,11 +1128,11 @@ namespace {
             // This is guarded by the cross-backend logit assertion and the window-0 logprob
             // tolerance in the test suite, not by argmax.
         }
-        ~Dev() { if (owned && p && q) sycl::free(p, *q); }
+        ~Dev() { if (owned && p && q) buf::free_bt(dev_bt(*q), p, n * sizeof(float)); }
         Dev(Dev&& o) noexcept : p(o.p), n(o.n), q(o.q), owned(o.owned) { o.p = nullptr; }
         Dev& operator=(Dev&& o) noexcept {
             if (this != &o) {
-                if (owned && p && q) sycl::free(p, *q);
+                if (owned && p && q) buf::free_bt(dev_bt(*q), p, n * sizeof(float));
                 p = o.p; n = o.n; q = o.q; owned = o.owned; o.p = nullptr;
             }
             return *this;
@@ -1085,7 +1161,7 @@ namespace {
         if (!tmp) return false;
         q.memcpy(dst, tmp, sizeof(float) * D);
         q.wait_and_throw();
-        sycl::free(tmp, q);
+        buf::free_bt(dev_bt(q), tmp, (size_t) D * sizeof(float));
         return true;
     }
 }  // namespace
@@ -1101,6 +1177,17 @@ std::string layer_placement(int layers, int primary, int secondary, int split_la
     }
     out += "|handoff=" + std::to_string(plan.handoff_layer);
     return out;
+}
+
+// F675 Stage 1: one-line "who owns which bytes" report from the shared allocation ledger.
+// "b0:3.1MiB|host:0.0MiB" - a byte class with no live allocations is still listed because
+// every alloc registers its buffer_type, and " anomalies=N" appears only when a pointer was
+// freed from the wrong class or twice - the release-discipline error the split run invited.
+std::string buffer_report() {
+    std::string r = buf::ledger().report();
+    char head[32];
+    std::snprintf(head, sizeof(head), "anomalies=%d ", buf::ledger().anomaly_count());
+    return std::string(head) + r;
 }
 
 std::string residency_report() {
@@ -1235,6 +1322,75 @@ double kv_cache_gib() {
 // Layer-range offload (FR-18): layers [layer, L) run on `backend`, the rest on the device the
 // caller passes to prefill. Disable with layer < 0. Residency is single-device, so it is
 // dropped here and every weight streams on whichever device owns its layer.
+// F675 Stage 2: apply an N-segment placement. The string is "b:from|b:from|..." - each
+// segment names a backend and the first layer it owns; segments must be contiguous, in
+// ascending order, and cover [0, L). The exact "b0:[0,s) + b1:[s,L)" two-segment shape
+// re-routes to the dedicated g_split fast path; everything else takes the generic path
+// (g_seg_active), which allocates its own per-segment KV/rope/scratch each pass.
+// Returns 1 on success (including the no-op single-segment split), 0 on a malformed
+// string, an uncovered gap, or a segment on an unavailable device.
+int set_seg_split(const std::string& spec, int L) {
+    if (L <= 0) return 0;
+    std::vector<std::pair<int, int>> segs;
+    size_t i = 0;
+    while (i < spec.size()) {
+        size_t bar = spec.find('|', i);
+        std::string tok = spec.substr(i, bar == std::string::npos ? std::string::npos : bar - i);
+        if (tok.empty()) return 0;
+        size_t col = tok.find(':');
+        if (col == std::string::npos || col == 0 || col + 1 >= tok.size()) return 0;
+        int b, from;
+        try {
+            b = std::stoi(tok.substr(0, col));
+            from = std::stoi(tok.substr(col + 1));
+        } catch (...) { return 0; }
+        if (b < 0 || from < 0 || from > L) return 0;
+        segs.push_back({b, from});
+        i = (bar == std::string::npos) ? spec.size() : bar + 1;
+    }
+    if (segs.empty() || segs.size() > (size_t) kakasi::device_count()) return 0;
+    for (size_t k = 1; k < segs.size(); ++k) {
+        if (segs[k].second != segs[k - 1].second + segs[k - 1].first) return 0;
+    }
+    if (segs.front().second != 0 || segs.back().second + (int) segs.back().first != L) return 0;
+    for (const auto& sg : segs) {
+        if (!kakasi::queue_for(sg.first)) { g_err = "segment backend " + std::to_string(sg.first)
+                                                 + " unavailable"; return 0; }
+    }
+    // The dedicated two-device fast path: first segment on b0, exactly one other
+    // backend after it. Everything else is generic.
+    if (segs.size() == 2 && segs[0].first == 0) {
+        g_seg_active = false;
+        g_seg_split = {};
+        g_seg.clear();
+        set_split(segs[1].first, segs[1].second);
+        return 1;
+    }
+    g_split_backend = -1;
+    g_split_layer = -1;
+    g_seg_active = true;
+    g_seg_split.backend.clear();
+    g_seg_split.start.clear();
+    for (const auto& sg : segs) {
+        g_seg_split.backend.push_back(sg.first);
+        g_seg_split.start.push_back(sg.second);
+    }
+    g_seg.clear();
+    g_kv.free_all();
+    return 1;
+}
+
+std::string seg_split_state() {
+    if (!g_seg_active) return "seg off";
+    std::string out;
+    for (size_t k = 0; k < g_seg_split.backend.size(); ++k) {
+        if (k) out += "|";
+        out += "b" + std::to_string(g_seg_split.backend[k])
+             + ":" + std::to_string(g_seg_split.start[k]);
+    }
+    return out;
+}
+
 void set_split(int backend, int layer) {
     if (layer < 0 || backend < 0) {
         g_split_backend = -1;
@@ -1249,6 +1405,18 @@ void set_split(int backend, int layer) {
     g_kv.free_all();
     g_kv2.free_all();
     if (!g_kv.f16 && g_kv2.f16) g_kv.f16 = g_kv2.f16;
+    // Entering or leaving the two-device fast path releases the generic segment state.
+    g_seg_active = false;
+    g_seg_split = {};
+    for (auto& sg : g_seg) {
+        buf::BufferType* btp = sg.q ? kakasi::buffer_type_for_queue(sg.q) : nullptr;
+        sg.kv.free_all();
+        if (sg.xs) { buf::free_bt(btp, sg.xs, 0); sg.xs = nullptr; }
+        if (sg.hs) { buf::free_bt(btp, sg.hs, 0); sg.hs = nullptr; }
+        sg.free_scratch(btp);
+        sg.q = nullptr; sg.backend = -1;
+    }
+    g_seg.clear();
 }
 
 std::string split_state() {
@@ -1826,8 +1994,9 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 stab[(size_t) t * half + j] = std::sin(ang);
             }
         }
-        float* dCos = sycl::malloc_device<float>(ctab.size(), q);
-        float* dSin = sycl::malloc_device<float>(stab.size(), q);
+        buf::BufferType* cbt = dev_bt(q);
+        float* dCos = cbt ? (float*) buf::alloc_bt(cbt, ctab.size() * sizeof(float)) : nullptr;
+        float* dSin = dCos ? (float*) buf::alloc_bt(cbt, stab.size() * sizeof(float)) : nullptr;
         q.memcpy(dCos, ctab.data(), sizeof(float) * ctab.size());
         q.memcpy(dSin, stab.data(), sizeof(float) * stab.size());
         q.wait_and_throw();
@@ -1988,7 +2157,18 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         const bool splitActive = q2p != nullptr;
         sycl::queue& q2 = splitActive ? *q2p : q;
         Dev xs(&q2, (size_t) T * D, true), hs(&q2, (size_t) T * D, true);
-        std::vector<float> handoff((size_t) T * D);
+        // F675 Stage 1: the boundary staging buffer is now a host buffer_type allocation -
+        // one of the two memory classes of the contract - instead of an unowned vector.
+        struct HostStage {
+            char* p = nullptr;
+            size_t bytes = 0;
+            explicit HostStage(size_t b) : bytes(b) { p = (char*) buf::alloc_bt(&host_bt(), b); }
+            ~HostStage() { if (p) buf::free_bt(&host_bt(), p, bytes); }
+        };
+        HostStage handoff((size_t) T * (size_t) D * sizeof(float));
+        // F675 Stage 1: the second device's memory class, scoped over the whole pass -
+        // not just the alloc block - because the success-side frees run after the layer loop.
+        buf::BufferType* s2bt = dev_bt(q2);
         // The second device needs its own copies of everything the layers touch: the rope
         // tables and the KV rows. A pointer allocated on one device must never be dereferenced
         // by the other.
@@ -2000,16 +2180,19 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         float* scores2 = nullptr;
         float* part2 = nullptr;
         if (splitActive) {
-            dCos2 = sycl::malloc_device<float>(ctab.size(), q2);
-            dSin2 = sycl::malloc_device<float>(stab.size(), q2);
-            scores2 = sycl::malloc_device<float>((size_t) T * NH * (size_t) scoreRows, q2);
-            part2 = sycl::malloc_device<float>(
-                (size_t) T * NH * (size_t) splitP * (size_t) partStride, q2);
+            dCos2 = s2bt ? (float*) buf::alloc_bt(s2bt, ctab.size() * sizeof(float)) : nullptr;
+            dSin2 = dCos2 ? (float*) buf::alloc_bt(s2bt, stab.size() * sizeof(float)) : nullptr;
+            scores2 = dSin2 ? (float*) buf::alloc_bt(s2bt,
+                (size_t) T * NH * (size_t) scoreRows * sizeof(float)) : nullptr;
+            part2 = scores2 ? (float*) buf::alloc_bt(s2bt,
+                (size_t) T * NH * (size_t) splitP * (size_t) partStride * sizeof(float)) : nullptr;
             if (!dCos2 || !dSin2 || !scores2 || !part2) {
-                if (dCos2) sycl::free(dCos2, q2);
-                if (dSin2) sycl::free(dSin2, q2);
-                if (scores2) sycl::free(scores2, q2);
-                if (part2) sycl::free(part2, q2);
+                if (dCos2) buf::free_bt(s2bt, dCos2, ctab.size() * sizeof(float));
+                if (dSin2) buf::free_bt(s2bt, dSin2, stab.size() * sizeof(float));
+                if (scores2) buf::free_bt(s2bt, scores2,
+                    (size_t) T * NH * (size_t) scoreRows * sizeof(float));
+                if (part2) buf::free_bt(s2bt, part2,
+                    (size_t) T * NH * (size_t) splitP * (size_t) partStride * sizeof(float));
                 g_err = "split scratch allocation failed";
                 return {};
             }
@@ -2023,11 +2206,14 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                                   ? std::min(pos, g_kv2.cap) : 0;
                 const int cap2 = std::max(pos + T, KV_MIN_CAP);
                 const size_t b2 = (size_t) cap2 * (size_t) DKV * g_kv2.elem();
+                buf::BufferType* b2p = dev_bt(q2);
                 std::vector<char*> nk2;
                 std::vector<char*> nv2;
                 for (int l = 0; l < L; ++l) {
-                    nk2.push_back(sycl::malloc_device<char>(b2, q2));
-                    nv2.push_back(sycl::malloc_device<char>(b2, q2));
+                    char* pk = b2p ? (char*) buf::alloc_bt(b2p, b2) : nullptr;
+                    char* pv = pk ? (char*) buf::alloc_bt(b2p, b2) : nullptr;
+                    nk2.push_back(pk);
+                    nv2.push_back(pv);
                 }
                 if (keep2 > 0) {
                     const size_t kb = (size_t) keep2 * (size_t) DKV * g_kv2.elem();
@@ -2055,9 +2241,10 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         for (int l = 0; l < L; ++l) {
             const bool on2 = splitActive && placement.backend_for(l) == placement.secondary_backend;
             if (on2 && placement.handoff_before(l)) {
-                q.memcpy(handoff.data(), x.p, sizeof(float) * handoff.size());
+                const size_t hb = (size_t) T * (size_t) D * sizeof(float);
+                q.memcpy(handoff.p, x.p, hb);
                 q.wait_and_throw();
-                q2.memcpy(xs.p, handoff.data(), sizeof(float) * handoff.size());
+                q2.memcpy(xs.p, handoff.p, hb);
                 q2.wait_and_throw();
             }
             if (!run_layer(on2 ? q2 : q, on2 ? xs.p : x.p, on2 ? hs.p : h.p,
@@ -2077,18 +2264,21 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             }
         }
         if (splitActive) {
-            q2.memcpy(handoff.data(), xs.p, sizeof(float) * handoff.size());
+            const size_t hb2 = (size_t) T * (size_t) D * sizeof(float);
+            q2.memcpy(handoff.p, xs.p, hb2);
             q2.wait_and_throw();
-            q.memcpy(x.p, handoff.data(), sizeof(float) * handoff.size());
+            q.memcpy(x.p, handoff.p, hb2);
             q.wait_and_throw();
-            sycl::free(dCos2, q2);
-            sycl::free(dSin2, q2);
-            sycl::free(scores2, q2);
-            sycl::free(part2, q2);
+            buf::free_bt(s2bt, dCos2, ctab.size() * sizeof(float));
+            buf::free_bt(s2bt, dSin2, stab.size() * sizeof(float));
+            buf::free_bt(s2bt, scores2,
+                (size_t) T * NH * (size_t) scoreRows * sizeof(float));
+            buf::free_bt(s2bt, part2,
+                (size_t) T * NH * (size_t) splitP * (size_t) partStride * sizeof(float));
         }
 
-        sycl::free(dCos, q);
-        sycl::free(dSin, q);
+        buf::free_bt(cbt, dCos, ctab.size() * sizeof(float));
+        buf::free_bt(cbt, dSin, stab.size() * sizeof(float));
         q.wait_and_throw();
         mark_stage();  // stage 1: the 24 transformer blocks
 
@@ -2150,7 +2340,10 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             } else {
                 gemm(q, xn.p, nOut, D, dW, nrows, dLogits.p + (size_t) r0, nullptr, rows);
             }
-            if (dStream) { q.wait_and_throw(); sycl::free(dStream, q); }
+            if (dStream) {
+                q.wait_and_throw();
+                buf::free_bt(cbt, dStream, (size_t) nrows * (size_t) D * sizeof(float));
+            }
         }
         for (int r = 0; r < nOut; ++r) {
             std::vector<float> row((size_t) rows);
@@ -2840,7 +3033,8 @@ std::vector<int> prefill_tops_tree(int backend, const std::vector<int>& tokens, 
     sycl::queue* qp = kakasi::queue_for(backend);
     if (!qp) { g_err = "tree verify: backend unavailable"; g_row_pos.clear(); g_head_want.clear(); return {}; }
     if (mask.size() != tokens.size()) { g_err = "tree verify: mask size mismatch"; g_row_pos.clear(); g_head_want.clear(); return {}; }
-    uint32_t* dm = sycl::malloc_device<uint32_t>(mask.size(), *qp);
+    buf::BufferType* mgt = kakasi::buffer_type_for_queue(qp);
+    uint32_t* dm = mgt ? (uint32_t*) buf::alloc_bt(mgt, mask.size() * sizeof(uint32_t)) : nullptr;
     if (!dm) { g_err = "tree verify: mask alloc failed"; g_row_pos.clear(); g_head_want.clear(); return {}; }
     qp->memcpy(dm, mask.data(), sizeof(uint32_t) * mask.size());
     qp->wait_and_throw();
@@ -2849,7 +3043,7 @@ std::vector<int> prefill_tops_tree(int backend, const std::vector<int>& tokens, 
     g_tree_mask = nullptr;
     g_row_pos.clear();
     g_head_want.clear();
-    sycl::free(dm, *qp);
+    buf::free_bt(mgt, dm, mask.size() * sizeof(uint32_t));
     return out;
 }
 

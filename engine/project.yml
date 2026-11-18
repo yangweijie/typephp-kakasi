@@ -5,6 +5,7 @@ sources:
   - src/gguf.stub.php
   - src/backend.cc
   - src/backend.stub.php
+  - src/buffer.cc
   - src/ops.cc
   - src/ops.stub.php
   - src/model.cc
