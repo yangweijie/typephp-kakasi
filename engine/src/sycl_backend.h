@@ -9,6 +9,9 @@ namespace kakasi {
 // Returns a persistent, warm, validated queue for the device, or nullptr if the
 // device cannot be acquired/validated. Never creates a per-call queue.
 sycl::queue* queue_for(int index);
+// F678: how many backend indices are valid - the model layer sizes the per-backend
+// op dispatch table against this instead of guessing.
+int device_count();
 
 // F675 Stage 1: the device's buffer_type - allocation, alignment and live-byte accounting
 // for exactly this device's memory class. Lazily created with the slot and registered

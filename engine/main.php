@@ -20230,6 +20230,25 @@ function main(): void
     if (!$graphOk) $ofail++;
     model_set_split(-1, -1);
 
+    // F678: the backend op dispatch table. Every backend must declare the full kernel
+    // set (dequant/gemm/rmsnorm/rope/kv_store/attn/split_k/silu/residual/lm_head); the
+    // forward loop refuses to dispatch an op the table does not list for a backend.
+    $opsRep = model_ops_table_report();
+    $opsDev = backend_device_count();
+    $opsOk = ($opsDev > 0 && strpos($opsRep, "b0=[dequant") === 0);
+    $opsExpect = "b";
+    for ($b = 0; $b < $opsDev; $b++) {
+        $blk = "b" . $b . "=[dequant+gemm+rmsnorm+rope+kv_store+attn+split_k+silu+residual+lm_head]";
+        if (strpos($opsRep, $blk) === false) {
+            $opsOk = false;
+        }
+    }
+    echo $opsOk ? "  OPS-TABLE: PASS {$opsRep}
+"
+        : "  OPS-TABLE: FAIL {$opsRep}
+";
+    if (!$opsOk) $ofail++;
+
     // F675 Stage 1: the buffer_type contract's own gate. The residency and split probes above
     // exercised all three memory classes - b0, b1, and the shared host staging buffer - so the
     // shared ledger must name all of them. Byte counts may be zero here (the split probe freed

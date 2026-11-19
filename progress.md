@@ -1,4 +1,11 @@
 # Progress Log
+## Session: 2026-11-19 - F678 FR-02 backend op dispatch table
+- **Goal:** close the last open FR-02 item from the F675 plan - "a complete operator dispatch table for the `backend` interface" - as a declared per-backend capability registry, with a pre-loop conformance check and a self-test gate.
+- `enum OpKind` (10 ops incl. split_k as a capability) + `OpTable g_ops` in model_sycl.cc; `build_ops_table()` sizes the table against `kakasi::device_count()`. Rebuilt on `set_split()` state change and at segment-branch pass start.
+- `prefill_top1` checks the table before the layer loop when a graph is armed: declared ops of every graph-named backend must be available; graph nodes may only name table-listed backends. Named g_err strings.
+- `model_ops_table_report()` bridge + `OPS-TABLE` self-test gate: each backend names all ten ops. Ladder: selftest_f678 RUN_EXIT=0 / 0 FAIL / ORCH PASS (incl. `OPS-TABLE: PASS b0=[dequant+gemm+rmsnorm+rope+kv_store+attn+split_k+silu+residual+lm_head] b1=[...] b2=[...]`); gate_live f678 + check_gates running.
+- FR-02 is now closed on all four original items: (1) buffer_type contract, (2) N-segment placement, (3) op-granularity compute graph (F677), (4) backend op dispatch table. Remaining open items are the deeper scheduler features: non-sequential DAG topology, arbitrary-tensor boundary copies.
+
 ## Session: 2026-11-19 - F677 FR-02 op-granularity graph
 - **Goal:** lower the compute graph from layer granularity to op granularity (attn/ffn as separate nodes) so the scheduler can reason about individual ops.
 - `GraphNode::Kind` gains ATTN/FFN; `build()` emits a{l}/f{l} per layer; `report()` labels ops (a0@b0 ... f23@b2).

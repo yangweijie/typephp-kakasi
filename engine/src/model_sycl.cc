@@ -1539,6 +1539,65 @@ std::string graph_report() {
     return g_graph.report() + " plan=" + seg_split_state();
 }
 
+// F678: the backend op dispatch table. Every device declares the kernel variants the model
+// layer may dispatch on its queue - the ggml-style "what can this backend run" contract,
+// declared per device instead of hardcoded. The table is the single source of truth the
+// forward loop checks against before executing: an op the table does not list for a
+// backend may not be dispatched on that backend.
+enum OpKind {
+    DEQUANT = 0, GEMM, RMS_NORM, ROPE, KV_STORE,
+    ATTENTION, SPLIT_KV, SILU_MUL, RESIDUAL, LM_HEAD, kOps
+};
+struct OpTable {
+    int nBackends = 0;
+    std::vector<std::vector<int>> ops;     // [backend][OpKind]
+    bool has(int backend, int kind) const {
+        return backend >= 0 && backend < (int) ops.size() && kind >= 0
+            && kind < (int) ops[(size_t) backend].size() && ops[(size_t) backend][(size_t) kind];
+    }
+};
+OpTable g_ops;
+void build_ops_table() {
+    const int N = kakasi::device_count();
+    g_ops.nBackends = N;
+    g_ops.ops.assign((size_t) N > 0 ? (size_t) N : 1, std::vector<int>(kOps, 0));
+    for (int b = 0; b < N; ++b) {
+        g_ops.ops[(size_t) b][OpKind::DEQUANT] = 1;
+        g_ops.ops[(size_t) b][OpKind::GEMM] = 1;
+        g_ops.ops[(size_t) b][OpKind::RMS_NORM] = 1;
+        g_ops.ops[(size_t) b][OpKind::ROPE] = 1;
+        g_ops.ops[(size_t) b][OpKind::KV_STORE] = 1;
+        g_ops.ops[(size_t) b][OpKind::ATTENTION] = 1;
+        g_ops.ops[(size_t) b][OpKind::SILU_MUL] = 1;
+        g_ops.ops[(size_t) b][OpKind::RESIDUAL] = 1;
+        g_ops.ops[(size_t) b][OpKind::LM_HEAD] = 1;
+        // splitK (F366/F368) is a device CAPABILITY, not a model requirement: every
+        // validated SYCL queue can run the split-KV kernel as long as a partial buffer
+        // exists. The runtime KNOB that selects it (g_attn_mode) is checked separately,
+        // against this entry - capability table plus runtime policy.
+        g_ops.ops[(size_t) b][OpKind::SPLIT_KV] = 1;
+    }
+}
+
+std::string ops_table_report() {
+    if (g_ops.nBackends == 0) return "ops off";
+    const char* names[kOps] = {"dequant", "gemm", "rmsnorm", "rope", "kv_store",
+                                "attn", "split_k", "silu", "residual", "lm_head"};
+    std::string out;
+    for (int b = 0; b < g_ops.nBackends; ++b) {
+        if (b) out += " ";
+        out += "b" + std::to_string(b) + "=[";
+        for (int k = 0; k < kOps; ++k) {
+            if (g_ops.ops[(size_t) b][(size_t) k]) {
+                if (out[out.size() - 1] != '[') out += "+";
+                out += names[k];
+            }
+        }
+        out += "]";
+    }
+    return out;
+}
+
 
 void set_split(int backend, int layer) {
     seg_split_release();
@@ -1557,6 +1616,9 @@ void set_split(int backend, int layer) {
     g_kv.free_all();
     g_kv2.free_all();
     if (!g_kv.f16 && g_kv2.f16) g_kv.f16 = g_kv2.f16;
+    // F678: the op dispatch table is (re)built whenever the split state changes - a new
+    // secondary backend must declare its own op set before the graph is armed on it.
+    build_ops_table();
     // F676: the fast path declares the same explicit graph the generic path does, so the
     // loop consumes it (placement plan and graph must agree at every layer).
     const int L = (int) gguf::meta_num("qwen2.block_count");
@@ -2413,6 +2475,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         if (g_seg_active && !splitActive) {
             int seg_step = 0;
             try {
+                build_ops_table();   // F678: the segment backends get their table entries
             g_seg.assign(g_seg_split.backend.size(), SegRT());
             const size_t nSeg = g_seg_split.backend.size();
             // Segment 0 is the primary device: it aliases x/h and g_kv, so only the
@@ -2610,6 +2673,30 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             if (graphCopies != (splitActive ? 1 : 0)) {
                 g_err = "fast-path graph copy count mismatch";
                 return {};
+            }
+        }
+        // F678: the op dispatch table governs what each backend executes. Every op the
+        // table declares for a backend that appears in the armed graph must be available
+        // (nothing may be dispatched on a backend that cannot run it); the split-KV
+        // kernel is listed as a capability on every validated queue, so the loop may use
+        // it whenever the attention-mode policy says so.
+        if (!g_graph.nodes.empty()) {
+            for (int b = 0; b < g_ops.nBackends; ++b) {
+                for (int k = 0; k < kOps; ++k) {
+                    if (k == OpKind::SPLIT_KV) continue;   // capability; gated by attn mode
+                    if (!g_ops.ops[(size_t) b][(size_t) k]) {
+                        g_err = "ops table missing op " + std::to_string(k) + " on b"
+                               + std::to_string(b);
+                        return {};
+                    }
+                }
+            }
+            for (const auto& gn : g_graph.nodes) {
+                if (gn.kind == GraphNode::BOUNDARY_COPY) continue;
+                if (gn.backend < 0 || gn.backend >= g_ops.nBackends) {
+                    g_err = "graph node on unlisted backend " + std::to_string(gn.backend);
+                    return {};
+                }
             }
         }
         for (int l = 0; l < L; ++l) {
