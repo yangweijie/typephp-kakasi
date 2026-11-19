@@ -1545,6 +1545,19 @@ void set_split(int backend, int layer) {
     g_kv.free_all();
     g_kv2.free_all();
     if (!g_kv.f16 && g_kv2.f16) g_kv.f16 = g_kv2.f16;
+    // F676: the fast path declares the same explicit graph the generic path does, so the
+    // loop consumes it (placement plan and graph must agree at every layer).
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    g_graph.nodes.clear();
+    g_graph.copies = 0;
+    if (g_split_backend >= 0 && g_split_layer >= 0 && g_split_layer < L) {
+        SegmentSplit fast;
+        fast.backend.push_back(0);
+        fast.backend.push_back(g_split_backend);
+        fast.start.push_back(0);
+        fast.start.push_back(g_split_layer);
+        g_graph.build(L, fast);
+    }
 }
 
 std::string split_state() {
@@ -2529,7 +2542,36 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // chunk), so the bump pointer can start clean.
         arena_reset(q);
         if (splitActive) arena_reset(q2);
-
+        // F676: the fast path obeys its declared graph. When a two-device split is armed
+        // (and no N-segment plan is active - the segment path has its own graph==segOf
+        // check), every LAYER node's backend must equal the loop's per-layer backend, and
+        // the BOUNDARY_COPY nodes must sit exactly on the handoff position. An empty graph
+        // is the plain run: every layer on the caller's device, no copies.
+        if (!g_seg_active && !g_graph.nodes.empty()) {
+            for (int l = 0; l < L; ++l) {
+                int graphBk = -1;
+                for (const auto& gn : g_graph.nodes)
+                    if (gn.kind == GraphNode::LAYER && gn.layer == l) { graphBk = gn.backend; break; }
+                if (graphBk != (int) placement.backend_for(l)) {
+                    g_err = "fast-path graph/backend mismatch at layer " + std::to_string(l);
+                    return {};
+                }
+            }
+            int graphCopies = 0;
+            for (const auto& gn : g_graph.nodes) {
+                if (gn.kind == GraphNode::BOUNDARY_COPY) {
+                    ++graphCopies;
+                    if (!placement.handoff_before(gn.layer)) {
+                        g_err = "fast-path graph copy at non-handoff layer";
+                        return {};
+                    }
+                }
+            }
+            if (graphCopies != (splitActive ? 1 : 0)) {
+                g_err = "fast-path graph copy count mismatch";
+                return {};
+            }
+        }
         for (int l = 0; l < L; ++l) {
             const bool on2 = splitActive && placement.backend_for(l) == placement.secondary_backend;
             if (on2 && placement.handoff_before(l)) {

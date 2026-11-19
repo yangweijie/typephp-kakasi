@@ -1,4 +1,12 @@
-# Progress Log — typephp-kakasi
+# Progress Log
+
+## Session: 2026-11-19 — F676 FR-02 fast-path graph unification
+- **Goal:** the explicit compute graph is now the declared plan for BOTH execution paths, not just the generic N-segment runtime.
+- set_split (the two-device fast path) now builds g_graph for the two-device shape: 1 embed + 24 LAYER + 1 BOUNDARY_COPY + FINAL_NORM + LM_HEAD = **28 nodes, 1 copy**; release clears it.
+- prefill_top1's fast/plain else-branch runs a **fast-path conformance check** before the layer loop, guarded by the segment-active flag (the generic segment path keeps its own graph==segOf check): LAYER backends must equal the placement plan's per-layer backend, copies only at handoff layers, copy count matches the split state — three named g_err strings.
+- Gate: orch[split] now asserts the fast-path graph report (nodes=28 copies=1 emb@b0 L0@b0 L12@b1 fn@b0 lm@b0) alongside the identical-ids token gate. First selftest caught my assertion off by one (27 vs 28 — copies count in nodes.size()); fixed.
+- **Ladder (f676b):** build green; selftest RUN_EXIT=0 / 0 FAIL / ORCH: PASS (orch[split] fast-path graph printed; orch[seg-contract]/orch[split3]/GRAPH-PLAN nodes=29 copies=2/BUFFER-LEDGER anomalies=0 all unchanged); gate_live.sh f676 GATE_LIVE_DONE (SMOKE/PRETTY 197/0, PARITY 13/13, THRU 1.542x, sentinels 0); check_gates 198 cited / 0 unresolved against selftest_f676b.log.
+- Next: commit F676; remaining FR-02 open items unchanged (intra-layer op decomposition, non-sequential DAG topology, arbitrary-tensor boundary copies).
 
 ## Session: 2026-11-18→19 — F675 FR-02 full graph scheduling (user chose "从 3 开始", stages 1+2+3)
 - **Stage 1 (buffer_type contract): complete, committed `53729bd`.**

@@ -20144,12 +20144,23 @@ function main(): void
     // only assertion that matters is that the split engine is the SAME engine - identical ids.
     $rc = model_set_split(1, 12);
     echo "  split: " . model_split_state() . "\n";
+    // F676: the two-device fast path now declares the same explicit graph as the generic
+    // path - 1 embed + 24 layers + 1 boundary copy + final norm + lm_head = 28 nodes,
+    // 1 copy, L0..L11 on b0 and L12..L23 on b1. The forward loop self-checks its
+    // per-layer backend against this graph before executing.
+    $splitGraph = model_graph_report();
+    $splitGraphOk = (strpos($splitGraph, "nodes=28") !== false
+        && strpos($splitGraph, "copies=1") !== false
+        && strpos($splitGraph, "L0@b0") !== false
+        && strpos($splitGraph, "L12@b1") !== false
+        && strpos($splitGraph, "fn@b0") !== false
+        && strpos($splitGraph, "lm@b0") !== false);
     $sgen = model_generate(0, $ids, 6);
     model_set_split(-1, -1);
-    if ($sgen == $base) {
-        echo "  orch[split] PASS 24 layers split GPU[0,12)+CPU[12,24) produced identical ids\n";
+    if ($sgen == $base && $splitGraphOk) {
+        echo "  orch[split] PASS 24 layers split GPU[0,12)+CPU[12,24) produced identical ids; fast-path graph: {$splitGraph}\n";
     } else {
-        echo "  orch[split] FAIL resident={$base} split={$sgen} err=" . model_last_error() . "\n";
+        echo "  orch[split] FAIL resident={$base} split={$sgen} graphOk=" . ($splitGraphOk ? 1 : 0) . " graph={$splitGraph} err=" . model_last_error() . "\n";
         $ofail++;
     }
 
