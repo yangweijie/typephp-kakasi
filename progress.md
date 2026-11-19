@@ -1,4 +1,10 @@
 # Progress Log
+## Session: 2026-11-19 - F679 FR-02 DAG topology seam
+- **Goal:** the last FR-02 deeper item from the plan - non-sequential topology - lands as the DECLARED-DAG half: explicit dependency edges on the compute graph, cycle detection, and an executor-order conformance check, all gate-verified. The executor itself stays a linear walk for now; the seam for real branch reordering is `topo_order()`.
+- `GraphNode` gains `deps`; `build()` emits predecessor edges (linear chain, N-1 edges); `ForwardGraph` gains `edge_count()`, Kahn `topo_order()` and `dag_conforms()` (the declared walk is valid only where every edge points to an earlier execution position).
+- Both loops call `dag_conforms()` before the layer loop (generic after the per-op segment check; fast/plain inside the F678 block), with a named g_err. `report()` now prints `edges=… topo=ok`.
+- Gates: fast path `nodes=52 copies=1 edges=51 topo=ok`; 3-seg generic `nodes=53 copies=2 edges=52 topo=ok` (asserted in orch[split] and GRAPH-PLAN). One build fix: `std::string` around a ternary (const char[7] + const char* precedence). Execution-neutral - orch[split]/orch[split3] id-equivalence gates unchanged.
+
 ## Session: 2026-11-19 - F678 FR-02 backend op dispatch table
 - **Goal:** close the last open FR-02 item from the F675 plan - "a complete operator dispatch table for the `backend` interface" - as a declared per-backend capability registry, with a pre-loop conformance check and a self-test gate.
 - `enum OpKind` (10 ops incl. split_k as a capability) + `OpTable g_ops` in model_sycl.cc; `build_ops_table()` sizes the table against `kakasi::device_count()`. Rebuilt on `set_split()` state change and at segment-branch pass start.

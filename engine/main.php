@@ -20152,6 +20152,8 @@ function main(): void
     $splitGraph = model_graph_report();
     $splitGraphOk = (strpos($splitGraph, "nodes=52") !== false
         && strpos($splitGraph, "copies=1") !== false
+        && strpos($splitGraph, "edges=51") !== false
+        && strpos($splitGraph, "topo=ok") !== false
         && strpos($splitGraph, "a0@b0") !== false
         && strpos($splitGraph, "f11@b0") !== false
         && strpos($splitGraph, "a12@b1") !== false
@@ -20215,6 +20217,8 @@ function main(): void
     $graphRep = model_graph_report();
     $graphOk = (strpos($graphRep, "nodes=53") !== false
         && strpos($graphRep, "copies=2") !== false
+        && strpos($graphRep, "edges=52") !== false
+        && strpos($graphRep, "topo=ok") !== false
         && strpos($graphRep, "emb@b0") !== false
         && strpos($graphRep, "a0@b0") !== false
         && strpos($graphRep, "a8@b0") !== false

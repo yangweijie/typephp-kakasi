@@ -161,6 +161,12 @@ namespace {
         int layer;       // transformer layer index, -1 for non-layer ops
         int segment;     // owning segment index into g_seg_split
         int backend;     // the device that executes this node
+        // F679: the explicit dependency edges. Each node names the node indices that must
+        // finish before it runs - the graph is a DAG, not just an ordered list. The
+        // executor's sequential walk is valid only where every edge points to an earlier
+        // execution index; a future scheduler may reorder any subgraph that still honors
+        // these edges (that is the non-sequential topology seam).
+        std::vector<int> deps;
         GraphNode(Kind k, int l, int s, int b) : kind(k), layer(l), segment(s), backend(b) {}
     };
     struct ForwardGraph {
@@ -171,8 +177,16 @@ namespace {
             nodes.clear();
             copies = 0;
             const int nSeg = (int) split.backend.size();
+            // F679: every node depends on the one added just before it - the plan is a
+            // linear chain DAG, so the edge set is N-1 predecessor links. EMBED has no
+            // predecessor. A future non-sequential topology re-emits this edge set with
+            // real branch merges.
+            auto add = [&](GraphNode::Kind k, int l, int s, int b) {
+                nodes.push_back(GraphNode(k, l, s, b));
+                if (nodes.size() > 1) nodes.back().deps.push_back((int) nodes.size() - 2);
+            };
             // EMBED always on the primary device (segment 0).
-            nodes.push_back(GraphNode(GraphNode::EMBED, -1, 0, split.backend.empty() ? 0 : split.backend[0]));
+            add(GraphNode::EMBED, -1, 0, split.backend.empty() ? 0 : split.backend[0]);
             int prevSk = -1;
             for (int l = 0; l < L; ++l) {
                 // Segment owning layer l: the first whose start is <= l.
@@ -182,25 +196,86 @@ namespace {
                 }
                 // Boundary copy when the segment changes between consecutive layers.
                 if (sk > 0 && sk != prevSk) {
-                    nodes.push_back(GraphNode(GraphNode::BOUNDARY_COPY, l, sk, split.backend[(size_t) sk]));
+                    add(GraphNode::BOUNDARY_COPY, l, sk, split.backend[(size_t) sk]);
                     ++copies;
                 }
                 // F677: each layer declares its two ops; both run on the owning segment's
                 // device (intra-layer overlap is an explicit scheduler decision, not a
                 // hidden default - the loop may only move ops across devices if the graph
                 // says so).
-                nodes.push_back(GraphNode(GraphNode::ATTN, l, sk, split.backend[(size_t) sk]));
-                nodes.push_back(GraphNode(GraphNode::FFN, l, sk, split.backend[(size_t) sk]));
+                add(GraphNode::ATTN, l, sk, split.backend[(size_t) sk]);
+                add(GraphNode::FFN, l, sk, split.backend[(size_t) sk]);
                 prevSk = sk;
             }
             // Final norm + lm_head always return to the primary device.
-            nodes.push_back(GraphNode(GraphNode::FINAL_NORM, -1, 0, split.backend.empty() ? 0 : split.backend[0]));
-            nodes.push_back(GraphNode(GraphNode::LM_HEAD, -1, 0, split.backend.empty() ? 0 : split.backend[0]));
+            add(GraphNode::FINAL_NORM, -1, 0, split.backend.empty() ? 0 : split.backend[0]);
+            add(GraphNode::LM_HEAD, -1, 0, split.backend.empty() ? 0 : split.backend[0]);
+        }
+        // F679: total declared edge count.
+        size_t edge_count() const {
+            size_t n = 0;
+            for (const auto& x : nodes) n += x.deps.size();
+            return n;
+        }
+        // Kahn topological order over the declared edges. ok=false on a cycle or an
+        // edge naming a nonexistent node; for the current linear plan the order is the
+        // node list unchanged.
+        std::vector<int> topo_order(bool& ok) const {
+            ok = false;
+            const int N = (int) nodes.size();
+            std::vector<std::vector<int>> succ((size_t) N > 0 ? (size_t) N : 1);
+            std::vector<int> in((size_t) N > 0 ? (size_t) N : 1, 0);
+            for (int v = 0; v < N; ++v) {
+                for (int u : nodes[(size_t) v].deps) {
+                    if (u < 0 || u >= N || u == v) return {};
+                    succ[(size_t) u].push_back(v);
+                    in[(size_t) v]++;
+                }
+            }
+            std::vector<int> ready;
+            for (int v = 0; v < N; ++v) if (in[(size_t) v] == 0) ready.push_back(v);
+            std::vector<int> order;
+            order.reserve((size_t) N);
+            for (size_t head = 0; head < ready.size(); ++head) {
+                const int u = ready[head];
+                order.push_back(u);
+                for (int v : succ[(size_t) u]) if (--in[(size_t) v] == 0) ready.push_back(v);
+            }
+            ok = ((int) order.size() == N);
+            return order;
+        }
+        // F679: the executing loop walks nodes in declaration (vector) order. That walk
+        // is a valid execution only where every declared edge points to a node that runs
+        // EARLIER in the same walk - the walk itself must be a topological order of the
+        // declared DAG. A cycle or a forward edge means the loop would execute a node
+        // before one of its dependencies.
+        bool dag_conforms() const {
+            const int N = (int) nodes.size();
+            if (N <= 1) return true;
+            std::vector<int> in((size_t) N, 0);
+            for (int v = 0; v < N; ++v) {
+                for (int u : nodes[(size_t) v].deps) {
+                    if (u < 0 || u >= N || u == v) return false;
+                    in[(size_t) v]++;
+                }
+            }
+            // Walk the declared order: every node must have all its deps already seen,
+            // and no node may depend on a later position.
+            for (int v = 0; v < N; ++v) {
+                for (int u : nodes[(size_t) v].deps) {
+                    if (u >= v) return false;   // forward/self edge => loop order invalid
+                }
+            }
+            return true;
         }
         // Human-readable plan: one field per non-copy node, "kind:layer@bN".
         std::string report() const {
             std::string out = "nodes=" + std::to_string(nodes.size())
-                            + " copies=" + std::to_string(copies);
+                            + " copies=" + std::to_string(copies)
+                            + " edges=" + std::to_string(edge_count());
+            bool topoOk = false;
+            topo_order(topoOk);
+            out += " topo=" + std::string(topoOk ? "ok" : "cycle");
             for (const auto& n : nodes) {
                 if (n.kind == GraphNode::BOUNDARY_COPY) continue;
                 const char* kn = n.kind == GraphNode::EMBED ? "emb"
@@ -2555,6 +2630,13 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                     }
                 }
             }
+            // F679: the executing loop walks nodes in declaration order; the declared
+            // dependency edges must point only to earlier execution positions (the DAG
+            // is acyclic AND the walk is a valid topological order of it).
+            if (!g_graph.dag_conforms()) {
+                g_err = "graph/loop DAG order violation (edge to a later execution node or cycle)";
+                return {};
+            }
             // Each layer's K/V lives in the PERSISTENT cache of the segment that owns that
             // layer - the same invariant as the dedicated two-device path (g_kv2). Prefix
             // rows [0, pos) were written by this same split in the previous pass, and
@@ -2697,6 +2779,11 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                     g_err = "graph node on unlisted backend " + std::to_string(gn.backend);
                     return {};
                 }
+            }
+            // F679: same DAG-order guarantee on the fast/plain path.
+            if (!g_graph.dag_conforms()) {
+                g_err = "graph/loop DAG order violation (edge to a later execution node or cycle)";
+                return {};
             }
         }
         for (int l = 0; l < L; ++l) {
