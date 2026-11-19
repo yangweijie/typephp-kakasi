@@ -112,7 +112,29 @@ namespace {
     struct SegmentSplit {
         std::vector<int> backend;
         std::vector<int> start;    // ascending
+        // F681: op-granular override - the FFN op of ONE layer runs on segment |ffnSeg|
+        // while its ATTN (and every other op) stays on the layer-range segments. The
+        // override segment may own zero layers (its start == L); the copy nodes around
+        // that op are the TENSOR-granular boundary copies (hidden state across devices
+        // at op granularity, not only at segment boundaries).
+        int ffnSegLayer = -1;
+        int ffnSeg = -1;
     };
+    // F681: the segment owning an OP. ATTN always sits on the layer-range segment; FFN
+    // moves to the override segment when the plan declares one for this layer. Free
+    // function so the graph build, the conformance check and the pass setup all share it.
+    int segOfOp(const SegmentSplit& split, int l, bool ffn) {
+        const int nSeg = (int) split.backend.size();
+        int sk = 0;
+        for (int k = nSeg - 1; k >= 0; --k) {
+            if (split.start[(size_t) k] <= l) { sk = k; break; }
+        }
+        if (ffn && split.ffnSegLayer == l && split.ffnSeg >= 0
+            && split.ffnSeg < nSeg) {
+            return split.ffnSeg;
+        }
+        return sk;
+    }
     SegmentSplit g_seg_split;
     bool g_seg_active = false;
 
@@ -167,6 +189,9 @@ namespace {
         // execution index; a future scheduler may reorder any subgraph that still honors
         // these edges (that is the non-sequential topology seam).
         std::vector<int> deps;
+        // F681: for BOUNDARY_COPY nodes, the segment the tensor comes FROM (the copy
+        // moves the running hidden state srcSeg -> segment). -1 for every other kind.
+        int srcSeg = -1;
         GraphNode(Kind k, int l, int s, int b) : kind(k), layer(l), segment(s), backend(b) {}
     };
     struct ForwardGraph {
@@ -181,35 +206,42 @@ namespace {
             // linear chain DAG, so the edge set is N-1 predecessor links. EMBED has no
             // predecessor. A future non-sequential topology re-emits this edge set with
             // real branch merges.
-            auto add = [&](GraphNode::Kind k, int l, int s, int b) {
+            auto add = [&](GraphNode::Kind k, int l, int s, int b, int src) {
                 nodes.push_back(GraphNode(k, l, s, b));
+                nodes.back().srcSeg = src;
                 if (nodes.size() > 1) nodes.back().deps.push_back((int) nodes.size() - 2);
             };
             // EMBED always on the primary device (segment 0).
-            add(GraphNode::EMBED, -1, 0, split.backend.empty() ? 0 : split.backend[0]);
-            int prevSk = -1;
+            add(GraphNode::EMBED, -1, 0, split.backend.empty() ? 0 : split.backend[0], -1);
+            // F681: copies are emitted at OP granularity - wherever the running hidden
+            // state must cross devices between two consecutive ops. For layer-range
+            // plans that is exactly the old segment-boundary set; with an FFN override
+            // the state crosses twice around the overridden op.
+            int prevSeg = 0;
             for (int l = 0; l < L; ++l) {
-                // Segment owning layer l: the first whose start is <= l.
-                int sk = 0;
-                for (int k = nSeg - 1; k >= 0; --k) {
-                    if (split.start[(size_t) k] <= l) { sk = k; break; }
-                }
-                // Boundary copy when the segment changes between consecutive layers.
-                if (sk > 0 && sk != prevSk) {
-                    add(GraphNode::BOUNDARY_COPY, l, sk, split.backend[(size_t) sk]);
+                const int aSeg = segOfOp(split, l, false);
+                if (aSeg != prevSeg) {
+                    add(GraphNode::BOUNDARY_COPY, l, aSeg, split.backend[(size_t) aSeg], prevSeg);
                     ++copies;
+                    prevSeg = aSeg;
                 }
-                // F677: each layer declares its two ops; both run on the owning segment's
-                // device (intra-layer overlap is an explicit scheduler decision, not a
+                // F677: each layer declares its two ops; both run on the segment the plan
+                // assigns (intra-layer overlap is an explicit scheduler decision, not a
                 // hidden default - the loop may only move ops across devices if the graph
                 // says so).
-                add(GraphNode::ATTN, l, sk, split.backend[(size_t) sk]);
-                add(GraphNode::FFN, l, sk, split.backend[(size_t) sk]);
-                prevSk = sk;
+                add(GraphNode::ATTN, l, aSeg, split.backend[(size_t) aSeg], -1);
+                const int fSeg = segOfOp(split, l, true);
+                if (fSeg != aSeg) {
+                    add(GraphNode::BOUNDARY_COPY, l, fSeg, split.backend[(size_t) fSeg], aSeg);
+                    ++copies;
+                }
+                add(GraphNode::FFN, l, fSeg, split.backend[(size_t) fSeg], -1);
+                prevSeg = fSeg;
             }
-            // Final norm + lm_head always return to the primary device.
-            add(GraphNode::FINAL_NORM, -1, 0, split.backend.empty() ? 0 : split.backend[0]);
-            add(GraphNode::LM_HEAD, -1, 0, split.backend.empty() ? 0 : split.backend[0]);
+            // Final norm + lm_head always return to the primary device; the return trip
+            // is the driver's handback epilogue, not a graph node (unchanged since F675).
+            add(GraphNode::FINAL_NORM, -1, 0, split.backend.empty() ? 0 : split.backend[0], -1);
+            add(GraphNode::LM_HEAD, -1, 0, split.backend.empty() ? 0 : split.backend[0], -1);
         }
         // F679: total declared edge count.
         size_t edge_count() const {
@@ -1587,8 +1619,7 @@ int set_seg_split(const std::string& spec, int L) {
     g_kv.free_all();
     g_kv2.free_all();
     g_seg_active = true;
-    g_seg_split.backend.clear();
-    g_seg_split.start.clear();
+    g_seg_split = SegmentSplit{};   // F681: resets the FFN-override fields too
     g_seg_kv.clear();
     for (const auto& sg : segs) {
         g_seg_split.backend.push_back(sg.first);
@@ -1599,6 +1630,55 @@ int set_seg_split(const std::string& spec, int L) {
     }
     g_graph.build(L, g_seg_split);
     return 1;
+}
+
+// F681: op-granular placement - the FFN op of ONE layer runs on its own device while
+// everything else stays on the primary. The two copies around that op are the
+// TENSOR-granular boundary copies: the running hidden state crosses devices at op
+// granularity, not only at segment boundaries. Mutually exclusive with the N-segment
+// split (arming one releases the other); released by set_op_split(-1, -1).
+int set_op_split(int layer, int backend) {
+    set_split(-1, -1);   // releases the fast path AND the segment state
+    if (layer < 0 || backend < 0) {
+        return 1;   // release-only call
+    }
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    if (layer >= L) {
+        g_err = "op split layer " + std::to_string(layer) + " out of range";
+        return 0;
+    }
+    if (backend == 0) {
+        g_err = "op split backend must differ from the primary device";
+        return 0;
+    }
+    if (!kakasi::queue_for(backend)) {
+        g_err = "op split backend " + std::to_string(backend) + " unavailable";
+        return 0;
+    }
+    g_res.clear_all(); g_res.q = nullptr; g_res.enabled = false;
+    g_kv.free_all();
+    g_kv2.free_all();
+    g_seg_active = true;
+    g_seg_split = SegmentSplit{};
+    // Segment 0 owns every layer's ATTN (and every un-overridden FFN); segment 1 owns
+    // no layers - it exists only to host the overridden FFN op and its scratch.
+    g_seg_split.backend.push_back(0);
+    g_seg_split.backend.push_back(backend);
+    g_seg_split.start.push_back(0);
+    g_seg_split.start.push_back(L);
+    g_seg_split.ffnSegLayer = layer;
+    g_seg_split.ffnSeg = 1;
+    SegKvSlot slot;
+    slot.backend = backend;
+    g_seg_kv.push_back(slot);
+    g_graph.build(L, g_seg_split);
+    return 1;
+}
+
+std::string op_split_state() {
+    if (!g_seg_active || g_seg_split.ffnSegLayer < 0) return "op split off";
+    return "op split layer=" + std::to_string(g_seg_split.ffnSegLayer)
+         + " ffn=b" + std::to_string(g_seg_split.backend[(size_t) g_seg_split.ffnSeg]);
 }
 
 std::string seg_split_state() {
@@ -2576,14 +2656,23 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                     return {};
                 }
                 // Persistent KV slot (survives across passes, like g_kv2): segment k keeps
-                // rows [0, pos) that its own layers wrote in earlier passes.
-                SegKvSlot& slot = g_seg_kv[(size_t) k];
-                const int keep = (slot.kv.backend == sg.backend && slot.kv.f16 == g_kv.f16)
-                                 ? std::min(pos, slot.kv.cap) : 0;
-                seg_step = 1;   // KV alloc
-                if (!ensure_seg_kv(slot, L, *sg.q, pos + T, DKV, keep, g_kv.f16)) {
-                    g_err = "segment KV allocation failed";
-                    return {};
+                // rows [0, pos) that its own layers wrote in earlier passes. F681: a
+                // segment that owns NO attention op (an FFN-override segment) never reads
+                // or writes KV - skip the allocation entirely instead of wasting the
+                // override device's memory on L empty rows.
+                bool ownsKv = false;
+                for (int l = 0; l < L; ++l) {
+                    if (segOfOp(g_seg_split, l, false) == (int) k) { ownsKv = true; break; }
+                }
+                if (ownsKv) {
+                    SegKvSlot& slot = g_seg_kv[(size_t) k];
+                    const int keep = (slot.kv.backend == sg.backend && slot.kv.f16 == g_kv.f16)
+                                     ? std::min(pos, slot.kv.cap) : 0;
+                    seg_step = 1;   // KV alloc
+                    if (!ensure_seg_kv(slot, L, *sg.q, pos + T, DKV, keep, g_kv.f16)) {
+                        g_err = "segment KV allocation failed";
+                        return {};
+                    }
                 }
                 seg_step = 2;   // per-pass scratch
                 // Per-pass buffers: allocated now, freed at pass end on success AND on the
@@ -2629,7 +2718,10 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             for (int l = 0; l < L; ++l) {
                 for (int op = 0; op < 2; ++op) {
                     const GraphNode* gn = graphNode(l, op);
-                    if (!gn || gn->segment != segOf(l)) {
+                    // F681: the expected segment is the plan's per-op assignment - the
+                    // FFN override moves one op off the layer-range segment.
+                    const int expect = segOfOp(g_seg_split, l, op == 1);
+                    if (!gn || gn->segment != expect) {
                         g_err = "graph/loop segment mismatch at layer " + std::to_string(l)
                                + " op " + std::to_string(op);
                         return {};
@@ -2663,6 +2755,9 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 g_err = "graph/loop DAG order violation (cycle or bad edge)";
                 return {};
             }
+            // F681: the segment holding the running hidden state right now. EMBED leaves
+            // it on the primary; every copy node and every op moves it per the plan.
+            int stateSeg = 0;
             for (int n = 0; n < (int) gOrder.size(); ++n) {
                 const GraphNode& gn = g_graph.nodes[(size_t) gOrder[(size_t) n]];
                 // Structural markers: embedding ran before the loop; final norm + lm_head
@@ -2672,15 +2767,21 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                     continue;
                 }
                 if (gn.kind == GraphNode::BOUNDARY_COPY) {
+                    const int src = gn.srcSeg;
                     const int sk = gn.segment;
-                    if (sk <= 0) continue;   // no cross-device handoff into the primary segment
+                    if (src < 0 || src >= (int) g_seg.size() || sk < 0
+                        || sk >= (int) g_seg.size() || src == sk) {
+                        g_err = "graph copy node with bad src/dst segment";
+                        return {};
+                    }
                     const size_t hb = (size_t) T * (size_t) D * sizeof(float);
-                    sycl::queue& prevQ = *g_seg[(size_t) (sk - 1)].q;
-                    prevQ.memcpy(handoff.p, g_seg[(size_t) (sk - 1)].xs, hb);
-                    prevQ.wait_and_throw();
+                    sycl::queue& srcQ = *g_seg[(size_t) src].q;
+                    srcQ.memcpy(handoff.p, g_seg[(size_t) src].xs, hb);
+                    srcQ.wait_and_throw();
                     sycl::queue& cq = *g_seg[(size_t) sk].q;
                     cq.memcpy(g_seg[(size_t) sk].xs, handoff.p, hb);
                     cq.wait_and_throw();
+                    stateSeg = sk;
                     continue;
                 }
                 // ATTN / FFN: dispatch the op on the owning segment, in place.
@@ -2698,6 +2799,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                                       l, nullptr, nullptr)) {
                         return {};
                     }
+                    stateSeg = sk;
                     continue;
                 }
                 // FFN closes the layer: drain + arena reset here, and the per-layer
@@ -2709,16 +2811,15 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 if (sk == 0) probe();   // F677: per-layer |x| trace on the primary segment
                 ql.wait_and_throw();
                 arena_reset(ql);
+                stateSeg = sk;
             }
             g_graphExecTopo = true;   // F680: this pass was driven by the declared DAG walk
-            // F675 cross-pass KV invariant (the exact gap the 2-seg fast path meets with
-            // its per-layer sync): every layer's K/V row lives in the cache of the segment
-            // that OWNS that layer. The next pass's segment 0 attends layers [0, s) and
-            // reads g_kv, so this pass's freshly written rows [pos, pos+T) must land in
-            // The last segment's running state must land on the caller's device: the final
-            // norm and lm_head run on the primary queue, like the two-device path.
-            if (nSeg > 1) {
-                SegRT& last = g_seg[nSeg - 1];
+            // F681: the handback returns the state from wherever the plan LEFT it - for
+            // layer-range plans that is the last segment (as before); with an FFN
+            // override the copy-back node already returned it to the primary, so no
+            // extra trip happens.
+            if (stateSeg > 0 && stateSeg < (int) g_seg.size()) {
+                SegRT& last = g_seg[(size_t) stateSeg];
                 seg_step = 90;
                 const size_t hb2 = (size_t) T * (size_t) D * sizeof(float);
                 last.q->memcpy(handoff.p, last.xs, hb2);
@@ -2726,6 +2827,10 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 q.memcpy(x.p, handoff.p, hb2);
                 q.wait_and_throw();
             }
+            // F675 cross-pass KV invariant (the exact gap the 2-seg fast path meets with
+            // its per-layer sync): every layer's K/V row lives in the cache of the segment
+            // that OWNS that layer. The next pass's segment 0 attends layers [0, s) and
+            // reads g_kv, so this pass's freshly written rows [pos, pos+T) must land in
             // Per-pass buffers die with the pass; the persistent KV slots stay.
             for (size_t k = 1; k < nSeg; ++k) {
                 SegRT& sg = g_seg[k];

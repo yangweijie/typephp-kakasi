@@ -20219,6 +20219,34 @@ function main(): void
 ";
         $ofail++;
     }
+    // F681: op-granular placement - the FFN op of ONE layer runs on b1 while every other
+    // op stays on the primary. The running hidden state crosses devices TWICE around that
+    // op (tensor-granular boundary copies declared as graph copy nodes with explicit
+    // src/dst), and the ids must still equal the unsplit engine. The driver executes the
+    // copies exactly where the graph declares them; the graph report reads nodes=53
+    // copies=2 edges=52 (1 embed + 48 ops + 2 tensor copies + fn + lm). An unavailable
+    // backend is refused at arm time and the state reads off.
+    $opRc = model_set_op_split(12, 1);
+    $opState = model_op_split_state();
+    $opGraph = model_graph_report();
+    $opGen = model_generate(0, $ids, 6);
+    $opTopo = model_graph_exec_topo();
+    $opBad = model_set_op_split(12, 9);
+    $opEnd = model_op_split_state();
+    model_set_op_split(-1, -1);
+    if ($opRc == 1 && $opGen == $base && $opTopo == 1
+        && $opState === "op split layer=12 ffn=b1"
+        && strpos($opGraph, "nodes=53") !== false && strpos($opGraph, "copies=2") !== false
+        && strpos($opGraph, "edges=52") !== false && strpos($opGraph, "topo=ok") !== false
+        && $opBad == 0 && $opEnd === "op split off") {
+        echo "  orch[opsplit] PASS layer-12 FFN on b1 identical ids; tensor copies declared+executed; graph: {$opGraph}
+";
+    } else {
+        echo "  orch[opsplit] FAIL rc={$opRc} gen==base:" . ($opGen == $base ? 1 : 0)
+            . " topo={$opTopo} state={$opState} bad={$opBad} end={$opEnd} err=" . model_last_error() . "
+";
+        $ofail++;
+    }
         // F675 Stage 3 + F677: the explicit compute graph at op granularity. When the
     // 3-seg split is armed, the graph must report the full node list: 1 embed + 24 layers
     // x 2 ops (attn+ffn) + 2 boundary copies + final norm + lm_head = 53 nodes, with 2

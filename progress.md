@@ -1,4 +1,11 @@
 # Progress Log
+## Session: 2026-11-20 - F681 FR-02 op-granular placement + tensor copies (FR-02 fully closed)
+- **Goal:** close the last audited FR-02 item - arbitrary-tensor-granularity boundary copies - as op-granular device placement with explicitly-declared copy nodes.
+- `SegmentSplit.ffnSegLayer/ffnSeg` (override segment may own zero layers); free function `segOfOp()` shared by build/check/setup; `GraphNode.srcSeg` on copy nodes; `build()` emits copies at op granularity; the driver moves `srcSeg -> segment` and the handback generalizes to `stateSeg`; setup skips KV for segments owning no ATTN op.
+- `model_set_op_split(layer, backend)` / `model_op_split_state()` bridges (mutually exclusive with the segment split; refused on out-of-range layer, primary backend, or unavailable backend).
+- Gate `orch[opsplit] PASS`: layer-12 FFN on b1, ids == unsplit, graph nodes=53 copies=2 edges=52 topo=ok (`a12@b0 f12@b1` per-op assignment visible), bad-backend refused, release reads off.
+- Ladder: build_f681 green first try; selftest_f681 RUN_EXIT=0/0 FAIL/ORCH PASS (all prior gates unchanged); gate_live f681 + check_gates running.
+
 ## Session: 2026-11-19 - F680 graph-driven executor + F680b socket read hardening
 - **F680:** the generic N-segment pass is now DRIVEN by the declared graph - a single dispatcher over `topo_order()` (BOUNDARY_COPY nodes fire host handoffs, ATTN/FFN ops dispatch in place, EMBED/FINAL_NORM/LM_HEAD stay structural markers). Walk is declared, not hardcoded; bit-identical for the linear plan (orch[split3] unchanged). `g_graphExecTopo` flag + `model_graph_exec_topo()` bridge; `GRAPH-DRIVE: PASS` gate drives a 3-step generic pass and requires flag set AND ids as token-prefix of the unsplit baseline.
 - **F680b (caught by the gate, not by the change):** the first `gate_live f680` run red on the 8000 endpoint-shape probe - `serve_f680.log` ended in `Fatal error: strpos(): Argument #1 must be of type string, false given` (main.php:19272). An aborted probe connection made the first `fread($c, 32768)` return `false`; neither server normalized it before `strpos`. Both handlers (8000 + 8001) now normalize `false` to an empty request, which the existing named "no user content" refusal already handles. Root cause was PRE-EXISTING, surfaced by the probe.

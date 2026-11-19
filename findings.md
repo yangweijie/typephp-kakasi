@@ -76,6 +76,32 @@
 - Segments keep their own in-order queues (in-order + one drain per layer), so no async fan-out is introduced - only the walk shape moved from hardcoded to declared.
 - `g_graphExecTopo` flag + `model_graph_exec_topo()` bridge name the executor of the LAST generic pass; the `GRAPH-DRIVE: PASS` gate drives a 3-step generic pass under the armed 3-seg graph and asserts the flag is set AND the ids read as the token-prefix of the unsplit 6-step baseline (the walk is execution-neutral, proven by output, not just by the flag).
 
+## F681 · FR-02 op-granular placement + tensor-granular boundary copies (2026-11-20)
+- The last open FR-02 item from the F675 plan - "arbitrary-tensor-granularity boundary copies" - lands as
+OP-granular device placement: `model_set_op_split(layer, backend)` moves ONE layer's FFN op onto its own
+device while every other op stays on the primary. The running hidden state crosses devices TWICE around
+that op - those crossings are declared as graph copy nodes with EXPLICIT src/dst segments
+(`GraphNode::srcSeg`), no longer implied by "segment k-1".
+- Mechanics: `SegmentSplit` gains `ffnSegLayer`/`ffnSeg` (the override segment may own ZERO layers -
+its start == L, it exists only to host the overridden op and its scratch); `ForwardGraph::segOfOp()`
+(shared by build, the conformance check and the pass setup) resolves per-op segments; `build()` emits
+copies at OP granularity wherever consecutive ops change segment - for layer-range plans that is exactly
+the old segment-boundary set (bit-identical graphs for orch[split]/split3).
+- Driver: copy nodes move srcSeg -> segment through the host staging buffer; the handback epilogue is
+generalized to "return the state from wherever the plan LEFT it" (`stateSeg`), so an op-split whose
+copy-back already returned the state to the primary does no redundant trip. Pass setup skips the KV
+allocation for segments that own no ATTN op (an FFN-override segment would otherwise waste L empty KV
+rows on the override device).
+- Gates: `orch[opsplit] PASS` - arm layer-12 FFN on b1: ids identical to unsplit (cross-device FFN is
+bit-equivalent, consistent with orch[split]/split3), graph reads nodes=53 copies=2 edges=52 topo=ok with
+`a12@b0 f12@b1` visible per op, unavailable backend refused at arm, release reads off. All prior gates
+unchanged.
+- FR-02 status: (1) buffer_type contract, (2) N-segment placement with N>=3 bit-equivalence, (3)
+op-granularity compute graph + backend op dispatch table, (4) declared-DAG machinery, (5) graph-driven
+executor, (6) op-granular placement + tensor-granular copies - ALL LANDED. The original F675 audit list
+is fully closed; what remains beyond it is genuinely new scheduler capability (real branch-merge plans,
+async overlap), not a gap against the audited spec.
+
 ## F680 · FR-02 graph-driven executor (the declared DAG now drives the walk) (2026-11-19)
 - The generic N-segment pass stopped hardcoding its own per-layer walk: a single dispatcher now walks `g_graph.topo_order()` and dispatches BOUNDARY_COPY nodes as host handoffs (sk>0 only) and ATTN/FFN ops onto their owning segments; EMBED/FINAL_NORM/LM_HEAD stay structural markers outside the driver. The walk is declared, not hardcoded - the loop knows nothing about which layer runs where, and a future non-sequential plan (branch merges, cross-segment op moves) re-emits the edges and this same driver consumes them unchanged. Bit-identical for the current linear plan: orch[split3] and the 3-step driven prefix still equal the unsplit baseline.
 - `g_graphExecTopo` (cleared in prefill_top1, set after the driver completes the pass) + `model_graph_exec_topo()` bridge; `GRAPH-DRIVE: PASS` gate drives a 3-step generic pass under the armed 3-seg graph and requires the flag set AND the ids to read as the token-prefix of the unsplit baseline - the execution-neutrality is proven by OUTPUT, not just by the flag.

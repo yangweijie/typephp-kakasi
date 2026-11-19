@@ -85,6 +85,8 @@ void set_split(int backend, int layer);
 std::string split_state();
 std::string layer_placement(int layers, int primary, int secondary, int split_layer);
 int set_seg_split(const std::string& spec, int L);
+int set_op_split(int layer, int backend);
+std::string op_split_state();
 std::string seg_split_state();
 std::string graph_report();
 int graph_exec_topo();
@@ -316,6 +318,8 @@ php::Int php_model_set_seg_split(php::Str spec) {
     return php::Int(model::set_seg_split(s, L));
 }
 php::Str php_model_seg_split_state() { return php::Str(model::seg_split_state()); }
+php::Int php_model_set_op_split(php::Int layer, php::Int backend) { return php::Int(model::set_op_split((int) layer, (int) backend)); }
+php::Str php_model_op_split_state() { return php::Str(model::op_split_state()); }
 php::Str php_model_graph_report() { return php::Str(model::graph_report()); }
 php::Int php_model_graph_exec_topo() { return php::Int(model::graph_exec_topo()); }
 php::Str php_model_ops_table_report() { return php::Str(model::ops_table_report()); }
