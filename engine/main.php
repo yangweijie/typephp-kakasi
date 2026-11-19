@@ -20144,15 +20144,18 @@ function main(): void
     // only assertion that matters is that the split engine is the SAME engine - identical ids.
     $rc = model_set_split(1, 12);
     echo "  split: " . model_split_state() . "\n";
-    // F676: the two-device fast path now declares the same explicit graph as the generic
-    // path - 1 embed + 24 layers + 1 boundary copy + final norm + lm_head = 28 nodes,
-    // 1 copy, L0..L11 on b0 and L12..L23 on b1. The forward loop self-checks its
-    // per-layer backend against this graph before executing.
+    // F676+F677: the two-device fast path declares the same explicit graph as the
+    // generic path, now at op granularity - 1 embed + 24 layers x 2 ops (attn+ffn)
+    // + 1 boundary copy + final norm + lm_head = 52 nodes, 1 copy, a0..a11/f0..f11 on
+    // b0 and a12..a23/f12..f23 on b1. The forward loop self-checks every op against
+    // this graph before executing.
     $splitGraph = model_graph_report();
-    $splitGraphOk = (strpos($splitGraph, "nodes=28") !== false
+    $splitGraphOk = (strpos($splitGraph, "nodes=52") !== false
         && strpos($splitGraph, "copies=1") !== false
-        && strpos($splitGraph, "L0@b0") !== false
-        && strpos($splitGraph, "L12@b1") !== false
+        && strpos($splitGraph, "a0@b0") !== false
+        && strpos($splitGraph, "f11@b0") !== false
+        && strpos($splitGraph, "a12@b1") !== false
+        && strpos($splitGraph, "f23@b1") !== false
         && strpos($splitGraph, "fn@b0") !== false
         && strpos($splitGraph, "lm@b0") !== false);
     $sgen = model_generate(0, $ids, 6);
@@ -20203,19 +20206,21 @@ function main(): void
 ";
         $ofail++;
     }
-        // F675 Stage 3: the explicit compute graph. When the 3-seg split is armed, the graph
-    // must report the full node list: 1 embed + 24 layers + 2 boundary copies + 1 final norm
-    // + 1 lm_head = 29 nodes, with 2 copies for the 2 segment boundaries. The gate also
-    // asserts that the per-node segment assignment is consistent (the generic loop already
-    // self-checks graph==segOf at every layer). The split is released at the end.
+        // F675 Stage 3 + F677: the explicit compute graph at op granularity. When the
+    // 3-seg split is armed, the graph must report the full node list: 1 embed + 24 layers
+    // x 2 ops (attn+ffn) + 2 boundary copies + final norm + lm_head = 53 nodes, with 2
+    // copies for the 2 segment boundaries. The generic loop self-checks every op against
+    // the graph (graph==segOf per op of every layer). The split is released at the end.
     model_set_seg_split("0:0|1:9|2:18");
     $graphRep = model_graph_report();
-    $graphOk = (strpos($graphRep, "nodes=29") !== false
+    $graphOk = (strpos($graphRep, "nodes=53") !== false
         && strpos($graphRep, "copies=2") !== false
         && strpos($graphRep, "emb@b0") !== false
-        && strpos($graphRep, "L0@b0") !== false
-        && strpos($graphRep, "L9@b1") !== false
-        && strpos($graphRep, "L18@b2") !== false
+        && strpos($graphRep, "a0@b0") !== false
+        && strpos($graphRep, "a8@b0") !== false
+        && strpos($graphRep, "a9@b1") !== false
+        && strpos($graphRep, "f18@b2") !== false
+        && strpos($graphRep, "a23@b2") !== false
         && strpos($graphRep, "fn@b0") !== false
         && strpos($graphRep, "lm@b0") !== false);
     echo $graphOk ? "  GRAPH-PLAN: PASS {$graphRep}

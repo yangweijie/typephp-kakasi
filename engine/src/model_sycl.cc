@@ -147,13 +147,17 @@ namespace {
     std::vector<SegKvSlot> g_seg_kv;
     std::vector<SegRT> g_seg;
 
-    // F675 Stage 3 (FR-02.3): the explicit compute graph. The generic pass's layer loop
-    // used to hardcode its own segment walk; now the graph is the single source of truth
-    // for which segment runs which layer, where the boundary copies sit, and which
-    // buffer_type each node's tensors live in. Built when a generic N-segment split is
-    // armed; consumed by the forward loop; reported via model_graph_report().
+    // F675 Stage 3 (FR-02.3) + F677: the explicit compute graph at OP granularity. The
+    // graph is the single source of truth for which segment runs which op of which layer,
+    // where the boundary copies sit, and which buffer_type each node's tensors live in.
+    // Built when a generic N-segment split or the two-device fast split is armed; each
+    // executing loop consumes it (per-op conformance check); model_graph_report() shows
+    // the full plan.
     struct GraphNode {
-        enum Kind { EMBED = 0, LAYER = 1, BOUNDARY_COPY = 2, FINAL_NORM = 3, LM_HEAD = 4 } kind;
+        // F677: the graph is declared at op granularity - every transformer layer is its
+        // two ops (attention block: norms/qkv/rope/KV-store/attention/o_proj; ffn block:
+        // ffn norm/gate/up/silu-mul/down), not one opaque LAYER node.
+        enum Kind { EMBED = 0, ATTN = 1, FFN = 2, BOUNDARY_COPY = 3, FINAL_NORM = 4, LM_HEAD = 5 } kind;
         int layer;       // transformer layer index, -1 for non-layer ops
         int segment;     // owning segment index into g_seg_split
         int backend;     // the device that executes this node
@@ -181,7 +185,12 @@ namespace {
                     nodes.push_back(GraphNode(GraphNode::BOUNDARY_COPY, l, sk, split.backend[(size_t) sk]));
                     ++copies;
                 }
-                nodes.push_back(GraphNode(GraphNode::LAYER, l, sk, split.backend[(size_t) sk]));
+                // F677: each layer declares its two ops; both run on the owning segment's
+                // device (intra-layer overlap is an explicit scheduler decision, not a
+                // hidden default - the loop may only move ops across devices if the graph
+                // says so).
+                nodes.push_back(GraphNode(GraphNode::ATTN, l, sk, split.backend[(size_t) sk]));
+                nodes.push_back(GraphNode(GraphNode::FFN, l, sk, split.backend[(size_t) sk]));
                 prevSk = sk;
             }
             // Final norm + lm_head always return to the primary device.
@@ -195,10 +204,13 @@ namespace {
             for (const auto& n : nodes) {
                 if (n.kind == GraphNode::BOUNDARY_COPY) continue;
                 const char* kn = n.kind == GraphNode::EMBED ? "emb"
-                               : n.kind == GraphNode::LAYER ? "L"
+                               : n.kind == GraphNode::ATTN ? "a"
+                               : n.kind == GraphNode::FFN ? "f"
                                : n.kind == GraphNode::FINAL_NORM ? "fn" : "lm";
+                // F677: op nodes carry their layer index (a0..f23); a0@b1 f0@b1 names
+                // attention+ffn of layer 0 on device b1.
                 out += " " + std::string(kn)
-                     + (n.kind == GraphNode::LAYER ? std::to_string(n.layer) : "")
+                     + (n.kind == GraphNode::ATTN || n.kind == GraphNode::FFN ? std::to_string(n.layer) : "")
                      + "@b" + std::to_string(n.backend);
             }
             return out;
@@ -2155,10 +2167,14 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // layer reads and writes K/V through kRows[l] / vRows[l] (the owning segment's dense
         // rows) instead of the `kv` cache's own array. Plain and two-device paths pass
         // nulls, so their dense `kv.k[l]` indexing is byte-for-byte unchanged.
-        auto run_layer = [&](sycl::queue& ql, float* xp, float* hp, KVCache& kv,
-                             const float* cosp, const float* sinp, float* sc, float* pc,
-                             int l, bool trace,
-                             void* const* kRows = nullptr, void* const* vRows = nullptr) -> bool {
+        // F677: the graph declares each layer as its two ops; execution runs them as
+        // two named blocks (attention: norms/qkv/rope/KV-store/attention/o_proj, ffn:
+        // norm/gate/up/silu-mul/down) so the loop can check EACH op against the
+        // declared plan. The ops still run on one device per layer; moving them
+        // apart later is a scheduler decision that needs a tensor-boundary copy.
+        auto run_op_attn = [&](sycl::queue& ql, float* xp, float* hp, KVCache& kv,
+                               const float* cosp, const float* sinp, float* sc, float* pc,
+                               int l, void* const* kRows, void* const* vRows) -> bool {
             const std::string p = "blk." + std::to_string(l) + ".";
             Wt anw = load_weight(ql, p + "attn_norm.weight", (uint64_t) D);
             if (!anw.p) return false;
@@ -2263,7 +2279,11 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             gemm(ql, ao.p, T, D, wo, D, oo.p, nullptr);
             weight_release(wo);
             add_inplace(ql, xp, oo.p, (size_t) T * D);
+            return true;
+        };
 
+        auto run_op_ffn = [&](sycl::queue& ql, float* xp, float* hp, int l) -> bool {
+            const std::string p = "blk." + std::to_string(l) + ".";
             // ffn
             Wt fnw = load_weight(ql, p + "ffn_norm.weight", (uint64_t) D);
             if (!fnw.p) return false;
@@ -2290,9 +2310,11 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             gemm(ql, g.p, T, FFN, wd, D, dd.p, nullptr);
             weight_release(wd);
             add_inplace(ql, xp, dd.p, (size_t) T * D);
-            if (trace) probe();   // per-layer |x| trace only on the primary device
             return true;
         };
+
+        // F677: the layer is its two op blocks; both executing loops call the ops
+        // separately so each op can be checked against its own graph node.
 
         // Layer-range offload: each layer's backend and the single boundary handoff come from
         // one placement plan; weights and KV remain owned by that backend's existing resources.
@@ -2450,16 +2472,24 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                        && g_seg_split.start[k + 1] <= layer) ++k;
                 return (int) k;
             };
-            // The graph's LAYER nodes must agree with segOf for every layer: the graph is
-            // the declared plan, the loop is the executor, and the gate proves they agree.
-            for (int l = 0; l < L; ++l) {
-                int graphSeg = -1;
+            // F677: the graph's per-OP nodes must agree with segOf for every op of every
+            // layer: the graph is the declared plan, the loop is the executor, and the
+            // gate proves they agree.
+            const auto graphNode = [&](int l, int op) {
                 for (const auto& gn : g_graph.nodes) {
-                    if (gn.kind == GraphNode::LAYER && gn.layer == l) { graphSeg = gn.segment; break; }
+                    const bool is = (op == 0) ? gn.kind == GraphNode::ATTN : gn.kind == GraphNode::FFN;
+                    if (is && gn.layer == l) return &gn;
                 }
-                if (graphSeg != segOf(l)) {
-                    g_err = "graph/loop segment mismatch at layer " + std::to_string(l);
-                    return {};
+                return (const GraphNode*) nullptr;
+            };
+            for (int l = 0; l < L; ++l) {
+                for (int op = 0; op < 2; ++op) {
+                    const GraphNode* gn = graphNode(l, op);
+                    if (!gn || gn->segment != segOf(l)) {
+                        g_err = "graph/loop segment mismatch at layer " + std::to_string(l)
+                               + " op " + std::to_string(op);
+                        return {};
+                    }
                 }
             }
             // Each layer's K/V lives in the PERSISTENT cache of the segment that owns that
@@ -2486,14 +2516,18 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 prevSk = sk;
                 const KVCache& layerKv = (sk == 0) ? g_kv : g_seg_kv[(size_t) sk].kv;
                 seg_step = 3 + l;   // layer l
-                                if (!run_layer(ql, sg.xs, sg.hs,
-                               const_cast<KVCache&>(layerKv),
-                               sk == 0 ? dCos : sg.dCos, sk == 0 ? dSin : sg.dSin,
-                               sk == 0 ? scores.p : sg.scores, sk == 0 ? part.p : sg.part,
-                               l, sk == 0,
-                               nullptr, nullptr)) {
+                // F677: the two ops run on the layer's own segment queue; the graph says
+                // they may live on that segment only - both ops of one layer execute in
+                // place, so they agree with the plan by construction.
+                if (!run_op_attn(ql, sg.xs, sg.hs,
+                                  const_cast<KVCache&>(layerKv),
+                                  sk == 0 ? dCos : sg.dCos, sk == 0 ? dSin : sg.dSin,
+                                  sk == 0 ? scores.p : sg.scores, sk == 0 ? part.p : sg.part,
+                                  l, nullptr, nullptr)
+                    || !run_op_ffn(ql, sg.xs, sg.hs, l)) {
                     return {};
                 }
+                if (sk == 0) probe();   // F677: per-layer |x| trace on the primary segment
                 // One drain per layer bounds the arena reset - the same discipline the
                 // two-device path applies to its secondary queue.
                 ql.wait_and_throw();
@@ -2542,19 +2576,25 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
         // chunk), so the bump pointer can start clean.
         arena_reset(q);
         if (splitActive) arena_reset(q2);
-        // F676: the fast path obeys its declared graph. When a two-device split is armed
-        // (and no N-segment plan is active - the segment path has its own graph==segOf
-        // check), every LAYER node's backend must equal the loop's per-layer backend, and
-        // the BOUNDARY_COPY nodes must sit exactly on the handoff position. An empty graph
-        // is the plain run: every layer on the caller's device, no copies.
+        // F676+F677: the fast path obeys its declared graph, now at OP granularity. When
+        // a two-device split is armed (and no N-segment plan is active - the segment path
+        // has its own per-op graph==segOf check), every ATTN/FFN node's backend must equal
+        // the loop's per-layer backend, and the BOUNDARY_COPY nodes must sit exactly on
+        // the handoff position. An empty graph is the plain run: every layer on the
+        // caller's device, no copies.
         if (!g_seg_active && !g_graph.nodes.empty()) {
             for (int l = 0; l < L; ++l) {
-                int graphBk = -1;
-                for (const auto& gn : g_graph.nodes)
-                    if (gn.kind == GraphNode::LAYER && gn.layer == l) { graphBk = gn.backend; break; }
-                if (graphBk != (int) placement.backend_for(l)) {
-                    g_err = "fast-path graph/backend mismatch at layer " + std::to_string(l);
-                    return {};
+                for (int op = 0; op < 2; ++op) {
+                    int graphBk = -1;
+                    for (const auto& gn : g_graph.nodes) {
+                        const bool is = (op == 0) ? gn.kind == GraphNode::ATTN : gn.kind == GraphNode::FFN;
+                        if (is && gn.layer == l) { graphBk = gn.backend; break; }
+                    }
+                    if (graphBk != (int) placement.backend_for(l)) {
+                        g_err = "fast-path graph/backend mismatch at layer " + std::to_string(l)
+                               + " op " + std::to_string(op);
+                        return {};
+                    }
                 }
             }
             int graphCopies = 0;
@@ -2581,12 +2621,17 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 q2.memcpy(xs.p, handoff.p, hb);
                 q2.wait_and_throw();
             }
-            if (!run_layer(on2 ? q2 : q, on2 ? xs.p : x.p, on2 ? hs.p : h.p,
-                           on2 ? g_kv2 : g_kv,
-                           on2 ? dCos2 : dCos, on2 ? dSin2 : dSin,
-                           on2 ? scores2 : scores.p, on2 ? part2 : part.p, l, !on2)) {
+            // F677: the two ops of the layer run on the layer's declared device (checked
+            // against the graph above); both share the layer's x/h and stay in place.
+            if (!run_op_attn(on2 ? q2 : q, on2 ? xs.p : x.p, on2 ? hs.p : h.p,
+                             on2 ? g_kv2 : g_kv,
+                             on2 ? dCos2 : dCos, on2 ? dSin2 : dSin,
+                             on2 ? scores2 : scores.p, on2 ? part2 : part.p,
+                             l, nullptr, nullptr)
+                || !run_op_ffn(on2 ? q2 : q, on2 ? xs.p : x.p, on2 ? hs.p : h.p, l)) {
                 return {};
             }
+            if (!on2) probe();   // F677: per-layer |x| trace on primary-device layers
             // One drain per layer bounds the arena reset: everything this layer queued has run,
             // so its slots may be handed out again. This is the point of the arena - drain count
             // falls from ~15 per layer to 1 - while no slot is ever reused while still being read.

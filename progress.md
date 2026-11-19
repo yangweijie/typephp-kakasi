@@ -1,4 +1,12 @@
 # Progress Log
+## Session: 2026-11-19 - F677 FR-02 op-granularity graph
+- **Goal:** lower the compute graph from layer granularity to op granularity (attn/ffn as separate nodes) so the scheduler can reason about individual ops.
+- `GraphNode::Kind` gains ATTN/FFN; `build()` emits a{l}/f{l} per layer; `report()` labels ops (a0@b0 ... f23@b2).
+- `run_layer` split into `run_op_attn` + `run_op_ffn`; the dead composition removed; both executing loops call the ops separately. Per-layer `|x|` trace preserved via `probe()` after each layer on primary-segment / primary-device layers.
+- Conformance checks are now per-op: generic loop verifies ATTN+FFN segments == segOf(l) for every layer; fast/plain loop verifies ATTN+FFN backends == placement plan for every layer, copies only at handoff layers, copy count == split state. Four named g_err strings.
+- Gates: `orch[split]` now asserts the fast-path graph reads nodes=52 copies=1 (1 emb + 48 ops + 1 copy + fn + lm); `GRAPH-PLAN` asserts the 3-seg generic graph reads nodes=53 copies=2 (1 emb + 48 ops + 2 copies + fn + lm). Token-equivalence gates (orch[split], orch[split3]) still hold - the op split is execution-neutral.
+- Next: verify the ladder (selftest/gate_live/check_gates), then update the plan/audit.
+
 
 ## Session: 2026-11-19 — F676 FR-02 fast-path graph unification
 - **Goal:** the explicit compute graph is now the declared plan for BOTH execution paths, not just the generic N-segment runtime.
