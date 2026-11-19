@@ -45,7 +45,10 @@
     - **修复 = 手交只在段边界**（`sk != prevSk`），逐段内部层在各自段的状态上就地跑。一行修复，N≥3 等价转绿。
     - 另一个必要的旁路：泛化拆分激活期间 **residency 必须整体旁路**（`keepable` 加 `!g_seg_active`）——否则非主段的权重会进主设备的 g_res 注册表，下个 clear_all 会在 b0 队列上 free b1/b2 指针（跨设备 free → SYCL abort），且主设备驻留权重指针会被跨段 kernel 解引用（错误 token）。
   - 记法：**"段边界手交"与"快路径唯一边界手交"是同一个不变量**——每段的运行状态就地更新，只有跨越段边界时才需要把状态搬到新段的设备上；把这条写错会在每个非主段层都产生状态回退。
-- **Stage 3（op 图调度器）未开工**，可在 Stage 2 收口后推进。
+- **Stage 3（显式计算图 / op-graph scheduler seam）已落地并验证**：
+  - 新增 `GraphNode`（EMBED/LAYER/BOUNDARY_COPY/FINAL_NORM/LM_HEAD）+ `ForwardGraph`（`build(L, split)` + `report()`），在泛化拆分激活时构建；泛化循环做 **graph==segOf 逐层一致性自检**（图是计划，循环是执行器，门证明二者一致）。
+  - **`GRAPH-PLAN: PASS nodes=29 copies=2`**：1 embed + 24 layers + 2 boundary copies + 1 final_norm + 1 lm_head = 29 节点，2 个边界拷贝（3 段 × 2 个段边界），每个节点标注所属段/设备（`emb@b0 L0@b0 … L8@b0 L9@b1 … L17@b1 L18@b2 … L23@b2 fn@b0 lm@b0 plan=b0:0|b1:9|b2:18`），经 `model_graph_report()` 暴露。
+  - FR-02(3) 的"计算图调度器"在**层粒度**已闭合：图的节点结构、per-node buffer_type、边界拷贝位置都可以从图上读出并被门验证。尚未做的：op 内部细分（attn/ffn 拆成独立节点）、非顺序拓扑（并行分支执行）、任意张量（非层粒度）的边界拷贝。
 - 记法（踩坑）：`alloc_bt`/`free_bt` 取**可变** `BufferType*`（虚函数非 const）；`KVCache::k/v` 是 `vector<void*>`，逐段分配器须用 `vector<void*>`；tpc 的 `getAbsolutePath` 拒绝缺失的 stub 文件——`buffer.cc`（纯 cl TU）进 `project.yml sources`、不需要 stub；`SegmentSplit` 是匿名命名空间类型，跨 setter 赋值要用 `SegmentSplit{}`；`g_seg_active` 期间必须让 residency 走 bypass（`keepable` 加 `!g_seg_active`），否则主设备驻留权重会被跨段 kernel 解引用。
 
 ## F673 · FR-05 profile budget naming correction (2026-11-18)

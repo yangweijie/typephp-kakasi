@@ -20192,7 +20192,29 @@ function main(): void
 ";
         $ofail++;
     }
-        // F675 Stage 1: the buffer_type contract's own gate. The residency and split probes above
+        // F675 Stage 3: the explicit compute graph. When the 3-seg split is armed, the graph
+    // must report the full node list: 1 embed + 24 layers + 2 boundary copies + 1 final norm
+    // + 1 lm_head = 29 nodes, with 2 copies for the 2 segment boundaries. The gate also
+    // asserts that the per-node segment assignment is consistent (the generic loop already
+    // self-checks graph==segOf at every layer). The split is released at the end.
+    model_set_seg_split("0:0|1:9|2:18");
+    $graphRep = model_graph_report();
+    $graphOk = (strpos($graphRep, "nodes=29") !== false
+        && strpos($graphRep, "copies=2") !== false
+        && strpos($graphRep, "emb@b0") !== false
+        && strpos($graphRep, "L0@b0") !== false
+        && strpos($graphRep, "L9@b1") !== false
+        && strpos($graphRep, "L18@b2") !== false
+        && strpos($graphRep, "fn@b0") !== false
+        && strpos($graphRep, "lm@b0") !== false);
+    echo $graphOk ? "  GRAPH-PLAN: PASS {$graphRep}
+"
+        : "  GRAPH-PLAN: FAIL {$graphRep}
+";
+    if (!$graphOk) $ofail++;
+    model_set_split(-1, -1);
+
+    // F675 Stage 1: the buffer_type contract's own gate. The residency and split probes above
     // exercised all three memory classes - b0, b1, and the shared host staging buffer - so the
     // shared ledger must name all of them. Byte counts may be zero here (the split probe freed
     // every KV row on exit), so the assertions are the class registry plus the anomaly

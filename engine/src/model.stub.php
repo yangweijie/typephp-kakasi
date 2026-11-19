@@ -87,6 +87,8 @@ function model_split_state(): string {}
 function model_set_seg_split(string $spec): int {}
 // "seg off" when no generic N-segment split is active, otherwise the segment list.
 function model_seg_split_state(): string {}
+// F675 Stage 3: explicit compute graph report from the active N-segment split.
+function model_graph_report(): string {}
 function model_layer_placement(int $layers, int $primary, int $secondary, int $split_layer): string {}
 // "" = not a directory; "!N" = directory with N .gguf files (N != 1); else the .gguf path.
 function model_dir_gguf(string $dir): string {}

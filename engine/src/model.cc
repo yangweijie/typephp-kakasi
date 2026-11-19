@@ -86,6 +86,7 @@ std::string split_state();
 std::string layer_placement(int layers, int primary, int secondary, int split_layer);
 int set_seg_split(const std::string& spec, int L);
 std::string seg_split_state();
+std::string graph_report();
 std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, int expect_id, int pos);
 std::vector<int> generate(int backend, std::vector<int> ids, int n_new);
 std::vector<int> generate_sampled(int backend, std::vector<int> ids, int n_new,
@@ -313,6 +314,7 @@ php::Int php_model_set_seg_split(php::Str spec) {
     return php::Int(model::set_seg_split(s, L));
 }
 php::Str php_model_seg_split_state() { return php::Str(model::seg_split_state()); }
+php::Str php_model_graph_report() { return php::Str(model::graph_report()); }
 
 // Directory-style model folder: "" when the path is not a directory, "!" when it is one
 // without exactly one .gguf, otherwise the single .gguf's path. Directory listing is not

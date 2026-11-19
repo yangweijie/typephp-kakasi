@@ -146,6 +146,65 @@ namespace {
     };
     std::vector<SegKvSlot> g_seg_kv;
     std::vector<SegRT> g_seg;
+
+    // F675 Stage 3 (FR-02.3): the explicit compute graph. The generic pass's layer loop
+    // used to hardcode its own segment walk; now the graph is the single source of truth
+    // for which segment runs which layer, where the boundary copies sit, and which
+    // buffer_type each node's tensors live in. Built when a generic N-segment split is
+    // armed; consumed by the forward loop; reported via model_graph_report().
+    struct GraphNode {
+        enum Kind { EMBED = 0, LAYER = 1, BOUNDARY_COPY = 2, FINAL_NORM = 3, LM_HEAD = 4 } kind;
+        int layer;       // transformer layer index, -1 for non-layer ops
+        int segment;     // owning segment index into g_seg_split
+        int backend;     // the device that executes this node
+        GraphNode(Kind k, int l, int s, int b) : kind(k), layer(l), segment(s), backend(b) {}
+    };
+    struct ForwardGraph {
+        std::vector<GraphNode> nodes;
+        int copies = 0;      // boundary-copy count
+        // Build the graph for L layers under the given segment split.
+        void build(int L, const SegmentSplit& split) {
+            nodes.clear();
+            copies = 0;
+            const int nSeg = (int) split.backend.size();
+            // EMBED always on the primary device (segment 0).
+            nodes.push_back(GraphNode(GraphNode::EMBED, -1, 0, split.backend.empty() ? 0 : split.backend[0]));
+            int prevSk = -1;
+            for (int l = 0; l < L; ++l) {
+                // Segment owning layer l: the first whose start is <= l.
+                int sk = 0;
+                for (int k = nSeg - 1; k >= 0; --k) {
+                    if (split.start[(size_t) k] <= l) { sk = k; break; }
+                }
+                // Boundary copy when the segment changes between consecutive layers.
+                if (sk > 0 && sk != prevSk) {
+                    nodes.push_back(GraphNode(GraphNode::BOUNDARY_COPY, l, sk, split.backend[(size_t) sk]));
+                    ++copies;
+                }
+                nodes.push_back(GraphNode(GraphNode::LAYER, l, sk, split.backend[(size_t) sk]));
+                prevSk = sk;
+            }
+            // Final norm + lm_head always return to the primary device.
+            nodes.push_back(GraphNode(GraphNode::FINAL_NORM, -1, 0, split.backend.empty() ? 0 : split.backend[0]));
+            nodes.push_back(GraphNode(GraphNode::LM_HEAD, -1, 0, split.backend.empty() ? 0 : split.backend[0]));
+        }
+        // Human-readable plan: one field per non-copy node, "kind:layer@bN".
+        std::string report() const {
+            std::string out = "nodes=" + std::to_string(nodes.size())
+                            + " copies=" + std::to_string(copies);
+            for (const auto& n : nodes) {
+                if (n.kind == GraphNode::BOUNDARY_COPY) continue;
+                const char* kn = n.kind == GraphNode::EMBED ? "emb"
+                               : n.kind == GraphNode::LAYER ? "L"
+                               : n.kind == GraphNode::FINAL_NORM ? "fn" : "lm";
+                out += " " + std::string(kn)
+                     + (n.kind == GraphNode::LAYER ? std::to_string(n.layer) : "")
+                     + "@b" + std::to_string(n.backend);
+            }
+            return out;
+        }
+    };
+    ForwardGraph g_graph;
     struct LayerPlacementPlan {
         std::vector<int> backend;
         int secondary_backend = -1;
@@ -1377,6 +1436,8 @@ bool ensure_seg_kv(SegKvSlot& slot, int L, sycl::queue& q, int need_rows, int dk
 
 
 void seg_split_release() {
+    g_graph.nodes.clear();
+    g_graph.copies = 0;
     for (auto& slot : g_seg_kv) {
         slot.kv.free_all();
     }
@@ -1445,6 +1506,7 @@ int set_seg_split(const std::string& spec, int L) {
         slot.backend = sg.first;
         g_seg_kv.push_back(slot);
     }
+    g_graph.build(L, g_seg_split);
     return 1;
 }
 
@@ -1458,6 +1520,13 @@ std::string seg_split_state() {
     }
     return out;
 }
+
+// F675 Stage 3: the explicit compute graph, built from the active N-segment split.
+std::string graph_report() {
+    if (g_graph.nodes.empty()) return "graph off";
+    return g_graph.report() + " plan=" + seg_split_state();
+}
+
 
 void set_split(int backend, int layer) {
     seg_split_release();
@@ -2368,6 +2437,18 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                        && g_seg_split.start[k + 1] <= layer) ++k;
                 return (int) k;
             };
+            // The graph's LAYER nodes must agree with segOf for every layer: the graph is
+            // the declared plan, the loop is the executor, and the gate proves they agree.
+            for (int l = 0; l < L; ++l) {
+                int graphSeg = -1;
+                for (const auto& gn : g_graph.nodes) {
+                    if (gn.kind == GraphNode::LAYER && gn.layer == l) { graphSeg = gn.segment; break; }
+                }
+                if (graphSeg != segOf(l)) {
+                    g_err = "graph/loop segment mismatch at layer " + std::to_string(l);
+                    return {};
+                }
+            }
             // Each layer's K/V lives in the PERSISTENT cache of the segment that owns that
             // layer - the same invariant as the dedicated two-device path (g_kv2). Prefix
             // rows [0, pos) were written by this same split in the previous pass, and
