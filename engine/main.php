@@ -16011,6 +16011,12 @@ function api_serve_par(int $port): void
             stream_set_blocking($c, true);
             stream_set_timeout($c, 2);
             $req = fread($c, 32768);
+            // F680b: an aborted client can make the very first read come back false;
+            // normalize to an empty request - the stall-bounded loop below bounds the
+            // wait, and the empty request is named below instead of crashing the server.
+            if ($req === false) {
+                $req = "";
+            }
             $hdrEnd = strpos($req, "\r\n\r\n");
             $wantLen = 0;
             $cm = [];
@@ -16802,6 +16808,11 @@ function api_serve(int $port): void
         stream_set_blocking($c, true);
         stream_set_timeout($c, 2);
         $req = fread($c, 32768);
+        // F680b: same as the two-slot server - an aborted client can make the first
+        // read false; an empty request is named below, never a strpos crash.
+        if ($req === false) {
+            $req = "";
+        }
         // Keep reading until the headers are complete AND the declared body has arrived. A single
         // fread can return just the headers; closing with unread body bytes makes Windows send
         // RST, which the client sees as a connection reset (observed with 4 concurrent clients).
@@ -20232,6 +20243,20 @@ function main(): void
         : "  GRAPH-PLAN: FAIL {$graphRep}
 ";
     if (!$graphOk) $ofail++;
+    // F680: the generic pass must run THROUGH the graph-driven (topo-order) executor, not
+    // a hardcoded layer walk. Drive a short generic pass under THIS armed graph, then read
+    // the flag: it proves this very pass was consumed by the declared DAG walk, and the
+    // ids must still equal the unsplit prefix (the walk is execution-neutral).
+    // model_generate returns the FULL id list (prompt + new), so a 3-step drive under the
+    // armed graph must read as the token-prefix of the 6-step unsplit baseline $base.
+    $drvGen = model_generate(0, $ids, 3);
+    $topoRan = model_graph_exec_topo();
+    $drvOk = ($topoRan == 1 && $drvGen != "" && strpos($base, $drvGen) === 0);
+    echo $drvOk ? "  GRAPH-DRIVE: PASS generic pass driven by the declared DAG walk (ids prefix of unsplit)
+"
+        : "  GRAPH-DRIVE: FAIL topoRan={$topoRan} drvGen={$drvGen} base={$base}
+";
+    if (!$drvOk) $ofail++;
     model_set_split(-1, -1);
 
     // F678: the backend op dispatch table. Every backend must declare the full kernel

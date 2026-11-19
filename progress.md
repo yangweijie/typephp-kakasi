@@ -1,4 +1,15 @@
 # Progress Log
+## Session: 2026-11-19 - F680 graph-driven executor + F680b socket read hardening
+- **F680:** the generic N-segment pass is now DRIVEN by the declared graph - a single dispatcher over `topo_order()` (BOUNDARY_COPY nodes fire host handoffs, ATTN/FFN ops dispatch in place, EMBED/FINAL_NORM/LM_HEAD stay structural markers). Walk is declared, not hardcoded; bit-identical for the linear plan (orch[split3] unchanged). `g_graphExecTopo` flag + `model_graph_exec_topo()` bridge; `GRAPH-DRIVE: PASS` gate drives a 3-step generic pass and requires flag set AND ids as token-prefix of the unsplit baseline.
+- **F680b (caught by the gate, not by the change):** the first `gate_live f680` run red on the 8000 endpoint-shape probe - `serve_f680.log` ended in `Fatal error: strpos(): Argument #1 must be of type string, false given` (main.php:19272). An aborted probe connection made the first `fread($c, 32768)` return `false`; neither server normalized it before `strpos`. Both handlers (8000 + 8001) now normalize `false` to an empty request, which the existing named "no user content" refusal already handles. Root cause was PRE-EXISTING, surfaced by the probe.
+- Ladder (f680c): build green; selftest RUN_EXIT=0 / 0 FAIL / ORCH PASS (GRAPH-DRIVE/GRAPH-PLAN/OPS-TABLE/BUFFER-LEDGER green); gate_live re-run running.
+
+## Session: 2026-11-19 - F680 FR-02 graph-driven executor
+- **Goal:** close the executor half of the non-sequential-topology item at the DECLARED-PLAN level: the generic pass no longer walks layers by hand - it walks the graph.
+- Replaced the generic segment loop with a single dispatcher over `g_graph.topo_order()`: BOUNDARY_COPY nodes fire the host handoff (sk>0 only), ATTN nodes dispatch `run_op_attn`, FFN nodes dispatch `run_op_ffn` and close the layer (drain + arena reset + trace on the primary segment). EMBED/FINAL_NORM/LM_HEAD stay structural markers (they run outside the driver, as before).
+- `g_graphExecTopo` flag (per pass, cleared in `prefill_top1`) + `model_graph_exec_topo()` bridge; `GRAPH-DRIVE` gate drives a 3-step generic pass under the armed 3-seg graph and requires the flag set AND the ids to be a token-prefix of the unsplit baseline - the walk is execution-neutral, proven by output.
+- Ladder: build f680b green; selftest_f680 running.
+
 ## Session: 2026-11-19 - F679 FR-02 DAG topology seam
 - **Goal:** the last FR-02 deeper item from the plan - non-sequential topology - lands as the DECLARED-DAG half: explicit dependency edges on the compute graph, cycle detection, and an executor-order conformance check, all gate-verified. The executor itself stays a linear walk for now; the seam for real branch reordering is `topo_order()`.
 - `GraphNode` gains `deps`; `build()` emits predecessor edges (linear chain, N-1 edges); `ForwardGraph` gains `edge_count()`, Kahn `topo_order()` and `dag_conforms()` (the declared walk is valid only where every edge points to an earlier execution position).

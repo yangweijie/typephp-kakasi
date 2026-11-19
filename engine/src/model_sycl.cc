@@ -292,6 +292,10 @@ namespace {
         }
     };
     ForwardGraph g_graph;
+// F680: did the last generic-segment pass run through the graph-driven (topo-order)
+// executor? The generic branch sets it after driving the walk; every pass clears it
+// first, so the flag names the LAST pass, not "ever ran it".
+bool g_graphExecTopo = false;
     struct LayerPlacementPlan {
         std::vector<int> backend;
         int secondary_backend = -1;
@@ -1613,6 +1617,7 @@ std::string graph_report() {
     if (g_graph.nodes.empty()) return "graph off";
     return g_graph.report() + " plan=" + seg_split_state();
 }
+int graph_exec_topo() { return g_graphExecTopo ? 1 : 0; }
 
 // F678: the backend op dispatch table. Every device declares the kernel variants the model
 // layer may dispatch on its queue - the ggml-style "what can this backend run" contract,
@@ -2164,6 +2169,7 @@ std::string sampler_check(int backend, std::vector<int> ids, int draws, uint64_t
 std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, int expect_id, int pos) {
     g_err.clear();
     g_trace.clear();
+    g_graphExecTopo = false;   // F680: this pass will name its own executor
     g_last_logits.clear();
     g_stage.clear();
     auto t_stage = std::chrono::steady_clock::now();
@@ -2645,39 +2651,66 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
             // and writes that segment's own running state in place, so re-copying the
             // previous segment's state on every layer would clobber the just-finished
             // layer's output with a stale pre-boundary state (the l10 divergence F675 hit).
-            int prevSk = -1;
-            for (int l = 0; l < L; ++l) {
-                const int sk = segOf(l);
-                SegRT& sg = g_seg[(size_t) sk];
-                sycl::queue& ql = *sg.q;
-                if (sk > 0 && sk != prevSk) {
+            // F680: the graph-DRIVEN executor. The walk is no longer hardcoded per layer;
+            // it is read off g_graph in topological order. For the current linear plan the
+            // order equals declaration order, so results are bit-identical - but the loop
+            // now knows nothing about which layer runs where: the GRAPH owns the walk, and
+            // a future non-sequential plan (branch merges, cross-segment op moves) re-emits
+            // the edges and this same driver consumes them unchanged.
+            bool gTopoOk = false;
+            const std::vector<int> gOrder = g_graph.topo_order(gTopoOk);
+            if (!gTopoOk) {
+                g_err = "graph/loop DAG order violation (cycle or bad edge)";
+                return {};
+            }
+            for (int n = 0; n < (int) gOrder.size(); ++n) {
+                const GraphNode& gn = g_graph.nodes[(size_t) gOrder[(size_t) n]];
+                // Structural markers: embedding ran before the loop; final norm + lm_head
+                // run after it. The driver dispatches only the in-graph compute + copy nodes.
+                if (gn.kind == GraphNode::EMBED || gn.kind == GraphNode::FINAL_NORM
+                    || gn.kind == GraphNode::LM_HEAD) {
+                    continue;
+                }
+                if (gn.kind == GraphNode::BOUNDARY_COPY) {
+                    const int sk = gn.segment;
+                    if (sk <= 0) continue;   // no cross-device handoff into the primary segment
                     const size_t hb = (size_t) T * (size_t) D * sizeof(float);
                     sycl::queue& prevQ = *g_seg[(size_t) (sk - 1)].q;
                     prevQ.memcpy(handoff.p, g_seg[(size_t) (sk - 1)].xs, hb);
                     prevQ.wait_and_throw();
-                    ql.memcpy(sg.xs, handoff.p, hb);
-                    ql.wait_and_throw();
+                    sycl::queue& cq = *g_seg[(size_t) sk].q;
+                    cq.memcpy(g_seg[(size_t) sk].xs, handoff.p, hb);
+                    cq.wait_and_throw();
+                    continue;
                 }
-                prevSk = sk;
+                // ATTN / FFN: dispatch the op on the owning segment, in place.
+                const int sk = gn.segment;
+                const int l = gn.layer;
+                SegRT& sg = g_seg[(size_t) sk];
+                sycl::queue& ql = *sg.q;
                 const KVCache& layerKv = (sk == 0) ? g_kv : g_seg_kv[(size_t) sk].kv;
-                seg_step = 3 + l;   // layer l
-                // F677: the two ops run on the layer's own segment queue; the graph says
-                // they may live on that segment only - both ops of one layer execute in
-                // place, so they agree with the plan by construction.
-                if (!run_op_attn(ql, sg.xs, sg.hs,
-                                  const_cast<KVCache&>(layerKv),
-                                  sk == 0 ? dCos : sg.dCos, sk == 0 ? dSin : sg.dSin,
-                                  sk == 0 ? scores.p : sg.scores, sk == 0 ? part.p : sg.part,
-                                  l, nullptr, nullptr)
-                    || !run_op_ffn(ql, sg.xs, sg.hs, l)) {
+                if (gn.kind == GraphNode::ATTN) {
+                    seg_step = 3 + l;   // layer l, attention op
+                    if (!run_op_attn(ql, sg.xs, sg.hs,
+                                      const_cast<KVCache&>(layerKv),
+                                      sk == 0 ? dCos : sg.dCos, sk == 0 ? dSin : sg.dSin,
+                                      sk == 0 ? scores.p : sg.scores, sk == 0 ? part.p : sg.part,
+                                      l, nullptr, nullptr)) {
+                        return {};
+                    }
+                    continue;
+                }
+                // FFN closes the layer: drain + arena reset here, and the per-layer
+                // trace on the primary segment.
+                seg_step = 4 + l;
+                if (!run_op_ffn(ql, sg.xs, sg.hs, l)) {
                     return {};
                 }
                 if (sk == 0) probe();   // F677: per-layer |x| trace on the primary segment
-                // One drain per layer bounds the arena reset - the same discipline the
-                // two-device path applies to its secondary queue.
                 ql.wait_and_throw();
                 arena_reset(ql);
             }
+            g_graphExecTopo = true;   // F680: this pass was driven by the declared DAG walk
             // F675 cross-pass KV invariant (the exact gap the 2-seg fast path meets with
             // its per-layer sync): every layer's K/V row lives in the cache of the segment
             // that OWNS that layer. The next pass's segment 0 attends layers [0, s) and
