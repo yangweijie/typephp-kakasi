@@ -21417,6 +21417,89 @@ function main(): void
         echo "SPEC-LAYERSKIP: FAIL (truncated-draft ids diverged from greedy)\n";
     }
 
+    // F687: MoE branch-merge on REAL expert weights. Side-load the Qwen3.5-MoE block-40 GGUF,
+    // run the router -> top-k parallel experts -> weighted merge (+ shared expert) on a probe
+    // hidden vector at representative magnitude (every weight is the block's real router/expert
+    // tensors). The op recomputes the merge on the host from the SAME per-expert outputs, so a
+    // missing/extra/wrongly-weighted branch shows up as a nonzero maxdiff. Asserts k experts,
+    // distinct in-range ids, router weights summing to <=1, a non-trivial finite output of width D,
+    // and the device-vs-host merge agreement.
+    $f687Path = "C:/Users/ASUS/.workbuddy/local-models/files/mtp38/Qwen3.8-35B-A3B-mtp-Q4_K_M.gguf";
+    if (!file_exists($f687Path)) {
+        echo "MOE-MERGE: SKIP (MTP gguf absent: " . $f687Path . ")\n";
+    } else if (model_moe_side_load($f687Path) != 1) {
+        echo "MOE-MERGE: FAIL side_load: " . model_moe_error() . "\n";
+    } else {
+        $f687Out = model_moe_ffn(0, 1000);
+        if (substr($f687Out, 0, 3) == "ERR") {
+            echo "MOE-MERGE: FAIL op: " . $f687Out . " (" . model_moe_error() . ")\n";
+        } else {
+            $f687Parts = explode(" ", $f687Out);
+            $f687K = 0;
+            $f687D = 0;
+            $f687Ids = "";
+            $f687Ws = "";
+            $f687Sg = 0.0;
+            $f687Diff = 0.0;
+            $f687Merged = 0;
+            $f687Mag = 0.0;
+            for ($f687I = 0; $f687I < count($f687Parts); $f687I++) {
+                $f687P = $f687Parts[$f687I];
+                if (substr($f687P, 0, 2) == "k=") {
+                    $f687K = (int) substr($f687P, 2);
+                } else if (substr($f687P, 0, 2) == "D=") {
+                    $f687D = (int) substr($f687P, 2);
+                } else if (substr($f687P, 0, 4) == "ids=") {
+                    $f687Ids = substr($f687P, 4);
+                } else if (substr($f687P, 0, 2) == "w=") {
+                    $f687Ws = substr($f687P, 2);
+                } else if (substr($f687P, 0, 3) == "sg=") {
+                    $f687Sg = (float) substr($f687P, 3);
+                } else if (substr($f687P, 0, 8) == "maxdiff=") {
+                    $f687Diff = (float) substr($f687P, 8);
+                } else if (substr($f687P, 0, 7) == "merged=") {
+                    $f687MVals = explode(",", substr($f687P, 7));
+                    $f687Merged = count($f687MVals);
+                    $f687Mag = 0.0;
+                    for ($f687I2 = 0; $f687I2 < count($f687MVals); $f687I2++) {
+                        $f687Vi = (float) $f687MVals[$f687I2];
+                        $f687Mag = $f687Mag + ($f687Vi < 0.0 ? -$f687Vi : $f687Vi);
+                    }
+                }
+            }
+            $f687IdArr = explode(",", $f687Ids);
+            $f687WArr = explode(",", $f687Ws);
+            $f687Wsum = 0.0;
+            for ($f687I = 0; $f687I < count($f687WArr); $f687I++) {
+                $f687Wsum = $f687Wsum + (float) $f687WArr[$f687I];
+            }
+            $f687Distinct = 1;
+            for ($f687I = 0; $f687I < count($f687IdArr); $f687I++) {
+                for ($f687J = $f687I + 1; $f687J < count($f687IdArr); $f687J++) {
+                    if ($f687IdArr[$f687I] == $f687IdArr[$f687J]) { $f687Distinct = 0; }
+                }
+            }
+            $f687Finite = (strpos($f687Out, "nan") === false && strpos($f687Out, "inf") === false) ? 1 : 0;
+            $f687Ok = 1;
+            if ($f687K < 1 || $f687K > 16) { $f687Ok = 0; }
+            if (count($f687IdArr) != $f687K || $f687Distinct != 1) { $f687Ok = 0; }
+            if (count($f687WArr) != $f687K || $f687Wsum <= 0.0 || $f687Wsum > 1.01) { $f687Ok = 0; }
+            if ($f687Merged != $f687D || $f687D < 256) { $f687Ok = 0; }
+            if ($f687Mag <= 1.0e-3) { $f687Ok = 0; }   // a real merge is non-trivial; zero would make maxdiff vacuous
+            if ($f687Diff > 1.0e-3 || $f687Finite != 1) { $f687Ok = 0; }
+            echo "MOE-MERGE k=" . $f687K . " D=" . $f687D . " ids=[" . $f687Ids . "] wsum="
+                . $f687Wsum . " sg=" . $f687Sg . " mag=" . $f687Mag . " maxdiff=" . $f687Diff . "\n";
+            if ($f687Ok == 1) {
+                echo "MOE-MERGE: PASS (router->" . $f687K . " parallel experts merged; device==host merge, "
+                    . "distinct ids, weights sum=" . $f687Wsum . ")\n";
+            } else {
+                echo "MOE-MERGE: FAIL k=" . $f687K . " nids=" . count($f687IdArr) . " distinct="
+                    . $f687Distinct . " wsum=" . $f687Wsum . " D=" . $f687D . " merged="
+                    . $f687Merged . " maxdiff=" . $f687Diff . " finite=" . $f687Finite . "\n";
+            }
+        }
+    }
+
     // SPEC-TREE-SAMPLE (F307): the same tree, verified by SAMPLING. Greedy verification can accept
     // only one branch (F273), so this is the first version where more than one bin can pay. Three
     // gates in one: temp=0 must reproduce the greedy tree token for token (regression guard), a

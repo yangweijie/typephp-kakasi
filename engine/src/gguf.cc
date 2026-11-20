@@ -727,6 +727,129 @@ bool make_two_shards(const std::string& src, const std::string& dir) {
     return true;
 }
 
+// F687: side-load a SECOND GGUF (e.g. a MoE expert block) into an independent table so the
+// already-loaded main model is never disturbed. Only the directory + metadata are parsed here;
+// tensor bytes are read on demand through side_raw_range.
+namespace {
+struct SideDB {
+    std::vector<Tensor> tensors;
+    std::map<std::string, double> num;
+    std::map<std::string, std::string> str;
+    std::string path;
+    std::string err;
+    uint64_t data_start = 0;
+    uint64_t fsize = 0;
+    uint64_t align = 32;
+    bool loaded = false;
+} g_side;
+}  // namespace
+
+bool side_load(const std::string& path) {
+    g_side = SideDB();
+    g_side.path = path;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) { g_side.err = "side_load: cannot open " + path; return false; }
+    in.seekg(0, std::ios::end);
+    g_side.fsize = (uint64_t) in.tellg();
+    in.seekg(0);
+    const size_t want = (size_t) (g_side.fsize < (16u << 20) ? g_side.fsize : (16u << 20));
+    std::vector<uint8_t> buf(want, 0);
+    in.read((char*) buf.data(), (std::streamsize) want);
+    if (!in) { g_side.err = "side_load: short header read"; return false; }
+    Cursor c{buf.data(), want};
+    if (!c.need(4) || memcmp(c.p - 4, "GGUF", 4) != 0) { g_side.err = "side_load: not a GGUF"; return false; }
+    const uint64_t ver = c.u32();
+    const uint64_t nt = c.u64();
+    const uint64_t nkv = c.u64();
+    if (!c.ok || ver < 2 || ver > 3 || nt > 100000 || nkv > 100000) { g_side.err = "side_load: bad header"; return false; }
+    for (uint64_t i = 0; i < nkv; ++i) {
+        std::string key = c.str();
+        uint32_t t = c.u32();
+        if (!c.ok) { g_side.err = "side_load: truncated kv " + key; return false; }
+        if (t == 8) {
+            std::string v = c.str();
+            if (!c.ok) { g_side.err = "side_load: truncated str " + key; return false; }
+            g_side.str[key] = v;
+        } else if (t == 9) {
+            const uint32_t elem = c.u32();
+            const uint64_t n = c.u64();
+            if (!c.ok) { g_side.err = "side_load: truncated arr " + key; return false; }
+            if (elem == 8) {
+                for (uint64_t j = 0; j < n; ++j) { c.str(); if (!c.ok) { g_side.err = "side_load: arr str"; return false; } }
+            } else if (elem == 5) {
+                c.skip((size_t) (n * 4)); if (!c.ok) { g_side.err = "side_load: arr i32"; return false; }
+            } else {
+                const size_t es = scalar_size(elem);
+                if (es == 0) { g_side.err = "side_load: arr elem type"; return false; }
+                c.skip((size_t) (n * es)); if (!c.ok) { g_side.err = "side_load: arr body"; return false; }
+            }
+            g_side.num[key + ".len"] = (double) n;
+        } else {
+            if (t == 4) { const uint32_t v = c.u32(); g_side.num[key] = (double) v; }
+            else if (t == 5) { g_side.num[key] = (double) c.i32(); }
+            else if (t == 6) { float f = 0; const uint64_t p = c.need(4); if (c.ok) { memcpy(&f, (const void*)(uintptr_t) p, 4); } g_side.num[key] = (double) f; }
+            else if (t == 10) { g_side.num[key] = (double) c.u64(); }
+            else if (t == 11) { const uint64_t p = c.need(8); int64_t v = 0; if (c.ok) memcpy(&v, (const void*)(uintptr_t) p, 8); g_side.num[key] = (double) v; }
+            else if (t == 12) { double d = 0; const uint64_t p = c.need(8); if (c.ok) memcpy(&d, (const void*)(uintptr_t) p, 8); g_side.num[key] = d; }
+            else if (t == 0 || t == 1 || t == 7) { const uint64_t p = c.need(1); uint8_t v = 0; if (c.ok) memcpy(&v, (const void*)(uintptr_t) p, 1); g_side.num[key] = (double) v; }
+            else if (t == 2 || t == 3) { const uint64_t p = c.need(2); uint16_t v = 0; if (c.ok) memcpy(&v, (const void*)(uintptr_t) p, 2); g_side.num[key] = (double) v; }
+            else { g_side.err = "side_load: scalar type " + std::to_string(t); return false; }
+            if (!c.ok) { g_side.err = "side_load: truncated val " + key; return false; }
+        }
+    }
+    auto it = g_side.str.find("general.alignment");
+    if (it != g_side.str.end()) g_side.align = (uint64_t) strtoull(it->second.c_str(), nullptr, 10);
+    if (g_side.align == 0) g_side.align = 32;
+    for (uint64_t i = 0; i < nt; ++i) {
+        Tensor ti;
+        ti.name = c.str();
+        uint32_t nd = c.u32();
+        if (!c.ok || nd > 4) { g_side.err = "side_load: bad tensor " + std::to_string(i); return false; }
+        ti.nd = nd;
+        for (uint32_t d = 0; d < nd; ++d) ti.ne[d] = c.u64();
+        ti.dtype = c.u32();
+        ti.off = c.u64();
+        if (!c.ok) { g_side.err = "side_load: truncated tensor " + std::to_string(i); return false; }
+        const TypeEntry* te = find_type(ti.dtype);
+        if (!te) { g_side.err = "side_load: dtype " + std::to_string(ti.dtype); return false; }
+        uint64_t numel = 1;
+        for (uint32_t d = 0; d < nd; ++d) numel *= ti.ne[d];
+        ti.bytes = numel / te->blk * te->tsz;
+        g_side.tensors.push_back(std::move(ti));
+    }
+    g_side.data_start = align_up((uint64_t) (c.p - buf.data()), g_side.align);
+    g_side.loaded = true;
+    return true;
+}
+
+bool side_loaded() { return g_side.loaded; }
+std::string side_error() { return g_side.err; }
+int side_find(const std::string& name) {
+    for (size_t i = 0; i < g_side.tensors.size(); ++i) if (g_side.tensors[i].name == name) return (int) i;
+    return -1;
+}
+int side_tensor_count() { return (int) g_side.tensors.size(); }
+int64_t side_ne(int idx, int dim) { return (idx >= 0 && idx < (int) g_side.tensors.size() && dim >= 0 && dim < 4) ? (int64_t) g_side.tensors[idx].ne[dim] : 0; }
+int side_dtype(int idx) { return (idx >= 0 && idx < (int) g_side.tensors.size()) ? (int) g_side.tensors[idx].dtype : -1; }
+int64_t side_bytes(int idx) { return (idx >= 0 && idx < (int) g_side.tensors.size()) ? (int64_t) g_side.tensors[idx].bytes : 0; }
+int64_t side_data_start() { return (int64_t) g_side.data_start; }
+double side_meta_num(const std::string& key) {
+    auto it = g_side.num.find(key);
+    return it == g_side.num.end() ? 0.0 : it->second;
+}
+bool side_raw_range(int idx, uint64_t byte_off, uint64_t len, std::vector<uint8_t>& out) {
+    if (!g_side.loaded || idx < 0 || idx >= (int) g_side.tensors.size()) { g_side.err = "side_raw_range: bad index"; return false; }
+    if (byte_off + len > g_side.tensors[idx].bytes) { g_side.err = "side_raw_range: beyond tensor"; return false; }
+    std::ifstream in(g_side.path, std::ios::binary);
+    if (!in) { g_side.err = "side_raw_range: cannot open"; return false; }
+    in.seekg((std::streamoff) (g_side.data_start + g_side.tensors[idx].off + byte_off));
+    if (!in) { g_side.err = "side_raw_range: seek failed"; return false; }
+    out.assign((size_t) len, 0);
+    in.read((char*) out.data(), (std::streamsize) len);
+    if ((uint64_t) in.gcount() != len) { g_side.err = "side_raw_range: short read"; out.clear(); return false; }
+    return true;
+}
+
 }  // namespace gguf
 
 using namespace php;

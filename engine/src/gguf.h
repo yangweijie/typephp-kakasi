@@ -45,4 +45,18 @@ bool raw_bytes(int index, std::vector<uint8_t>& out);
 // Reads a byte subrange of a tensor's data (used for row streaming of big tensors).
 bool raw_bytes_range(int index, uint64_t byte_off, uint64_t len, std::vector<uint8_t>& out);
 
+// F687: side-load of a SECOND GGUF into an independent table (the main model is untouched).
+// Used to read a MoE expert block's tensors without disturbing the resident model.
+bool side_load(const std::string& path);
+bool side_loaded();
+std::string side_error();
+int side_find(const std::string& name);
+int side_tensor_count();
+int64_t side_ne(int idx, int dim);
+int side_dtype(int idx);
+int64_t side_bytes(int idx);
+int64_t side_data_start();
+double side_meta_num(const std::string& key);
+bool side_raw_range(int idx, uint64_t byte_off, uint64_t len, std::vector<uint8_t>& out);
+
 }  // namespace gguf

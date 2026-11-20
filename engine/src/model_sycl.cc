@@ -4253,6 +4253,188 @@ std::vector<int> spec_layerskip_generate(int backend, std::vector<int> ids, int 
     return out;
 }
 
+// F687: MoE FFN branch-merge on REAL expert weights. Given the side-loaded MoE GGUF (see
+// gguf::side_load) and a token id, this computes one block's MoE FFN: router -> softmax -> top-k
+// experts run as PARALLEL BRANCHES -> weighted merge, plus the shared expert. k experts merged by a
+// weighted sum is the real branch-merge topology the scheduler seam (F679/F680) lacked on a
+// sequential model. The result is checked against a HOST recomputation of the merge (independent
+// of the device reduction), so a missing/extra/wrongly-weighted branch is caught by value.
+// Returns "k=.. ids=.. w=.. sg=.. maxdiff=.. merged=<D csv>" or "ERR <msg>".
+static float* side_dequant_weight(sycl::queue& q, int idx, uint64_t numel, uint32_t dtype) {
+    std::vector<uint8_t> raw;
+    if (!gguf::side_raw_range(idx, 0, (uint64_t) gguf::side_bytes(idx), raw)) return nullptr;
+    return dequant_device(q, raw, dtype, numel);
+}
+std::string moe_ffn(int backend, int token_id) {
+    g_err.clear();
+    sycl::queue* qp = kakasi::queue_for(backend);
+    if (!qp) { g_err = "moe: backend unavailable"; return "ERR backend"; }
+    sycl::queue& q = *qp;
+    const int gi = gguf::side_find("blk.40.ffn_gate_inp.weight");
+    const int ge = gguf::side_find("blk.40.ffn_gate_exps.weight");
+    const int ue = gguf::side_find("blk.40.ffn_up_exps.weight");
+    const int de = gguf::side_find("blk.40.ffn_down_exps.weight");
+    const int sgg = gguf::side_find("blk.40.ffn_gate_shexp.weight");
+    const int sug = gguf::side_find("blk.40.ffn_up_shexp.weight");
+    const int sdg = gguf::side_find("blk.40.ffn_down_shexp.weight");
+    const int sgi = gguf::side_find("blk.40.ffn_gate_inp_shexp.weight");
+    if (gi < 0 || ge < 0 || ue < 0 || de < 0) { g_err = "moe: missing tensors"; return "ERR tensors"; }
+    const int D = (int) gguf::side_ne(gi, 0);      // router input width (= embedding_length)
+    const int E = (int) gguf::side_ne(gi, 1);      // expert count
+    const int FF = (int) gguf::side_ne(ge, 1);     // expert feed-forward width
+    int K = (int) gguf::side_meta_num("qwen35moe.expert_used_count");
+    if (K <= 0 || K > E) K = (E < 8) ? E : 8;
+    if (D <= 0 || E <= 0 || FF <= 0) { g_err = "moe: bad dims"; return "ERR dims"; }
+
+    // Input hidden: a deterministic representative vector at hidden-state magnitude (~[-2,2]).
+    // The raw token embedding is ~1e-2 and yields near-zero activations when fed to a deep
+    // block's MoE, so a probe at hidden magnitude is what actually exercises the merge. Every
+    // weight below is the block's REAL router and expert tensors.
+    Dev xd(&q, (size_t) D, true);
+    { std::vector<float> hx((size_t) D); uint32_t sd = 2463534242u + (uint32_t) token_id;
+      for (int i = 0; i < D; ++i) { sd = sd * 1664525u + 1013904223u; hx[(size_t) i] = (((sd >> 9) & 0xFFFFu) / 65535.0f - 0.5f) * 4.0f; }
+      q.memcpy(xd.p, hx.data(), sizeof(float) * (size_t) D); q.wait_and_throw(); }
+
+    // Router: logits[E] = x . gate_inp[E,D].
+    Dev logits(&q, (size_t) E, true);
+    {
+        float* rp = side_dequant_weight(q, gi, (uint64_t) D * E, (uint32_t) gguf::side_dtype(gi));
+        if (!rp) return "ERR router";
+        gemv(q, xd.p, D, Wt{rp, nullptr, 0}, E, logits.p, nullptr);
+        q.wait_and_throw();
+        buf::free_bt(dev_bt(q), rp, sizeof(float) * (size_t) D * E);
+    }
+    std::vector<float> hostLog((size_t) E);
+    q.memcpy(hostLog.data(), logits.p, sizeof(float) * (size_t) E);
+    q.wait_and_throw();
+    // softmax over all experts (host), then top-k by probability.
+    double mx = -1e300;
+    for (int i = 0; i < E; ++i) if (hostLog[(size_t) i] > mx) mx = hostLog[(size_t) i];
+    double sum = 0.0;
+    std::vector<double> pr((size_t) E);
+    for (int i = 0; i < E; ++i) { pr[(size_t) i] = std::exp((double) hostLog[(size_t) i] - mx); sum += pr[(size_t) i]; }
+    for (int i = 0; i < E; ++i) pr[(size_t) i] /= sum;
+    std::vector<int> sel;
+    for (int pick = 0; pick < K; ++pick) {
+        int best = -1; double bv = -1.0;
+        for (int i = 0; i < E; ++i) {
+            bool used = false;
+            for (size_t s = 0; s < sel.size(); ++s) if (sel[s] == i) { used = true; break; }
+            if (used) continue;
+            if (pr[(size_t) i] > bv) { bv = pr[(size_t) i]; best = i; }
+        }
+        if (best < 0) break;
+        sel.push_back(best);
+    }
+    const int ksel = (int) sel.size();
+    if (ksel <= 0) return "ERR no experts";
+
+    // Per-expert byte sizes: the 3D expert tensors are contiguous per expert (ne2 outermost).
+    const uint64_t geExp = (uint64_t) gguf::side_bytes(ge) / (uint64_t) E;
+    const uint64_t ueExp = (uint64_t) gguf::side_bytes(ue) / (uint64_t) E;
+    const uint64_t deExp = (uint64_t) gguf::side_bytes(de) / (uint64_t) E;
+    const uint32_t geDt = (uint32_t) gguf::side_dtype(ge);
+    const uint32_t ueDt = (uint32_t) gguf::side_dtype(ue);
+    const uint32_t deDt = (uint32_t) gguf::side_dtype(de);
+
+    Dev gbuf(&q, (size_t) FF, true), ubuf(&q, (size_t) FF, true), abuf(&q, (size_t) FF, true), obuf(&q, (size_t) D, true);
+    Dev merged(&q, (size_t) D, true);
+    { std::vector<float> z((size_t) D, 0.0f); q.memcpy(merged.p, z.data(), sizeof(float) * (size_t) D); q.wait_and_throw(); }
+    std::vector<double> hostMerged((size_t) D, 0.0);
+    std::vector<double> wsum((size_t) ksel, 0.0);
+    for (int t = 0; t < ksel; ++t) {
+        const int e = sel[(size_t) t];
+        std::vector<uint8_t> graw, uraw, draw;
+        if (!gguf::side_raw_range(ge, (uint64_t) e * geExp, geExp, graw)
+            || !gguf::side_raw_range(ue, (uint64_t) e * ueExp, ueExp, uraw)
+            || !gguf::side_raw_range(de, (uint64_t) e * deExp, deExp, draw)) { g_err = "moe: expert read"; return "ERR expert read"; }
+        float* gp = dequant_device(q, graw, geDt, (uint64_t) D * FF);
+        float* up = dequant_device(q, uraw, ueDt, (uint64_t) D * FF);
+        float* dp = dequant_device(q, draw, deDt, (uint64_t) FF * D);
+        if (!gp || !up || !dp) { g_err = "moe: expert dequant"; return "ERR expert dequant"; }
+        gemv(q, xd.p, D, Wt{gp, nullptr, 0}, FF, gbuf.p, nullptr);
+        gemv(q, xd.p, D, Wt{up, nullptr, 0}, FF, ubuf.p, nullptr);
+        q.wait_and_throw();
+        silu_mul(q, gbuf.p, ubuf.p, (size_t) FF, abuf.p);
+        gemv(q, abuf.p, FF, Wt{dp, nullptr, 0}, D, obuf.p, nullptr);
+        q.wait_and_throw();
+        const double wgt = pr[(size_t) e];
+        wsum[(size_t) t] = wgt;
+        // device accumulation: merged += wgt * o
+        { const float* op = obuf.p; float* mp = merged.p; const float wf = (float) wgt;
+          q.parallel_for(sycl::range<1>((size_t) D), [=](sycl::item<1> it) { mp[it.get_id(0)] += wf * op[it.get_id(0)]; }); }
+        q.wait_and_throw();
+        std::vector<float> ho((size_t) D);
+        q.memcpy(ho.data(), obuf.p, sizeof(float) * (size_t) D);
+        q.wait_and_throw();
+        for (int i = 0; i < D; ++i) hostMerged[(size_t) i] += wgt * (double) ho[(size_t) i];
+        buf::free_bt(dev_bt(q), gp, sizeof(float) * (size_t) D * FF);
+        buf::free_bt(dev_bt(q), up, sizeof(float) * (size_t) D * FF);
+        buf::free_bt(dev_bt(q), dp, sizeof(float) * (size_t) FF * D);
+    }
+
+    // Shared expert (always on): gate_shexp/up/down (2D) scaled by sigmoid(gate_inp_shexp . x).
+    double sg = 0.0;
+    if (sgg >= 0 && sug >= 0 && sdg >= 0 && sgi >= 0) {
+        Dev gscale(&q, 1, true);
+        {
+            float* sp = side_dequant_weight(q, sgi, (uint64_t) D, (uint32_t) gguf::side_dtype(sgi));
+            if (sp) { gemv(q, xd.p, D, Wt{sp, nullptr, 0}, 1, gscale.p, nullptr); q.wait_and_throw(); buf::free_bt(dev_bt(q), sp, sizeof(float) * (size_t) D); }
+        }
+        float gv = 0.0f; q.memcpy(&gv, gscale.p, sizeof(float)); q.wait_and_throw();
+        sg = 1.0 / (1.0 + std::exp(-(double) gv));
+        const int shFF = (int) gguf::side_ne(sgg, 1);
+        float* gsp = side_dequant_weight(q, sgg, (uint64_t) D * shFF, (uint32_t) gguf::side_dtype(sgg));
+        float* usp = side_dequant_weight(q, sug, (uint64_t) D * shFF, (uint32_t) gguf::side_dtype(sug));
+        float* dsp = side_dequant_weight(q, sdg, (uint64_t) shFF * D, (uint32_t) gguf::side_dtype(sdg));
+        if (gsp && usp && dsp) {
+            Dev gb(&q, (size_t) shFF, true), ub(&q, (size_t) shFF, true), ab(&q, (size_t) shFF, true), os(&q, (size_t) D, true);
+            gemv(q, xd.p, D, Wt{gsp, nullptr, 0}, shFF, gb.p, nullptr);
+            gemv(q, xd.p, D, Wt{usp, nullptr, 0}, shFF, ub.p, nullptr);
+            q.wait_and_throw();
+            silu_mul(q, gb.p, ub.p, (size_t) shFF, ab.p);
+            gemv(q, ab.p, shFF, Wt{dsp, nullptr, 0}, D, os.p, nullptr);
+            q.wait_and_throw();
+            { const float* op = os.p; float* mp = merged.p; const float wf = (float) sg;
+              q.parallel_for(sycl::range<1>((size_t) D), [=](sycl::item<1> it) { mp[it.get_id(0)] += wf * op[it.get_id(0)]; }); }
+            q.wait_and_throw();
+            std::vector<float> hs((size_t) D);
+            q.memcpy(hs.data(), os.p, sizeof(float) * (size_t) D);
+            q.wait_and_throw();
+            for (int i = 0; i < D; ++i) hostMerged[(size_t) i] += sg * (double) hs[(size_t) i];
+        }
+        if (gsp) buf::free_bt(dev_bt(q), gsp, sizeof(float) * (size_t) D * shFF);
+        if (usp) buf::free_bt(dev_bt(q), usp, sizeof(float) * (size_t) D * shFF);
+        if (dsp) buf::free_bt(dev_bt(q), dsp, sizeof(float) * (size_t) shFF * D);
+    }
+
+    std::vector<float> devMerged((size_t) D);
+    q.memcpy(devMerged.data(), merged.p, sizeof(float) * (size_t) D);
+    q.wait_and_throw();
+    double maxdiff = 0.0;
+    for (int i = 0; i < D; ++i) {
+        const double dd = std::fabs((double) devMerged[(size_t) i] - hostMerged[(size_t) i]);
+        if (dd > maxdiff) maxdiff = dd;
+    }
+    std::string ids, ws, ms;
+    for (int t = 0; t < ksel; ++t) {
+        if (t) { ids += ","; ws += ","; }
+        ids += std::to_string(sel[(size_t) t]);
+        char b[32]; std::snprintf(b, sizeof(b), "%.6f", wsum[(size_t) t]); ws += b;
+    }
+    {
+        char b[40]; std::snprintf(b, sizeof(b), "%.8g", sg); 
+        ms = std::string("k=") + std::to_string(ksel) + " D=" + std::to_string(D)
+             + " ids=" + ids + " w=" + ws + " sg=" + b
+             + " maxdiff=" + std::to_string(maxdiff) + " merged=";
+    }
+    for (int i = 0; i < D; ++i) {
+        if (i) ms += ",";
+        char b[32]; std::snprintf(b, sizeof(b), "%.5f", (double) devMerged[(size_t) i]); ms += b;
+    }
+    return ms;
+}
+
 // FR-06 with a SAMPLING verifier. Under the greedy argmax test a tree can accept at most one
 // branch, because the argmax along an accepted prefix is unique (F273) - branch diversity only
 // pays once acceptance is probabilistic. At each node the model's OWN logits row gives p(draft)

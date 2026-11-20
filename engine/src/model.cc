@@ -82,6 +82,8 @@ int spec_selfseed_on();
 void set_draft_layers(int k);
 int draft_layers();
 std::vector<int> spec_layerskip_generate(int backend, std::vector<int> ids, int n_new, int draft_layers, int depth);
+// F687: MoE FFN branch-merge on a side-loaded expert block.
+std::string moe_ffn(int backend, int token_id);
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
@@ -302,6 +304,16 @@ php::Str php_model_spec_layerskip(php::Int backend, php::Str tokens, php::Int n_
         s += std::to_string(out[i]);
     }
     return php::Str(s);
+}
+// F687: side-load a MoE GGUF (independent table; the main model is untouched), then run one
+// block's MoE FFN. The merge is verified inside the op against a host recomputation.
+php::Int php_model_moe_side_load(php::Str path) {
+    const std::string p(path.data(), path.length());
+    return php::Int(gguf::side_load(p) ? 1 : 0);
+}
+php::Str php_model_moe_error() { return php::Str(gguf::side_error()); }
+php::Str php_model_moe_ffn(php::Int backend, php::Int token_id) {
+    return php::Str(model::moe_ffn((int) backend, (int) token_id));
 }
 php::Str php_model_spec_tree(php::Int backend, php::Str tokens, php::Int n_new, php::Int bins,
                              php::Int depth) {
