@@ -1,0 +1,132 @@
+[
+ {
+  "name": "enum_ok",
+  "code": 200,
+  "expect": 200,
+  "keyword": "",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"c\\\":\\\"lyon\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+ },
+ {
+  "name": "bounds_ok",
+  "code": 200,
+  "expect": 200,
+  "keyword": "",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"n\\\":1}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+ },
+ {
+  "name": "bounds_mult_unsat",
+  "code": 400,
+  "expect": 400,
+  "keyword": "multipleOf",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: numeric bounds cannot be honoured on this shape: schema keyword multipleOf,minimum/maximum has no writer for it (served: a single integer property with any-span inclusive bounds, exclusive bounds converted to the adjacent integer, fractional bounds rounded inward, a multipleOf inside those bounds emitted as the smallest multiple, an unbounded inte"
+ },
+ {
+  "name": "bounds_frac_unsat",
+  "code": 400,
+  "expect": 400,
+  "keyword": "multipleOf",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: numeric bounds cannot be honoured on this shape: schema keyword multipleOf,minimum/maximum has no writer for it (served: a single integer property with any-span inclusive bounds, exclusive bounds converted to the adjacent integer, fractional bounds rounded inward, a multipleOf inside those bounds emitted as the smallest multiple, an unbounded inte"
+ },
+ {
+  "name": "excl_unsat",
+  "code": 400,
+  "expect": 400,
+  "keyword": "exclusiveMinimum/exclusiveMaximum",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: numeric bounds cannot be honoured on this shape: schema keyword exclusiveMinimum/exclusiveMaximum has no writer for it (served: a single integer property with any-span inclusive bounds, exclusive bounds converted to the adjacent integer, fractional bounds rounded inward, a multipleOf inside those bounds emitted as the smallest multiple, an unbound"
+ },
+ {
+  "name": "excl_bool_alone",
+  "code": 400,
+  "expect": 400,
+  "keyword": "exclusiveMinimum",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: schema keyword exclusiveMinimum/exclusiveMaximum (draft-4 boolean with no inclusive bound to tighten) (the streamed and non-streamed transports share this guard)\",\"type\":\"invalid_request_error\"}}"
+ },
+ {
+  "name": "excl_bool_served",
+  "code": 200,
+  "expect": 200,
+  "keyword": "",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"n\\\":7}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+ },
+ {
+  "name": "unique_items",
+  "code": 400,
+  "expect": 400,
+  "keyword": "uniqueItems",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: schema keyword uniqueItems (the streamed and non-streamed transports share this guard)\",\"type\":\"invalid_request_error\"}}"
+ },
+ {
+  "name": "contains_kw",
+  "code": 400,
+  "expect": 400,
+  "keyword": "contains",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: schema keyword contains (the streamed and non-streamed transports share this guard)\",\"type\":\"invalid_request_error\"}}"
+ },
+ {
+  "name": "pattern_meta",
+  "code": 400,
+  "expect": 400,
+  "keyword": "pattern",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: schema pattern with regex metacharacters (the streamed and non-streamed transports share this guard)\",\"type\":\"invalid_request_error\"}}"
+ },
+ {
+  "name": "deep_obj_array",
+  "code": 400,
+  "expect": 400,
+  "keyword": "three or more levels",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "{\"error\":{\"message\":\"request schema not supported: arrays nested three or more levels deep with object elements (the streamed and non-streamed transports share this guard)\",\"type\":\"invalid_request_error\"}}"
+ },
+ {
+  "name": "mult_unb_ok",
+  "code": 200,
+  "expect": 200,
+  "keyword": "",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"n\\\":1000002}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+ },
+ {
+  "name": "onedf_bounds_only",
+  "code": 200,
+  "expect": 200,
+  "keyword": "",
+  "named": true,
+  "value_ok": true,
+  "ok": true,
+  "text": "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"n\\\":1}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":\"qwen2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+ }
+]

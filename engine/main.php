@@ -16017,6 +16017,7 @@ function api_serve_par(int $port): void
     $schosen = [[], [], [], []]; // tokens chosen so far
     $sd = [0, 0, 0, 0];       // current step index
     $scpn = [0, 0, 0, 0];     // prompt token count (for api_gen_text)
+    $sprefill = [0, 0, 0, 0]; // F684: 1 = chunked prefill in progress
     while (true) {
         // F370: the three stamps below split one served iteration into "before the forward pass"
         // (accept, select, request and slot bookkeeping), "the forward pass itself as the host sees
@@ -16338,7 +16339,7 @@ Connection: close
                             fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
                                      . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                             fclose($c);
-                        } else if (model_batch_add(0, $slot, $ids, $tev, $tpv, $sdv) != 0) {
+                        } else if (model_batch_add_begin(0, $slot, $ids, $tev, $tpv, $sdv) != 0) {
                             $payload = "{\"error\":{\"message\":\"parallel mode: the slot could not take this prompt\",\"type\":\"server_error\"}}";
                             $payload = api_error_for_path($req, $payload);
                             fwrite($c, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n"
@@ -16356,6 +16357,7 @@ Connection: close
                             $sbg[$slot] = $bgv;
                             $st0[$slot] = microtime(true);
                             $srs[$slot] = 0;
+                            $sprefill[$slot] = 1;
                             $ssn[$slot] = 0;
                             $sstop[$slot] = $stopV;
                             $shold[$slot] = "";
@@ -16688,16 +16690,24 @@ Connection: close
         // Re-evaluated AFTER the stop checks above: the original code gated the pass on the current
         // rs values, while the select timeout at the top of the iteration used the previous ones.
         // Keeping those two moments separate is what preserves when a pass is skipped.
+        // F684: advance chunked prefill for admitting slots (one chunk per iteration).
+        for ($s = 0; $s < $nslots; $s++) {
+            if ($on[$s] == 1 && $sprefill[$s] == 1) {
+                $pfRem = model_batch_prefill_chunk($s, 512);
+                if ($pfRem == 0) { $sprefill[$s] = 0; }
+                if ($pfRem < 0) { $sprefill[$s] = 0; $srs[$s] = 1; model_batch_stop($s); }
+            }
+        }
         $needStep = 0;
         for ($s = 0; $s < $nslots; $s++) {
-            if ($on[$s] == 1 && $srs[$s] == 0) {
+            if ($on[$s] == 1 && $srs[$s] == 0 && $sprefill[$s] == 0) {
                 $needStep = 1;
             }
         }
         if ($needStep == 1) {
             // F683: set per-row allowed sets for constrained slots before the shared pass.
             for ($s = 0; $s < $nslots; $s++) {
-                if ($on[$s] == 1 && $sctype[$s] == 1 && $srs[$s] == 0) {
+                if ($on[$s] == 1 && $sctype[$s] == 1 && $srs[$s] == 0 && $sprefill[$s] == 0) {
                     $ca = api_constrain_allowed($scand[$s], $schosen[$s], $sd[$s]);
                     if ($ca[1] == 1) {
                         $srs[$s] = 6;
@@ -16724,6 +16734,7 @@ Connection: close
         // could drift apart.
         for ($s = 0; $s < $nslots; $s++) {
             if ($on[$s] == 1) {
+                if ($sprefill[$s] == 1) { continue; }
                 if ($srs[$s] == 0) {
                     $t = $toks[$s];
                     if ($t < 0) {
@@ -26898,6 +26909,40 @@ function main(): void
         } else {
             echo "BATCH-ALLOWED: FAIL ok=" . $f683Ok . " plain=" . $f683Plain
                 . " solo=" . $f683Solo . " fixed=" . $f683Fixed . "\n";
+        }
+    }
+
+    // F684: chunked prefill must produce the same tokens as a single-shot prefill.
+    {
+        $f684Prompt = $ids;
+        model_batch_start_n(0, 256, 2);
+        model_batch_add(0, 0, $f684Prompt, 0.0, 1.0, 12345);
+        $f684Full = "";
+        for ($i = 0; $i < 8; $i++) {
+            $f684R = model_batch_next(0);
+            if ($f684R <= 0) { break; }
+            $f684Tk = explode(",", model_batch_tokens());
+            $f684Full = $f684Full == "" ? $f684Tk[0] : $f684Full . "," . $f684Tk[0];
+        }
+        model_batch_end();
+        model_batch_start_n(0, 256, 2);
+        model_batch_add_begin(0, 0, $f684Prompt, 0.0, 1.0, 12345);
+        $f684Rem = 1;
+        while ($f684Rem > 0) {
+            $f684Rem = model_batch_prefill_chunk(0, 4);
+        }
+        $f684Chunked = "";
+        for ($i = 0; $i < 8; $i++) {
+            $f684R = model_batch_next(0);
+            if ($f684R <= 0) { break; }
+            $f684Tk = explode(",", model_batch_tokens());
+            $f684Chunked = $f684Chunked == "" ? $f684Tk[0] : $f684Chunked . "," . $f684Tk[0];
+        }
+        model_batch_end();
+        if ($f684Full != "" && $f684Full == $f684Chunked) {
+            echo "BATCH-CHUNKED: PASS chunked prefill (chunk=4) == single-shot, 8 tokens identical\n";
+        } else {
+            echo "BATCH-CHUNKED: FAIL full=" . $f684Full . " chunked=" . $f684Chunked . "\n";
         }
     }
 

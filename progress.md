@@ -1,4 +1,13 @@
 # Progress Log
+## Session: 2026-11-20 - F684 chunked prefill (non-blocking long-prompt admission)
+- **Goal:** remove the second serialization bottleneck on 8001: long prompt batch_add prefill blocks all live slots. Now admission stores the prompt (batch_add_begin) and the event loop processes 512-token chunks interleaved with decode steps.
+- C++ layer: BatchSess gains prompt/prefill_cursor/prefill_backend; `batch_add_begin()` stores prompt without forward pass (active=false); `batch_prefill_chunk(slot, chunk_size)` runs prefill_top1 on next chunk with correct RowPlan (abspos=start+i, hi=base+start+i), returns remaining (0=done→active=true+logits set).
+- Bridge: php_model_batch_add_begin + php_model_batch_prefill_chunk in model.cc + stub declarations.
+- PHP layer: admission calls batch_add_begin + $sprefill[$slot]=1; event loop processes one chunk per iteration before batch_next; $needStep excludes prefilling slots; emission loop `continue` guard skips prefilling slots; F683 allowed-set loop also excludes prefilling slots; error case (pfRem<0) stops slot cleanly.
+- Self-test gate: BATCH-CHUNKED — full prefill 8 tokens vs chunked (chunk=4) 8 tokens, must be identical.
+- Live gate: par-chunked-prefill — long prompt (~600 tokens) in thread + concurrent short stream; asserts long completes valid SSE AND short < 3s.
+- **Status:** code complete, ladder running. NOT YET VERIFIED.
+
 ## Session: 2026-11-20 - F683 batch-path constrained decoding (per-row allowed masking)
 - **Goal:** remove the synchronous constrained-decode bottleneck on 8001: finite json_schema requests now run inside the batch event loop (one token per batch_next step, per-row allowed-set masking) instead of blocking all slots via model_session_start + model_session_next_allowed.
 - C++ layer: `BatchSess.allowed` vector + `batch_set_allowed(slot, ids)` + batch_next sampling branch (greedy argmax restricted to allowed set when non-empty, else normal sample_from). batch_stop/batch_reset clear allowed via BatchSess() reset.

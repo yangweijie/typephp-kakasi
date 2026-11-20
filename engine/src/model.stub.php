@@ -64,6 +64,9 @@ function model_batch_start(int $backend, int $cap): int {}
 // F373: `slots` KV regions (1..8) so one step can carry 3 or 4 conversations.
 function model_batch_start_n(int $backend, int $cap, int $slots): int {}
 function model_batch_add(int $backend, int $slot, string $ids, float $temp, float $top_p, int $seed): int {}
+// F684: chunked prefill — begin stores the prompt without blocking; chunk advances it.
+function model_batch_add_begin(int $backend, int $slot, string $ids, float $temp, float $top_p, int $seed): int {}
+function model_batch_prefill_chunk(int $slot, int $chunk_size): int {}
 function model_batch_stop(int $slot): int {}
 function model_batch_reset(): int {}
 function model_batch_set_allowed(int $slot, string $ids): int {}

@@ -161,6 +161,39 @@ def main():
     check("par-concurrent-schema", bool(schema_result and schema_result[0]) and ttft_ok,
           "schema_ok=%s %s" % (schema_result, ttft_detail))
 
+    # F684: a long prompt (>512 tokens) goes through chunked prefill; it must still produce a
+    # valid stream, and a concurrent short stream must not be blocked by the multi-chunk admission.
+    long_prompt = "The quick brown fox jumps over the lazy dog. " * 60
+    long_result = []
+
+    def long_schema_stream():
+        try:
+            raw = post("/v1/chat/completions",
+                       {"messages": [{"role": "user", "content": long_prompt}],
+                        "max_tokens": 4, "stream": True})
+            evts = sse(raw)
+            long_result.append(len(evts) > 1 and evts[-1] == "[DONE]")
+        except Exception:
+            long_result.append(False)
+
+    lt = threading.Thread(target=long_schema_stream)
+    lt.start()
+    time.sleep(0.2)
+    short_ok = False
+    short_detail = ""
+    try:
+        t0 = time.time()
+        post("/v1/chat/completions",
+             {"messages": [{"role": "user", "content": "Hi."}], "max_tokens": 4, "stream": True})
+        elapsed = time.time() - t0
+        short_ok = elapsed < 3.0
+        short_detail = "elapsed=%.2fs" % elapsed
+    except Exception as e:
+        short_detail = str(e)
+    lt.join()
+    check("par-chunked-prefill", bool(long_result and long_result[0]) and short_ok,
+          "long_ok=%s %s" % (long_result, short_detail))
+
     # F621: the cooperative server takes the same sampling knobs as 8000, so it must refuse the
     # same unimplemented ones instead of streaming under a different distribution.
     sp_ok = False

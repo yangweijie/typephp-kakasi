@@ -61,6 +61,15 @@
 **风险**：`api_constrained_continue` 当前是"给一步预算、返回下一步 allowed"的接口，需确认它能被拆成单步驱动（每轮只调一次、状态在 PHP 侧持久）；若接口不支持单步，需先加 `api_constrain_step` 纯函数。
 **不做**：分块 prefill（长 prompt 阻塞是第二个瓶颈，但改动面更大，留 F684）；多设备 session 分配（需第二设备）。
 
+## F684 规格（2026-11-20）：分块预填充——消除 8001 长 prompt 准入阻塞
+**动机**：`batch_add` 调用 `batch_prefill` → `prefill_top1(全 prompt)`，长 prompt（>512 token）阻塞事件循环数百毫秒，所有活跃 slot 停转。F683 消除了约束解码阻塞，F684 消除预填充阻塞。
+**改动（三层）**：
+1. **C++**：`BatchSess` 加 `prompt/prefill_cursor/prefill_backend`；`batch_add_begin()` 存 prompt 不跑前向（active=false）；`batch_prefill_chunk(slot, chunk_size)` 对下一 chunk 跑 `prefill_top1`（RowPlan abspos=start+i, hi=base+start+i），返回剩余 token 数（0=完成→active=true+logits）。
+2. **桥**：`model_batch_add_begin` + `model_batch_prefill_chunk`。
+3. **PHP**：准入改调 `batch_add_begin` + `$sprefill=1`；事件循环每轮处理一个 chunk（512 token）；`$needStep` 排除 prefilling slot；emission loop `continue` 跳过；F683 allowed-set 也排除；错误（pfRem<0）停 slot。
+**门**：`BATCH-CHUNKED`（chunk=4 vs 全量，8 token 一致）；活体 `par-chunked-prefill`（~600 token prompt + 并发短流 < 3s）。
+**验收**：自检 0 FAIL + BATCH-CHUNKED PASS；SMOKE/PRETTY 197/0；PAR 全 PASS（含新门）；FAIR 0；THRU ≥ 1.5×；PARITY 13/13；check_gates 198/0。
+
 - **Session errors to avoid repeating:** `alloc_bt`/`free_bt` take a **mutable** `BufferType*`; `KVCache::k/v` are `vector<void*>` (per-seg allocators must use `vector<void*>`); tpc `getAbsolutePath` rejects a missing stub — put `buffer.cc` (pure cl TU) in `project.yml sources`, no stub; `SegmentSplit` is anonymous-namespace, assign via `SegmentSplit{}`; while `g_seg_active` the residency path must bypass (`keepable` adds `!g_seg_active`) or a primary-device resident weight is dereferenced by a cross-segment kernel.
 
 > 本计划基于需求文档 `specs/typephp-inference-framework/requirements.md`（v0.2，决策已闭合）。

@@ -55,6 +55,8 @@ int batch_start(int backend, int cap);
 // F373: start the batch layer with `slots` KV regions so a step can carry 3 or 4 rows.
 int batch_start_n(int backend, int cap, int slots);
 int batch_add(int backend, int slot, const std::vector<int>& ids, double temp, double top_p, uint64_t seed);
+int batch_add_begin(int backend, int slot, const std::vector<int>& ids, double temp, double top_p, uint64_t seed);
+int batch_prefill_chunk(int slot, int chunk_size);
 int batch_stop(int slot);
 void batch_reset();
 void batch_set_allowed(int slot, const std::vector<int>& ids);
@@ -207,6 +209,15 @@ php::Int php_model_batch_add(php::Int backend, php::Int slot, php::Str ids,
     const std::string csv(ids.data(), ids.length());
     return php::Int(model::batch_add((int) backend, (int) slot, parse_ids(csv),
                                       (double) temp, (double) top_p, (uint64_t)(int64_t) seed));
+}
+php::Int php_model_batch_add_begin(php::Int backend, php::Int slot, php::Str ids,
+                                    php::Float temp, php::Float top_p, php::Int seed) {
+    const std::string csv(ids.data(), ids.length());
+    return php::Int(model::batch_add_begin((int) backend, (int) slot, parse_ids(csv),
+                                            (double) temp, (double) top_p, (uint64_t)(int64_t) seed));
+}
+php::Int php_model_batch_prefill_chunk(php::Int slot, php::Int chunk_size) {
+    return php::Int(model::batch_prefill_chunk((int) slot, (int) chunk_size));
 }
 php::Int php_model_batch_stop(php::Int slot) {
     return php::Int(model::batch_stop((int) slot));

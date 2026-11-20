@@ -470,6 +470,10 @@ bool g_graphExecTopo = false;
         std::vector<float> logits;
         std::vector<int> allowed; // F683: non-empty ⇒ greedy argmax restricted to this set
         int last = -1;            // last token this session emitted (-1 after eos)
+        // F684: chunked prefill state (prompt stored until fully prefilled, then cleared)
+        std::vector<int> prompt;
+        int prefill_cursor = 0;
+        int prefill_backend = 0;
     } g_bs[kBatchSlotsMax];
     int g_bhalf = 0;              // rows per session region
     int g_bslots = 2;             // regions the batch layer was started with (F373)
@@ -3366,6 +3370,75 @@ int batch_add(int backend, int slot, const std::vector<int>& ids,
         return -1;
     }
     return 0;
+}
+
+// F684: begin a chunked prefill — stores the prompt without running the forward pass.
+int batch_add_begin(int backend, int slot, const std::vector<int>& ids,
+                    double temp, double top_p, uint64_t seed) {
+    g_err.clear();
+    if (slot < 0 || slot >= g_bslots) { g_err = "batch: bad slot"; return -1; }
+    if (g_bhalf <= 0) { g_err = "batch: not started"; return -1; }
+    if (ids.empty()) { g_err = "batch: empty prompt"; return -1; }
+    if ((int) ids.size() > g_bhalf) { g_err = "batch: prompt longer than the slot"; return -1; }
+    BatchSess& b = g_bs[slot];
+    const int base = g_bstage + slot * g_bhalf;
+    b = BatchSess();
+    b.base = base;
+    b.cap = g_bhalf;
+    b.temp = temp;
+    b.top_p = top_p;
+    b.rng = seed;
+    b.prompt = ids;
+    b.prefill_cursor = 0;
+    b.prefill_backend = backend;
+    return 0;
+}
+
+// F684: prefill the next chunk. Returns remaining tokens (0 = done, slot becomes active).
+int batch_prefill_chunk(int slot, int chunk_size) {
+    g_err.clear();
+    if (slot < 0 || slot >= g_bslots) { g_err = "batch: bad slot"; return -1; }
+    BatchSess& b = g_bs[slot];
+    if (b.prompt.empty()) return 0;
+    if (chunk_size <= 0) chunk_size = 512;
+    const int start = b.prefill_cursor;
+    const int total = (int) b.prompt.size();
+    const int end = (start + chunk_size < total) ? start + chunk_size : total;
+    const int len = end - start;
+    const std::vector<int> chunk(b.prompt.begin() + start, b.prompt.begin() + end);
+    g_plan.on = true;
+    g_plan.slot.assign((size_t) len, 0);
+    g_plan.lo.assign((size_t) len, 0);
+    g_plan.hi.assign((size_t) len, 0);
+    g_plan.abspos.assign((size_t) len, 0);
+    for (int i = 0; i < len; ++i) {
+        g_plan.slot[(size_t) i] = b.base + start + i;
+        g_plan.lo[(size_t) i] = b.base;
+        g_plan.hi[(size_t) i] = b.base + start + i;
+        g_plan.abspos[(size_t) i] = start + i;
+    }
+    g_plan.head_rows = 1;
+    sycl::queue* qp = kakasi::queue_for(b.prefill_backend);
+    const bool up = qp && plan_upload(*qp);
+    if (!up) g_err = "batch: plan upload failed";
+    const std::vector<double> r = up ? prefill_top1(b.prefill_backend, chunk, -1, 0) : std::vector<double>();
+    if (qp) plan_free(*qp);
+    g_plan.on = false;
+    g_plan.slot.clear();
+    g_plan.lo.clear();
+    g_plan.hi.clear();
+    g_plan.abspos.clear();
+    if (r.empty()) { g_err = "batch: chunk prefill failed"; return -1; }
+    b.prefill_cursor = end;
+    b.len = end;
+    if (end >= total) {
+        b.active = true;
+        b.logits = g_row_logits.empty() ? g_last_logits : g_row_logits[0];
+        b.prompt.clear();
+        b.prompt.shrink_to_fit();
+        return 0;
+    }
+    return total - end;
 }
 
 // End one conversation; the slot becomes free for the next request.
