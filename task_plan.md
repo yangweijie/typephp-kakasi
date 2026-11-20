@@ -24,10 +24,13 @@
   **Full ladder verified (2026-11-20):** SMOKE/PRETTY 197/0; PAR 24/0; FAIR 0; THRU 1.546×;
   PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0+14/0; BODY-LIMIT PASS; PAR-ABANDON PASS;
   check_gates 198/0. HEAD `884b8a6`.
-  Remaining queue: per-session KV true parallelism (architecture, throughput still shared);
+  Remaining queue: F684 chunked prefill (long prompt batch_add blocks all live slots);
   FR-06 independent draft model (decision); FR-05 plugins (decision+hardware);
   real branch-merge plans / async cross-device overlap (new scheduler capabilities);
   SSD prefix bucketing deepening; multi-card split (needs second device).
+  - **F683 (batch-path constrained decoding) - DONE + verified.** Per-row allowed-set masking
+  in batch_next; finite json_schema runs inside the event loop instead of blocking all slots.
+  BATCH-ALLOWED PASS + par-concurrent-schema PASS. HEAD `47cb76c`.
 
   `model_set_op_split(layer, backend)` moves ONE layer's FFN onto its own device; the hidden state crosses
   devices twice around that op via copy nodes with explicit `srcSeg`/dst (tensor-granular, no longer
@@ -40,6 +43,7 @@
   - FR-02 status: ALL audited items closed - (1) buffer_type contract ✅, (2) N-segment placement with proven N≥3 bit-equivalence ✅, (3) op-granularity compute graph (F677) + backend op dispatch table (F678) ✅, (4) declared-DAG machinery (F679) ✅, (5) graph-driven executor (F680) ✅, (6) op-granular placement + tensor-granular boundary copies (F681) ✅. Beyond the audited spec remain only new scheduler capabilities: real branch-merge plans, async cross-device overlap.
 
 ## F683 规格（2026-11-20）：约束解码进 batch 路径——消除 8001 混合负载序列化瓶颈
+**已闭合 2026-11-20，提交 `47cb76c`。** 全梯绿灯：BATCH-ALLOWED PASS、par-concurrent-schema PASS、SMOKE/PRETTY 197/0、PAR 26/0、FAIR 0、THRU 1.546×、PARITY 13/13、check_gates 198/0。
 **动机**：`api_serve_par` 的 `json_schema` 有限请求走同步 `api_number_bounded_value`/`api_number_value`（调 `model_session_start` + 循环 `model_session_next_allowed`），**阻塞整个事件循环**——所有其他活跃 slot 停转。这是混合负载下最大的吞吐瓶颈。~1.5× scaling 是单设备带宽受限 matvec 的物理上限（不是 bug），但序列化阻塞是可消除的人为瓶颈。
 **架构事实（已核）**：KV 已按会话逻辑隔离（`g_kv` 内连续行区域，RowPlan lo/hi 掩码）；`batch_next` 每步对每个活跃 slot 调 `sample_from(b.logits, b.temp, b.top_p, b.rng, nullptr)`（3413 行）；`session_next_allowed` 的约束逻辑是 greedy argmax restricted to allowed set（3242-3261 行）。
 **改动（三层）**：

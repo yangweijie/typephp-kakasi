@@ -6,7 +6,9 @@
 - PHP layer: `api_constrain_allowed(cand, chosen, d)` pure function (prefix-tree walk → allowed next-token CSV + done flag); per-slot state arrays ($sctype/$scand/$schosen/$sd/$scpn); admission initializes state instead of synchronous api_constrained call; before batch_next computes allowed sets for constrained slots; emission loop accumulates tokens + checks done; completion assembles full SSE response (chat/Anthropic); empty-candidates fallback to plain stream.
 - Self-test gate: `BATCH-ALLOWED: PASS/FAIL` — solo baseline 8 tokens, batch 2 slots same prompt seed 12345, slot1 pinned to first solo token via batch_set_allowed each step; asserts slot1==fixed AND slot0==solo.
 - Live gate: `par-concurrent-schema` in par_smoke.py — schema request in thread + concurrent plain stream; asserts schema returns valid JSON AND plain stream completes < 2s (non-blocking proof).
-- **Status:** code complete, full ladder running in background (build-check f683 → selftest → gate_live f683 → check_gates). NOT YET VERIFIED — do not commit until green.
+- **Status:** VERIFIED AND COMMITTED. HEAD `47cb76c`.
+- **Verification (2026-11-20):** BUILD_OK; selftest 931 lines RUN_EXIT=0 / 0 FAIL / BATCH-ALLOWED PASS; SMOKE/PRETTY 197/0; PAR 26/0 (json-schema PASS + par-concurrent-schema PASS); FAIR 0; THRU 1.546×; PARITY 13/13; CACHE-PERSIST PASS; BODY-LIMIT PASS; check_gates 198/0; SENTINELS_LEFT=0.
+- **Remaining queue:** F684 chunked prefill (long prompt batch_add blocks all live slots); FR-06 independent draft model (decision); FR-05 plugins (decision+hardware); real branch-merge plans / async cross-device overlap; SSD prefix bucketing; multi-card split (needs second device).
 - **Error 1:** tpc fatal "Cannot re-assign `$st` from php::Int to php::Str" at main.php:26875 — the BATCH-ALLOWED self-test used `$st` (int from model_session_next) but `$st` is a string elsewhere in main(). Fixed: renamed to `$f683St`. Ladder restarted.
 - **Error 2:** tpc fatal "Function model_session_next() requires 3 arguments, 1 given" — stub signature is (int backend, float temp, float top_p). Fixed: `model_session_next(0, 0.0, 1.0)`. Ladder restarted (attempt 3).
 
