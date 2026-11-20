@@ -468,6 +468,7 @@ bool g_graphExecTopo = false;
         double top_p = 1.0;       // nucleus size of THIS conversation
         uint64_t rng = 12345;
         std::vector<float> logits;
+        std::vector<int> allowed; // F683: non-empty ⇒ greedy argmax restricted to this set
         int last = -1;            // last token this session emitted (-1 after eos)
     } g_bs[kBatchSlotsMax];
     int g_bhalf = 0;              // rows per session region
@@ -3396,6 +3397,13 @@ void batch_seed(int s, uint64_t seed) {
     g_bs[s].rng = seed;
 }
 
+// F683: set or clear the per-row allowed token set. Non-empty ⇒ greedy argmax restricted to
+// the set (same logic as session_next_allowed); empty ⇒ unconstrained sample_from.
+void batch_set_allowed(int s, const std::vector<int>& ids) {
+    if (s < 0 || s >= g_bslots) return;
+    g_bs[s].allowed = ids;
+}
+
 // One step for every live conversation: each samples its next token from its own logits with
 // its OWN temperature and nucleus, and all of them are fed through a SINGLE forward pass.
 // Returns the number of rows in that pass (0 when nothing is live).
@@ -3410,7 +3418,19 @@ int batch_next(int backend) {
         // A conversation may never write past its own region: the row after the region belongs
         // to the other conversation.
         if (b.len + 1 > b.cap) { b.done = true; b.last = -1; continue; }
-        const int t = sample_from(b.logits, b.temp, b.top_p, b.rng, nullptr);
+        int t;
+        if (!b.allowed.empty()) {
+            t = -1;
+            double bestv = -1e300;
+            for (size_t ai = 0; ai < b.allowed.size(); ++ai) {
+                const int id = b.allowed[ai];
+                if (id < 0 || id >= (int) b.logits.size()) continue;
+                const double v = (double) b.logits[(size_t) id];
+                if (v > bestv) { bestv = v; t = id; }
+            }
+        } else {
+            t = sample_from(b.logits, b.temp, b.top_p, b.rng, nullptr);
+        }
         if (t < 0) { b.done = true; b.last = -1; continue; }
         // The single-session path returns -1 at eos and never appends the eos token, so the
         // batch reports the same -1: the caller must not see an eos id as text.

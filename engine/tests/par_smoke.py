@@ -128,6 +128,39 @@ def main():
         unc_detail = str(e.code)
     check("par-unclaimed-refuse", unc_ok, unc_detail)
 
+    # F683: a finite json_schema request runs inside the batch loop (per-row allowed masking)
+    # and must not block a concurrent plain stream. Start the schema request in a thread, then
+    # measure the plain stream's time-to-first-byte: it must arrive well under 2 s.
+    schema_result = []
+
+    def schema_stream():
+        try:
+            raw = post("/v1/chat/completions", schema)
+            text = "".join(json.loads(d)["choices"][0]["delta"].get("content", "")
+                           for d in sse(raw) if d != "[DONE]")
+            schema_result.append(json.loads(text) == {"city": "New York"})
+        except Exception:
+            schema_result.append(False)
+
+    st = threading.Thread(target=schema_stream)
+    st.start()
+    time.sleep(0.3)
+    ttft_ok = False
+    ttft_detail = ""
+    try:
+        t0 = time.time()
+        plain_raw = post("/v1/chat/completions",
+                         {"messages": [{"role": "user", "content": "Say hello."}],
+                          "max_tokens": 8, "stream": True})
+        ttft = time.time() - t0
+        ttft_ok = ttft < 2.0
+        ttft_detail = "ttft=%.2fs" % ttft
+    except Exception as e:
+        ttft_detail = str(e)
+    st.join()
+    check("par-concurrent-schema", bool(schema_result and schema_result[0]) and ttft_ok,
+          "schema_ok=%s %s" % (schema_result, ttft_detail))
+
     # F621: the cooperative server takes the same sampling knobs as 8000, so it must refuse the
     # same unimplemented ones instead of streaming under a different distribution.
     sp_ok = False

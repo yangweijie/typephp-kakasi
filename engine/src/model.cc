@@ -57,6 +57,7 @@ int batch_start_n(int backend, int cap, int slots);
 int batch_add(int backend, int slot, const std::vector<int>& ids, double temp, double top_p, uint64_t seed);
 int batch_stop(int slot);
 void batch_reset();
+void batch_set_allowed(int slot, const std::vector<int>& ids);
 int batch_next(int backend);
 std::vector<int> batch_tokens();
 int batch_len(int slot);
@@ -212,6 +213,11 @@ php::Int php_model_batch_stop(php::Int slot) {
 }
 php::Int php_model_batch_reset() {
     model::batch_reset();
+    return php::Int(1);
+}
+php::Int php_model_batch_set_allowed(php::Int slot, php::Str ids) {
+    const std::string csv(ids.data(), ids.length());
+    model::batch_set_allowed((int) slot, parse_ids(csv));
     return php::Int(1);
 }
 php::Int php_model_batch_next(php::Int backend) {

@@ -1,10 +1,23 @@
 # Progress Log
+## Session: 2026-11-20 - F683 batch-path constrained decoding (per-row allowed masking)
+- **Goal:** remove the synchronous constrained-decode bottleneck on 8001: finite json_schema requests now run inside the batch event loop (one token per batch_next step, per-row allowed-set masking) instead of blocking all slots via model_session_start + model_session_next_allowed.
+- C++ layer: `BatchSess.allowed` vector + `batch_set_allowed(slot, ids)` + batch_next sampling branch (greedy argmax restricted to allowed set when non-empty, else normal sample_from). batch_stop/batch_reset clear allowed via BatchSess() reset.
+- Bridge: `php_model_batch_set_allowed` in model.cc + declaration in model.stub.php.
+- PHP layer: `api_constrain_allowed(cand, chosen, d)` pure function (prefix-tree walk → allowed next-token CSV + done flag); per-slot state arrays ($sctype/$scand/$schosen/$sd/$scpn); admission initializes state instead of synchronous api_constrained call; before batch_next computes allowed sets for constrained slots; emission loop accumulates tokens + checks done; completion assembles full SSE response (chat/Anthropic); empty-candidates fallback to plain stream.
+- Self-test gate: `BATCH-ALLOWED: PASS/FAIL` — solo baseline 8 tokens, batch 2 slots same prompt seed 12345, slot1 pinned to first solo token via batch_set_allowed each step; asserts slot1==fixed AND slot0==solo.
+- Live gate: `par-concurrent-schema` in par_smoke.py — schema request in thread + concurrent plain stream; asserts schema returns valid JSON AND plain stream completes < 2s (non-blocking proof).
+- **Status:** code complete, full ladder running in background (build-check f683 → selftest → gate_live f683 → check_gates). NOT YET VERIFIED — do not commit until green.
+- **Error 1:** tpc fatal "Cannot re-assign `$st` from php::Int to php::Str" at main.php:26875 — the BATCH-ALLOWED self-test used `$st` (int from model_session_next) but `$st` is a string elsewhere in main(). Fixed: renamed to `$f683St`. Ladder restarted.
+- **Error 2:** tpc fatal "Function model_session_next() requires 3 arguments, 1 given" — stub signature is (int backend, float temp, float top_p). Fixed: `model_session_next(0, 0.0, 1.0)`. Ladder restarted (attempt 3).
+
 ## Session: 2026-11-20 - F682 sharded GGUF loading
 - **Goal:** close the audited "multi-shard GGUF merge" queue item: load a GGUF shard set as one logical model with identical outputs to the single file.
 - `gguf::load_sharded(first)` (any member of the set; prefix/count derived from the name; per-shard load + merge; split.no/count validated when present) + per-tensor shard routing in raw_bytes/range; `gguf::make_two_shards` writes the split (verbatim KV bytes + appended split TLVs + rewritten tensor table + aligned data copy); `validate()` gains per-shard accounting; `Tensor.nd` kept verbatim; bridges `gguf_load_sharded`/`gguf_make_shards`.
 - Gate `SHARD-GATE: PASS` at the selftest tail: split -> sharded load -> generate ids == single-file baseline -> `shards=2 ACCOUNTING=PASS` -> main model restored. Shards live in engine/shards/ (gitignored).
 - Three first-run bugs caught and fixed: shard containers wiped mid-merge (heap corruption), shard-ordinal rfind self-match, and data_start derived from the tensor-byte total instead of the header length (misaligned read-back). All documented in findings.
 - Ladder: build green; selftest RUN_EXIT=0/0 FAIL with SHARD-GATE PASS; gate_live f682 + check_gates running.
+- **Verification complete (2026-11-20):** SMOKE/PRETTY 197/0; PAR 24/0; FAIR 0; THRU 1.546×; PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0 (8000) + 14/0 (8001); BODY-LIMIT PASS (both); PAR-ABANDON PASS; check_gates 198/0. HEAD `884b8a6`. No sentinels. Working tree clean (spec_req.log only).
+- **Remaining queue:** per-session KV true parallelism (architecture, throughput still shared); FR-06 independent draft model (decision, conflicts with single-binary constraint); FR-05 plugins (decision+hardware, not locally verifiable); real branch-merge plans / async cross-device overlap (new scheduler capabilities beyond FR-02 audit); SSD prefix bucketing deepening; multi-card split (needs second device).
 
 ## Session: 2026-11-20 - F681 FR-02 op-granular placement + tensor copies (FR-02 fully closed)
 - **Goal:** close the last audited FR-02 item - arbitrary-tensor-granularity boundary copies - as op-granular device placement with explicitly-declared copy nodes.

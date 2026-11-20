@@ -633,6 +633,41 @@ function api_cache_should_store(int $hit, int $promptN): int
 // position (cold session: "no logits computed"), not because the grammar ran out. Re-prefilling
 // the tokens consumed so far restores exactly the state a successful decode would have left, so
 // one retry per blocked step recovers the rest of the forced literal instead of truncating it.
+
+// F683: pure single-step allowed-set computation for the batch-driven constrained walk.
+// $cand: array of token-id arrays (tokenized candidates); $chosen: ids chosen so far; $d: step.
+// Returns [allowedCsv, done]: done=1 when a candidate is complete or no candidate extends.
+function api_constrain_allowed(array $cand, array $chosen, int $d): array
+{
+    $allowed = "";
+    $done = 0;
+    for ($i = 0; $i < count($cand); $i++) {
+        $match = 1;
+        $lim = $d < count($cand[$i]) ? $d : count($cand[$i]);
+        for ($j = 0; $j < $lim; $j++) {
+            if ($chosen[$j] != $cand[$i][$j]) {
+                $match = 0;
+                break;
+            }
+        }
+        if ($match == 0) {
+            continue;
+        }
+        if (count($cand[$i]) == $d) {
+            $done = 1;
+            continue;
+        }
+        if (count($cand[$i]) < $d + 1) {
+            continue;
+        }
+        $allowed = $allowed == "" ? $cand[$i][$d] : $allowed . "," . $cand[$i][$d];
+    }
+    if ($allowed == "") {
+        $done = 1;
+    }
+    return [$allowed, $done];
+}
+
 function api_constrain_loop(array $vals, int $maxSteps, string $restartIds = "", int $strict = 0): array
 {
     $cand = [];
@@ -15976,6 +16011,12 @@ function api_serve_par(int $port): void
     $shold = ["", "", "", ""];
     $socks = [$srv, $srv, $srv, $srv];
     $toks = [-1, -1, -1, -1];
+    // F683: per-slot constrained-decode state (finite json_schema candidates driven by the batch loop)
+    $sctype = [0, 0, 0, 0];   // 0=plain, 1=finite-schema batch-driven
+    $scand = [[], [], [], []]; // tokenized candidate arrays
+    $schosen = [[], [], [], []]; // tokens chosen so far
+    $sd = [0, 0, 0, 0];       // current step index
+    $scpn = [0, 0, 0, 0];     // prompt token count (for api_gen_text)
     while (true) {
         // F370: the three stamps below split one served iteration into "before the forward pass"
         // (accept, select, request and slot bookkeeping), "the forward pass itself as the host sees
@@ -16331,9 +16372,22 @@ Connection: close
                             }
                             $scOut = "";
                             if (count($schemaCands) > 0) {
-                                // Finite json_schema: one constrained pass, then a normal-looking
-                                // stream. It does not occupy the slot afterwards.
-                                $scOut = api_constrained($ids, $schemaCands, 128, 1);
+                                // F683: finite json_schema driven by the batch loop instead of a
+                                // synchronous constrained pass that blocks all other slots.
+                                $sctype[$slot] = 1;
+                                $scand[$slot] = [];
+                                for ($ci = 0; $ci < count($schemaCands); $ci++) {
+                                    $ct = tok_encode($schemaCands[$ci]);
+                                    if ($ct != "") {
+                                        $scand[$slot][] = explode(",", $ct);
+                                    }
+                                }
+                                $schosen[$slot] = [];
+                                $sd[$slot] = 0;
+                                $scpn[$slot] = $pn;
+                                if (count($scand[$slot]) == 0) {
+                                    $sctype[$slot] = 0;
+                                }
                             } else {
                                 // One-level nested string first (see the non-stream path).
                                 $scArrN = api_response_schema_array_n_string($body);
@@ -16641,6 +16695,18 @@ Connection: close
             }
         }
         if ($needStep == 1) {
+            // F683: set per-row allowed sets for constrained slots before the shared pass.
+            for ($s = 0; $s < $nslots; $s++) {
+                if ($on[$s] == 1 && $sctype[$s] == 1 && $srs[$s] == 0) {
+                    $ca = api_constrain_allowed($scand[$s], $schosen[$s], $sd[$s]);
+                    if ($ca[1] == 1) {
+                        $srs[$s] = 6;
+                        model_batch_stop($s);
+                    } else {
+                        model_batch_set_allowed($s, $ca[0]);
+                    }
+                }
+            }
             $tEng0 = microtime(true);
             $rows = model_batch_next(0);
             $tEng1 = microtime(true);
@@ -16662,6 +16728,15 @@ Connection: close
                     $t = $toks[$s];
                     if ($t < 0) {
                         $srs[$s] = 1;
+                    } else if ($sctype[$s] == 1) {
+                        // F683: constrained slot accumulates tokens silently; no per-token chunk.
+                        $schosen[$s][] = "" . $t;
+                        $sd[$s] = $sd[$s] + 1;
+                        $ssn[$s] = $ssn[$s] + 1;
+                        $ca = api_constrain_allowed($scand[$s], $schosen[$s], $sd[$s]);
+                        if ($ca[1] == 1) {
+                            $srs[$s] = 6;
+                        }
                     } else {
                         $piece = api_text("" . $t);
                         $emit = $piece;
@@ -16711,6 +16786,41 @@ Connection: close
                     }
                 }
                 if ($srs[$s] != 0) {
+                    if ($sctype[$s] == 1) {
+                        // F683: constrained slot completed — emit the full value as one chunk.
+                        $scIds = "";
+                        for ($ci = 0; $ci < count($schosen[$s]); $ci++) {
+                            $scIds = $scIds == "" ? $schosen[$s][$ci] : $scIds . "," . $schosen[$s][$ci];
+                        }
+                        $scText = $scIds == "" ? "" : api_gen_text($scIds, 0);
+                        $scEsc = api_esc($scText);
+                        if ($skind[$s] == 1) {
+                            fwrite($socks[$s], "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{\"content\":\"" . $scEsc . "\"},"
+                                     . "\"finish_reason\":null}]}\n\n");
+                            fwrite($socks[$s], "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\","
+                                     . "\"model\":\"" . $modelId . "\",\"choices\":[{\"index\":0,"
+                                     . "\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n");
+                            fwrite($socks[$s], "data: [DONE]\n\n");
+                        } else {
+                            fwrite($socks[$s], "event: content_block_delta\ndata: {\"type\":\"content_block_delta\","
+                                     . "\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\""
+                                     . $scEsc . "\"}}\n\n");
+                            fwrite($socks[$s], "event: content_block_stop\ndata: "
+                                     . "{\"type\":\"content_block_stop\",\"index\":0}\n\n");
+                            fwrite($socks[$s], "event: message_delta\ndata: {\"type\":\"message_delta\","
+                                     . "\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":"
+                                     . $ssn[$s] . "}}\n\n");
+                            fwrite($socks[$s], "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+                        }
+                        echo "SESSION par schema slot=" . $slotTag[$s] . " tokens=" . $ssn[$s]
+                            . " bytes=" . strlen($scText) . " reason=batch-constrained\n";
+                        model_batch_stop($s);
+                        fclose($socks[$s]);
+                        $on[$s] = 0;
+                        $sctype[$s] = 0;
+                    } else {
                     if ($srs[$s] != 5 && $shold[$s] != "") {
                         if ($skind[$s] == 1) {
                             fwrite($socks[$s],
@@ -16752,6 +16862,7 @@ Connection: close
                     model_batch_stop($s);
                     fclose($socks[$s]);
                     $on[$s] = 0;
+                    }
                 }
             }
         }
@@ -26753,6 +26864,41 @@ function main(): void
                 . "\n  single_c=" . $f373Sc . "\n  batch_c=" . $f373Bc . "\n";
         }
         echo "BATCH-M3-COST:" . $f373Cost . "\n";
+    }
+
+    // F683: per-row allowed-set masking — a constrained slot must not disturb its neighbour.
+    {
+        $f683Prompt = $ids;
+        $f683Solo = "";
+        model_session_start(0, $f683Prompt);
+        for ($i = 0; $i < 8; $i++) {
+            $f683St = model_session_next(0, 0.0, 1.0);
+            if ($f683St < 0) { break; }
+            $f683Solo = $f683Solo == "" ? "" . $f683St : $f683Solo . "," . $f683St;
+        }
+        model_batch_start_n(0, 256, 2);
+        model_batch_add(0, 0, $f683Prompt, 0.0, 1.0, 12345);
+        model_batch_add(0, 1, $f683Prompt, 0.0, 1.0, 12345);
+        // slot 1 constrained to a single fixed token (the first token of the solo baseline)
+        $f683Parts = explode(",", $f683Solo);
+        $f683Fixed = $f683Parts[0];
+        $f683Ok = 1;
+        $f683Plain = "";
+        for ($i = 0; $i < 8; $i++) {
+            model_batch_set_allowed(1, $f683Fixed);
+            $r683 = model_batch_next(0);
+            if ($r683 <= 0) { break; }
+            $tk683 = explode(",", model_batch_tokens());
+            $f683Plain = $f683Plain == "" ? $tk683[0] : $f683Plain . "," . $tk683[0];
+            if ($tk683[1] != $f683Fixed) { $f683Ok = 0; }
+        }
+        model_batch_end();
+        if ($f683Ok == 1 && $f683Plain == $f683Solo) {
+            echo "BATCH-ALLOWED: PASS constrained slot pinned, plain slot == solo baseline\n";
+        } else {
+            echo "BATCH-ALLOWED: FAIL ok=" . $f683Ok . " plain=" . $f683Plain
+                . " solo=" . $f683Solo . " fixed=" . $f683Fixed . "\n";
+        }
     }
 
     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to

@@ -66,6 +66,7 @@ function model_batch_start_n(int $backend, int $cap, int $slots): int {}
 function model_batch_add(int $backend, int $slot, string $ids, float $temp, float $top_p, int $seed): int {}
 function model_batch_stop(int $slot): int {}
 function model_batch_reset(): int {}
+function model_batch_set_allowed(int $slot, string $ids): int {}
 function model_batch_next(int $backend): int {}
 function model_batch_tokens(): string {}
 function model_batch_len(int $slot): int {}

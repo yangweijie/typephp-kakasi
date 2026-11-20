@@ -1,6 +1,6 @@
 # Task Plan: typephp-kakasi — TypePHP 多后端推理框架（Kapitsa 引擎移植）
 
-## Active continuation (2026-11-18 → 11-19)
+## Active continuation (2026-11-18 → 11-20)
 - **F672 follow-up completed:** direct self-test asserts each UTF-8 tokenizer ID is present in `gguf_charset_ids` and round-trips `中文 🙂 🎉\nASCII`; 8000/8001 endpoint gates passed (15/14 cases, both with the new `utf8_zh_enum`/`utf8_plain_response` lines), `check_gates.sh` cited 198 / unresolved 0.
 - **F673 completed:** audited all shipped FR-05 profile fields against PHP application and native setters; corrected `budget_gib` documentation to say resident-weight budget (not KV budget). No missing setter was evidenced; this does not close FR-05 dynamic vendor plugins.
 - **F674 implemented AND verified:** `LayerPlacementPlan` consumed by the real forward loop and `split_state()`; `SCHED-PLAN: PASS` + `orch[split] PASS`; `gate_live.sh f674` = GATE_LIVE_DONE; committed as `9fdb429`. FR-02 stays partial (scheduler seam, not graph scheduler).
@@ -21,8 +21,13 @@
   single-file baseline. Three first-run bugs fixed along the way (loop-wiped shard containers
   = heap corruption; ordinal rfind self-match; data_start from byte total instead of header
   length). Shards in engine/shards/ (gitignored). `selftest_f682` RUN_EXIT=0 / 0 FAIL.
-  Remaining queue after this: per-session KV true parallelism (architecture), draft-model
-  variety / FR-06 (decision), FR-05 plugins (decision+hardware).
+  **Full ladder verified (2026-11-20):** SMOKE/PRETTY 197/0; PAR 24/0; FAIR 0; THRU 1.546×;
+  PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0+14/0; BODY-LIMIT PASS; PAR-ABANDON PASS;
+  check_gates 198/0. HEAD `884b8a6`.
+  Remaining queue: per-session KV true parallelism (architecture, throughput still shared);
+  FR-06 independent draft model (decision); FR-05 plugins (decision+hardware);
+  real branch-merge plans / async cross-device overlap (new scheduler capabilities);
+  SSD prefix bucketing deepening; multi-card split (needs second device).
 
   `model_set_op_split(layer, backend)` moves ONE layer's FFN onto its own device; the hidden state crosses
   devices twice around that op via copy nodes with explicit `srcSeg`/dst (tensor-granular, no longer
@@ -33,6 +38,25 @@
   beyond it remain only genuinely new scheduler capabilities (real branch-merge plans, async overlap).
 
   - FR-02 status: ALL audited items closed - (1) buffer_type contract ✅, (2) N-segment placement with proven N≥3 bit-equivalence ✅, (3) op-granularity compute graph (F677) + backend op dispatch table (F678) ✅, (4) declared-DAG machinery (F679) ✅, (5) graph-driven executor (F680) ✅, (6) op-granular placement + tensor-granular boundary copies (F681) ✅. Beyond the audited spec remain only new scheduler capabilities: real branch-merge plans, async cross-device overlap.
+
+## F683 规格（2026-11-20）：约束解码进 batch 路径——消除 8001 混合负载序列化瓶颈
+**动机**：`api_serve_par` 的 `json_schema` 有限请求走同步 `api_number_bounded_value`/`api_number_value`（调 `model_session_start` + 循环 `model_session_next_allowed`），**阻塞整个事件循环**——所有其他活跃 slot 停转。这是混合负载下最大的吞吐瓶颈。~1.5× scaling 是单设备带宽受限 matvec 的物理上限（不是 bug），但序列化阻塞是可消除的人为瓶颈。
+**架构事实（已核）**：KV 已按会话逻辑隔离（`g_kv` 内连续行区域，RowPlan lo/hi 掩码）；`batch_next` 每步对每个活跃 slot 调 `sample_from(b.logits, b.temp, b.top_p, b.rng, nullptr)`（3413 行）；`session_next_allowed` 的约束逻辑是 greedy argmax restricted to allowed set（3242-3261 行）。
+**改动（三层）**：
+1. **C++ `model_sycl.cc`**：`BatchSess` 加 `std::vector<int> allowed`（空=无约束）；新增 `batch_set_allowed(int slot, const std::vector<int>& ids)`（清空或设置）；`batch_next` 采样步：`b.allowed` 非空时走 greedy-argmax-restricted（镜像 `session_next_allowed` 逻辑，但读 `b.logits` 而非 `g_last_logits`），空时走既有 `sample_from`。`batch_stop`/`batch_reset` 清 `allowed`。
+2. **C++ `model.cc` + `model.stub.php`**：`php_model_batch_set_allowed(int $slot, string $idsCsv): int` 包装 + 声明（ids 用逗号分隔字符串，与既有 `model_batch_add` 的 ids 传参风格一致）。
+3. **PHP `main.php` `api_serve_par`**：把同步约束解码改为 batch 槽位驱动——
+   - 准入：`json_schema` 有限请求不再调 `api_number_bounded_value`，改为 `model_batch_add` 占槽 + 在 PHP 侧维护 per-slot schema 状态（`$slotSchema[$slot]`：当前写入器状态、已发射文本、allowed-set 计算器）；
+   - 每轮循环：对每个约束 slot 调 `api_constrained_continue` 的**单步**版本取 allowed set → `model_batch_set_allowed($slot, $csv)` → `model_batch_next` → 读 token → 更新 schema 状态；
+   - 完成：值完整时写响应、`model_batch_stop`、清 `$slotSchema[$slot]`；
+   - 既有 `api_constrain_loop`/`api_constrained_continue` 的 schema 状态机不变，只是驱动方式从同步循环改为事件循环单步。
+**门**：
+- 自检 `BATCH-ALLOWED`：`model_batch_start_n(0,256,2)` + slot0 无约束 + slot1 设 allowed={某固定 token}，8 步后 slot1 每步 token ∈ allowed 且 slot0 token == 无约束基线（证明 per-row 掩码不影响其他 slot）。
+- 活体 `par-concurrent-schema`：8001 同时发一条长纯文本流 + 一条 `json_schema` 有限请求；断言纯文本流的 TTFT < 2s（不被约束解码阻塞）且 schema 请求返回合法 JSON。修前对照：同步路径下纯文本流 TTFT ≈ schema 解码总时长。
+**验收**：自检 0 FAIL + BATCH-ALLOWED PASS；四 harness CHECK_EXIT=0；SMOKE/PRETTY 197/0 不劣化；par/fair 0；`par-concurrent-schema` PASS；check_gates 198/0（或新门后 199/0）。
+**风险**：`api_constrained_continue` 当前是"给一步预算、返回下一步 allowed"的接口，需确认它能被拆成单步驱动（每轮只调一次、状态在 PHP 侧持久）；若接口不支持单步，需先加 `api_constrain_step` 纯函数。
+**不做**：分块 prefill（长 prompt 阻塞是第二个瓶颈，但改动面更大，留 F684）；多设备 session 分配（需第二设备）。
+
 - **Session errors to avoid repeating:** `alloc_bt`/`free_bt` take a **mutable** `BufferType*`; `KVCache::k/v` are `vector<void*>` (per-seg allocators must use `vector<void*>`); tpc `getAbsolutePath` rejects a missing stub — put `buffer.cc` (pure cl TU) in `project.yml sources`, no stub; `SegmentSplit` is anonymous-namespace, assign via `SegmentSplit{}`; while `g_seg_active` the residency path must bypass (`keepable` adds `!g_seg_active`) or a primary-device resident weight is dereferenced by a cross-segment kernel.
 
 > 本计划基于需求文档 `specs/typephp-inference-framework/requirements.md`（v0.2，决策已闭合）。
