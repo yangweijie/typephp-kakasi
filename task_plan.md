@@ -24,9 +24,13 @@
   **Full ladder verified (2026-11-20):** SMOKE/PRETTY 197/0; PAR 24/0; FAIR 0; THRU 1.546×;
   PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0+14/0; BODY-LIMIT PASS; PAR-ABANDON PASS;
   check_gates 198/0. HEAD `884b8a6`.
-  Remaining queue: FR-06.2 as a SEPARATE second GGUF draft model (needs forward-pass handle refactor + a smaller draft model not available locally; layer-truncated self-draft covers the "independent drafter" capability); FR-05 plugins (decision+hardware);
-  real branch-merge plans / async cross-device overlap (Qwen2 sequential, no parallel branches);
+  Remaining queue: FR-06.2 as a SEPARATE second GGUF draft model (needs forward-pass handle refactor + a smaller draft model not available locally; layer-truncated self-draft covers the "independent drafter" capability); FR-05 plugins (decision+hardware); async cross-device overlap (new scheduler timing, not topology);
   multi-card split (needs second device).
+  - **F687 (MoE branch-merge op on real weights) - DONE + verified.** `gguf::side_load` reads a
+  second GGUF independently; `moe_ffn` runs a block-40 MoE (router -> top-8 of 256 experts as
+  parallel branches -> weighted merge + shared expert) on the REAL Qwen3.5-MoE tensors, device
+  result vs independent host merge. MOE-MERGE PASS (k=8 distinct, mag=20.16, maxdiff=0). This is
+  the real parallel-branch plan the F679/F680 seam lacked on a sequential model. HEAD `de729a3`.
   - **F686 (layer-truncated self-draft) - DONE + verified.** `spec_layerskip_generate`: same
   weights through first K blocks draft, full model verifies in one pass; bit-identical to greedy.
   SPEC-LAYERSKIP PASS (K=23/24 → 100% accept, 607ms/24tok; K=12/24 → 0 accept, honest cost).
