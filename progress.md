@@ -1,4 +1,12 @@
 # Progress Log
+## Session: 2026-11-20 - F686 layer-truncated self-draft (FR-06.2 independent drafter)
+- **Goal:** implement the "independent draft model" as a layer-truncated predictor: the drafter is the SAME weights through only the first K blocks (shares weights, single binary, no second model), the full model verifies the draft chain in one pass. Chosen over a separate second GGUF (would need global-state forward-pass refactor + a smaller draft model we don't have locally) and over same-model self-seed (not independent).
+- C++ layer: `g_draft_layers`/`g_draft_mode` globals; exec layer loop honors g_draft_mode (runs only K blocks); `spec_layerskip_generate(backend, ids, n_new, K, depth)` — chain[0]=full-model top token (free), chain[1..]=truncated-model greedies, verify via `prefill_tops_tree` (chain mask), emit longest accepted prefix, bit-identical to greedy.
+- Bridge + stub: model_set_draft_layers / model_spec_layerskip.
+- Self-test gate: SPEC-LAYERSKIP — K=L/2 and K=L-1, both must equal greedy $gRef over 24 tokens; reports drafts/accepted/verifies.
+- **Status:** code complete, ladder running. NOT YET VERIFIED.
+- **Error 1:** tpc "Cannot assign value to variable $kk of type php::Int with type php::Var" — the gate reused `$kk` (already Int from SPEC-SWEEP). Fixed: unrolled the 2-K loop into explicit $f686a/$f686b calls. Ladder restarted.
+
 ## Session: 2026-11-20 - F685 SSD prefix cache for the batch path (8001)
 - **Goal:** bring the 3.3× cold→warm prefix cache speedup to the 8001 cooperative server, which previously had NO cache integration (the old comment said "cache restores into rows [0,n) which is the staging area").
 - C++ layer: `cache_store_batch(backend, slot, ids, path)` reads KV from slot's region (base offset); `cache_prefill_batch(backend, slot, ids, path, temp, top_p, seed)` loads cached prefix into slot's KV rows, prefills suffix with RowPlan, sets active+logits. Returns hit count (0=miss, -1=error).

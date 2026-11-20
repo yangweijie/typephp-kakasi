@@ -428,6 +428,10 @@ bool g_graphExecTopo = false;
     int g_spec_fix = 1;               // F315 control: 0 disables the depth-position + compaction
                                       // repair inside the SAME build, so the defect can be shown
                                       // behaviourally instead of argued.
+    // F686: layer-truncated self-draft. g_draft_layers = K (0 = off); g_draft_mode gates the
+    // truncation so ordinary passes always run all L blocks.
+    int g_draft_layers = 0;
+    int g_draft_mode = 0;
     // Device-side tree mask for the current verify pass; nullptr means plain causal attention.
     // Kept as module state so prefill_top1's external signature (and its mangled name) never
     // changes - the same reason g_head_rows is a global.
@@ -2929,7 +2933,7 @@ std::vector<double> prefill_top1(int backend, const std::vector<int>& tokens, in
                 return {};
             }
         }
-        for (int l = 0; l < L; ++l) {
+        for (int l = 0; l < ((g_draft_mode && g_draft_layers > 0 && g_draft_layers < L) ? g_draft_layers : L); ++l) {
             const bool on2 = splitActive && placement.backend_for(l) == placement.secondary_backend;
             if (on2 && placement.handoff_before(l)) {
                 const size_t hb = (size_t) T * (size_t) D * sizeof(float);
@@ -4151,6 +4155,104 @@ std::vector<int> spec_tree_generate(int backend, std::vector<int> ids, int n_new
     return out;
 }
 
+// F686: layer-truncated self-draft. The drafter is the SAME weights through only the first
+// `draft_layers` transformer blocks; the full model verifies the draft chain in ONE pass, so the
+// emitted ids are bit-identical to plain greedy (the verify's argmax IS the greedy token). The
+// first chain node is the full model's own top token (free), the rest are the truncated model's
+// guesses. On a plain (non-split) engine only; a split falls back to plain greedy.
+std::vector<int> spec_layerskip_generate(int backend, std::vector<int> ids, int n_new,
+                                         int draft_layers, int depth) {
+    std::vector<int> out = ids;
+    g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
+    g_spec_alt = 0;
+    g_spec_bmax = 0;
+    g_spec_on = 1;
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    const int eos = eos_id();
+    g_head_rows = 1;
+    if (!gguf::loaded() || L <= 0) return {};
+    const int K = (draft_layers > 0 && draft_layers < L) ? draft_layers : 0;
+    std::vector<double> r = prefill_top1(backend, out, -1, 0);
+    if (r.empty()) return {};
+    int pos = (int) out.size();
+    int produced = 0;
+    int ref = (int) r[0];
+    // No usable truncation (K==0), a split/graph engine, or depth<2: plain greedy, no drafting.
+    const bool canDraft = K > 0 && depth >= 2 && g_split_layer < 0 && !g_seg_active && g_graph.nodes.empty();
+    if (!canDraft) {
+        while (produced < n_new) {
+            out.push_back(ref);
+            ++produced;
+            if (eos > 0 && ref == eos) break;
+            r = prefill_top1(backend, std::vector<int>{ref}, -1, pos);
+            ++pos;
+            if (r.empty()) break;
+            ref = (int) r[0];
+        }
+        g_spec_on = 0;
+        return out;
+    }
+    while (produced < n_new) {
+        int D = depth;
+        const int room = g_kv.cap - pos;
+        if (room < 2) D = 1;
+        if (D > room) D = room;
+        if (D > 32) D = 32;
+        std::vector<int> chain;
+        chain.push_back(ref);           // depth 0: the full model's own top token
+        int dtok = ref;
+        for (int i = 1; i < D; ++i) {
+            g_draft_mode = 1;
+            g_draft_layers = K;
+            g_head_rows = 1;
+            std::vector<double> dr = prefill_top1(backend, std::vector<int>{dtok}, -1, pos + i - 1);
+            g_draft_mode = 0;
+            if (dr.empty()) break;
+            dtok = (int) dr[0];
+            chain.push_back(dtok);
+        }
+        if ((int) chain.size() < 2) {
+            out.push_back(ref);
+            ++produced;
+            if (eos > 0 && ref == eos) break;
+            r = prefill_top1(backend, std::vector<int>{ref}, -1, pos);
+            ++pos;
+            if (r.empty()) break;
+            ref = (int) r[0];
+            continue;
+        }
+        // Verify the chain in one pass: node i attends to nodes 0..i (prefix rows always visible).
+        const int cn = (int) chain.size();
+        std::vector<uint32_t> mask((size_t) cn, 0);
+        uint32_t bits = 0;
+        for (int i = 0; i < cn; ++i) { bits |= (1u << (uint32_t) i); mask[(size_t) i] = bits; }
+        ++g_spec_verified;
+        g_spec_drafts += cn - 1;
+        if (cn > g_spec_bmax) g_spec_bmax = cn;
+        std::vector<int> tops = prefill_tops_tree(backend, chain, pos, mask);
+        if ((int) tops.size() != cn) break;
+        int acc = 1;                    // chain[0] == ref is the greedy token by construction
+        for (int i = 1; i < cn; ++i) {
+            if (chain[(size_t) i] != tops[(size_t) (i - 1)]) break;
+            ++acc;
+        }
+        int take = std::min(acc, n_new - produced);
+        if (eos > 0) {
+            for (int i = 0; i < take; ++i) {
+                if (chain[(size_t) i] == eos) { take = i + 1; break; }
+            }
+        }
+        for (int i = 0; i < take; ++i) out.push_back(chain[(size_t) i]);
+        produced += take;
+        pos += acc;
+        g_spec_accepted += acc - 1;
+        if (produced >= n_new) break;
+        if (eos > 0 && out.back() == eos) break;
+        ref = tops[(size_t) (acc - 1)];   // greedy token after the accepted prefix (bonus when acc==cn)
+    }
+    return out;
+}
+
 // FR-06 with a SAMPLING verifier. Under the greedy argmax test a tree can accept at most one
 // branch, because the argmax along an accepted prefix is unique (F273) - branch diversity only
 // pays once acceptance is probabilistic. At each node the model's OWN logits row gives p(draft)
@@ -4467,6 +4569,9 @@ void set_spec_multiwin(int on) { g_spec_multiwin = on ? 1 : 0; }
 int spec_multiwin_on() { return g_spec_multiwin; }
 void set_spec_selfseed(int on) { g_spec_selfseed = on ? 1 : 0; }
 int spec_selfseed_on() { return g_spec_selfseed; }
+// F686: layer-truncated self-draft layer count (0 = off). Clamped to [0, L-1] at call time.
+void set_draft_layers(int k) { g_draft_layers = (k > 0) ? k : 0; }
+int draft_layers() { return g_draft_layers; }
 
 // F392: the drafter's lookup window in use, so a server can log it at startup. The window is a
 // behaviour knob whose failure mode is silent - a wrong value looks like "the drafter had

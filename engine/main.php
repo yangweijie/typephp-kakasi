@@ -21389,6 +21389,34 @@ function main(): void
     }
     echo "SPEC-TREE-SWEEP\n" . $tsweep;
 
+    // F686: layer-truncated self-draft — the draft predictor is the same weights through only the
+    // first K blocks; the full model verifies the chain in one pass. Output MUST be bit-identical
+    // to greedy (the verify's argmax IS the greedy token); the counters show the draft was used.
+    $f686L = (int) gguf_meta_num("qwen2.block_count");
+    $f686Half = $f686L > 2 ? (int) ($f686L / 2) : 1;
+    $f686Near = $f686L > 1 ? $f686L - 1 : 1;
+    $f686All = 1;
+    $f686Rep = "";
+    $t686a = microtime(true);
+    $g686a = model_spec_layerskip(0, $specIds, 24, $f686Half, 4);
+    $ms686a = (microtime(true) - $t686a) * 1000.0;
+    if ($g686a != $gRef) { $f686All = 0; }
+    $f686Rep = $f686Rep . "  K=" . $f686Half . "/" . $f686L . " " . $ms686a . " ms "
+        . model_spec_stats() . " " . ($g686a == $gRef ? "ok" : "DIFF") . "\n";
+    $t686b = microtime(true);
+    $g686b = model_spec_layerskip(0, $specIds, 24, $f686Near, 4);
+    $ms686b = (microtime(true) - $t686b) * 1000.0;
+    if ($g686b != $gRef) { $f686All = 0; }
+    $f686Rep = $f686Rep . "  K=" . $f686Near . "/" . $f686L . " " . $ms686b . " ms "
+        . model_spec_stats() . " " . ($g686b == $gRef ? "ok" : "DIFF") . "\n";
+    echo "SPEC-LAYERSKIP\n" . $f686Rep;
+    if ($f686All == 1) {
+        echo "SPEC-LAYERSKIP: PASS (truncated draft K=" . $f686Half . "/" . $f686Near
+            . " of " . $f686L . " layers, ids identical to greedy)\n";
+    } else {
+        echo "SPEC-LAYERSKIP: FAIL (truncated-draft ids diverged from greedy)\n";
+    }
+
     // SPEC-TREE-SAMPLE (F307): the same tree, verified by SAMPLING. Greedy verification can accept
     // only one branch (F273), so this is the first version where more than one bin can pay. Three
     // gates in one: temp=0 must reproduce the greedy tree token for token (regression guard), a

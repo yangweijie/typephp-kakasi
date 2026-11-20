@@ -80,6 +80,9 @@ function model_spec_fix(int $on): int {}
 function model_spec_freq(int $on): int {}
 function model_spec_multiwin(int $on): int {}
 function model_spec_selfseed(int $on): int {}
+// F686: layer-truncated self-draft — K layers draft, full model verifies (0 = off).
+function model_set_draft_layers(int $k): int {}
+function model_spec_layerskip(int $backend, string $tokens, int $n_new, int $draft_layers, int $depth): string {}
 function model_spec_tree(int $backend, string $tokens, int $n_new, int $bins, int $depth): string {}
 function model_spec_tree_sample(int $backend, string $tokens, int $n_new, int $bins, int $depth, float $temp, int $seed): string {}
 function model_cache_store(int $backend, string $tokens, string $path): int {}

@@ -79,6 +79,9 @@ void set_spec_multiwin(int on);
 int spec_multiwin_on();
 void set_spec_selfseed(int on);
 int spec_selfseed_on();
+void set_draft_layers(int k);
+int draft_layers();
+std::vector<int> spec_layerskip_generate(int backend, std::vector<int> ids, int n_new, int draft_layers, int depth);
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
@@ -283,6 +286,22 @@ php::Int php_model_spec_multiwin(php::Int on) {
 php::Int php_model_spec_selfseed(php::Int on) {
     model::set_spec_selfseed((int) on);
     return php::Int(model::spec_selfseed_on());
+}
+php::Int php_model_set_draft_layers(php::Int k) {
+    model::set_draft_layers((int) k);
+    return php::Int(model::draft_layers());
+}
+php::Str php_model_spec_layerskip(php::Int backend, php::Str tokens, php::Int n_new,
+                                  php::Int draft_layers, php::Int depth) {
+    const std::string csv(tokens.data(), tokens.length());
+    const std::vector<int> out = model::spec_layerskip_generate(
+        (int) backend, parse_ids(csv), (int) n_new, (int) draft_layers, (int) depth);
+    std::string s;
+    for (size_t i = 0; i < out.size(); ++i) {
+        if (i) s += ",";
+        s += std::to_string(out[i]);
+    }
+    return php::Str(s);
 }
 php::Str php_model_spec_tree(php::Int backend, php::Str tokens, php::Int n_new, php::Int bins,
                              php::Int depth) {
