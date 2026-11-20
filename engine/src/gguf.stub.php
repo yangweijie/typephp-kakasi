@@ -3,6 +3,10 @@
 
 function gguf_load(string $path): bool {}
 
+function gguf_load_sharded(string $first): bool {}
+
+function gguf_make_shards(string $src, string $dir): string {}
+
 function gguf_error(): string {}
 
 function gguf_validate(): string {}

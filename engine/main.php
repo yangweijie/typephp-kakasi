@@ -26785,4 +26785,37 @@ function main(): void
     }
     echo "INT8-REPRO requant_b0=" . $self0 . " requant_b1=" . $self1
         . " cross_b0_b1=" . $cross . "\n";
+
+    // F682: multi-shard GGUF merged loading. The model is split into a 2-shard set
+    // (<name>-00001-of-00002.gguf / -00002-of-00002.gguf) under engine/shards/, then
+    // loaded back through the shard-merging loader: the tensor directory is the
+    // concatenation of both shards' directories, each tensor's bytes route to its
+    // owning shard file, and the accounting oracle applies per shard. The loaded
+    // sharded model must produce the SAME ids as the single-file baseline - and the
+    // main single-file model is reloaded afterwards so nothing downstream changes.
+    $shDir = "shards";
+    if (!is_dir($shDir)) {
+        mkdir($shDir, 0777, true);
+    }
+    $nT0 = gguf_tensor_count();
+    $shFirst = gguf_make_shards($path, $shDir);
+    $shOk = ($shFirst != "");
+    $shGen = "";
+    $shVal = "";
+    if ($shOk && !gguf_load_sharded($shFirst)) {
+        $shOk = false;
+    }
+    if ($shOk) {
+        $shVal = gguf_validate();
+        $shGen = model_generate(0, $ids, 6);
+        gguf_load($path);   // restore the single-file model for anything that follows
+    }
+    if ($shOk && $shGen == $base && strpos($shVal, "shards=2") !== false
+        && strpos($shVal, "ACCOUNTING=PASS") !== false && gguf_tensor_count() == $nT0) {
+        echo "  SHARD-GATE: PASS sharded 2-shard load produced identical ids; {$shVal}\n";
+    } else {
+        echo "  SHARD-GATE: FAIL first={$shFirst} gen==base:" . ($shGen == $base ? 1 : 0)
+            . " val={$shVal} err=" . gguf_error() . "\n";
+        $ofail++;
+    }
 }

@@ -1,4 +1,11 @@
 # Progress Log
+## Session: 2026-11-20 - F682 sharded GGUF loading
+- **Goal:** close the audited "multi-shard GGUF merge" queue item: load a GGUF shard set as one logical model with identical outputs to the single file.
+- `gguf::load_sharded(first)` (any member of the set; prefix/count derived from the name; per-shard load + merge; split.no/count validated when present) + per-tensor shard routing in raw_bytes/range; `gguf::make_two_shards` writes the split (verbatim KV bytes + appended split TLVs + rewritten tensor table + aligned data copy); `validate()` gains per-shard accounting; `Tensor.nd` kept verbatim; bridges `gguf_load_sharded`/`gguf_make_shards`.
+- Gate `SHARD-GATE: PASS` at the selftest tail: split -> sharded load -> generate ids == single-file baseline -> `shards=2 ACCOUNTING=PASS` -> main model restored. Shards live in engine/shards/ (gitignored).
+- Three first-run bugs caught and fixed: shard containers wiped mid-merge (heap corruption), shard-ordinal rfind self-match, and data_start derived from the tensor-byte total instead of the header length (misaligned read-back). All documented in findings.
+- Ladder: build green; selftest RUN_EXIT=0/0 FAIL with SHARD-GATE PASS; gate_live f682 + check_gates running.
+
 ## Session: 2026-11-20 - F681 FR-02 op-granular placement + tensor copies (FR-02 fully closed)
 - **Goal:** close the last audited FR-02 item - arbitrary-tensor-granularity boundary copies - as op-granular device placement with explicitly-declared copy nodes.
 - `SegmentSplit.ffnSegLayer/ffnSeg` (override segment may own zero layers); free function `segOfOp()` shared by build/check/setup; `GraphNode.srcSeg` on copy nodes; `build()` emits copies at op granularity; the driver moves `srcSeg -> segment` and the handback generalizes to `stateSeg`; setup skips KV for segments owning no ATTN op.

@@ -76,6 +76,13 @@
 - Segments keep their own in-order queues (in-order + one drain per layer), so no async fan-out is introduced - only the walk shape moved from hardcoded to declared.
 - `g_graphExecTopo` flag + `model_graph_exec_topo()` bridge name the executor of the LAST generic pass; the `GRAPH-DRIVE: PASS` gate drives a 3-step generic pass under the armed 3-seg graph and asserts the flag is set AND the ids read as the token-prefix of the unsplit 6-step baseline (the walk is execution-neutral, proven by output, not just by the flag).
 
+## F682 · 多分片 GGUF 合并加载（2026-11-20）
+- 审计队列的"多分片 GGUF 合并"落地：`gguf::load_sharded(first)` 接受分片集中**任意一片**（`<prefix>-0000i-of-0000N.gguf`），从文件名推导 prefix/序号/总数，逐片用现有 `load()` 解析器装载并备份，合并张量目录（张量按分片顺序拼接、每张量记录所属分片）与元数据（取第一片；`split.no`/`split.count` 若存在则与文件名校验）。`raw_bytes`/`raw_bytes_range` 按张量路由到所属分片文件的 `data_start + off`。`gguf::make_two_shards(src, dir)` 写出 2 分片拆分（KV TLV 字节级复制 + 追加 split.no/count + 张量表重写 + 数据按对齐 off 拷贝）。
+- `validate()` 分片感知：每片核算"最后张量末尾 == 文件末尾"（片内张量间对齐 pad 合法）；单文件路径保持原 sum==avail 判据。`Tensor` 保留声明秩 `nd`（重写分片头时逐字回写）。
+- 门 `SHARD-GATE: PASS`（自检尾部）：拆分→合并加载→`model_generate` ids 与单文件基线一致→`gguf_validate` 报 `shards=2 ACCOUNTING=PASS`→重新 `gguf_load($path)` 恢复主模型。分片产物在 `engine/shards/`（gitignore）。
+- 三个当场抓到的缺陷（都是首次运行暴露的写入器/加载器 bug，不是回归）：① `load_sharded` 循环内对会被 `load()` 清空的全局容器 push（两片时第一片路径被第二次 load 抹掉 → 合并后张量越界 → 堆损坏 0xC0000374）——分片路径/偏移改局部收集后一次性装回；② 分片名序号解析 `rfind('-', of)` 命中 `-of-` 自身的连字符（应从 `of-1` 起查）；③ **写分片数据时 `data_start` 误用张量字节累计值而非头部实际长度对齐**——声明的 off 与流式写出位置差出整个数据段，读回落在空洞里（ids 错 + 核算 FAIL）。修复后写数据时按声明 off 补 pad（`tellp` 对位），核算改 per-shard `maxend == span`。
+- 记法：写文件格式的偏移量必须从**实际写出的头部边界**推导，不能从语义上的累计值推导；加载器复用时（load 在循环里）凡其会清空的全局容器，一律先局部收集再统一落位。
+
 ## F681 · FR-02 op-granular placement + tensor-granular boundary copies (2026-11-20)
 - The last open FR-02 item from the F675 plan - "arbitrary-tensor-granularity boundary copies" - lands as
 OP-granular device placement: `model_set_op_split(layer, backend)` moves ONE layer's FFN op onto its own

@@ -30,6 +30,15 @@ const std::vector<std::string>* arr_ptr(const std::string& key);
 // Index of a tensor by exact name, or -1.
 int find_tensor(const std::string& name);
 
+// F682: sharded loading. load_sharded takes ANY member of a GGUF shard set
+// (<prefix>-0000i-of-0000N.gguf), merges every shard's tensor directory into one
+// logical model, and routes raw_bytes per tensor to its owning shard.
+bool load_sharded(const std::string& first);
+// Writes a 2-shard split of src into dir (idempotent rewrite); returns true and leaves
+// the FIRST shard's full path in error() as the message on success (the PHP bridge uses
+// it as the return value).
+bool make_two_shards(const std::string& src, const std::string& dir);
+
 // Reads the tensor's raw quantized bytes from disk (data_start + offset).
 bool raw_bytes(int index, std::vector<uint8_t>& out);
 

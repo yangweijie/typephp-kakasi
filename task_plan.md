@@ -14,6 +14,16 @@
   - **F679 (DAG topology seam) - DONE + verified.** `GraphNode` gains explicit `deps` edges; `build()` emits the predecessor chain (N-1 edges); `ForwardGraph` gains `edge_count()` + Kahn `topo_order()` + `dag_conforms()`; both executing loops verify the declared walk is a valid topological order before the layer loop (named g_err). Report prints `edges=… topo=ok`; the fast-path and 3-seg generic graphs read `edges=51 topo=ok` / `edges=52 topo=ok`. `selftest_f679` RUN_EXIT=0 / 0 FAIL / ORCH PASS. The remaining deeper item is now the EXECUTOR half of non-sequential topology: re-emit edges with real branch merges and let the loop consume `topo_order()`; arbitrary-tensor boundary copies stay open as well.
   - **F680 (graph-driven executor) - DONE + verified.** The generic N-segment pass is now DRIVEN by the declared graph: a single dispatcher over `topo_order()` fires BOUNDARY_COPY nodes as host handoffs and dispatches ATTN/FFN ops onto their owning segments - the walk is declared, not hardcoded, and the driver stays bit-identical for the current linear plan (orch[split3] unchanged). `g_graphExecTopo` flag + `model_graph_exec_topo()` bridge; `GRAPH-DRIVE: PASS` gate proves the last generic pass ran through the declared walk AND its ids are a token-prefix of the unsplit baseline. `selftest_f680` RUN_EXIT=0 / 0 FAIL / ORCH PASS. The remaining deeper item is now purely the PLAN half: a real non-sequential plan (branch merges, cross-segment op moves) - the driver that consumes it already exists.
   - **F681 (op-granular placement + tensor-granular copies) - DONE + verified.**
+  - **F682 (multi-shard GGUF merge) - DONE + verified.** `gguf::load_sharded` accepts ANY
+  member of a `<prefix>-0000i-of-0000N.gguf` set and merges the tensor directories with
+  per-tensor shard routing; `gguf::make_two_shards` writes the split; `validate()` accounting
+  is per-shard; `SHARD-GATE: PASS` proves the sharded model generates ids identical to the
+  single-file baseline. Three first-run bugs fixed along the way (loop-wiped shard containers
+  = heap corruption; ordinal rfind self-match; data_start from byte total instead of header
+  length). Shards in engine/shards/ (gitignored). `selftest_f682` RUN_EXIT=0 / 0 FAIL.
+  Remaining queue after this: per-session KV true parallelism (architecture), draft-model
+  variety / FR-06 (decision), FR-05 plugins (decision+hardware).
+
   `model_set_op_split(layer, backend)` moves ONE layer's FFN onto its own device; the hidden state crosses
   devices twice around that op via copy nodes with explicit `srcSeg`/dst (tensor-granular, no longer
   implied by segment order). `SegmentSplit.ffnSegLayer/ffnSeg`, shared `segOfOp()`, per-op `build()`
