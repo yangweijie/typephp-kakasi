@@ -24,9 +24,13 @@
   **Full ladder verified (2026-11-20):** SMOKE/PRETTY 197/0; PAR 24/0; FAIR 0; THRU 1.546×;
   PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0+14/0; BODY-LIMIT PASS; PAR-ABANDON PASS;
   check_gates 198/0. HEAD `884b8a6`.
-  Remaining queue: FR-06 independent draft model (decision); FR-05 plugins (decision+hardware);
+  Remaining queue: FR-06.2 as a SEPARATE second GGUF draft model (needs forward-pass handle refactor + a smaller draft model not available locally; layer-truncated self-draft covers the "independent drafter" capability); FR-05 plugins (decision+hardware);
   real branch-merge plans / async cross-device overlap (Qwen2 sequential, no parallel branches);
   multi-card split (needs second device).
+  - **F686 (layer-truncated self-draft) - DONE + verified.** `spec_layerskip_generate`: same
+  weights through first K blocks draft, full model verifies in one pass; bit-identical to greedy.
+  SPEC-LAYERSKIP PASS (K=23/24 → 100% accept, 607ms/24tok; K=12/24 → 0 accept, honest cost).
+  HEAD `0d0387b`.
   - **F683 (batch-path constrained decoding) - DONE + verified.** Per-row allowed-set masking
   in batch_next; finite json_schema runs inside the event loop instead of blocking all slots.
   BATCH-ALLOWED PASS + par-concurrent-schema PASS. HEAD `47cb76c`.

@@ -4,8 +4,9 @@
 - C++ layer: `g_draft_layers`/`g_draft_mode` globals; exec layer loop honors g_draft_mode (runs only K blocks); `spec_layerskip_generate(backend, ids, n_new, K, depth)` — chain[0]=full-model top token (free), chain[1..]=truncated-model greedies, verify via `prefill_tops_tree` (chain mask), emit longest accepted prefix, bit-identical to greedy.
 - Bridge + stub: model_set_draft_layers / model_spec_layerskip.
 - Self-test gate: SPEC-LAYERSKIP — K=L/2 and K=L-1, both must equal greedy $gRef over 24 tokens; reports drafts/accepted/verifies.
-- **Status:** code complete, ladder running. NOT YET VERIFIED.
-- **Error 1:** tpc "Cannot assign value to variable $kk of type php::Int with type php::Var" — the gate reused `$kk` (already Int from SPEC-SWEEP). Fixed: unrolled the 2-K loop into explicit $f686a/$f686b calls. Ladder restarted.
+- **Status:** VERIFIED AND COMMITTED. HEAD `0d0387b`.
+- **Verification (2026-11-20):** BUILD_OK; selftest 937 lines RUN_EXIT=0 / 0 FAIL / **SPEC-LAYERSKIP PASS**; SMOKE/PRETTY 197/0; PAR PASS; FAIR 0; THRU 1.344×(ladder) / clean re-runs 1.459×+1.397× (noise band; normal decode path unchanged); PARITY 13/13; CACHE-PERSIST PASS; check_gates 198/0; SENTINELS_LEFT=0.
+- **Result:** K=23/24 accepts 18/18 drafts (100%, 607ms/24 tok) — near-full truncated draft is bit-identical and fast; K=12/24 accepts 0 (over-truncation honestly slower). Mechanism proven; a layer-close draft is a real independent predictor sharing weights.
 
 ## Session: 2026-11-20 - F685 SSD prefix cache for the batch path (8001)
 - **Goal:** bring the 3.3× cold→warm prefix cache speedup to the 8001 cooperative server, which previously had NO cache integration (the old comment said "cache restores into rows [0,n) which is the staging area").
