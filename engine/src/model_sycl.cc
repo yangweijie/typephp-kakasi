@@ -3205,6 +3205,155 @@ int cache_prefill(int backend, const std::vector<int>& ids, const std::string& p
     return prefix;
 }
 
+// F685: store the prompt portion of a batch slot's KV to disk.
+bool cache_store_batch(int backend, int slot, const std::vector<int>& ids, const std::string& path) {
+    g_err.clear();
+    if (slot < 0 || slot >= g_bslots) { g_err = "cache_store_batch: bad slot"; return false; }
+    BatchSess& b = g_bs[slot];
+    if (!b.active || ids.empty() || (int) ids.size() > b.len) {
+        g_err = "cache_store_batch: nothing to save"; return false;
+    }
+    sycl::queue* qp = kakasi::queue_for(backend);
+    if (!qp) { g_err = "cache_store_batch: backend unavailable"; return false; }
+    sycl::queue& q = *qp;
+    const int n = (int) ids.size();
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    const uint32_t ver = 1;
+    const uint32_t elem = (uint32_t) g_kv.elem();
+    const int dkv = g_kv.dkv;
+    const size_t rowBytes = (size_t) dkv * elem;
+    std::ofstream f(path, std::ios::binary);
+    if (!f) { g_err = "cache_store_batch: cannot open " + path; return false; }
+    f.write("KVPC1", 5);
+    f.write((const char*) &ver, 4);
+    f.write((const char*) &L, 4);
+    f.write((const char*) &n, 4);
+    f.write((const char*) &dkv, 4);
+    f.write((const char*) &elem, 4);
+    f.write((const char*) ids.data(), sizeof(int) * (size_t) n);
+    std::vector<char> buf(rowBytes * (size_t) n);
+    for (int l = 0; l < L; ++l) {
+        for (int pass = 0; pass < 2; ++pass) {
+            void* base = pass == 0 ? g_kv.k[(size_t) l] : g_kv.v[(size_t) l];
+            void* src = (char*) base + (size_t) b.base * rowBytes;
+            q.memcpy(buf.data(), src, buf.size());
+            q.wait_and_throw();
+            f.write(buf.data(), (std::streamsize) buf.size());
+        }
+    }
+    return f.good();
+}
+
+// F685: prefill a batch slot reusing the stored prefix. Returns hit count (0 = miss, -1 = error).
+// On hit > 0 the slot becomes active with logits ready for batch_next.
+int cache_prefill_batch(int backend, int slot, const std::vector<int>& ids, const std::string& path,
+                        double temp, double top_p, uint64_t seed) {
+    g_err.clear();
+    if (slot < 0 || slot >= g_bslots) { g_err = "cache_prefill_batch: bad slot"; return -1; }
+    if (g_bhalf <= 0) { g_err = "cache_prefill_batch: batch not started"; return -1; }
+    if (ids.empty()) { g_err = "cache_prefill_batch: empty prompt"; return -1; }
+    if ((int) ids.size() > g_bhalf) { g_err = "cache_prefill_batch: prompt too long"; return -1; }
+    sycl::queue* qp = kakasi::queue_for(backend);
+    if (!qp) { g_err = "cache_prefill_batch: backend unavailable"; return -1; }
+    sycl::queue& q = *qp;
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    const int D = (int) gguf::meta_num("qwen2.embedding_length");
+    const int NH = (int) gguf::meta_num("qwen2.attention.head_count");
+    const int NKV = (int) gguf::meta_num("qwen2.attention.head_count_kv");
+    const int DKV = (NH > 0 ? D / NH : 0) * NKV;
+    const size_t rowBytes = (size_t) DKV * g_kv.elem();
+    BatchSess& b = g_bs[slot];
+    const int base = g_bstage + slot * g_bhalf;
+
+    int prefix = 0;
+    std::ifstream f(path, std::ios::binary);
+    if (f) {
+        char magic[5] = {0};
+        uint32_t ver = 0, elem = 0;
+        int nl = 0, n = 0, dkv = 0;
+        f.read(magic, 5);
+        f.read((char*) &ver, 4);
+        f.read((char*) &nl, 4);
+        f.read((char*) &n, 4);
+        f.read((char*) &dkv, 4);
+        f.read((char*) &elem, 4);
+        if (f && ver == 1 && nl == L && dkv == DKV && n > 0 && elem == (uint32_t) g_kv.elem()) {
+            std::vector<int> saved((size_t) n);
+            f.read((char*) saved.data(), sizeof(int) * (size_t) n);
+            if (f) {
+                while (prefix < n && prefix < (int) ids.size()
+                       && saved[(size_t) prefix] == ids[(size_t) prefix]) {
+                    ++prefix;
+                }
+                if (prefix > 0) {
+                    ensure_kv(backend, q, g_bstage + g_bslots * g_bhalf, DKV, L);
+                    const std::streamoff skipRows = (std::streamoff) (n - prefix) * (std::streamoff) rowBytes;
+                    std::vector<char> buf(rowBytes * (size_t) prefix);
+                    for (int l = 0; l < L && prefix > 0; ++l) {
+                        for (int pass = 0; pass < 2; ++pass) {
+                            f.read(buf.data(), (std::streamsize) buf.size());
+                            if (!f) { prefix = 0; break; }
+                            void* dstBase = pass == 0 ? g_kv.k[(size_t) l] : g_kv.v[(size_t) l];
+                            void* dst = (char*) dstBase + (size_t) base * rowBytes;
+                            q.memcpy(dst, buf.data(), buf.size());
+                            q.wait_and_throw();
+                            if (skipRows > 0) f.seekg(skipRows, std::ios::cur);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (prefix == 0) return 0;
+
+    // Set up the slot as if batch_add had been called.
+    b = BatchSess();
+    b.base = base;
+    b.cap = g_bhalf;
+    b.len = prefix;
+    b.temp = temp;
+    b.top_p = top_p;
+    b.rng = seed;
+
+    // Prefill the suffix (or re-run last token on full hit) with RowPlan targeting this slot.
+    const int total = (int) ids.size();
+    std::vector<int> suffix;
+    int startPos = prefix;
+    if (prefix < total) {
+        suffix.assign(ids.begin() + prefix, ids.end());
+    } else {
+        suffix.push_back(ids.back());
+        startPos = prefix - 1;
+    }
+    const int slen = (int) suffix.size();
+    g_plan.on = true;
+    g_plan.slot.assign((size_t) slen, 0);
+    g_plan.lo.assign((size_t) slen, 0);
+    g_plan.hi.assign((size_t) slen, 0);
+    g_plan.abspos.assign((size_t) slen, 0);
+    for (int i = 0; i < slen; ++i) {
+        g_plan.slot[(size_t) i] = base + startPos + i;
+        g_plan.lo[(size_t) i] = base;
+        g_plan.hi[(size_t) i] = base + startPos + i;
+        g_plan.abspos[(size_t) i] = startPos + i;
+    }
+    g_plan.head_rows = 1;
+    const bool up = plan_upload(q);
+    if (!up) g_err = "cache_prefill_batch: plan upload failed";
+    const std::vector<double> r = up ? prefill_top1(backend, suffix, -1, 0) : std::vector<double>();
+    plan_free(q);
+    g_plan.on = false;
+    g_plan.slot.clear();
+    g_plan.lo.clear();
+    g_plan.hi.clear();
+    g_plan.abspos.clear();
+    if (r.empty()) { g_err = "cache_prefill_batch: suffix prefill failed"; return -1; }
+    b.len = total;
+    b.active = true;
+    b.logits = g_row_logits.empty() ? g_last_logits : g_row_logits[0];
+    return prefix;
+}
+
 // Streaming session: the prompt is prefilled once, then every session_next() call appends
 // exactly one token to the KV cache and returns it. Same loop generate() runs, exposed so the
 // API can emit a token as soon as it exists instead of waiting for the whole answer.

@@ -82,6 +82,9 @@ int spec_selfseed_on();
 std::string spec_stats();
 bool cache_store(int backend, const std::vector<int>& ids, const std::string& path);
 int cache_prefill(int backend, const std::vector<int>& ids, const std::string& path);
+bool cache_store_batch(int backend, int slot, const std::vector<int>& ids, const std::string& path);
+int cache_prefill_batch(int backend, int slot, const std::vector<int>& ids, const std::string& path,
+                        double temp, double top_p, uint64_t seed);
 std::string device_fingerprint(int backend);
 double kv_cache_gib();
 void set_split(int backend, int layer);
@@ -315,6 +318,18 @@ php::Int php_model_cache_prefill(php::Int backend, php::Str tokens, php::Str pat
     const std::string csv(tokens.data(), tokens.length());
     const std::string p(path.data(), path.length());
     return php::Int(model::cache_prefill((int) backend, parse_ids(csv), p));
+}
+php::Int php_model_cache_store_batch(php::Int backend, php::Int slot, php::Str tokens, php::Str path) {
+    const std::string csv(tokens.data(), tokens.length());
+    const std::string p(path.data(), path.length());
+    return php::Int(model::cache_store_batch((int) backend, (int) slot, parse_ids(csv), p) ? 1 : 0);
+}
+php::Int php_model_cache_prefill_batch(php::Int backend, php::Int slot, php::Str tokens, php::Str path,
+                                       php::Float temp, php::Float top_p, php::Int seed) {
+    const std::string csv(tokens.data(), tokens.length());
+    const std::string p(path.data(), path.length());
+    return php::Int(model::cache_prefill_batch((int) backend, (int) slot, parse_ids(csv), p,
+                                                (double) temp, (double) top_p, (uint64_t)(int64_t) seed));
 }
 php::Str php_model_device_fingerprint(php::Int backend) {
     return php::Str(model::device_fingerprint((int) backend));

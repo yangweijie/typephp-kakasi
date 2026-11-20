@@ -1,4 +1,12 @@
 # Progress Log
+## Session: 2026-11-20 - F685 SSD prefix cache for the batch path (8001)
+- **Goal:** bring the 3.3× cold→warm prefix cache speedup to the 8001 cooperative server, which previously had NO cache integration (the old comment said "cache restores into rows [0,n) which is the staging area").
+- C++ layer: `cache_store_batch(backend, slot, ids, path)` reads KV from slot's region (base offset); `cache_prefill_batch(backend, slot, ids, path, temp, top_p, seed)` loads cached prefix into slot's KV rows, prefills suffix with RowPlan, sets active+logits. Returns hit count (0=miss, -1=error).
+- Bridge + stub: model_cache_store_batch / model_cache_prefill_batch.
+- PHP layer: admission tries cache_prefill_batch before batch_add_begin; on hit>0 skips chunked prefill ($sprefill=0); per-slot $spcpath/$spcids/$spchit/$spn arrays; at completion (normal + constrained) stores if hit < promptN.
+- Self-test gate: BATCH-CACHE — store→batch_end→restart→cache_prefill_batch→8 tokens identical.
+- **Status:** code complete, ladder running. NOT YET VERIFIED.
+
 ## Session: 2026-11-20 - F684 chunked prefill (non-blocking long-prompt admission)
 - **Goal:** remove the second serialization bottleneck on 8001: long prompt batch_add prefill blocks all live slots. Now admission stores the prompt (batch_add_begin) and the event loop processes 512-token chunks interleaved with decode steps.
 - C++ layer: BatchSess gains prompt/prefill_cursor/prefill_backend; `batch_add_begin()` stores prompt without forward pass (active=false); `batch_prefill_chunk(slot, chunk_size)` runs prefill_top1 on next chunk with correct RowPlan (abspos=start+i, hi=base+start+i), returns remaining (0=done→active=true+logits set).

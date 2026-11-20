@@ -84,6 +84,9 @@ function model_spec_tree(int $backend, string $tokens, int $n_new, int $bins, in
 function model_spec_tree_sample(int $backend, string $tokens, int $n_new, int $bins, int $depth, float $temp, int $seed): string {}
 function model_cache_store(int $backend, string $tokens, string $path): int {}
 function model_cache_prefill(int $backend, string $tokens, string $path): int {}
+// F685: batch-slot prefix cache (store/prefill target the slot's KV region, not the session globals).
+function model_cache_store_batch(int $backend, int $slot, string $tokens, string $path): int {}
+function model_cache_prefill_batch(int $backend, int $slot, string $tokens, string $path, float $temp, float $top_p, int $seed): int {}
 function model_device_fingerprint(int $backend): string {}
 function model_set_split(int $backend, int $layer): int {}
 function model_split_state(): string {}

@@ -16018,6 +16018,10 @@ function api_serve_par(int $port): void
     $sd = [0, 0, 0, 0];       // current step index
     $scpn = [0, 0, 0, 0];     // prompt token count (for api_gen_text)
     $sprefill = [0, 0, 0, 0]; // F684: 1 = chunked prefill in progress
+    $spcpath = ["", "", "", ""]; // F685: cache file path per slot
+    $spcids = ["", "", "", ""];  // F685: prompt ids for cache store at completion
+    $spchit = [0, 0, 0, 0];     // F685: cache hit count at admission
+    $spn = [0, 0, 0, 0];        // F685: prompt token count per slot
     while (true) {
         // F370: the three stamps below split one served iteration into "before the forward pass"
         // (accept, select, request and slot bookkeeping), "the forward pass itself as the host sees
@@ -16329,17 +16333,20 @@ Connection: close
                         $sdv = api_num($body, "seed", 12345);
                         $bgv = api_num($body, "timeout_ms", 0);
                         $kind = strpos($req, "/v1/messages") !== false ? 2 : 1;
-                        // F359: the conversation joins the batch instead of taking the single
-                        // session path. The prefix cache is not used here: it restores one
-                        // conversation into rows [0,n), which is the staging area the batch
-                        // deliberately leaves free, and the batch owns its own two regions.
+                        // F685: SSD prefix cache targeting the batch slot's own KV region.
+                        $pcPath685 = "";
+                        $cacheHit685 = 0;
+                        if ($pn + $mxv <= $cap) {
+                            $pcPath685 = api_cache_pick($ids);
+                            $cacheHit685 = model_cache_prefill_batch(0, $slot, $ids, $pcPath685, $tev, $tpv, $sdv);
+                        }
                         if ($pn + $mxv > $cap) {
                             $payload = "{\"error\":{\"message\":\"parallel mode: prompt plus max_tokens exceeds the slot capacity\",\"type\":\"invalid_request_error\"}}";
                             $payload = api_error_for_path($req, $payload);
                             fwrite($c, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
                                      . "Content-Length: " . strlen($payload) . "\r\n\r\n" . $payload);
                             fclose($c);
-                        } else if (model_batch_add_begin(0, $slot, $ids, $tev, $tpv, $sdv) != 0) {
+                        } else if ($cacheHit685 <= 0 && model_batch_add_begin(0, $slot, $ids, $tev, $tpv, $sdv) != 0) {
                             $payload = "{\"error\":{\"message\":\"parallel mode: the slot could not take this prompt\",\"type\":\"server_error\"}}";
                             $payload = api_error_for_path($req, $payload);
                             fwrite($c, "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n"
@@ -16357,7 +16364,11 @@ Connection: close
                             $sbg[$slot] = $bgv;
                             $st0[$slot] = microtime(true);
                             $srs[$slot] = 0;
-                            $sprefill[$slot] = 1;
+                            $sprefill[$slot] = $cacheHit685 > 0 ? 0 : 1;
+                            $spcpath[$slot] = $pcPath685;
+                            $spcids[$slot] = $ids;
+                            $spchit[$slot] = $cacheHit685;
+                            $spn[$slot] = $pn;
                             $ssn[$slot] = 0;
                             $sstop[$slot] = $stopV;
                             $shold[$slot] = "";
@@ -16680,9 +16691,15 @@ Connection: close
             if ($on[$s] == 1) {
                 if ($sbg[$s] > 0 && (microtime(true) - $st0[$s]) * 1000.0 > $sbg[$s]) {
                     $srs[$s] = 3;
+                    if ($spcpath[$s] != "" && $spchit[$s] < $spn[$s]) {
+                        model_cache_store_batch(0, $s, $spcids[$s], $spcpath[$s]);
+                    }
                     model_batch_stop($s);
                 } else if ($ssn[$s] >= $smx[$s]) {
                     $srs[$s] = 2;
+                    if ($spcpath[$s] != "" && $spchit[$s] < $spn[$s]) {
+                        model_cache_store_batch(0, $s, $spcids[$s], $spcpath[$s]);
+                    }
                     model_batch_stop($s);
                 }
             }
@@ -16827,6 +16844,9 @@ Connection: close
                         }
                         echo "SESSION par schema slot=" . $slotTag[$s] . " tokens=" . $ssn[$s]
                             . " bytes=" . strlen($scText) . " reason=batch-constrained\n";
+                        if ($spcpath[$s] != "" && $spchit[$s] < $spn[$s]) {
+                            model_cache_store_batch(0, $s, $spcids[$s], $spcpath[$s]);
+                        }
                         model_batch_stop($s);
                         fclose($socks[$s]);
                         $on[$s] = 0;
@@ -16870,6 +16890,9 @@ Connection: close
                         : ($srs[$s] == 3 ? "timeout" : ($srs[$s] == 5 ? "stop" : "client-gone")));
                     echo "SESSION par slot=" . $slotTag[$s] . " tokens=" . $ssn[$s]
                         . " reason=" . $why . "\n";
+                    if ($spcpath[$s] != "" && $spchit[$s] < $spn[$s]) {
+                        model_cache_store_batch(0, $s, $spcids[$s], $spcpath[$s]);
+                    }
                     model_batch_stop($s);
                     fclose($socks[$s]);
                     $on[$s] = 0;
@@ -26943,6 +26966,41 @@ function main(): void
             echo "BATCH-CHUNKED: PASS chunked prefill (chunk=4) == single-shot, 8 tokens identical\n";
         } else {
             echo "BATCH-CHUNKED: FAIL full=" . $f684Full . " chunked=" . $f684Chunked . "\n";
+        }
+    }
+
+    // F685: batch-slot prefix cache — store then reload must produce identical tokens.
+    {
+        $f685Prompt = $ids;
+        $f685Path = api_state_dir() . "/f685_test.kv";
+        model_batch_start_n(0, 256, 2);
+        model_batch_add(0, 0, $f685Prompt, 0.0, 1.0, 12345);
+        $f685Base = "";
+        for ($i = 0; $i < 8; $i++) {
+            $f685R = model_batch_next(0);
+            if ($f685R <= 0) { break; }
+            $f685Tk = explode(",", model_batch_tokens());
+            $f685Base = $f685Base == "" ? $f685Tk[0] : $f685Base . "," . $f685Tk[0];
+        }
+        model_cache_store_batch(0, 0, $f685Prompt, $f685Path);
+        model_batch_end();
+        model_batch_start_n(0, 256, 2);
+        $f685Hit = model_cache_prefill_batch(0, 0, $f685Prompt, $f685Path, 0.0, 1.0, 12345);
+        $f685Cached = "";
+        if ($f685Hit > 0) {
+            for ($i = 0; $i < 8; $i++) {
+                $f685R = model_batch_next(0);
+                if ($f685R <= 0) { break; }
+                $f685Tk = explode(",", model_batch_tokens());
+                $f685Cached = $f685Cached == "" ? $f685Tk[0] : $f685Cached . "," . $f685Tk[0];
+            }
+        }
+        model_batch_end();
+        if ($f685Hit > 0 && $f685Base != "" && $f685Base == $f685Cached) {
+            echo "BATCH-CACHE: PASS hit=" . $f685Hit . " store->reload 8 tokens identical\n";
+        } else {
+            echo "BATCH-CACHE: FAIL hit=" . $f685Hit . " base=" . $f685Base
+                . " cached=" . $f685Cached . "\n";
         }
     }
 
