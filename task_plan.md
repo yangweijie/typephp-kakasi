@@ -24,13 +24,15 @@
   **Full ladder verified (2026-11-20):** SMOKE/PRETTY 197/0; PAR 24/0; FAIR 0; THRU 1.546×;
   PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0+14/0; BODY-LIMIT PASS; PAR-ABANDON PASS;
   check_gates 198/0. HEAD `884b8a6`.
-  Remaining queue: F684 chunked prefill (long prompt batch_add blocks all live slots);
-  FR-06 independent draft model (decision); FR-05 plugins (decision+hardware);
+  Remaining queue: FR-06 independent draft model (decision); FR-05 plugins (decision+hardware);
   real branch-merge plans / async cross-device overlap (new scheduler capabilities);
   SSD prefix bucketing deepening; multi-card split (needs second device).
   - **F683 (batch-path constrained decoding) - DONE + verified.** Per-row allowed-set masking
   in batch_next; finite json_schema runs inside the event loop instead of blocking all slots.
   BATCH-ALLOWED PASS + par-concurrent-schema PASS. HEAD `47cb76c`.
+  - **F684 (chunked prefill) - DONE + verified.** batch_add_begin + batch_prefill_chunk;
+  long-prompt admission interleaves with decode steps. BATCH-CHUNKED PASS +
+  par-chunked-prefill PASS. HEAD `425b531`.
 
   `model_set_op_split(layer, backend)` moves ONE layer's FFN onto its own device; the hidden state crosses
   devices twice around that op via copy nodes with explicit `srcSeg`/dst (tensor-granular, no longer
@@ -62,6 +64,7 @@
 **不做**：分块 prefill（长 prompt 阻塞是第二个瓶颈，但改动面更大，留 F684）；多设备 session 分配（需第二设备）。
 
 ## F684 规格（2026-11-20）：分块预填充——消除 8001 长 prompt 准入阻塞
+**已闭合 2026-11-20，提交 `425b531`。** BATCH-CHUNKED PASS + par-chunked-prefill PASS；SMOKE/PRETTY 197/0；PAR 全 PASS；FAIR 0；THRU 1.545×；PARITY 13/13；check_gates 198/0。
 **动机**：`batch_add` 调用 `batch_prefill` → `prefill_top1(全 prompt)`，长 prompt（>512 token）阻塞事件循环数百毫秒，所有活跃 slot 停转。F683 消除了约束解码阻塞，F684 消除预填充阻塞。
 **改动（三层）**：
 1. **C++**：`BatchSess` 加 `prompt/prefill_cursor/prefill_backend`；`batch_add_begin()` 存 prompt 不跑前向（active=false）；`batch_prefill_chunk(slot, chunk_size)` 对下一 chunk 跑 `prefill_top1`（RowPlan abspos=start+i, hi=base+start+i），返回剩余 token 数（0=完成→active=true+logits）。

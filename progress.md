@@ -6,7 +6,9 @@
 - PHP layer: admission calls batch_add_begin + $sprefill[$slot]=1; event loop processes one chunk per iteration before batch_next; $needStep excludes prefilling slots; emission loop `continue` guard skips prefilling slots; F683 allowed-set loop also excludes prefilling slots; error case (pfRem<0) stops slot cleanly.
 - Self-test gate: BATCH-CHUNKED — full prefill 8 tokens vs chunked (chunk=4) 8 tokens, must be identical.
 - Live gate: par-chunked-prefill — long prompt (~600 tokens) in thread + concurrent short stream; asserts long completes valid SSE AND short < 3s.
-- **Status:** code complete, ladder running. NOT YET VERIFIED.
+- **Status:** VERIFIED AND COMMITTED. HEAD `425b531`.
+- **Verification (2026-11-20):** BUILD_OK; selftest 932 lines RUN_EXIT=0 / 0 FAIL / BATCH-CHUNKED PASS; SMOKE/PRETTY 197/0; PAR PASS (par-chunked-prefill PASS); FAIR 0; THRU 1.545×; PARITY 13/13; CACHE-PERSIST PASS; check_gates 198/0; SENTINELS_LEFT=0.
+- **Remaining queue:** FR-06 independent draft model (decision); FR-05 plugins (decision+hardware); real branch-merge plans / async cross-device overlap; SSD prefix bucketing; multi-card split (needs second device).
 
 ## Session: 2026-11-20 - F683 batch-path constrained decoding (per-row allowed masking)
 - **Goal:** remove the synchronous constrained-decode bottleneck on 8001: finite json_schema requests now run inside the batch event loop (one token per batch_next step, per-row allowed-set masking) instead of blocking all slots via model_session_start + model_session_next_allowed.
