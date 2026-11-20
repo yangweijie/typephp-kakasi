@@ -25,14 +25,17 @@
   PARITY 13/13; CACHE-PERSIST PASS; ENDPOINT-SHAPE 15/0+14/0; BODY-LIMIT PASS; PAR-ABANDON PASS;
   check_gates 198/0. HEAD `884b8a6`.
   Remaining queue: FR-06 independent draft model (decision); FR-05 plugins (decision+hardware);
-  real branch-merge plans / async cross-device overlap (new scheduler capabilities);
-  SSD prefix bucketing deepening; multi-card split (needs second device).
+  real branch-merge plans / async cross-device overlap (Qwen2 sequential, no parallel branches);
+  multi-card split (needs second device).
   - **F683 (batch-path constrained decoding) - DONE + verified.** Per-row allowed-set masking
   in batch_next; finite json_schema runs inside the event loop instead of blocking all slots.
   BATCH-ALLOWED PASS + par-concurrent-schema PASS. HEAD `47cb76c`.
   - **F684 (chunked prefill) - DONE + verified.** batch_add_begin + batch_prefill_chunk;
   long-prompt admission interleaves with decode steps. BATCH-CHUNKED PASS +
   par-chunked-prefill PASS. HEAD `425b531`.
+  - **F685 (batch prefix cache) - DONE + verified.** cache_store_batch / cache_prefill_batch
+  target the slot's KV region; 8001 warm hits skip prefill entirely. BATCH-CACHE PASS;
+  THRU 1.545→1.605×. HEAD `9bd188e`.
 
   `model_set_op_split(layer, backend)` moves ONE layer's FFN onto its own device; the hidden state crosses
   devices twice around that op via copy nodes with explicit `srcSeg`/dst (tensor-granular, no longer

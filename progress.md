@@ -5,7 +5,9 @@
 - Bridge + stub: model_cache_store_batch / model_cache_prefill_batch.
 - PHP layer: admission tries cache_prefill_batch before batch_add_begin; on hit>0 skips chunked prefill ($sprefill=0); per-slot $spcpath/$spcids/$spchit/$spn arrays; at completion (normal + constrained) stores if hit < promptN.
 - Self-test gate: BATCH-CACHE — store→batch_end→restart→cache_prefill_batch→8 tokens identical.
-- **Status:** code complete, ladder running. NOT YET VERIFIED.
+- **Status:** VERIFIED AND COMMITTED. HEAD `9bd188e`.
+- **Verification (2026-11-20):** BUILD_OK; selftest 933 lines RUN_EXIT=0 / 0 FAIL / BATCH-CACHE PASS (hit=5); SMOKE/PRETTY 197/0; PAR PASS; FAIR 0; **THRU 1.605×** (up from 1.545×); PARITY 13/13; CACHE-PERSIST PASS; check_gates 198/0; SENTINELS_LEFT=0.
+- **Remaining queue:** FR-06 independent draft model (decision); FR-05 plugins (decision+hardware); real branch-merge plans (Qwen2 sequential, no parallel branches); multi-card split (needs second device).
 
 ## Session: 2026-11-20 - F684 chunked prefill (non-blocking long-prompt admission)
 - **Goal:** remove the second serialization bottleneck on 8001: long prompt batch_add prefill blocks all live slots. Now admission stores the prompt (batch_add_begin) and the event loop processes 512-token chunks interleaved with decode steps.
