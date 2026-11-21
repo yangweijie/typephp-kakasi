@@ -27260,6 +27260,122 @@ function main(): void
         }
     }
 
+    // F693: planned-vs-plain at MATCHED shape. F691 read verify's planned blocks at vs1=14.3ms
+    // (pos~45) against plain s1=8.66 at pos=0 and flagged that comparison as not directly
+    // readable - attention grows with context, so part of any gap is physics, not mechanism.
+    // This gate runs the SAME T=1 decode step (same prompt, same position, same visible range,
+    // same seed) through the plain session path and the planned batch path inside one binary,
+    // and prints the per-step stage readings side by side. The only assertion is walk equality
+    // (the BATCH-EQ standard); the speed numbers are REPORTED, never asserted - the convict-or-
+    // acquit decision reads them per the F688 probe-first precedent (quantify first; a negative
+    // result is a deliverable, not a failure).
+    {
+        $f693Prompt = $ids;
+        $f693N = 8;
+        $f693PlainWalk = array();
+        $f693PlainS1 = array();
+        $f693PlainRow = array();
+        model_session_start(0, $f693Prompt);
+        model_session_seed(12345);
+        for ($i = 0; $i < 3; $i++) {
+            model_session_next(0, 0.0, 1.0);
+        }
+        for ($i = 0; $i < $f693N; $i++) {
+            $f693T = model_session_next(0, 0.0, 1.0);
+            if ($f693T < 0) {
+                break;
+            }
+            $f693PlainWalk[] = "" . $f693T;
+            $f693PlainS1[] = model_stage_at(1);
+            $f693PlainRow[] = "i=" . $i . " pos=" . model_session_len()
+                . " plain=" . round(model_stage_at(0), 2) . "/" . round(model_stage_at(1), 2)
+                . "/" . round(model_stage_at(2), 2);
+        }
+        $f693PlanWalk = array();
+        $f693PlanS1 = array();
+        $f693PlanRow = array();
+        model_batch_start_n(0, 256, 2);
+        model_batch_add(0, 0, $f693Prompt, 0.0, 1.0, 12345);
+        for ($i = 0; $i < 3; $i++) {
+            model_batch_next(0);
+        }
+        for ($i = 0; $i < $f693N; $i++) {
+            $f693R = model_batch_next(0);
+            if ($f693R <= 0) {
+                break;
+            }
+            $f693Tk = explode(",", model_batch_tokens());
+            $f693PlanWalk[] = $f693Tk[0];
+            $f693PlanS1[] = model_stage_at(1);
+            $f693PlanRow[] = "i=" . $i . " pos=" . model_batch_len(0)
+                . " planned=" . round(model_stage_at(0), 2) . "/" . round(model_stage_at(1), 2)
+                . "/" . round(model_stage_at(2), 2);
+        }
+        model_batch_end();
+        $f693PW = implode(",", $f693PlainWalk);
+        $f693BW = implode(",", $f693PlanWalk);
+        $f693WalkEq = ($f693PW != "" && $f693PW == $f693BW) ? 1 : 0;
+        // Trimmed mean of s1 per arm (sum-min-max over up to 8 samples): single-sample spikes
+        // are real on a shared GPU, and the F323 median-of-three trick does not extend to 8.
+        $f693Trim = 0.0;
+        $f693TrimN = 0;
+        for ($i = 0; $i < count($f693PlainS1); $i++) {
+            $f693Trim = $f693Trim + $f693PlainS1[$i];
+            $f693TrimN = $f693TrimN + 1;
+        }
+        if ($f693TrimN >= 3) {
+            $f693Mn = $f693PlainS1[0];
+            $f693Mx = $f693PlainS1[0];
+            for ($i = 1; $i < $f693TrimN; $i++) {
+                if ($f693PlainS1[$i] < $f693Mn) { $f693Mn = $f693PlainS1[$i]; }
+                if ($f693PlainS1[$i] > $f693Mx) { $f693Mx = $f693PlainS1[$i]; }
+            }
+            $f693PlainTrim = ($f693Trim - $f693Mn - $f693Mx) / ($f693TrimN - 2);
+        } else if ($f693TrimN > 0) {
+            $f693PlainTrim = $f693Trim / $f693TrimN;
+        } else {
+            $f693PlainTrim = 0.0;
+        }
+        $f693Trim = 0.0;
+        $f693TrimN = 0;
+        for ($i = 0; $i < count($f693PlanS1); $i++) {
+            $f693Trim = $f693Trim + $f693PlanS1[$i];
+            $f693TrimN = $f693TrimN + 1;
+        }
+        if ($f693TrimN >= 3) {
+            $f693Mn = $f693PlanS1[0];
+            $f693Mx = $f693PlanS1[0];
+            for ($i = 1; $i < $f693TrimN; $i++) {
+                if ($f693PlanS1[$i] < $f693Mn) { $f693Mn = $f693PlanS1[$i]; }
+                if ($f693PlanS1[$i] > $f693Mx) { $f693Mx = $f693PlanS1[$i]; }
+            }
+            $f693PlanTrim = ($f693Trim - $f693Mn - $f693Mx) / ($f693TrimN - 2);
+        } else if ($f693TrimN > 0) {
+            $f693PlanTrim = $f693Trim / $f693TrimN;
+        } else {
+            $f693PlanTrim = 0.0;
+        }
+        $f693Steps = count($f693PlainRow);
+        if (count($f693PlanRow) < $f693Steps) {
+            $f693Steps = count($f693PlanRow);
+        }
+        for ($i = 0; $i < $f693Steps; $i++) {
+            echo "PROBE-PLAN step " . $f693PlainRow[$i] . " | " . $f693PlanRow[$i] . "\n";
+        }
+        $f693Delta = $f693PlanTrim - $f693PlainTrim;
+        $f693Pct = ($f693PlainTrim > 0.0) ? round(100.0 * $f693Delta / $f693PlainTrim, 1) : 0.0;
+        if ($f693WalkEq == 1) {
+            echo "PROBE-PLAN: PASS walk_eq=1 steps=" . $f693Steps
+                . " plain_s1_trim=" . round($f693PlainTrim, 2)
+                . " planned_s1_trim=" . round($f693PlanTrim, 2)
+                . " delta_ms=" . round($f693Delta, 2) . " (" . $f693Pct . "%)"
+                . " - speeds REPORTED, not asserted\n";
+        } else {
+            echo "PROBE-PLAN: FAIL walk_eq=0 plain_walk=" . $f693PW
+                . " planned_walk=" . $f693BW . "\n";
+        }
+    }
+
     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to
     // 1.6e-2 (F34). If quantization is not reproducible, clearing residency and re-quantizing on
     // the SAME backend should move the logit by the same order; if it is reproducible, the gap
