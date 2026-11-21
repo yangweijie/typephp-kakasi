@@ -1,0 +1,201 @@
+diff --git a/engine/main.php b/engine/main.php
+index 0e22b37..99f53d2 100644
+--- a/engine/main.php
++++ b/engine/main.php
+@@ -27260,6 +27260,122 @@ function main(): void
+         }
+     }
+ 
++    // F693: planned-vs-plain at MATCHED shape. F691 read verify's planned blocks at vs1=14.3ms
++    // (pos~45) against plain s1=8.66 at pos=0 and flagged that comparison as not directly
++    // readable - attention grows with context, so part of any gap is physics, not mechanism.
++    // This gate runs the SAME T=1 decode step (same prompt, same position, same visible range,
++    // same seed) through the plain session path and the planned batch path inside one binary,
++    // and prints the per-step stage readings side by side. The only assertion is walk equality
++    // (the BATCH-EQ standard); the speed numbers are REPORTED, never asserted - the convict-or-
++    // acquit decision reads them per the F688 probe-first precedent (quantify first; a negative
++    // result is a deliverable, not a failure).
++    {
++        $f693Prompt = $ids;
++        $f693N = 8;
++        $f693PlainWalk = array();
++        $f693PlainS1 = array();
++        $f693PlainRow = array();
++        model_session_start(0, $f693Prompt);
++        model_session_seed(12345);
++        for ($i = 0; $i < 3; $i++) {
++            model_session_next(0, 0.0, 1.0);
++        }
++        for ($i = 0; $i < $f693N; $i++) {
++            $f693T = model_session_next(0, 0.0, 1.0);
++            if ($f693T < 0) {
++                break;
++            }
++            $f693PlainWalk[] = "" . $f693T;
++            $f693PlainS1[] = model_stage_at(1);
++            $f693PlainRow[] = "i=" . $i . " pos=" . model_session_len()
++                . " plain=" . round(model_stage_at(0), 2) . "/" . round(model_stage_at(1), 2)
++                . "/" . round(model_stage_at(2), 2);
++        }
++        $f693PlanWalk = array();
++        $f693PlanS1 = array();
++        $f693PlanRow = array();
++        model_batch_start_n(0, 256, 2);
++        model_batch_add(0, 0, $f693Prompt, 0.0, 1.0, 12345);
++        for ($i = 0; $i < 3; $i++) {
++            model_batch_next(0);
++        }
++        for ($i = 0; $i < $f693N; $i++) {
++            $f693R = model_batch_next(0);
++            if ($f693R <= 0) {
++                break;
++            }
++            $f693Tk = explode(",", model_batch_tokens());
++            $f693PlanWalk[] = $f693Tk[0];
++            $f693PlanS1[] = model_stage_at(1);
++            $f693PlanRow[] = "i=" . $i . " pos=" . model_batch_len(0)
++                . " planned=" . round(model_stage_at(0), 2) . "/" . round(model_stage_at(1), 2)
++                . "/" . round(model_stage_at(2), 2);
++        }
++        model_batch_end();
++        $f693PW = implode(",", $f693PlainWalk);
++        $f693BW = implode(",", $f693PlanWalk);
++        $f693WalkEq = ($f693PW != "" && $f693PW == $f693BW) ? 1 : 0;
++        // Trimmed mean of s1 per arm (sum-min-max over up to 8 samples): single-sample spikes
++        // are real on a shared GPU, and the F323 median-of-three trick does not extend to 8.
++        $f693Trim = 0.0;
++        $f693TrimN = 0;
++        for ($i = 0; $i < count($f693PlainS1); $i++) {
++            $f693Trim = $f693Trim + $f693PlainS1[$i];
++            $f693TrimN = $f693TrimN + 1;
++        }
++        if ($f693TrimN >= 3) {
++            $f693Mn = $f693PlainS1[0];
++            $f693Mx = $f693PlainS1[0];
++            for ($i = 1; $i < $f693TrimN; $i++) {
++                if ($f693PlainS1[$i] < $f693Mn) { $f693Mn = $f693PlainS1[$i]; }
++                if ($f693PlainS1[$i] > $f693Mx) { $f693Mx = $f693PlainS1[$i]; }
++            }
++            $f693PlainTrim = ($f693Trim - $f693Mn - $f693Mx) / ($f693TrimN - 2);
++        } else if ($f693TrimN > 0) {
++            $f693PlainTrim = $f693Trim / $f693TrimN;
++        } else {
++            $f693PlainTrim = 0.0;
++        }
++        $f693Trim = 0.0;
++        $f693TrimN = 0;
++        for ($i = 0; $i < count($f693PlanS1); $i++) {
++            $f693Trim = $f693Trim + $f693PlanS1[$i];
++            $f693TrimN = $f693TrimN + 1;
++        }
++        if ($f693TrimN >= 3) {
++            $f693Mn = $f693PlanS1[0];
++            $f693Mx = $f693PlanS1[0];
++            for ($i = 1; $i < $f693TrimN; $i++) {
++                if ($f693PlanS1[$i] < $f693Mn) { $f693Mn = $f693PlanS1[$i]; }
++                if ($f693PlanS1[$i] > $f693Mx) { $f693Mx = $f693PlanS1[$i]; }
++            }
++            $f693PlanTrim = ($f693Trim - $f693Mn - $f693Mx) / ($f693TrimN - 2);
++        } else if ($f693TrimN > 0) {
++            $f693PlanTrim = $f693Trim / $f693TrimN;
++        } else {
++            $f693PlanTrim = 0.0;
++        }
++        $f693Steps = count($f693PlainRow);
++        if (count($f693PlanRow) < $f693Steps) {
++            $f693Steps = count($f693PlanRow);
++        }
++        for ($i = 0; $i < $f693Steps; $i++) {
++            echo "PROBE-PLAN step " . $f693PlainRow[$i] . " | " . $f693PlanRow[$i] . "\n";
++        }
++        $f693Delta = $f693PlanTrim - $f693PlainTrim;
++        $f693Pct = ($f693PlainTrim > 0.0) ? round(100.0 * $f693Delta / $f693PlainTrim, 1) : 0.0;
++        if ($f693WalkEq == 1) {
++            echo "PROBE-PLAN: PASS walk_eq=1 steps=" . $f693Steps
++                . " plain_s1_trim=" . round($f693PlainTrim, 2)
++                . " planned_s1_trim=" . round($f693PlanTrim, 2)
++                . " delta_ms=" . round($f693Delta, 2) . " (" . $f693Pct . "%)"
++                . " - speeds REPORTED, not asserted\n";
++        } else {
++            echo "PROBE-PLAN: FAIL walk_eq=0 plain_walk=" . $f693PW
++                . " planned_walk=" . $f693BW . "\n";
++        }
++    }
++
+     // Experiment, not a pass/fail gate: int8 residency raised the b0/b1 logit gap from 5.7e-6 to
+     // 1.6e-2 (F34). If quantization is not reproducible, clearing residency and re-quantizing on
+     // the SAME backend should move the logit by the same order; if it is reproducible, the gap
+diff --git a/progress.md b/progress.md
+index 262ee89..e1a23f1 100644
+--- a/progress.md
++++ b/progress.md
+@@ -3161,3 +3161,12 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 
+ - 结构判决：drafter 每 token ~24.5ms > 目标批量 verify 每 token ~4.5ms ⇒ 需 ~5× 便宜才赢；接受率崖（自用同权重在 chat 上 K≤12 全零）为深度固有 ⇒ 模型类 drafter 结构性不可赢。
+ - 盈利归属零成本 drafter（prompt-lookup F391 + batch 路径）；side-model drafter 定位为能力交付（FR-06.2）。
+ - 梯全绿（selftest_f692b 0 FAIL、四 harness、gate_live f692、check_gates 198/0）。提交：仪表 + 证据 + docs。
++
++## F693 会话（2026-11-21，mac 侧）：同形状 A/B 立项 + 探针门代码就位（未提交，待 Windows 梯）
++- 状态恢复：F692 闭合（HEAD f9ca466）。队列盘点：FR-05 插件与多卡被硬件阻塞（F650 开工条件三件齐才可做）、unevaluated* 标记价值有限、F649 方案 C 已由 F673 交付（residency_budget_gib/kv_cache_gib + null-before-prefill，活体门在 api_smoke.py:2847 / par_smoke.py:316）、F582 十进制串已由 F588-F605 结项 ⇒ **F691 点名的 planned 路径 ~5.6ms 嫌疑是链上唯一本地可做的项**。
++- 环境事实（本轮新核）：本 mac 检出无 SYCL 工具链（无 icx/dpcpp/acpp/sycl-ls；/Volumes/data 是本地 hfs 盘，不是 Windows 机 SMB 挂载）；构建与梯历来在 Windows 机（C:\git\c\typephp-kakasi，Git Bash + oneAPI icx + Arc B390）。
++- F693 规格写入 task_plan.md：A 段探针 = 自检新门 **PROBE-PLAN**（同 prompt $ids、同 pos、同 T=1 的 planned-vs-plain 同二进制 A/B；断言只有两臂 8 token walk 逐 id 相同；速度只报告不断言；判定分支：planned ≥10% 且稳定 ⇒ B 段逐 op 分段定罪、只修主项，<10% 或不稳 ⇒ 洗清并记判据"planned-vs-plain 必须同 pos 对表"）。
++- PROBE-PLAN 门实现于 engine/main.php（BATCH-CACHE 之后）：双臂各 3 步热身 + 8 步采样，逐对打印 pos + s0/s1/s2（session_len / batch_len(0) 对齐），双臂 s1 trimmean + delta 报告行；唯一断言 walk_eq（BATCH-EQ 口径）；只用文件内既有构造（array()/[]= /count/implode）。
++- 本地验证（F645/F658 先例：夹具先过真解释器）：php -l 通过；真 PHP + stub 原语双分支测试（/tmp/f693/harness.php）——PASS 行（walk_eq=1 + trimmean + delta）与 FAIL 行（walk_eq=0 双 walk 打印）均按设计出现。**这是解释器级验证，不替代编译与真引擎读数。**
++- 停车状态（F648 先例：验证未出，不提交）：main.php 的 F693 块留在工作树。**交接件**：`f693_handoff.patch`（repo 根，未跟踪，含 main.php/task_plan/progress 三文件的全部改动；已在 f9ca466 纯净 worktree 上验证 `git apply --check` 干净、php -l 通过、门块字节一致）。Windows 侧恢复命令（C:\git\c\typephp-kakasi，Git Bash）：①`git apply f693_handoff.patch`；②`bash scripts/build-check.sh` → BUILD_OK；③`run-kakasi-selftest.bat selftest_f693.log` → RUN_EXIT=0 / 0 FAIL + `PROBE-PLAN: PASS`（walk_eq=1）→ 读 8 对配对读数与 trimmean；④按判定分支走（定罪 ⇒ B 段逐 op 探针；洗清 ⇒ findings 记判据）；⑤四 harness + `gate_live.sh f693` + `check_gates.sh` 不劣化；⑥绿则提交（含日志 git add -f）并闭 task_plan/findings/progress。
++- 远程执行尝试（本轮，未成）：Windows 机疑似 = LAN `yangweiiedemini (192.168.31.96)`（known_hosts 已有其 ed25519 host key ⇒ 此 mac 之前连过它；端口 22 现存）。BatchMode 公钥试了 ASUS/yangweijie/jay/administrator 四用户全部 Permission denied（publickey,password）——**缺凭据**，非网络不通；仓库 scripts/docs 无既有连接配方；ZeroTier 在网（10.147.20.73）但同样卡凭据。跨机执行需用户给凭据或用户亲自跑梯。
+diff --git a/task_plan.md b/task_plan.md
+index f32886f..86e54ab 100644
+--- a/task_plan.md
++++ b/task_plan.md
+@@ -100,6 +100,52 @@
+ - **F691 (side drafter step cost) — DONE + verified (2026-11-21).** The section probe CORRECTED the F690 attribution: draft step ~18 ms (layers 14, head 3.2) + VERIFY 17 ms, not a monolithic 50. Fixes gated: side layer weights cache f16 (layers 14->11, cache 968 MB, K=23 acceptance 18/21 unchanged, lossless intact); head is ONE gemv (the 3 ms is the 273 MB f16 read - physics). Verify exposed via g_stage: vs1=14.3 ms in the planned-path blocks = the named F692 lever. Speed reported: side-draft 24tok 1061 ms vs greedy 477 ms = 2.23x (improved from 1361/477, still unprofitable - honest). Ladder green: four harnesses, gate_live THRU 1.681x, check_gates 198/0. HEAD a653524.
+ - **F692 (round ledger + acceptance cliff) — DONE + verified (2026-11-21).** The per-round ledger closes the last cost black box (783.5 ms of rounds fully accounted). The cliff test seals the structural verdict: the SELF-drafter (same weights) on casual chat accepts 0 at K<=12 and climbs only at K>=18, so the low-K acceptance cliff is depth-INHERENT, not an asset-pair property. Combined with the cost asymmetry (drafter ~24.5 ms/drafted-token vs the target's batched verify ~4.5 ms/token), model-based drafting is structurally unprofitable on this engine: low K is free but accepts nothing, high K accepts but costs as much as the target. Throughput belongs to the zero-cost drafters (prompt-lookup F391, batch path); the side-model drafter stands as the FR-06.2 CAPABILITY delivery, exactly its spec goal. HEAD 8344ae8.
+ 
++- **F693 (planned-path same-shape A/B) — IN FLIGHT (2026-11-21, mac side).** F691 named the one
++  untouched engine lever: verify's planned blocks read vs1=14.3 ms at pos≈45 while plain s1=8.66 ms
++  was read at pos=0 — and F691 itself flagged that comparison as not directly readable. The queue
++  was otherwise empty of locally actionable items (FR-05 plugins and multi-card are
++  hardware-blocked per F650, unevaluated* is marked low-value, F649 plan C was already delivered
++  by F673's rename to residency_budget_gib/kv_cache_gib, F582 decimals closed by F588-F605), so
++  this is the chain's next item. Spec below; PROBE-PLAN gate staged in engine/main.php
++  (UNCOMMITTED — no SYCL toolchain on this machine; build + selftest + ladder must run on the
++  Windows side). Decision branch: convict (≥10% consistent planned overcost at matched shape ⇒
++  B-section per-op probe fixes the named main item) or acquit (gap <10%/unstable ⇒ F691's 5.6 ms
++  was context-length physics; record the "planned-vs-plain must be compared at matched pos" judge
++  line).
++
++## F693 规格（2026-11-21）：planned 路径同形状 A/B——F691 的 5.6ms 嫌疑定罪或洗清
++**动机**：F691 曝光 verify 分段 vs1=14.3ms（planned blocks，pos≈45），对照 plain s1=8.66 是在
++pos=0 读的——F691 自己已标注该对照不可直接对表（注意力随上下文增长是物理，不是机制开销）。
++这是 F690→F691→F692 链上唯一被点名却未处理的引擎侧杠杆，且 planned 路径就是 batch 路径
++（THRU 1.6× 的载体），定罪即吞吐杠杆，洗清也是诚实交付（F688 先例：量化为准，负结果亦为交付）。
++**已核事实（源码）**：
++- planned 机制（F359）：RowPlan slot/lo/hi/abspos（model_sycl.cc:2291-2299），注意力逐行
++  [lo,hi]（:2481-2503）、KV 逐槽写入、逐行 rope（:2373）；每次带计划的 pass 前
++  plan_upload（3 次 H2D + wait_and_throw，:797-810）、pass 后 plan_free。
++- scoreRows：plain=pos+T，planned=max(hi-lo+1)（:2303-2312）；splitP 两侧同公式
++  （T*NH<224 ⇒ ceil(scoreRows/16) 上限 16，:2315-2322）⇒ 同 pos 同 T 时两侧同 splitP 同机制分支。
++- 阶段计时已有且对 planned pass 生效（F691 的 vs1 即读它）：model_stage_at(0/1/2)=
++  emb+rope / 24 blocks / norm+lm_head（model_sycl.cc:1934）。
++- A/B 两臂 API 齐备、零 C++ 改动：plain 臂 = model_session_start/seed/next（单会话暂存区，
++  g_plan.on=false）；planned 臂 = model_batch_start/add/next（槽区 + RowPlan，g_plan.on=true）。
++  batch_add 的整体预填与 batch_next 的 T=1 解码步均走 planned pass（model_sycl.cc:3332/3668）。
++**设计（A 段探针 = 自检新门 PROBE-PLAN，插在 BATCH-CACHE 之后）**：同 prompt（$ids，~48 tok，
++即 F691 verify 的实测场景）双臂各 3 步热身 + 8 步采样贪心 walk：plain 臂 session API、planned 臂
++batch API（1 活跃槽）；每步读 s0/s1/s2 与 pos（session_len / batch_len(0)），按步序逐位对齐成
++8 对同 pos 同 T 同可见范围的配对读数；逐对打印 + 两臂 s1 中位数入报告行。断言只有一条：两臂
++8 token walk 逐 id 相同（机制正确性沿用 BATCH-EQ 口径）；速度只报告不断言（F688 判据：同二进制
++A/B 才可信，比率不可外推）。
++**判定分支（读数说话）**：
++- planned 每 pass 显著更贵（≥10% 且多样本一致）⇒ 进 B 段：planned pass 内逐 op 分段计时
++  （attention/rope/kv_store/plan_upload），只修探针指认的主项，每修一项独立成门；
++  BATCH-EQ / orch 三门 / token 等价不回退。
++- 差距 <10% 或样本间不稳定 ⇒ 洗清：F691 的 5.6ms 归因改判为上下文长度物理，F692 判决不动，
++  findings 记判据"planned-vs-plain 必须同 pos 对表，pos=0 曲线不能给 pos>0 的 pass 定价"。
++**验收**：自检 0 FAIL + PROBE-PLAN PASS（walk 等价）+ 四 harness / gate_live / check_gates
++不劣化；B 段若开工另加对应门。
++**不做**：不动 attn mode 公式、splitP、gemv 路径——除非探针定罪且单独成门；不碰 verify 树
++路径本身；不在 mac 侧提交任何未验证代码（F648 停车先例）。
++
+ ## F692 规格（2026-11-21）：轮级账本 + 接受率崖——模型类 drafter 的结构判决
+ **已闭合 2026-11-21，提交 8344ae8。** 轮级仪表（drafts/verify/backfill 逐轮，诊断开关）把最后一段黑箱清零：K=23 depth=4 七轮 783.5ms 完全闭合（3×24.5 + verify 18 + backfill ~21）。崖测试封棺：同权重自用 drafter 在闲聊上 K≤12 接受为零（K=6: 0/72、K=12: 0/72、K=18: 5/57、K=23: 13/36）⇒ 低 K 崖是深度固有。与成本不对称（drafter ~24.5ms/token vs 目标批量 verify ~4.5ms/token）合取 ⇒ 模型类 drafter 结构性不可赢；盈利属零成本 drafter（prompt-lookup F391、batch 路径）。side-model drafter 定位为 FR-06.2 能力交付。判据：评估 drafter 必须同时量每 drafted-token 成本与目标批量 verify 每 token 成本；同权重自用 drafter 是深度崖与资产距离的判别器。梯全绿（selftest_f692b 0 FAIL、四 harness、gate_live f692、check_gates 198/0）。
+ 

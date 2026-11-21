@@ -1,0 +1,13 @@
+ABI-CHECK: PASS (C++ TU; header compiles, asserts hold, handshake rules work)
+ABI-CHECK-C: PASS (header compiles as C11; layout asserts compiled)
+PLUGIN-REFUSE abi: refused (NULL) want_abi=0x00020000 -> named refusal ok
+PLUGIN-REFUSE caps: role=compute satisfied (caps=0x3f)
+PLUGIN-LOOP device: Apple M4 caps=0x3f mem=13000MB
+PLUGIN-LOOP gemv_mm M=2 K=896 N=4864: maxdiff=1.192e-07 rel=1.037e-07 ok | determinism=PASS
+PLUGIN-LOOP gemv_mm M=4 K=4864 N=896: maxdiff=3.874e-07 rel=1.987e-07 ok | determinism=PASS
+PLUGIN-LOOP gemm_tiled M=512 K=896 N=4864: maxdiff=1.669e-06 rel=1.238e-06 ok
+PLUGIN-LOOP dequant_q8_0 blocks=10000: ok (bit-exact)
+PLUGIN-LOOP rmsnorm D=896: maxdiff=0.000e+00 rel=0.000e+00 ok
+PLUGIN-REFUSE caps: stub refused, role=compute missing=0x3c -> named refusal ok
+PLUGIN-REFUSE entry: symbol not found in /tmp/f693/libplugin_stub_noentry.dylib -> named refusal ok
+PLUGIN-CLOSED-LOOP: PASS (closed loop + 3 named refusal paths on Apple M4)

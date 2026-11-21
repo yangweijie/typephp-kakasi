@@ -100,6 +100,164 @@
 - **F691 (side drafter step cost) — DONE + verified (2026-11-21).** The section probe CORRECTED the F690 attribution: draft step ~18 ms (layers 14, head 3.2) + VERIFY 17 ms, not a monolithic 50. Fixes gated: side layer weights cache f16 (layers 14->11, cache 968 MB, K=23 acceptance 18/21 unchanged, lossless intact); head is ONE gemv (the 3 ms is the 273 MB f16 read - physics). Verify exposed via g_stage: vs1=14.3 ms in the planned-path blocks = the named F692 lever. Speed reported: side-draft 24tok 1061 ms vs greedy 477 ms = 2.23x (improved from 1361/477, still unprofitable - honest). Ladder green: four harnesses, gate_live THRU 1.681x, check_gates 198/0. HEAD a653524.
 - **F692 (round ledger + acceptance cliff) — DONE + verified (2026-11-21).** The per-round ledger closes the last cost black box (783.5 ms of rounds fully accounted). The cliff test seals the structural verdict: the SELF-drafter (same weights) on casual chat accepts 0 at K<=12 and climbs only at K>=18, so the low-K acceptance cliff is depth-INHERENT, not an asset-pair property. Combined with the cost asymmetry (drafter ~24.5 ms/drafted-token vs the target's batched verify ~4.5 ms/token), model-based drafting is structurally unprofitable on this engine: low K is free but accepts nothing, high K accepts but costs as much as the target. Throughput belongs to the zero-cost drafters (prompt-lookup F391, batch path); the side-model drafter stands as the FR-06.2 CAPABILITY delivery, exactly its spec goal. HEAD 8344ae8.
 
+- **F693 (planned-path same-shape A/B) — IN FLIGHT (2026-11-21, mac side).** F691 named the one
+  untouched engine lever: verify's planned blocks read vs1=14.3 ms at pos≈45 while plain s1=8.66 ms
+  was read at pos=0 — and F691 itself flagged that comparison as not directly readable. The queue
+  was otherwise empty of locally actionable items (FR-05 plugins and multi-card are
+  hardware-blocked per F650, unevaluated* is marked low-value, F649 plan C was already delivered
+  by F673's rename to residency_budget_gib/kv_cache_gib, F582 decimals closed by F588-F605), so
+  this is the chain's next item. Spec below; PROBE-PLAN gate staged in engine/main.php
+  (UNCOMMITTED — no SYCL toolchain on this machine; build + selftest + ladder must run on the
+  Windows side). Decision branch: convict (≥10% consistent planned overcost at matched shape ⇒
+  B-section per-op probe fixes the named main item) or acquit (gap <10%/unstable ⇒ F691's 5.6 ms
+  was context-length physics; record the "planned-vs-plain must be compared at matched pos" judge
+  line). **PARKED (user, 2026-11-21): "windows 那边任务差不多了 差非intel gpu的插件 要跨系统运行" —
+  Windows-side ladder deprioritized; gate + handoff preserved (f693_handoff.patch, apply-verified
+  on pristine f9ca466; resume = apply + 6-step ladder in progress.md). New active item: F694.**
+
+## F693 规格（2026-11-21）：planned 路径同形状 A/B——F691 的 5.6ms 嫌疑定罪或洗清
+**动机**：F691 曝光 verify 分段 vs1=14.3ms（planned blocks，pos≈45），对照 plain s1=8.66 是在
+pos=0 读的——F691 自己已标注该对照不可直接对表（注意力随上下文增长是物理，不是机制开销）。
+这是 F690→F691→F692 链上唯一被点名却未处理的引擎侧杠杆，且 planned 路径就是 batch 路径
+（THRU 1.6× 的载体），定罪即吞吐杠杆，洗清也是诚实交付（F688 先例：量化为准，负结果亦为交付）。
+**已核事实（源码）**：
+- planned 机制（F359）：RowPlan slot/lo/hi/abspos（model_sycl.cc:2291-2299），注意力逐行
+  [lo,hi]（:2481-2503）、KV 逐槽写入、逐行 rope（:2373）；每次带计划的 pass 前
+  plan_upload（3 次 H2D + wait_and_throw，:797-810）、pass 后 plan_free。
+- scoreRows：plain=pos+T，planned=max(hi-lo+1)（:2303-2312）；splitP 两侧同公式
+  （T*NH<224 ⇒ ceil(scoreRows/16) 上限 16，:2315-2322）⇒ 同 pos 同 T 时两侧同 splitP 同机制分支。
+- 阶段计时已有且对 planned pass 生效（F691 的 vs1 即读它）：model_stage_at(0/1/2)=
+  emb+rope / 24 blocks / norm+lm_head（model_sycl.cc:1934）。
+- A/B 两臂 API 齐备、零 C++ 改动：plain 臂 = model_session_start/seed/next（单会话暂存区，
+  g_plan.on=false）；planned 臂 = model_batch_start/add/next（槽区 + RowPlan，g_plan.on=true）。
+  batch_add 的整体预填与 batch_next 的 T=1 解码步均走 planned pass（model_sycl.cc:3332/3668）。
+**设计（A 段探针 = 自检新门 PROBE-PLAN，插在 BATCH-CACHE 之后）**：同 prompt（$ids，~48 tok，
+即 F691 verify 的实测场景）双臂各 3 步热身 + 8 步采样贪心 walk：plain 臂 session API、planned 臂
+batch API（1 活跃槽）；每步读 s0/s1/s2 与 pos（session_len / batch_len(0)），按步序逐位对齐成
+8 对同 pos 同 T 同可见范围的配对读数；逐对打印 + 两臂 s1 中位数入报告行。断言只有一条：两臂
+8 token walk 逐 id 相同（机制正确性沿用 BATCH-EQ 口径）；速度只报告不断言（F688 判据：同二进制
+A/B 才可信，比率不可外推）。
+**判定分支（读数说话）**：
+- planned 每 pass 显著更贵（≥10% 且多样本一致）⇒ 进 B 段：planned pass 内逐 op 分段计时
+  （attention/rope/kv_store/plan_upload），只修探针指认的主项，每修一项独立成门；
+  BATCH-EQ / orch 三门 / token 等价不回退。
+- 差距 <10% 或样本间不稳定 ⇒ 洗清：F691 的 5.6ms 归因改判为上下文长度物理，F692 判决不动，
+  findings 记判据"planned-vs-plain 必须同 pos 对表，pos=0 曲线不能给 pos>0 的 pass 定价"。
+**验收**：自检 0 FAIL + PROBE-PLAN PASS（walk 等价）+ 四 harness / gate_live / check_gates
+不劣化；B 段若开工另加对应门。
+**不做**：不动 attn mode 公式、splitP、gemv 路径——除非探针定罪且单独成门；不碰 verify 树
+路径本身；不在 mac 侧提交任何未验证代码（F648 停车先例）。
+
+## F694 规格（2026-11-21）：非 Intel GPU 后端——先探针定载体（acpp 对原生插件），再谈 ABI
+**A 段判定（2026-11-21，读数已入 findings F694）**：OCLK-PROBE **PASS**——五个引擎热点内核形状
+（gemvM2 双向、tiled GEMM、Q8_0 反量化 bit-exact、rmsnorm、attention 打分）在 Apple M4 GPU 经
+系统 OpenCL 全部数值正确 ⇒ **内核数学在非 Intel GPU 上成立，原生插件轨道可开工**（F650 条件②
+核心已闭合）。acpp 轨道未测成（brew 被 portable-ruby 4.0.10 卡死：ghcr 慢流 + 三镜像 404/403 +
+一次并发自伤锁）——F2 的"一次编译多后端"仍开放，待工具链解锁补测。B 段：先 ABI 规格，再本机
+最小闭环，漂移门同步设计；两轨读数对比后定载体。判据两条已录：OpenCL global size 是 item 数
+不是 group 数（"恰好前 N/64 正确"= 组数算错签名）；判别实验探针写入必须用专用缓冲。
+**动机（用户方向，2026-11-21）**："本项目是多后端推理引擎 windows 那边任务差不多了 差非intel
+gpu的插件 要跨系统运行"。本机（Mac mini, Apple M4, 10 核 GPU, Metal 4, 16GB）本身就是非 Intel
+GPU 机器 ⇒ F650 撤回理由①"无厂商 SDK 不可验证"在本机不成立（Metal 是系统框架，无需装 SDK），
+开工条件②"加载→设备→一次 GEMM 对参考"可本机闭合。AdaptiveCpp 25.10 有 bottled formula；F2
+研究发现（"acpp = 一次编译多后端"的载体）写于 2026-11-06 之前，从未实测。
+**已核事实**：
+- F650 撤回四理由 + 三开工条件（findings F650）：①ABI 规格先行；②有非 SYCL 卡的机器先做单后端
+  最小闭环（加载→设备→一次 GEMM 对参考）；③基线加"插件 vs 内建 logits 漂移"门（f16 阈值
+  5.7e-6）。接缝已就位：BufferType/Ledger（F675s1）、OpKind/OpTable（F678）、placement plan
+  （F674/F681）、graph（F677/F679/F680）——F650 设想的"换 php_backend_* 实现"现在有真正的
+  抽象层可落，不再动裸 dispatch。
+- 引擎内核为可移植 SYCL 子集（USM 捕获指针、parallel_for range/nd_range、local_accessor、
+  bit_cast<half>）：ops_sycl.cc:150-231（dequant）、:246-260（tiled GEMM）、model_sycl.cc:649-682
+  （gemvM，TG=64 蝶形归约）。
+- 本机：Apple M4 / OpenCL.framework 与 Metal.framework 都在 / Apple clang 21 / brew adaptivecpp
+  25.10.0（本轮安装）。
+**A 段（探针，零引擎改动）**：`probe/acpp/sycl_probe.cpp`——五个引擎热点内核形状（gemvM2
+TG=64 蝶形归约 @ K=896→4864 与 K=4864→896、tiled GEMM 16/16/32 @ M=512、Q8_0 块反量化
+（bit-exact 容差 0）、rmsnorm 归约 @ D=896、attention 打分 @ 46 行）经 acpp 编译，在本机非
+Intel 设备上对独立 CPU 参考核对 maxdiff/rel 并计时（速度只报告）。判定分支（读数说话）：
+- 编译失败 / 内核数值错 / 反量化不 bit-exact ⇒ **acpp 载体否决** → B 段走原生插件：先写 F650
+  条件①的 ABI 规格（POD vtable + 版本 + 能力位 + 显式拒绝），再落 Metal 最小闭环（本机可验证）。
+- 编译+数值过关 ⇒ **acpp 载体成立** ⇒ B 段评估"acpp 运行时分发" vs "原生厂商插件"的成本/收益
+  （含 F650 理由②的基线守卫方案与理由④的 ABI 决策），规格再细化后才动引擎。
+**验收（A 段）**：ACPP-PROBE 读数（devices/每 op maxdiff/rel/ms）入 findings；判定分支明确落档。
+**不做**（A 段口径；"不写 vtable"已被 A 段判定解除，由下方 B 段规格接管）：不装 CUDA/HIP SDK；
+不动引擎与 build 脚本；F693 探针门保持 PARKED（patch 已验证）。
+
+## F694 B 段规格（2026-11-21）：插件 ABI v1 —— POD vtable、演进策略、能力位、显式拒绝（F650 开工条件①）
+**已闭合（2026-11-21，本机 Apple M4）**：验收①②③全绿。①ABI-CHECK（C++17）+ ABI-CHECK-C
+（C11）双 PASS；②PLUGIN-CLOSED-LOOP: PASS——真 dlopen 加载 libkakasi_plugin_opencl.dylib，
+gemv_mm M=2/4 双形状 rel≤1.99e-07 + **自身确定性 byte-identical**、gemm_tiled rel=1.24e-06、
+dequant_q8_0 **bit-exact**（测试数据须钳出 f16 NaN/Inf 指数域：srand 撞出 scale16=ffca 的 NaN
+payload，两 NaN 位型可比对出假不一致——判据入 findings）、rmsnorm maxdiff=0；③三拒绝路径全部
+具名输出（abi 大版本 → NULL、缺 CAP_GEMM 的 stub 被 compute 角色检查拒绝 missing=0x3c、
+无入口符号 dylib 被 dlsym 拒绝）。证据：f694_closed_loop.log（git add -f）。
+**漂移门设计（F650 条件③，两层）**：v1 层已实现于闭环 harness——op 级对独立 CPU 参考（double
+累加）的容差断言 + dequant bit-exact + 自身确定性。v2 层（引擎集成时落门）：PLUGIN-DRIFT——
+同权重同 prompt 分别走 built-in SYCL 与 plugin 路径 greedy 生成，报告 max |logit| 漂移与首 token
+分歧位置，**只报告不断言**（F367/F688 先例），阈值待第一台真目标机读数落定后写死；负向对照 =
+篡改插件输出必须让漂移报告显著变化（gate 对"没测到"敏感，F660 先例）。
+**定位**：本规格落成头文件 `engine/src/plugins/plugin_abi.h`（纯 C 兼容头，跨系统唯一共享工件），
+v1 交付 = ABI 头 + 参考实现（OpenCL 后端插件，本机 Apple M4 可验证）+ 独立闭环 harness
+（加载→枚举设备→alloc→H2D→一次 gemvM/GEMM 对 CPU 参考→读回→断言）——**零引擎改动**；引擎
+加载器集成是 v2（基线守卫，见"宿主接入"）。OCLK-PROBE（findings F694）已证五内核数学在目标
+硬件成立，本规格只定边界，不定内核。
+**布局铁律（POD）**：
+1. 全部结构体 C 兼容 POD：定宽类型（int32_t/int64_t/uint64_t/float），禁 std:: 类型、禁虚函数、
+   禁继承、禁异常跨界、禁 C++ 引用；自然对齐，禁 pack；头内 `static_assert(sizeof(...))` 逐结构
+   钉死布局。同进程加载（in-process），无跨进程字节序问题——文档明示此边界。
+2. **每个结构体首字段 `uint32_t struct_size`**（Vulkan/CL 模式）：调用方填 `sizeof(自己知道的版本)`，
+   接收方校验 `>= 自己期望的最小值`；旧代码忽略多出的尾部字段。这是唯一的字段演进机制。
+3. 字符串：身份串（插件名/版本/设备名）一律 `const char*` NUL 结尾、由插件持有静态存储；
+   数据缓冲一律 `void* + uint64_t bytes` 显式长度，无隐式长度。
+4. 句柄：`kakasi_plugin_device`、`kakasi_plugin_stream` 为不透明 `void*`，由插件创建/销毁；
+   宿主不解释其内容。
+**vtable 与版本演进**：
+- 唯一导出：`extern "C" const kakasi_plugin_vtable* kakasi_plugin_get_vtable(uint32_t want_abi);`
+  want_abi = 宿主 ABI（major<<16|minor）。返回 NULL = 不兼容（宿主显式拒绝、具名报告，不重试降级）。
+- vtable 首两字段 `uint32_t abi_version; uint32_t vtable_size;`；**函数只许追加在尾部**，禁止
+  重排/删除/改签名（改语义 = 新增函数名，旧函数标注 superseded）；minor 升 = 追加，major 升 =
+  任何破坏性变化。宿主规则：major 相等才加载，minor 宿主 >= 插件即可。
+- 每个回调返回 `int32_t` 状态码（0=OK，负=错误，枚举进头文件）；详情经
+  `const char* last_error(kakasi_plugin_device*)` 取具名串。**任何失败都必须可从报告读到名字**。
+**能力位（显式拒绝的依据）**：`uint64_t query_caps(void)` 返回位集，v1 定义
+`CAP_DEVICE(枚举) | CAP_MEM(alloc/copy) | CAP_GEMV_MM(M<=4 共享权值 matvec) | CAP_GEMM(tiled) |
+CAP_DEQUANT_Q8_0(bit-exact)`。宿主按角色要求位集：插件声明了某角色却缺位 ⇒ **加载期具名拒绝**
+（`PLUGIN_REFUSED cap=... role=...`），绝不允许"加载了但用到才发现缺"；插件没声明的 op 宿主根本
+不路由（无静默回落到内建——回落只能是**配置层**（vendor_profiles 的 backend 选择）做出的、
+在 `/plugins` 报告可见的决定）。
+**v1 vtable 函数集（最小闭环，OCLK-PROBE 已验证的形状）**：
+- 设备：`device_count()` / `device_info(i, struct out*)`（name/caps/带宽或厂商 id）/
+  `device_open(i)` / `device_close(h)` / `stream_create(h)` / `stream_destroy(s)` / `stream_sync(s)`。
+- 内存：`mem_alloc(h, bytes, mem_kind)` / `mem_free(h, ptr)`（kind: device/host_pinned）/
+  `copy_h2d(s, dst, src, bytes)` / `copy_d2h(s, dst, src, bytes)`（D2D 留 v2）。
+- 计算（v1 四件）：`gemv_mm(s, X, W, bias, Y, K, N, M, ldy)`（引擎 gemvM 语义：每输出行一个
+  64-lane 组、权重单读共享、宿主保证 M∈1..4）；`gemm_tiled(s, X, W, Y, M, N, K)`（16/16/32 tile）；
+  `dequant_q8_0(s, raw, out, nblocks)`（34B 块、f16 scale，**bit-exact 契约**）；
+  `rmsnorm(s, x, w, out, n, eps)`。attention/KV/sampling/forward 全部留 v2——按 F650 条件②
+  "最小闭环（加载→设备→一次 GEMM 对参考）"划界，不贪。
+- 所有权：设备内存由插件分配、经插件的 mem_free 释放；宿主内存 = 调用方分配 + 容量入参，
+  接收方只写不malloc；**任何一侧都不得 free 对方给的指针**。
+**数值契约（与基线漂移门的关系，F650 条件③）**：插件不承诺与内建 SYCL 位恒等（硬件与累加
+序不同）；承诺三层：①op 级 vs 独立 CPU 参考（double 累加）在声明容差内（gemv/gemm rel<=5e-4
+量级、dequant **==0**，即 OCLK-PROBE 的口径）；②自身确定性：同权重同输入两次运行逐位一致；
+③引擎级 plugin-vs-builtin logits 漂移 = **先报告后定阈**（F367/F688 先例：经验属性只报告），
+阈值在拿到第一台非 Intel 目标机的读数后写入门，不预先拍脑袋。
+**宿主接入（v2，本规格只占位不定案）**：加载器按 F656/F657 的镜像相对解析（`<exe>/plugins` →
+`<exe>/../../plugins`）；加载状态/能力/拒绝原因经 `model_plugin_state()` 桥进 `/plugins` 报告；
+OpTable（F678）增加 plugin backend 条目——集成前基线零改动、零门变化。
+**验收（v1）**：①~~`plugin_abi.h` 编译过~~ **已达成（2026-11-21）**：`engine/src/plugins/
+plugin_abi.h` 落成，ABI-CHECK（C++17）与 ABI-CHECK-C（C11）双 PASS——布局 static_assert 全过、
+版本宏 pack/unpack 过、major 不匹配拒绝返回 NULL、compute 角色能力位掩码拒绝演示、stub 对其
+声明能力零 NULL（合规样例）；②③ **已达成（2026-11-21，PLUGIN-CLOSED-LOOP: PASS）**：真 dlopen 闭环 gemv_mm/gemm_tiled/
+dequant/rmsnorm 全对参考通过 + 确定性；三拒绝路径具名输出（abi 大版本 NULL、缺能力 stub 被
+角色检查拒绝、无入口 dylib 被 dlsym 拒绝）；④闭环 harness 只含 plugin_abi.h，无引擎头文件。
+**不做**：v1 不动引擎、不动 build 脚本、不写 Metal 后端（OpenCL 先行，Metal 作第二实现检验
+ABI 的可移植性主张）；不定义 attention/KV/sampling ABI（v2 再说）；不承诺性能数字。
+**acpp 轨道状态（本轮复核）**：ghcr.io 复测 connect=2.1s / TTFB=3.3s / 1MB 范围请求 12s 内
+**0 字节** ⇒ 网络仍不可用，补测继续停车；"两轨对比定载体"在 acpp 解锁前，原生插件轨道按本
+规格先行——OCLK-PROBE 已给足 A 段证据，载体最终判定留待 acpp 读数补齐后复核一次。
+
 ## F692 规格（2026-11-21）：轮级账本 + 接受率崖——模型类 drafter 的结构判决
 **已闭合 2026-11-21，提交 8344ae8。** 轮级仪表（drafts/verify/backfill 逐轮，诊断开关）把最后一段黑箱清零：K=23 depth=4 七轮 783.5ms 完全闭合（3×24.5 + verify 18 + backfill ~21）。崖测试封棺：同权重自用 drafter 在闲聊上 K≤12 接受为零（K=6: 0/72、K=12: 0/72、K=18: 5/57、K=23: 13/36）⇒ 低 K 崖是深度固有。与成本不对称（drafter ~24.5ms/token vs 目标批量 verify ~4.5ms/token）合取 ⇒ 模型类 drafter 结构性不可赢；盈利属零成本 drafter（prompt-lookup F391、batch 路径）。side-model drafter 定位为 FR-06.2 能力交付。判据：评估 drafter 必须同时量每 drafted-token 成本与目标批量 verify 每 token 成本；同权重自用 drafter 是深度崖与资产距离的判别器。梯全绿（selftest_f692b 0 FAIL、四 harness、gate_live f692、check_gates 198/0）。
 

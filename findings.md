@@ -5842,3 +5842,40 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **盈利归属**：零成本 drafter——prompt-lookup（F391 已上线：重复文本 1.865×、自适应窗口、不赢即自关）与本引擎的 batch 路径（M=3 per_tok 5.49ms、THRU 1.6×）。side-model drafter 的交付价值是**能力**（F689：跨模型无损投机 + 真接受计数），不是吞吐——原 FR-06.2 规格目标即能力，已达成。
 **判据（写入口径）**：评估 drafter 必须同时量"每 drafted-token 成本"与"目标批量 verify 每 token 成本"——只看接受率会误判（75% 接受仍 2× 亏损）；同权重自用 drafter 是"深度崖"与"资产距离"的判别器。
 **梯**：selftest_f692b 0 FAIL、四 harness exit 0、gate_live f692 GATE_LIVE_DONE、check_gates 198/0。仪表（分段/轮级计时，诊断开关，热路径零开销）按 F666 观测先例保留在库。
+
+## F694（2026-11-21，mac 侧）：非 Intel GPU 后端 A 段探针——引擎内核数学在 Apple M4 上全部数值正确（OpenCL 路径）
+**用户方向（2026-11-21）**："本项目是多后端推理引擎 windows 那边任务差不多了 差非intel gpu的插件 要跨系统运行"。本机 Mac mini（Apple M4，10 核 GPU，Metal 4，16GB）本身就是非 Intel GPU 机器 ⇒ F650 撤回理由①"无厂商 SDK 不可验证"在本机不成立（OpenCL/Metal 都是系统框架，零 SDK 安装），开工条件②"设备上算对"可本机闭合。
+**已证（OCLK-PROBE，`probe/acpp/ocl_kernels_probe.cpp`，`clang++ -O2 -framework OpenCL`，设备 Apple M4）**：
+- **五个引擎热点内核形状全部数值正确**：gemvM2（TG=64 蝶形归约）K=896→4864 rel=1.17e-07 / 0.63ms，K=4864→896 rel=1.52e-07 / 0.63ms；tiled GEMM（16/16/32 local）M=512 K=896 N=4864 rel=1.29e-06 / 43.7ms；**Q8_0 块反量化 bit-exact（maxdiff=0）**；rmsnorm 归约 rel=9.47e-08；attention 打分 rel=9.78e-08。前置：OCL-PROBE（vadd 1M 元素）PASS ⇒ 系统 OpenCL 运行时在 M4 GPU 上 alive。
+- **对插件轨道的含义**：F650 开工条件②的核心（设备上算对）已在非 Intel GPU 上证实；接缝（BufferType/Ledger F675s1、OpTable F678、placement F674/F681）就位；Metal 与 OpenCL 双 API 均可选。launch/sync 开销初读 ~0.2ms/次（bench 含 clFinish 往返，未分离 launch 与 sync）——引擎 15 内核×24 层/pass 的形态下须单独测量，本探针不定罪。
+**判据（写入口径）**：
+1. **OpenCL 的 global size 参数是 work-ITEM 数，不是 work-GROUP 数**——探针首跑把 `g=N, l=64` 当"N 个组"传，实际只产生 N/64 个组：恰好前 N/64 行正确、其余全零。三轮假因（2D `__local` 数组、lane0-only 写、COPY_HOST_PTR 串行化）被逐一否证后，由零行分布（first=76=N/64、count=4788、无解）定罪。引擎源码（model_sycl.cc:654 `nd_range(N*TG, TG)`）从来是对的，错在探针。**"恰好前 N/64 正确、其余为零"是组数算错的签名**。
+2. **判别实验的探针写入必须用专用缓冲**——DIAG 槽位 Y[N+2..N+5] 与真实输出槽 Y[N+row]（row=2..5）重叠，跨组写入顺序未定义 ⇒ DIAG 读数自相矛盾（redA0 两次"0.3084/-0.0556"是槽位碰撞，不是竞态）。教训同 F652：判别实验本身先要可判别。
+3. Apple GPU 的 OpenCL 完全可靠：local+barrier 归约、bit-exact 整数反量化（fp16 as_half）、2D tiled local、跨组独立归约全过。此前三轮"Apple OpenCL 有 bug"的假设全部是我方 bug，**修好组数后 5/5 一次全绿**。
+**停车（诚实）**：acpp 轨道（SYCL 源码经 AdaptiveCpp 编译的跨厂商可移植性，F2 发现的实测）**未测成**——brew 在本机被 portable-ruby 4.0.10 卡死：ghcr.io 直连 ~8KB/s 慢流；NJU/TUNA/USTC 三个镜像均无该文件（404/403）；外加一次自伤（并发 brew 命令互锁）。**F2 的"一次编译多后端"问题仍开放**——在网络正常的机器上预计几分钟可解；本机的 bootstrap 成本本身是 acpp 轨道的一项实际成本证据。
+**B 段决策（下轮）**：内核数学已证成立 ⇒ 原生插件轨道可开工：先写 F650 条件①的 ABI 规格（POD vtable + 版本 + 能力位 + 显式拒绝），再落本机可验证的最小闭环（OpenCL 或 Metal 版 gemvM→GEMM 对参考），基线漂移门（f16 5.7e-6 阈值）同步设计。acpp 轨道待工具链解锁后补测，两轨读数对比后再定载体。
+
+## F694 B 段（2026-11-21，mac 侧）：插件 ABI v1 + OpenCL 参考插件——闭环全绿，F650 三开工条件全部闭合
+**交付**：`engine/src/plugins/plugin_abi.h`（ABI v1：struct_size 首字段演进、vtable 尾部追加、
+major/minor 加载规则、能力位、last_error、所有权规则、static_assert 钉 64 位布局）+
+`engine/src/plugins/plugin_opencl.cc`（参考后端，真动态库）+ `probe/acpp/` 闭环 harness 与
+两个负向 stub。引擎零改动（F650 理由②的基线守卫按设计兑现：v1 不动引擎、v2 才接 OpTable）。
+**读数（PLUGIN-CLOSED-LOOP: PASS，Apple M4，证据 f694_closed_loop.log）**：
+- ABI-CHECK（C++17）/ ABI-CHECK-C（C11）双 PASS：布局断言、版本宏、major 拒绝、角色掩码。
+- gemv_mm M=2 K=896→4864 rel=1.04e-07 / M=4 K=4864→896 rel=1.99e-07，**两次运行 byte-identical
+  （自身确定性）**；gemm_tiled M=512 rel=1.24e-06；**dequant_q8_0 bit-exact**；rmsnorm maxdiff=0。
+- 三拒绝路径具名：PLUGIN-REFUSE abi（want 0x20000 → NULL）、PLUGIN-REFUSE caps（stub 只声明
+  DEVICE|MEM，compute 角色检查 missing=0x3c）、PLUGIN-REFUSE entry（无入口符号 dlsym 失败）。
+**判据（写入口径）**：
+1. **随机 f16 scale 会撞进 NaN/Inf 指数域**（srand(300) 撞出 scale16=ffca）：两个 NaN 的 payload
+   位型可以不同，bitwise 比较会报假不一致——bit-exact 契约的测试数据必须钳出 exp 全 1 域，
+   或比较必须 NaN-aware（both-NaN 视为一致）。OCLK-PROBE 的 srand(11) 没撞到，属于运气不是
+   设计；本轮两道防线都上了。
+2. **补丁命令被外部拦截时不得假设已应用**——本轮 DIAG 补丁实际没落盘，重建后读数"矛盾"
+   （DIAG 缺席 + FAIL 在场）拖延了两轮。恢复先核对源码现状再推断行为。
+3. **F650 三开工条件闭合**：①ABI 规格已定案并落头文件；②"加载→设备→一次 GEMM 对参考"在非
+   Intel GPU（Apple M4）全绿；③漂移门两层设计定案（v1 op 级已实现：容差+bit-exact+确定性；
+   v2 引擎级 PLUGIN-DRIFT：报告不定阈，负向对照防"没测到"）。
+**两轨状态**：原生插件轨道 v1 交付完成；acpp 轨道仍停车（ghcr 0 字节/12s）。载体最终判定
+待 acpp 解锁补测；即便 acpp 可行，插件 ABI 仍保留价值——厂商调优内核（cublas/MPS 级）本就
+需要出 SYCL 可移植面之外的口子，F650 的原始动机成立。

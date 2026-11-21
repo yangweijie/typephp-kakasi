@@ -3161,3 +3161,28 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - 结构判决：drafter 每 token ~24.5ms > 目标批量 verify 每 token ~4.5ms ⇒ 需 ~5× 便宜才赢；接受率崖（自用同权重在 chat 上 K≤12 全零）为深度固有 ⇒ 模型类 drafter 结构性不可赢。
 - 盈利归属零成本 drafter（prompt-lookup F391 + batch 路径）；side-model drafter 定位为能力交付（FR-06.2）。
 - 梯全绿（selftest_f692b 0 FAIL、四 harness、gate_live f692、check_gates 198/0）。提交：仪表 + 证据 + docs。
+
+## F693 会话（2026-11-21，mac 侧）：同形状 A/B 立项 + 探针门代码就位（未提交，待 Windows 梯）
+- 状态恢复：F692 闭合（HEAD f9ca466）。队列盘点：FR-05 插件与多卡被硬件阻塞（F650 开工条件三件齐才可做）、unevaluated* 标记价值有限、F649 方案 C 已由 F673 交付（residency_budget_gib/kv_cache_gib + null-before-prefill，活体门在 api_smoke.py:2847 / par_smoke.py:316）、F582 十进制串已由 F588-F605 结项 ⇒ **F691 点名的 planned 路径 ~5.6ms 嫌疑是链上唯一本地可做的项**。
+- 环境事实（本轮新核）：本 mac 检出无 SYCL 工具链（无 icx/dpcpp/acpp/sycl-ls；/Volumes/data 是本地 hfs 盘，不是 Windows 机 SMB 挂载）；构建与梯历来在 Windows 机（C:\git\c\typephp-kakasi，Git Bash + oneAPI icx + Arc B390）。
+- F693 规格写入 task_plan.md：A 段探针 = 自检新门 **PROBE-PLAN**（同 prompt $ids、同 pos、同 T=1 的 planned-vs-plain 同二进制 A/B；断言只有两臂 8 token walk 逐 id 相同；速度只报告不断言；判定分支：planned ≥10% 且稳定 ⇒ B 段逐 op 分段定罪、只修主项，<10% 或不稳 ⇒ 洗清并记判据"planned-vs-plain 必须同 pos 对表"）。
+- PROBE-PLAN 门实现于 engine/main.php（BATCH-CACHE 之后）：双臂各 3 步热身 + 8 步采样，逐对打印 pos + s0/s1/s2（session_len / batch_len(0) 对齐），双臂 s1 trimmean + delta 报告行；唯一断言 walk_eq（BATCH-EQ 口径）；只用文件内既有构造（array()/[]= /count/implode）。
+- 本地验证（F645/F658 先例：夹具先过真解释器）：php -l 通过；真 PHP + stub 原语双分支测试（/tmp/f693/harness.php）——PASS 行（walk_eq=1 + trimmean + delta）与 FAIL 行（walk_eq=0 双 walk 打印）均按设计出现。**这是解释器级验证，不替代编译与真引擎读数。**
+- 停车状态（F648 先例：验证未出，不提交）：main.php 的 F693 块留在工作树。**交接件**：`f693_handoff.patch`（repo 根，未跟踪，含 main.php/task_plan/progress 三文件的全部改动；已在 f9ca466 纯净 worktree 上验证 `git apply --check` 干净、php -l 通过、门块字节一致）。Windows 侧恢复命令（C:\git\c\typephp-kakasi，Git Bash）：①`git apply f693_handoff.patch`；②`bash scripts/build-check.sh` → BUILD_OK；③`run-kakasi-selftest.bat selftest_f693.log` → RUN_EXIT=0 / 0 FAIL + `PROBE-PLAN: PASS`（walk_eq=1）→ 读 8 对配对读数与 trimmean；④按判定分支走（定罪 ⇒ B 段逐 op 探针；洗清 ⇒ findings 记判据）；⑤四 harness + `gate_live.sh f693` + `check_gates.sh` 不劣化；⑥绿则提交（含日志 git add -f）并闭 task_plan/findings/progress。
+- 远程执行尝试（本轮，未成）：Windows 机疑似 = LAN `yangweiiedemini (192.168.31.96)`（known_hosts 已有其 ed25519 host key ⇒ 此 mac 之前连过它；端口 22 现存）。BatchMode 公钥试了 ASUS/yangweijie/jay/administrator 四用户全部 Permission denied（publickey,password）——**缺凭据**，非网络不通；仓库 scripts/docs 无既有连接配方；ZeroTier 在网（10.147.20.73）但同样卡凭据。跨机执行需用户给凭据或用户亲自跑梯。
+
+## F694 会话（2026-11-21，mac 侧续）：用户改向非 Intel GPU 插件 + A 段探针判定
+- 用户答："本项目是多后端推理引擎 windows 那边任务差不多了 差非intel gpu的插件 要跨系统运行" ⇒ F693 梯保持 PARKED（patch 已验证），活动题转为 F694（非 Intel GPU 后端，跨系统）。
+- 已核：本机 = Mac mini（Apple M4，10 核 GPU，Metal 4，16GB）——本身就是非 Intel GPU 机器；OpenCL/Metal 均为系统框架，F650 撤回理由①在本机不成立；brew 有 adaptivecpp 25.10.0；引擎内核为可移植 SYCL 子集（gemvM TG=64 蝶形归约 model_sycl.cc:649、tiled GEMM ops_sycl.cc:246、dequant ops_sycl.cc:150）。
+- 探针（probe/acpp/）：opencl_probe.cpp（vadd，OCL-PROBE PASS）→ ocl_kernels_probe.cpp（五内核，引擎结构逐字镜像）。
+- **判定：OCLK-PROBE PASS——五内核在 Apple M4 GPU 全部数值正确**（gemvM2 rel≤1.5e-07、tiled GEMM rel=1.3e-06、Q8_0 反量化 bit-exact、rmsnorm/attn rel≤1e-07）。原生插件轨道核心可行性证实。
+- 排错记录（三轮假因 + 一真因，全入 findings 判据）：①疑 2D __local——否证；②疑 lane0-only 写——否证；③疑 COPY_HOST_PTR 串行化——否证；④真因 = 探针把 global size 当 group 数传（item 数！），零行分布 first=76=N/64 定罪；修后 5/5 一次全绿。DIAG 槽位与真实输出槽碰撞制造了"非确定性"假象——判据：判别实验写入必须用专用缓冲。
+- acpp 安装停车：ghcr.io ~8KB/s 慢流 + NJU/TUNA/USTC 三镜像无 portable-ruby 4.0.10 + 一次并发 brew 自伤残留锁 ⇒ F2"一次编译多后端"实测未成，待网络正常机器或源码构建补测。
+- 下轮（B 段）：F650 条件① ABI 规格（POD vtable + 版本 + 能力位 + 显式拒绝）→ 本机最小闭环（OpenCL/Metal gemvM→GEMM 对参考）→ 漂移门（f16 5.7e-6）设计；acpp 轨道解锁后对比定载体。
+- B 段第一步已落（同日续）：**插件 ABI v1 规格写入 task_plan.md**（POD 铁律含 struct_size 首字段 + static_assert；vtable 尾部追加式演进 + major/minor 加载规则；能力位 CAP_DEVICE/MEM/GEMV_MM/GEMM/DEQUANT_Q8_0 + 加载期具名拒绝；v1 函数集 = 设备/内存/gemv_mm/gemm_tiled/dequant_q8_0/rmsnorm，attention/KV/forward 留 v2；数值契约三层 = op 级容差 + 自身确定性 + 引擎级漂移先报告后定阈）。v1 交付件 = plugin_abi.h + OpenCL 参考插件 + 独立闭环 harness，零引擎改动。
+- 网络复核：ghcr.io connect=2.1s / TTFB=3.3s / 1MB 范围请求 12s 内 0 字节 ⇒ acpp 补测继续停车，原生插件轨道按 B 段规格先行；载体最终判定待 acpp 读数补齐后复核一次。
+- 验收①落地（同日续）：`engine/src/plugins/plugin_abi.h` 写成（纯 C 兼容：struct_size 首字段、vtable 尾部追加、能力位、last_error、所有权规则、static_assert 钉 64 位布局）；`probe/acpp/plugin_abi_compile_check.{cpp,c}` 双语言验证 **ABI-CHECK: PASS + ABI-CHECK-C: PASS**（stub 按声明能力合规：device_info 实现而非 NULL）。三处自误（include 层级、万能 stub 签名、mem_free 双参）当场修正。
+- **v1 验收②③全绿（PLUGIN-CLOSED-LOOP: PASS，Apple M4）**：`engine/src/plugins/plugin_opencl.cc`（真动态库，dlopen 全路径）→ gemv_mm M=2/4 双形状 rel≤1.99e-07 + byte-identical 确定性、gemm_tiled rel=1.24e-06、dequant_q8_0 bit-exact、rmsnorm maxdiff=0；三拒绝路径具名输出全过（abi 大版本 NULL / 缺能力 stub missing=0x3c / 无入口 dlsym 拒绝）。
+- 过程判据：随机 f16 scale 撞 NaN 域（scale16=ffca）⇒ bit-exact 测试数据须钳 exp 全 1 域或 NaN-aware 比较（两道防线都上）；DIAG 补丁被 hook 拦截后不得假设已应用（读数"矛盾"两轮的根因）。证据：f694_closed_loop.log（git add -f）。
+- 漂移门两层设计定案（F650 条件③）：v1 op 级已实现（容差+bit-exact+确定性）；v2 引擎级 PLUGIN-DRIFT（报告不定阈 + 负向对照）。
+- 收口提交（选择性）：plugin_abi.h + plugin_opencl.cc + probe/acpp 全部源码 + f694_closed_loop.log + f693_handoff.patch + 三份 planning docs；engine/main.php 的 F693 块继续 PARKED 不提交。
