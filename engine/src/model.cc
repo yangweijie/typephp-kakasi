@@ -82,6 +82,9 @@ int spec_selfseed_on();
 void set_draft_layers(int k);
 int draft_layers();
 std::vector<int> spec_layerskip_generate(int backend, std::vector<int> ids, int n_new, int draft_layers, int depth);
+// F689: speculative decoding with the INDEPENDENT side-loaded drafter (FR-06.2).
+std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int n_new, int draft_layers, int depth);
+std::string side_cache_report();
 // F687: MoE FFN branch-merge on a side-loaded expert block.
 std::string moe_ffn(int backend, int token_id);
 std::string spec_stats();
@@ -305,6 +308,21 @@ php::Str php_model_spec_layerskip(php::Int backend, php::Str tokens, php::Int n_
     }
     return php::Str(s);
 }
+// F689: same shape as spec_layerskip, but the chain builder runs the side-loaded INDEPENDENT
+// drafter (its own weights, own KV, own rope tables). Verify is the untouched target pass.
+php::Str php_model_spec_side_draft(php::Int backend, php::Str tokens, php::Int n_new,
+                                   php::Int draft_layers, php::Int depth) {
+    const std::string csv(tokens.data(), tokens.length());
+    const std::vector<int> out = model::spec_side_draft_generate(
+        (int) backend, parse_ids(csv), (int) n_new, (int) draft_layers, (int) depth);
+    std::string s;
+    for (size_t i = 0; i < out.size(); ++i) {
+        if (i) s += ",";
+        s += std::to_string(out[i]);
+    }
+    return php::Str(s);
+}
+php::Str php_model_side_cache_report() { return php::Str(model::side_cache_report()); }
 // F687: side-load a MoE GGUF (independent table; the main model is untouched), then run one
 // block's MoE FFN. The merge is verified inside the op against a host recomputation.
 php::Int php_model_moe_side_load(php::Str path) {

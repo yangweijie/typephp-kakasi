@@ -3135,3 +3135,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - SYNC-TAX v2 门（T=1+T=5 双形状 × 7 样本，selftest_f688b.log）：ratio 0.988 / 1.002 ⇒ <5% 线未过。
 - 判定：负结果闭合。引擎四文件 git checkout 回 HEAD；重建（build_f688c.log）+ 自检（selftest_f688c.log，939 行 0 FAIL）+ check_gates 198/0。
 - 提交：探针 + 证据日志 + findings/progress；docs 闭环（task_plan.md）。
+
+## F689 会话（2026-11-21）：独立第二草稿模型闭环
+- 用户指示全盘搜 GGUF（72 个，探针盘点）→ 兼容性头验证（xLAM 同构/官方 Instruct 需下载）→ ModelScope 下载官方 Qwen2.5-0.5B-Instruct q4_k_m（491MB，字节数对 manifest）。
+- 实现：side 缓存 + side_forward + spec_side_draft_generate + 桥接 + SIDE-DRAFT 门（插 MOE-MERGE 后）。
+- 首轮 xLAM：lossless=ok / 0/72 —— 与 F686 自用 K=12 的 0 对照 ⇒ 机制无恙、资产太远。
+- 换官方资产 + 双 K 判别：K=6 0/72（不构成反证）、K=23 18/21（86%）⇒ side 前向证明正确；SIDE-DRAFT: PASS（lossless 两档）。
+- 梯：selftest_f689c 942 行 0 FAIL、四 harness PASS、gate_live f689（SMOKE/PRETTY 197/0、PARITY 13×3、THRU 1.616×）、check_gates 198/0。
+- 提交：引擎四文件 + 头探针 + 证据日志；docs 闭环。模型文件 gitignored 不入库。

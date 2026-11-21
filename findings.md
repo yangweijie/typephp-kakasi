@@ -5806,3 +5806,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **判据（写入口径）**：①微基准的"占比"不可迁移，只有"绝对值 × 引擎实测层时"的算术才可外推；②跨二进制对比在共享 GPU 上噪声主导（旧二进制 PERF 32.34 vs 新 34.23，而同二进制 A/B 是 32.58 vs 32.64）——**只有同二进制内 A/B 可信**；③测量门的两分支决策措辞用 RESULT/NOT_CLEARED 而非 FAIL（F367 "reported, not asserted" 先例）：正确性断言两侧全绿，报红会谎报"实现坏了"，而真实结论是"该分支不达线"。
 **决定**：按规格 <5% 分支，引擎改动全量撤回（F650 先例），保留探针 + 证据日志 + 本条目。撤回后重建自检 939 行 0 FAIL、RUN_EXIT=0、check_gates **198/0**（cites selftest_f688c.log）。
 **残余队列不变**：FR-06.2 第二草稿模型（缺小模型资产）、FR-05 插件（缺硬件/ABI 三前提）、多卡（缺第二块 dGPU）。
+
+## F689（2026-11-21）：独立第二草稿模型（FR-06.2）——跨模型投机解码闭合
+**资产（全盘实测选定）**：72 个 GGUF 盘点（.lmstudio/.cache/modelscope/git/ZHIPU，probe/gguf_header_probe.py 读头验证）。驻留目标 = `qwen2.5_0.5b_uncensored.Q4_K_M.gguf`（main.php:19436，qwen2 键/24 层/896/4864/14+2 头/151936 词表/tied embed）。草稿 = **官方 Qwen2.5-0.5B-Instruct Q4_K_M**（ModelScope Qwen/Qwen2.5-0.5B-Instruct-GGUF，491,400,032 字节与 repo manifest 逐字节核对；头实测同构 291 tensors；存 `engine/models/qwen2.5-0.5b-instruct-gguf/`，gitignored）。盘上 xLAM 微调版同构同词表但分布远（见下）。
+**实现**：`side_cached_weight`（side 表按名首用 → dequant_device → 小张量 f32 / embed-head f16，进程内缓存，K=23 时 278 tensors 1.64GB）；`side_forward`（side embed 行 → K 层全套既有 kernel → side final_norm → tied head 分块 gemv + 一次读回 argmax；自有 f32 side-KVCache 仅 K 层、rope 表按 side meta 现场构建）；`spec_side_draft_generate`（镜像 F686 循环，verify 用未动的 `prefill_tops_tree`）。**上下文同步关键点**：F686 自用 draft 直接读主 KV（同权重故有效），独立 drafter 必须自维护 side-KV——prompt 先做 K 层 side 预填充；**全接受（acc==cn）时最后一个接受 token 从未当过 draft 输入，其 side 行未写，须回填一次 T=1 side_forward**（这是独立 drafter 与自用 draft 的本质差异）。
+**两轮实测，判别链**：
+- xLAM 资产：lossless=ok 但 **accepted=0/72**。**这不是实现 bug 的证据**——同一日志里 F686 自用 draft K=12 也是 0/72（目标自己的半深截断在该 prompt 上同样全拒）；prompt 是事实回声链（"The capital of France is Paris. …"），greedy 轨迹对深度极端敏感（K=23 自用 100%、K=12 自用 0%）。
+- 换官方亲本资产 + 双 K 判别门：K=6 → 0/72（与自用 K=12 同型，快深度接受为零在此 prompt 类不构成反证）；**K=23 → 18/21（86%）accepted** ⇒ side 前向被证明正确（若张量/rope/GQA 有 bug，近全深度也会是 0）。**lossless 两档全过**（位恒等硬门）。
+**门**：`SIDE-DRAFT`（自检，插 MOE-MERGE 后，side_load 可重入）——asset 回退（official → xLAM → SKIP）、双 K、lossless 合取 + 近深度 acceptance>0 为 PASS 条件。梯：自检 942 行 0 FAIL、四 harness VERDICT PASS、SMOKE/PRETTY 197/0、PARITY 13×3、PAR/FAIR 0、THRU 1.616×、哨兵 0、check_gates 198/0（cites selftest_f689c.log）。
+**诚实声明（吞吐）**：门计时 K=23 档 1718ms/24tok **含 side 缓存一次性预热**（491MB 读+反量化），且每 draft 步 head 读 273MB f16——当前形态吞吐不优于 plain greedy；本 F 交付的是**能力**（独立权重 drafter 接入、无损 verify、真接受计数），盈利路径（更匹配 prompt 类的小 K、int8 head、drafter 放 CPU 设备）留作后续测量项，不做口头承诺。
+**判据（写入口径）**：①资产选择可测：domain-shift 微调（xLAM）与直系亲本（官方 Instruct）的接受率差就是资产距离的直接度量；②快深度 acceptance=0 不是 drafter 坏了的证据——判别性实验必须覆盖"近深度"档（深度敏感 prompt 类上，连目标自身截断都会全拒）。

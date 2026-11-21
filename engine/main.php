@@ -21500,6 +21500,62 @@ function main(): void
         }
     }
 
+    // F689: the INDEPENDENT second draft model (FR-06.2). The drafter is a side-loaded GGUF of
+    // the resident model's own family - same tokenizer, vocab 151936 and shapes, DIFFERENT
+    // weights - so its guesses are real cross-model speculation. Greedy speculative decoding is
+    // lossless: the verify's argmax IS the target's greedy token, so ids must equal plain greedy
+    // bit for bit. acceptance > 0 is the bar for "the drafter actually contributes"; the rate
+    // itself is reported, not asserted (an empirical property of the asset pair). Asset choice,
+    // MEASURED: the on-disk xLAM fine-tune (function-calling domain shift) drafted 0/72 accepted
+    // - the SAME acceptance the F686 self-draft got at K=12, so the mechanism was sound and the
+    // asset was too far. The resident target is an abliteration of the OFFICIAL
+    // Qwen2.5-0.5B-Instruct, so the official model (pulled from ModelScope
+    // Qwen/Qwen2.5-0.5B-Instruct-GGUF, byte size verified against the repo manifest) is the
+    // closest independent drafter that exists and is the primary asset; xLAM stays as fallback.
+    // Re-side-loading here is safe: side_load replaces the whole side table and MOE-MERGE above
+    // already finished.
+    $f689Path = "C:/git/c/typephp-kakasi/engine/models/qwen2.5-0.5b-instruct-gguf/qwen2.5-0.5b-instruct-q4_k_m.gguf";
+    $f689Asset = "official-instruct";
+    if (!file_exists($f689Path)) {
+        $f689Path = "C:/Users/ASUS/.lmstudio/models/ermiaazarkhalili/Qwen2.5-0.5B-Instruct_Function_Calling_xLAM-GGUF/model-Q8_0.gguf";
+        $f689Asset = "xLAM-fallback";
+    }
+    if (!file_exists($f689Path)) {
+        echo "SIDE-DRAFT: SKIP (draft gguf absent: " . $f689Path . ")\n";
+    } else if (model_moe_side_load($f689Path) != 1) {
+        echo "SIDE-DRAFT: FAIL side_load: " . model_moe_error() . "\n";
+    } else {
+        // Two depths, mirroring the F686 gate's shape: K=6 is the FAST-drafter point, K=23 is
+        // the near-full-depth point where the F686 self-draft reached 100% acceptance. The
+        // F686 self-draft got 0 accepted at K=12 on this prompt, so a fast-depth acceptance of
+        // zero says nothing about the drafter's correctness - the near-depth run is what
+        // discriminates a working side forward from a broken one.
+        $f689AllLossless = true;
+        $f689NearAccepted = 0;
+        foreach ([6, 23] as $f689K) {
+            $f689Depth = 4;
+            $t689 = microtime(true);
+            $g689 = model_spec_side_draft(0, $specIds, 24, $f689K, $f689Depth);
+            $ms689 = (microtime(true) - $t689) * 1000.0;
+            $f689Stats = model_spec_stats();
+            $f689Accepted = 0;
+            $f689Drafts = 0;
+            if (preg_match('/accepted=(\d+)/', $f689Stats, $f689M)) { $f689Accepted = (int) $f689M[1]; }
+            if (preg_match('/drafts=(\d+)/', $f689Stats, $f689M)) { $f689Drafts = (int) $f689M[1]; }
+            echo "SIDE-DRAFT asset=" . $f689Asset . " K=" . $f689K . " depth=" . $f689Depth . " "
+                . $ms689 . " ms " . $f689Stats . " cache[" . model_side_cache_report() . "]" . chr(10);
+            if ($g689 != $gRef) { $f689AllLossless = false; }
+            if ($f689K == 23) { $f689NearAccepted = $f689Accepted; }
+        }
+        if ($f689AllLossless && $f689NearAccepted > 0) {
+            echo "SIDE-DRAFT: PASS (independent drafter: lossless at both depths, "
+                . $f689NearAccepted . " drafts accepted at the near-depth point)" . chr(10);
+        } else {
+            echo "SIDE-DRAFT: FAIL lossless=" . ($f689AllLossless ? "ok" : "DIFF")
+                . " near_depth_accepted=" . $f689NearAccepted . chr(10);
+        }
+    }
+
     // SPEC-TREE-SAMPLE (F307): the same tree, verified by SAMPLING. Greedy verification can accept
     // only one branch (F273), so this is the first version where more than one bin can pay. Three
     // gates in one: temp=0 must reproduce the greedy tree token for token (regression guard), a

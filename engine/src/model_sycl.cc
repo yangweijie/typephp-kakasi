@@ -4435,6 +4435,331 @@ std::string moe_ffn(int backend, int token_id) {
     return ms;
 }
 
+// =================================================================== F689
+// F689: the INDEPENDENT second draft model (FR-06.2). The drafter is a side-loaded GGUF of the
+// resident target's own family - same tokenizer, vocab 151936 and shapes, DIFFERENT weights (an
+// xLAM function-calling fine-tune of Qwen2.5-0.5B) - so its guesses are real cross-model
+// speculation, not the F686 self-draft's truncated read of the target's own weights. Greedy
+// speculative decoding stays LOSSLESS: the verify pass (prefill_tops_tree, untouched) computes
+// the target's own greedy at every chain position, so emitted ids are bit-identical to plain
+// greedy no matter what the drafter proposes; the acceptance counters are the only signal of
+// whether the drafter is any good, and they are reported, not asserted.
+//
+// Side-tensor device cache: the drafter reads its weights from the side table (file-backed) on
+// first use, dequantizes onto the device and keeps them for the process - re-reading the 531 MB
+// file per draft step (the F687 moe_ffn pattern, fine for a one-shot gate) would swamp the
+// draft loop. Small tensors stay f32; the tied embedding (the one >16M-element tensor, doubled
+// as the head) goes to f16, mirroring the resident path's precision policy for its big tensors.
+std::map<std::string, Wt> g_side_cache;
+size_t g_side_cache_bytes = 0;
+Wt side_cached_weight(sycl::queue& q, const std::string& name) {
+    auto it = g_side_cache.find(name);
+    if (it != g_side_cache.end()) return it->second;
+    const int idx = gguf::side_find(name);
+    if (idx < 0) { g_err = "side draft: missing tensor " + name; return {}; }
+    uint64_t numel = 1;
+    for (int d = 0; d < 4; ++d) {
+        const int64_t ne = gguf::side_ne(idx, d);
+        if (ne > 0) numel *= (uint64_t) ne;
+    }
+    if (numel == 0) { g_err = "side draft: empty tensor " + name; return {}; }
+    std::vector<uint8_t> raw;
+    if (!gguf::side_raw_range(idx, 0, (uint64_t) gguf::side_bytes(idx), raw)) {
+        g_err = "side draft: read " + name; return {};
+    }
+    float* p = dequant_device(q, raw, (uint32_t) gguf::side_dtype(idx), numel);
+    if (!p) { g_err = "side draft: dequant " + name; return {}; }
+    Wt w{p, nullptr, 0};
+    size_t bytes = (size_t) numel * sizeof(float);
+    if (numel > (1u << 24)) {
+        buf::BufferType* btp = dev_bt(q);
+        sycl::half* ph = btp ? (sycl::half*) buf::alloc_bt(btp, numel * sizeof(sycl::half)) : nullptr;
+        if (ph) {
+            to_half(q, p, ph, numel);
+            q.wait_and_throw();
+            buf::free_bt(dev_bt(q), p, numel * sizeof(float));
+            w = Wt{(void*) ph, nullptr, 1};
+            bytes = (size_t) numel * sizeof(sycl::half);
+        }
+    }
+    g_side_cache[name] = w;
+    g_side_cache_bytes += bytes;
+    return w;
+}
+std::string side_cache_report() {
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "tensors=%zu bytes=%zu", g_side_cache.size(), g_side_cache_bytes);
+    return std::string(buf);
+}
+
+// F689: run `toks` through the side model's first K blocks (KV rows pos0..pos0+T-1 written
+// into the side KV), optionally returning the side head's argmax for the LAST row. All weights
+// come from the side cache; every kernel is the engine's own. Returns the top token (want_top),
+// 0, or -1 with g_err set.
+int side_forward(sycl::queue& q, const std::vector<int>& toks, int pos0, int K, KVCache& skv,
+                 bool want_top) {
+    const int eIdx = gguf::side_find("token_embd.weight");
+    if (eIdx < 0) { g_err = "side draft: no token_embd.weight"; return -1; }
+    const int D = (int) gguf::side_ne(eIdx, 0);
+    const int V = (int) gguf::side_ne(eIdx, 1);
+    const int NH = (int) gguf::side_meta_num("qwen2.attention.head_count");
+    const int NKV = (int) gguf::side_meta_num("qwen2.attention.head_count_kv");
+    const int FFN = (int) gguf::side_meta_num("qwen2.feed_forward_length");
+    double theta = gguf::side_meta_num("qwen2.rope.freq_base");
+    if (!(theta > 0)) theta = 1000000.0;
+    double epsd = gguf::side_meta_num("qwen2.attention.layer_norm_rms_epsilon");
+    if (!(epsd > 0)) epsd = 1e-6;
+    const float eps = (float) epsd;
+    const int T = (int) toks.size();
+    if (D <= 0 || V <= 0 || NH <= 0 || NKV <= 0 || FFN <= 0 || K <= 0 || T <= 0
+        || D % NH != 0) { g_err = "side draft: bad side dims"; return -1; }
+    const int HD = D / NH;
+    const int DKV = NKV * HD;
+    Wt emb = side_cached_weight(q, "token_embd.weight");
+    if (!emb.p) return -1;
+    const int half = HD / 2;
+    std::vector<float> ctab((size_t) T * half), stab((size_t) T * half);
+    for (int t = 0; t < T; ++t) {
+        for (int j = 0; j < half; ++j) {
+            const float freq = (float) std::pow(theta, -(double) (2 * j) / (double) HD);
+            const float ang = (float) (pos0 + t) * freq;
+            ctab[(size_t) t * half + j] = std::cos(ang);
+            stab[(size_t) t * half + j] = std::sin(ang);
+        }
+    }
+    Dev dCos(&q, ctab.size(), true);
+    Dev dSin(&q, stab.size(), true);
+    q.memcpy(dCos.p, ctab.data(), sizeof(float) * ctab.size());
+    q.memcpy(dSin.p, stab.data(), sizeof(float) * stab.size());
+    const float scale = 1.0f / sycl::sqrt((float) HD);
+    Dev x(&q, (size_t) T * D, true);
+    Dev h(&q, (size_t) T * D, true);
+    Dev qkv(&q, (size_t) T * D, true);
+    Dev kt(&q, (size_t) T * DKV, true);
+    Dev vt(&q, (size_t) T * DKV, true);
+    Dev ao(&q, (size_t) T * D, true);
+    Dev oo(&q, (size_t) T * D, true);
+    const int scoreRows = pos0 + T;
+    Dev sc(&q, (size_t) T * NH * (size_t) scoreRows, true);
+    Dev sg(&q, (size_t) T * FFN, true);
+    Dev su(&q, (size_t) T * FFN, true);
+    Dev sd(&q, (size_t) T * D, true);
+    if (!dCos.p || !dSin.p || !x.p || !h.p || !qkv.p || !kt.p || !vt.p || !ao.p || !oo.p
+        || !sc.p || !sg.p || !su.p || !sd.p) { g_err = "side draft: alloc failed"; return -1; }
+    for (int t = 0; t < T; ++t) {
+        copy_row(q, emb, (uint64_t) toks[(size_t) t] * (uint64_t) D, x.p + (size_t) t * D, D);
+    }
+    q.wait_and_throw();
+    for (int l = 0; l < K; ++l) {
+        const std::string p = "blk." + std::to_string(l) + ".";
+        Wt anw = side_cached_weight(q, p + "attn_norm.weight");
+        Wt wq = side_cached_weight(q, p + "attn_q.weight");
+        Wt bq = side_cached_weight(q, p + "attn_q.bias");
+        Wt wk = side_cached_weight(q, p + "attn_k.weight");
+        Wt bk = side_cached_weight(q, p + "attn_k.bias");
+        Wt wv = side_cached_weight(q, p + "attn_v.weight");
+        Wt bv = side_cached_weight(q, p + "attn_v.bias");
+        Wt wo = side_cached_weight(q, p + "attn_output.weight");
+        Wt fnw = side_cached_weight(q, p + "ffn_norm.weight");
+        Wt wg = side_cached_weight(q, p + "ffn_gate.weight");
+        Wt wu = side_cached_weight(q, p + "ffn_up.weight");
+        Wt wd = side_cached_weight(q, p + "ffn_down.weight");
+        if (!anw.p || !wq.p || !bq.p || !wk.p || !bk.p || !wv.p || !bv.p || !wo.p
+            || !fnw.p || !wg.p || !wu.p || !wd.p) {
+            if (g_err.empty()) g_err = "side draft: missing layer tensors blk " + std::to_string(l);
+            return -1;
+        }
+        rmsnorm(q, x.p, T, D, (const float*) anw.p, eps, h.p);
+        gemm(q, h.p, T, D, wq, D, qkv.p, (const float*) bq.p);
+        gemm(q, h.p, T, D, wk, DKV, kt.p, (const float*) bk.p);
+        gemm(q, h.p, T, D, wv, DKV, vt.p, (const float*) bv.p);
+        rope(q, qkv.p, T, NH, HD, dCos.p, dSin.p);
+        rope(q, kt.p, T, NKV, HD, dCos.p, dSin.p);
+        kv_store(q, kt.p, (float*) skv.k[(size_t) l], T, DKV, pos0);
+        kv_store(q, vt.p, (float*) skv.v[(size_t) l], T, DKV, pos0);
+        attention(q, qkv.p, (const float*) skv.k[(size_t) l], (const float*) skv.v[(size_t) l],
+                  T, pos0, NH, NKV, HD, scale, ao.p, sc.p, scoreRows);
+        gemm(q, ao.p, T, D, wo, D, oo.p, nullptr);
+        add_inplace(q, x.p, oo.p, (size_t) T * D);
+        rmsnorm(q, x.p, T, D, (const float*) fnw.p, eps, h.p);
+        gemm(q, h.p, T, D, wg, FFN, sg.p, nullptr);
+        gemm(q, h.p, T, D, wu, FFN, su.p, nullptr);
+        silu_mul(q, sg.p, su.p, (size_t) T * FFN, sg.p);
+        gemm(q, sg.p, T, FFN, wd, D, sd.p, nullptr);
+        add_inplace(q, x.p, sd.p, (size_t) T * D);
+    }
+    if (!want_top) return 0;
+    Wt onw = side_cached_weight(q, "output_norm.weight");
+    if (!onw.p) return -1;
+    Dev xn(&q, (size_t) D, true);
+    if (!xn.p) { g_err = "side draft: alloc failed"; return -1; }
+    rmsnorm(q, x.p + (size_t) (T - 1) * D, 1, D, (const float*) onw.p, eps, xn.p);
+    Dev dLog(&q, (size_t) V, true);
+    if (!dLog.p) { g_err = "side draft: alloc failed"; return -1; }
+    const int chunk = 4096;
+    for (int c0 = 0; c0 < V; c0 += chunk) {
+        const int cn = (c0 + chunk <= V) ? chunk : (V - c0);
+        Wt wc{(void*) ((sycl::half*) emb.p + (size_t) c0 * D), nullptr, 1};
+        gemm(q, xn.p, 1, D, wc, cn, dLog.p + c0, nullptr);
+    }
+    q.wait_and_throw();
+    std::vector<float> hl((size_t) V, 0.0f);
+    q.memcpy(hl.data(), dLog.p, sizeof(float) * (size_t) V).wait_and_throw();
+    int best = 0;
+    double bv = -1e300;
+    for (int i = 0; i < V; ++i) {
+        if ((double) hl[(size_t) i] > bv) { bv = (double) hl[(size_t) i]; best = i; }
+    }
+    return best;
+}
+
+// F689: the speculative loop with the INDEPENDENT drafter. Identical shape to F686's
+// spec_layerskip_generate except the chain builder: side_forward over the side-loaded model
+// with its own KV cache and rope tables. The verify pass and the target's KV are untouched, so
+// the output is bit-identical to plain greedy by construction. The side context is maintained
+// explicitly (initial side prefill of the prompt; one T=1 backfill when a full chain is
+// accepted and the last token's side row was never drafted).
+std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int n_new,
+                                          int draft_layers, int depth) {
+    std::vector<int> out = ids;
+    g_spec_drafts = g_spec_accepted = g_spec_verified = 0;
+    g_spec_alt = 0;
+    g_spec_bmax = 0;
+    g_spec_on = 1;
+    const int L = (int) gguf::meta_num("qwen2.block_count");
+    const int eos = eos_id();
+    g_head_rows = 1;
+    if (!gguf::loaded() || L <= 0) return {};
+    const int Ls = (int) gguf::side_meta_num("qwen2.block_count");
+    const int K = (draft_layers > 0 && Ls > 0 && draft_layers <= Ls) ? draft_layers : 0;
+    std::vector<double> r = prefill_top1(backend, out, -1, 0);
+    if (r.empty()) return {};
+    int pos = (int) out.size();
+    int produced = 0;
+    int ref = (int) r[0];
+    const bool canDraft = K > 0 && depth >= 2 && gguf::side_loaded()
+                          && g_split_layer < 0 && !g_seg_active && g_graph.nodes.empty();
+    if (!canDraft) {
+        while (produced < n_new) {
+            out.push_back(ref);
+            ++produced;
+            if (eos > 0 && ref == eos) break;
+            r = prefill_top1(backend, std::vector<int>{ref}, -1, pos);
+            ++pos;
+            if (r.empty()) break;
+            ref = (int) r[0];
+        }
+        g_spec_on = 0;
+        return out;
+    }
+    sycl::queue* qp = kakasi::queue_for(backend);
+    if (!qp) { g_err = "side draft: backend unavailable"; return {}; }
+    sycl::queue& q = *qp;
+    const int eIdx = gguf::side_find("token_embd.weight");
+    const int NH = (int) gguf::side_meta_num("qwen2.attention.head_count");
+    const int NKV = (int) gguf::side_meta_num("qwen2.attention.head_count_kv");
+    const int Dside = (int) gguf::side_ne(eIdx, 0);
+    if (eIdx < 0 || NH <= 0 || NKV <= 0 || Dside <= 0 || Dside % NH != 0) {
+        g_err = "side draft: bad side dims";
+        return {};
+    }
+    const int DKV = NKV * (Dside / NH);
+    KVCache skv;
+    skv.q = &q;
+    skv.backend = backend;
+    skv.cap = 4096;
+    skv.dkv = DKV;
+    skv.f16 = false;
+    buf::BufferType* sbt = dev_bt(q);
+    for (int l = 0; l < K && sbt; ++l) {
+        void* kr = buf::alloc_bt(sbt, (size_t) skv.cap * (size_t) DKV * sizeof(float));
+        void* vr = buf::alloc_bt(sbt, (size_t) skv.cap * (size_t) DKV * sizeof(float));
+        if (!kr || !vr) { sbt = nullptr; }
+        skv.k.push_back(kr);
+        skv.v.push_back(vr);
+    }
+    if (!sbt || (int) skv.k.size() < K) {
+        g_err = "side draft: KV alloc failed";
+        skv.free_all();
+        return {};
+    }
+    // Initial side prefill of the prompt: side-KV rows [0, len).
+    if (side_forward(q, out, 0, K, skv, false) < 0) {
+        skv.free_all();
+        g_spec_on = 0;
+        while (produced < n_new) {
+            out.push_back(ref);
+            ++produced;
+            if (eos > 0 && ref == eos) break;
+            r = prefill_top1(backend, std::vector<int>{ref}, -1, pos);
+            ++pos;
+            if (r.empty()) break;
+            ref = (int) r[0];
+        }
+        return out;
+    }
+    while (produced < n_new) {
+        int Dp = depth;
+        const int room = (g_kv.cap < skv.cap ? g_kv.cap : skv.cap) - pos;
+        if (room < 2) Dp = 1;
+        if (Dp > room) Dp = room;
+        if (Dp > 32) Dp = 32;
+        std::vector<int> chain;
+        chain.push_back(ref);           // depth 0: the target's own greedy token
+        int dtok = ref;
+        for (int i = 1; i < Dp; ++i) {
+            const int t = side_forward(q, std::vector<int>{dtok}, pos + i - 1, K, skv, true);
+            if (t < 0) break;
+            dtok = t;
+            chain.push_back(dtok);
+        }
+        if ((int) chain.size() < 2) {
+            out.push_back(ref);
+            ++produced;
+            if (eos > 0 && ref == eos) break;
+            r = prefill_top1(backend, std::vector<int>{ref}, -1, pos);
+            ++pos;
+            if (r.empty()) break;
+            ref = (int) r[0];
+            continue;
+        }
+        const int cn = (int) chain.size();
+        std::vector<uint32_t> mask((size_t) cn, 0);
+        uint32_t bits = 0;
+        for (int i = 0; i < cn; ++i) { bits |= (1u << (uint32_t) i); mask[(size_t) i] = bits; }
+        ++g_spec_verified;
+        g_spec_drafts += cn - 1;
+        if (cn > g_spec_bmax) g_spec_bmax = cn;
+        std::vector<int> tops = prefill_tops_tree(backend, chain, pos, mask);
+        if ((int) tops.size() != cn) break;
+        int acc = 1;
+        for (int i = 1; i < cn; ++i) {
+            if (chain[(size_t) i] != tops[(size_t) (i - 1)]) break;
+            ++acc;
+        }
+        int take = acc < (n_new - produced) ? acc : (n_new - produced);
+        if (eos > 0) {
+            for (int i = 0; i < take; ++i) {
+                if (chain[(size_t) i] == eos) { take = i + 1; break; }
+            }
+        }
+        for (int i = 0; i < take; ++i) out.push_back(chain[(size_t) i]);
+        produced += take;
+        // F689 context sync: on a FULL accept the last accepted token never served as a draft
+        // input, so its side-KV row is unwritten - backfill it before pos moves past it.
+        if (acc == cn) {
+            side_forward(q, std::vector<int>{chain[(size_t) cn - 1]}, pos + cn - 1, K, skv, false);
+        }
+        pos += acc;
+        g_spec_accepted += acc - 1;
+        if (produced >= n_new) break;
+        if (eos > 0 && !out.empty() && out.back() == eos) break;
+        ref = tops[(size_t) (acc - 1)];
+    }
+    skv.free_all();
+    return out;
+}
+
 // FR-06 with a SAMPLING verifier. Under the greedy argmax test a tree can accept at most one
 // branch, because the argmax along an accepted prefix is unique (F273) - branch diversity only
 // pays once acceptance is probabilistic. At each node the model's OWN logits row gives p(draft)
