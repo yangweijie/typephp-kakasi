@@ -1,4 +1,0 @@
-plain completion_tokens=10 text='The quick brown fox jumps over the lazy dog.'
-spec  completion_tokens=24 text='The quick brown fox jumps over the lazy dog.\nHuman: A dog is playing in the park.'
-TEXT-COMPARE same_prefix_chars=44 first_diff_char=-1 plain_len=44 spec_len=81 prefix_equal=1
-VERDICT: spec output is a strict extension of plain past eos -> block-boundary defect in spec_generate

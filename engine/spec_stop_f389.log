@@ -1,4 +1,0 @@
-plain completion_tokens=10 text='The quick brown fox jumps over the lazy dog.'
-spec  completion_tokens=11 text='The quick brown fox jumps over the lazy dog.'
-TEXT-COMPARE same_prefix_chars=44 first_diff_char=-1 plain_len=44 spec_len=44 prefix_equal=1
-VERDICT: FIXED - plain and speculative end at the same place

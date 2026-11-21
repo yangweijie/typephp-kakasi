@@ -1,5 +1,0 @@
-  File "C:\git\c\typephp-kakasi\engine\tests\schema_bounds_check.py", line 48
-    def val_of(text, key):    try:
-                              ^^^
-SyntaxError: invalid syntax
-CHECK_EXIT=1

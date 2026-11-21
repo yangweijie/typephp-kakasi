@@ -1,4 +1,0 @@
-contains_enum_plain_items  status=400 text={"error":{"message":"schema keyword not supported: contains (minItems/maxItems are honoured on a single scalar-array property, als
-if_enum_prop               status=400 text={"error":{"message":"schema keyword not supported: if (minItems/maxItems are honoured on a single scalar-array property, also toge
-depschema_enum             status=400 text={"error":{"message":"schema keyword not supported: dependentSchemas (minItems/maxItems are honoured on a single scalar-array prope
-not_enum_nested            status=400 text={"error":{"message":"schema keyword not supported: not (minItems/maxItems are honoured on a single scalar-array property, also tog

@@ -1,9 +1,0 @@
-WARM ms=974.29418563843 err=
-API_LISTEN 8000
-ATTN_MODE 2
-SPEC_WINDOW 2
-SESSION request completion=39 reason=complete json=ok tools=none seed=12345 cache=-1
-SESSION request completion=12 reason=complete json=ok tools=none seed=12345 cache=-1
-SESSION stream json=ok reason=complete
-SESSION request completion=57 reason=complete json=ok tools=none seed=12345 cache=-1
-SESSION request completion=21 reason=complete json=ok tools=none seed=12345 cache=-1

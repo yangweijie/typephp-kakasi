@@ -1,6 +1,0 @@
-WARM ms=979.1100025177 err=
-API_LISTEN 8000
-ATTN_MODE 2
-SPEC_WINDOW 2
-SESSION stream tokens=45 reason=eos seed=12345 cache=0
-SESSION stream tokens=45 reason=eos seed=12345 cache=0

@@ -1,4 +1,0 @@
-req_all     status=200 body={"id":"chatcmpl-1","object":"chat.completion","created":0,"model":"qwen2","choices":[{"index":0,"message":{"role":"assistant","content":"{\"a\":\"A bu
-req_subset  status=400 body={"error":{"message":"schema keyword not supported: required (required is honoured only when it names every declared property)","type":"invalid_request
-minItems    status=400 body={"error":{"message":"schema keyword not supported: minItems (required is honoured only when it names every declared property)","type":"invalid_request
-plain       status=200 body={"id":"chatcmpl-1","object":"chat.completion","created":0,"model":"qwen2","choices":[{"index":0,"message":{"role":"assistant","content":"{\"a\":\"A bu

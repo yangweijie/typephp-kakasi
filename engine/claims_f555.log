@@ -1,5 +1,0 @@
-pnames_maxlen_ok   status=200 text={"city":"New York City, New York, United States. 1,300","note":"New York City is the most populous city in the United States and is the most"}
-pnames_enum_ok     status=200 text="city"
-pnames_len_bad     status=400 text={"error":{"message":"schema keyword not supported: propertyNames (minItems/maxItems are honoured on a single scalar-array property
-depschema_req      status=200 text={"a":"New York City, New York, USA, is the most populous city in the","b":"Los Angeles, California, USA, is the most populous city in the"}
-depschema_allreq   status=200 text={"a":"New York City, New York, USA, is the most populous city in the","b":"Los Angeles, California, USA, is the most populous city in the"}

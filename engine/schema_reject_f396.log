@@ -1,3 +1,0 @@
-unsupported  status=400 body={"error":{"message":"schema pattern with regex metacharacters is not supported; use a literal or an alternation of literals","type":"invalid_request_error"}}
-supported    status=200 body={"id":"chatcmpl-1","object":"chat.completion","created":0,"model":"qwen2","choices":[{"index":0,"message":{"role":"assistant","content":"{\"city\":\"Paris\"}"},"finish_reason":"stop"}],"usage":{"promp
-VERDICT: unsupported refused with 400 and a reason; supported still constrained

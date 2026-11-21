@@ -1,5 +1,0 @@
-scripts/spec_attrib_run.sh: line 27: /c/git/typephp-kakasi/engine/spec_attrib.lock: No such file or directory
-scripts/spec_attrib_run.sh: line 33: /c/git/typephp-kakasi/engine/serve.on: No such file or directory
-scripts/spec_attrib_run.sh: line 34: /c/git/typephp-kakasi/engine/serve_spec_f377.log: No such file or directory
-HEALTH_TIMEOUT port=8000
-tail: cannot open '/c/git/typephp-kakasi/engine/serve_spec_f377.log' for reading: No such file or directory

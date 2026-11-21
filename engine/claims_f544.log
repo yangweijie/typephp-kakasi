@@ -1,9 +1,0 @@
-F544 streaming root-scalar probe (8000, stream:true, temperature 0)
-STREAM str_enum   status=200 json_ok=False text=New York City, also known as New York, is a major city in the New York metropolitan area of the nort
-STREAM str_const  status=200 json_ok=False text=New York City, also known as New York, is a major city in the New York metropolitan area of the nort
-
-Conclusion: the non-streaming enumFlat fold (F543) does not exist on the streaming path - a root
-string enum or const streams 200 free prose, the same silent violation F543 fixed for non-streaming.
-Object schemas do stream constrained (deep200 probe), so the gap is specific to the root-scalar fold.
-Queued P0: mirror the enum/const fold in the streaming branch (quote strings, fold const), then add
-a live stream:true gate for both shapes.

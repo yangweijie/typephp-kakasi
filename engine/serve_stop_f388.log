@@ -1,5 +1,0 @@
-WARM ms=977.49090194702 err=
-API_LISTEN 8000
-ATTN_MODE 2
-SESSION request completion=10 reason=complete json=off tools=none seed=12345 cache=0
-SESSION request completion=24 reason=complete json=off tools=none seed=12345 cache=-1

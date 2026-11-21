@@ -1,3 +1,0 @@
-port=8001 streams=2 longs=[(1.78, 0.08, 101)] short=(0.15, 0.08, 4)
-FAIRNESS: PASS (short stream finished well before the long ones)
-FAIR_EXIT=0

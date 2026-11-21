@@ -1,3 +1,0 @@
-STREAM str_enum   status=200 json_ok=True text="paris"
-STREAM str_const  status=200 json_ok=True text="paris"
-STREAM int_enum   status=200 json_ok=True text=2

@@ -1,5 +1,0 @@
-  File "C:\git\c\typephp-kakasi\engine\tests\api_smoke.py", line 2791
-    "items": {"type": "array", "items": {"type": "array", "items": deep_leaf}}}}}}}}})
-                                                                                    ^
-SyntaxError: closing parenthesis '}' does not match opening parenthesis '(' on line 2788
-SMOKE_EXIT=1

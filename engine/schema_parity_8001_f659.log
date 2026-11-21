@@ -1,5 +1,0 @@
-  File "C:\git\c\typephp-kakasi\engine\tests\schema_parity.py", line 53
-    200, ""),
-           ^
-SyntaxError: closing parenthesis ')' does not match opening parenthesis '{' on line 52
-PARITY1_EXIT=1

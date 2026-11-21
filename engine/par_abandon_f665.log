@@ -1,3 +1,0 @@
-PAR-ABANDON long=1 freed_after=0.2s short=1 freed_after=0.2s
-PAR-ABANDON: PASS (both abandoned streams released their slots; two new streams served each time)
-PARAB_EXIT=0

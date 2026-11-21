@@ -1,5 +1,0 @@
-  File "C:\git\c\typephp-kakasi\engine\tests\api_smoke.py", line 1559
-    "contains": {"pattern": "^[A-Z]{3}$"}, "minContains": 3}}}}}
-                                                               ^
-SyntaxError: unmatched '}'
-SMOKE_EXIT=1

@@ -1,5 +1,0 @@
-items_enum           status=200 content={"items":"paris"}
-items_const          status=200 content={"items":"paris"}
-items_pattern        status=200 content={"items":"paris"}
-items_minimum        status=200 content={"items":5}
-items_plain_control  status=200 content={"cities":["New York City, USA,"]}

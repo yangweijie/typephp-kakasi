@@ -1,4 +1,0 @@
-supported  status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}
-float      status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}
-onesided   status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}
-wide       status=400 body={"error":{"message":"numeric bounds are supported only for an integer with both minimum and maximum and a span of at most 15","type":"invalid_request_error"}}
