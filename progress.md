@@ -3127,3 +3127,11 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **修**：`api_state_dir()`（`<exe>/../../engine` 存在即返回原开发路径，否则 `<exe>/state`）+ `api_engine_file()`（只读文件三段解析）；`package.sh` 复制 `VERSION` 并建 `state/`。
 - **验证**：`F657: PASS`（state_dir 与原路径一致、version==文件内容）；**包件判别**：移走仓库 `VERSION` 后包件 `/health` 仍 `version=0.1.0`、`/plugins` 仍 profiles:3。
 - **梯（f657）**：BUILD_OK、0 FAIL、四 harness `CHECK_EXIT=0`、SMOKE/PRETTY 各 197/0、par/fair 0、scaling 1.556×、哨兵 0、`check_gates 198/0`、PACKAGE_OK+ARCHIVE_OK。
+
+## F688 会话（2026-11-21）：异步跨设备重叠——量化负结果闭环
+- 用户深化题目（顶尖专家四问）→ 重写后的规格（测量先行/负结果一等交付/只动时序）写入 task_plan.md 并经用户确认。
+- A段：probe/sycl/async_probe.cpp + build-async-probe.bat（f688_probe.log）：b0=Arc B390/b1=CPU；drain 税 0.91ms/pass（探针形状 12.7%）；事件时间线空闲 4-11%→0.4%；handoff 事件链跨 context 可行但 T=1 更慢（负）。
+- B段：arena 窗口（512MiB 上限、T*(3D+2DKV+3FFN) 每层估算）+ probe() 推迟读回（设备端 max，位恒等）+ set_layer_drain 开关（model.cc/stub/main.php 桥接）。自检 f688：0 FAIL、RUN_EXIT=0、orch 三门 PASS、trace/ids EQ。
+- SYNC-TAX v2 门（T=1+T=5 双形状 × 7 样本，selftest_f688b.log）：ratio 0.988 / 1.002 ⇒ <5% 线未过。
+- 判定：负结果闭合。引擎四文件 git checkout 回 HEAD；重建（build_f688c.log）+ 自检（selftest_f688c.log，939 行 0 FAIL）+ check_gates 198/0。
+- 提交：探针 + 证据日志 + findings/progress；docs 闭环（task_plan.md）。

@@ -5791,3 +5791,18 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`endpoint_shape.py` 新增 `max_tokens_zero` / `max_tokens_over`（513）/ `max_tokens_huge`（100000）与 8000 侧 `max_output_zero`，均为 400 且正文点名；两台现分别 13/12 例全 PASS。
 **梯（f671b）**：两台阶梯全绿（SMOKE/PRETTY 197/0、四 harness `CHECK_EXIT=0`、`PARITY: PASS (13)`、`CACHE-PERSIST: PASS`、8001 12 例、par/fair 0、scaling 1.499×、哨兵 0、`check_gates 198/0`）。
 **记法**：静默代换必须在**请求边界**拒绝；内部夹取可以留，但两者要分清——夹具里出现"越界值也能过"时，先问它靠的是哪一层。
+
+## F688（2026-11-21）：异步跨设备重叠——量化负结果闭合（引擎未动一行）
+**题目（用户确认后深化）**：先由设备与独立工具证明串行化真是瓶颈；<5% 线则负结果交付；证成也只动时序不动拓扑。
+**硬件真相（探针实测，engine 枚举同序）**：b0 = Arc B390 GPU 25.34GiB，b1 = **CPU**（Core Ultra X7 358H，31.52GiB）——双设备拆分是 GPU↔CPU 而非 GPU↔GPU；DEV_2/3 是同物理设备的重复枚举（sycl_backend.cc:55 注释已预料）。
+**A段探针（probe/sycl/async_probe.cpp，独立于引擎，模拟 24 层链：每层 2 内核 ~259µs）**：
+- 逐层 drain 税：PASS_SYNC 7.13ms vs ASYNC 6.23ms ⇒ **0.91ms/pass（12.7%）**；空闲队列 wait_and_throw 0.8µs。
+- 运行时事件时间线（enable_profiling + get_profiling_info）：SYNC 设备空闲 **4.3–10.7%** → ASYNC **0.40–0.42%**——空闲确由同步造成，运行时时间戳独立证实。
+- handoff 事件链（跨 queue **跨 context**，各设备独立 context 如引擎 sycl_backend.cc:85）：**可行**（T1/T512 字节校验 OK）但 **T=1 更慢**（62.5µs vs 同步 43.4µs，事件搭建开销）、T=512 边际（277 vs 292µs）；每 pass 仅 2 次 handoff，总占比 <0.1% ⇒ **原语②负结果**，同步 pattern 保留。
+- 带宽（5MB pinned）：D2H 40.2 / H2D 45.5 / 往返 35.9 GB/s。
+**B段实现（arena 按 pass 窗口增长 + probe() 推迟为设备端 max、pass 末一次读回 + set_layer_drain A/B 开关）**：位恒等全绿——orch[split]/[split3]/[opsplit] PASS、trace EQ、ids EQ、自检 0 FAIL、RUN_EXIT=0。max 无舍入，推迟读回的值与宿主循环逐位相同（门实测 EQ）。
+**同二进制 A/B（7 样本中位数 × 两形状）**：T=1 ratio **0.988**（−1.2%）、T=5 ratio **1.002**（噪声级）⇒ **引擎规模串行化税 ~1%，远低于 5% 决策线**。
+**未迁移的根因**：探针模拟层 2 内核/259µs，同步:功比高；引擎每层 15+ 内核、T=1 342µs / T=5 1.35ms 设备功，把固定的 ~11µs/层同步成本稀释到 <1.5%。探针的**比率**不可跨形状外推，只有绝对值（~0.9ms/pass 上界）可带——而引擎实测连绝对值都更小（热路径唤醒延迟低于探针）。
+**判据（写入口径）**：①微基准的"占比"不可迁移，只有"绝对值 × 引擎实测层时"的算术才可外推；②跨二进制对比在共享 GPU 上噪声主导（旧二进制 PERF 32.34 vs 新 34.23，而同二进制 A/B 是 32.58 vs 32.64）——**只有同二进制内 A/B 可信**；③测量门的两分支决策措辞用 RESULT/NOT_CLEARED 而非 FAIL（F367 "reported, not asserted" 先例）：正确性断言两侧全绿，报红会谎报"实现坏了"，而真实结论是"该分支不达线"。
+**决定**：按规格 <5% 分支，引擎改动全量撤回（F650 先例），保留探针 + 证据日志 + 本条目。撤回后重建自检 939 行 0 FAIL、RUN_EXIT=0、check_gates **198/0**（cites selftest_f688c.log）。
+**残余队列不变**：FR-06.2 第二草稿模型（缺小模型资产）、FR-05 插件（缺硬件/ABI 三前提）、多卡（缺第二块 dGPU）。

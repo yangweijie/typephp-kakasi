@@ -1,0 +1,32 @@
+C:\Program Files (x86)\Intel\oneAPI\compiler\latest\bin\icx.exe
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+==COMPILE_EXIT=0==
+==DEVICE_COUNT=4==
+==DEV_0 name=Intel(R) Arc(TM) B390 GPU cpu=0 gpu=1 mem=25.34GiB==
+==DEV_1 name=Intel(R) Core(TM) Ultra X7 358H cpu=1 gpu=0 mem=31.52GiB==
+==DEV_2 name=Intel(R) Arc(TM) B390 GPU cpu=0 gpu=1 mem=25.34GiB==
+==DEV_3 name=Intel(R) Core(TM) Ultra X7 358H cpu=1 gpu=0 mem=31.52GiB==
+==WAIT_EMPTY_US_MED=0.800==
+==WAIT_EMPTY_US_P95=1.000==
+==LAYER_SYNC_US_MED=297.121==
+==LAYER_ASYNC_US_MED=259.358==
+==PASS_SYNC_MS_MED=7.131==
+==PASS_ASYNC_MS_MED=6.225==
+==DRAIN_TAX_PCT=12.709==
+==EVENT_CHAIN_T1=OK==
+==HANDOFF1_SYNC_US_MED=43.400==
+==HANDOFF1_EVENT_US_MED=62.500==
+==EVENT_CHAIN_T512=OK==
+==HANDOFF512_SYNC_US_MED=292.400==
+==HANDOFF512_EVENT_US_MED=277.000==
+==BW_ROUNTRIP_GBS=35.861==
+==BW_D2H_GBS=40.175==
+==BW_H2D_GBS=45.551==
+==PROFILE_SYNC dev_wall_ms=9.717 busy_ms=8.674 idle_pct=10.72 host_wall_ms=10.393==
+==PROFILE_ASYNC dev_wall_ms=6.734 busy_ms=6.706 idle_pct=0.42 host_wall_ms=6.777==
+==PROFILE_SYNC dev_wall_ms=7.375 busy_ms=7.059 idle_pct=4.29 host_wall_ms=7.431==
+==PROFILE_ASYNC dev_wall_ms=6.113 busy_ms=6.088 idle_pct=0.40 host_wall_ms=6.132==
+==PROBE_DONE==
+==PROBE_EXIT=0==
