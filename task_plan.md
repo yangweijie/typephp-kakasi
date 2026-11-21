@@ -85,6 +85,18 @@
 **验收**：自检 0 FAIL + SIDE-DRAFT PASS + 四 harness CHECK_EXIT=0 + SMOKE/PRETTY 不劣化 + check_gates 199/0（新门 +1）。
 **不做**：side 模型的 tree draft、双 side 模型、side 模型的 split；acceptance 调优（K/depth 扫描只报告）。
 
+- **F690 (drafter throughput measurement) — DONE + verified (2026-11-21, zero engine changes).** DRAFT-TUNE gate (8 configs, all lossless) measured: verify(<=4 tokens) costs ~10 ms per pass (one decode step - the physical ceiling for speculation is GOOD), greedy 20.8/19.2 ms/tok, acceptance rises with K (factual 0/0/11/18, chat 0/0/4/9), but every side draft step carries a ~50 ms K-INDEPENDENT fixed cost, so speculation is unprofitable today at any K. The fixed cost is the next lever (F691 candidate, not started): single-kernel head, pooled allocations, fewer host syncs, f16 side-KV. HEAD 7859c95.
+
+## F690 规格（2026-11-21）：drafter 吞吐测量——先量清楚，再谈盈利
+**已闭合 2026-11-21，提交 7859c95。** 数据与判读入 findings：verify(≤4)≈10ms/pass（头寸真实）、draft 步固定 ~50ms（K 无关、唯一瓶颈）、acceptance 随 K 升（0/0/11/18 factual）。判据新录："acceptance 高 ≠ 吞吐好"。F691 候选（消固定开销）未开工。以下为原始规格。
+**动机**：F689 闭合时如实声明"吞吐未证"——门计时含 side 缓存预热、每 draft 步 head 读 273MB f16、且 verify 批量成本曲线从未测过。本项把三个决定投机盈利性的量全部实测，**零引擎代码改动**，所有吞吐数字只报告不断言（断言仅 losslessness）。
+**测量项（自检 DRAFT-TUNE 门，插在 SIDE-DRAFT 之后）**：
+1. **verify 成本曲线**：`model_prefill` 对 T=1,2,4,8,16 取 s1/s2——verify 每 pass 重读全部目标权重，其每 token 成本是投机能否盈利的物理上界。BATCH-THRU（M=3 per_tok 5.49ms）已证 batch 路径有 1.61×，但 verify 走 prefill_top1 的 gemm/gemvM 路径，曲线未知。
+2. **K 扫描 × 两 prompt 类**：K ∈ {6,12,18,23} × {事实回声 $specIds（F689 已证深度敏感：目标自身 K=12 截断也 0 接受）, 闲聊续写新 prompt}，depth=4。每配置：墙钟 ms、drafts/accepted/verifies、对该 prompt 自身 greedy 的位恒等校验。
+3. **基线**：两 prompt 各自 plain greedy 的每 token 成本；最优配置的每 token 成本对照。
+**判读口径**：acceptance 与每 token 成本都是资产对与 prompt 类的经验属性——只报告；losslessness 任一破位才 FAIL。若曲线揭示廉价杠杆（如 verify 小 M 批量效率、head 精度），如实记为后续项，不在本 F 内动引擎。
+**验收**：自检 0 FAIL + DRAFT-TUNE 全 lossless + 数字入 findings；check_gates 不劣化。
+
 ## F683 规格（2026-11-20）：约束解码进 batch 路径——消除 8001 混合负载序列化瓶颈
 **已闭合 2026-11-20，提交 `47cb76c`。** 全梯绿灯：BATCH-ALLOWED PASS、par-concurrent-schema PASS、SMOKE/PRETTY 197/0、PAR 26/0、FAIR 0、THRU 1.546×、PARITY 13/13、check_gates 198/0。
 **动机**：`api_serve_par` 的 `json_schema` 有限请求走同步 `api_number_bounded_value`/`api_number_value`（调 `model_session_start` + 循环 `model_session_next_allowed`），**阻塞整个事件循环**——所有其他活跃 slot 停转。这是混合负载下最大的吞吐瓶颈。~1.5× scaling 是单设备带宽受限 matvec 的物理上限（不是 bug），但序列化阻塞是可消除的人为瓶颈。
