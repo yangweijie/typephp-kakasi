@@ -55,6 +55,16 @@
 
   - FR-02 status: ALL audited items closed - (1) buffer_type contract ✅, (2) N-segment placement with proven N≥3 bit-equivalence ✅, (3) op-granularity compute graph (F677) + backend op dispatch table (F678) ✅, (4) declared-DAG machinery (F679) ✅, (5) graph-driven executor (F680) ✅, (6) op-granular placement + tensor-granular boundary copies (F681) ✅. Beyond the audited spec remain only new scheduler capabilities: real branch-merge plans, async cross-device overlap.
 
+- **F688 (async cross-device overlap) — CLOSED as a quantified NEGATIVE result (2026-11-21).** Hardware truth: b0 = Arc B390 GPU, b1 = CPU (the two-device split is GPU-CPU). Probe: drain tax 0.91 ms/pass (12.7% on a 2-kernel-per-layer chain; runtime event timeline idle 4-11% -> 0.4% async); event-chained cross-context handoff WORKS but is SLOWER at T=1 (62.5us vs 43.4us) - primitive 2 negative. Phase B (arena windows + deferred trace) implemented, bit-identical everywhere (orch gates PASS, trace/ids EQ), then the in-binary A/B answered the transfer question: ratio 0.988 (T=1) / 1.002 (T=5) - ~1% at engine scale, far under the 5% line, because the engine's 15-kernel layers dilute the fixed ~11us/layer sync cost. Per the spec's own decision branch the executor changes were FULLY REVERTED (F650 precedent); only the probe, evidence logs and this closure remain. Post-revert: 939-line selftest 0 FAIL, check_gates 198/0.
+
+## F688 规格（2026-11-21）：异步跨设备重叠——先证瓶颈，再谈异步；量化为准，负结果亦为交付
+**已闭合（量化负结果），2026-11-21。** 判定链：探针 12.7%（探针形状）→ 引擎内同二进制 A/B T=1 ratio 0.988 / T=5 ratio 1.002 ⇒ 引擎规模串行化税 ~1%，<5% 决策线 ⇒ 原语①（arena 窗口）与原语②（handoff 事件链，T=1 反而更慢）双双负结果，引擎改动全量撤回（撤回后自检 939 行 0 FAIL、check_gates 198/0）。保留：探针（probe/sycl/async_probe.cpp）、证据日志（f688_probe.log、selftest_f688*.log）、findings 条目（含"比率不可外推/同二进制 A/B 才可信"两条判据）。原题目按用户四问深化重写如下。
+**状态**：题目经用户确认（2026-11-21）深化重写：先由设备与独立工具证明串行化真是瓶颈，证不成则负结果交付；证成也只动时序、不动拓扑，正确性由门语料+独立重算+负对照三方背书。
+**A 段（测量，零引擎代码改动）**：以 SYCL 事件级 profiling（`enable_profiling` + `get_profiling_info`）对四配置产出每设备忙/闲时间线：{T=1 解码步, T=512 预填充} × {split 关, split 开 b0/b1}。拆出三类串行化成本实测值：逐层 drain（每 pass 24 次，model_sycl.cc:2959-2963）、边界 handoff（3 次等待，:2938-2943）、copyback（2 次等待，:2967-2972）；对照 roofline 上界（handoff 字节数 ÷ 实测带宽；enqueue 唤醒间隙 × 层数）判定**串行化空闲占墙钟比例**。<5% ⇒ 以量化负结果闭合 F688（时间线与算术入档 findings）；≥5% ⇒ 进 B 段。设备身份（b0/b1 到底是什么）、in-order 语义与 F24 CPU 后端反例一并复核。
+**B 段（最小异步改动，仅两类原语）**：① 同队列 in-order 语义下 arena 按 pass 增长、pass 末一次 reset——**禁止**重试事件有序池/free-list 两个已失败方案（model_sycl.cc:1256-1260 自证）；② 跨队列 event 链式 handoff（`q.memcpy` 的事件喂给 `q2.memcpy`，去掉中间宿主等待；跨 context 可行性由 A 段探针先证）。动工前逐条 host wait 标注其防护的 hazard 及是否仍承重（依据 SYCL 2020 规范原文 + F24 CPU 后端反例复核）。
+**验收（缺一不闭合）**：位恒等 id 门全绿（orch[split]/orch[split3]/orch[opsplit]）；新增 split×draft×batch 交错 30 步重放压力门；双向自证（恢复旧同步序，新门必红）；独立 profiler 时间线证实设备空闲确已消除；时延报中位数+p95 而非均值。
+**范围外**：MoE 专家跨设备扇出（改权重放置，属拓扑不属于时序）；多卡。
+
 ## F683 规格（2026-11-20）：约束解码进 batch 路径——消除 8001 混合负载序列化瓶颈
 **已闭合 2026-11-20，提交 `47cb76c`。** 全梯绿灯：BATCH-ALLOWED PASS、par-concurrent-schema PASS、SMOKE/PRETTY 197/0、PAR 26/0、FAIR 0、THRU 1.546×、PARITY 13/13、check_gates 198/0。
 **动机**：`api_serve_par` 的 `json_schema` 有限请求走同步 `api_number_bounded_value`/`api_number_value`（调 `model_session_start` + 循环 `model_session_next_allowed`），**阻塞整个事件循环**——所有其他活跃 slot 停转。这是混合负载下最大的吞吐瓶颈。~1.5× scaling 是单设备带宽受限 matvec 的物理上限（不是 bug），但序列化阻塞是可消除的人为瓶颈。
