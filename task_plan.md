@@ -65,6 +65,26 @@
 **验收（缺一不闭合）**：位恒等 id 门全绿（orch[split]/orch[split3]/orch[opsplit]）；新增 split×draft×batch 交错 30 步重放压力门；双向自证（恢复旧同步序，新门必红）；独立 profiler 时间线证实设备空闲确已消除；时延报中位数+p95 而非均值。
 **范围外**：MoE 专家跨设备扇出（改权重放置，属拓扑不属于时序）；多卡。
 
+- **F689 (FR-06.2, independent second draft model) — DONE + verified (2026-11-21).** Asset: official Qwen2.5-0.5B-Instruct Q4_K_M pulled from ModelScope (the on-disk xLAM fine-tune was measured first and rejected: 0/72 accepted, the same 0 the F686 self-draft got at K=12 — mechanism sound, asset too far). side-tensor device cache + side_forward (own KV, own rope, engine kernels) + spec_side_draft_generate; the F686 verify is untouched so speculation stays lossless. The SIDE-DRAFT gate runs K=6 AND K=23: lossless at both, 18/21 accepted (86%) at the near point — the two-depth shape is the discriminator (fast-depth 0 is NOT evidence of a broken drafter on depth-sensitive prompts). Ladder green: selftest 942/0, four harnesses PASS, SMOKE/PRETTY 197/0, PARITY 13x3, THRU 1.616x, check_gates 198/0. HEAD d0a5da8.
+
+## F689 规格（2026-11-21）：独立第二草稿模型（FR-06.2）——跨模型投机解码
+**已闭合 2026-11-21，提交 d0a5da8。** 门：SIDE-DRAFT 双 K（K=6 快档 / K=23 近全深度），lossless 两档 + 近深度 acceptance>0（官方亲本 18/21=86%）。资产决策实测化：xLAM 0/72（同 F686 自用 K=12 的 0——机制无恙、资产太远）→ 官方亲本 ModelScope 下载（491MB 字节数对 manifest）。关键设计点：独立 drafter 的 side-KV 自维护——全接受时最后一个接受 token 的 side 行未写过，须回填。梯全绿（selftest 942/0、四 harness PASS、SMOKE/PRETTY 197/0、PARITY 13×3、THRU 1.616×、check_gates 198/0）。吞吐盈利（head 成本、K/prompt 类调优）为后续测量项，未声称。以下为原始规格。
+**已核事实（探针 + 源码）**：
+- 驻留目标：`qwen2.5_0.5b_uncensored.Q4_K_M.gguf`（main.php:19436）——qwen2 架构键、24 层、D=896、FFN=4864、14+2 头（HD=64）、词表 151936、tied embed、tokenizer gpt2/qwen2-pre。
+- **草稿候选本机已有**：`C:/Users/ASUS/.lmstudio/models/ermiaazarkhalili/Qwen2.5-0.5B-Instruct_Function_Calling_xLAM-GGUF/model-Q8_0.gguf`（531MB）——GGUF 头实测（probe/gguf_header_probe.py）：**同 architecture=qwen2、同 24/896/4864/14+2、同词表 151936、同 tokenizer（gpt2/pre=qwen2，eos 151645）、290 tensors 与驻留同构**，但权重独立（xLAM 函数调用微调）⇒ 真·跨模型 drafter。全盘 72 个 GGUF 盘点后确认无需 ModelScope 下载（盘上无更小词表兼容模型，Qwen3 系带 QK-norm 架构不兼容引擎前向）。
+- F687 `gguf::side_load`（gguf.cc:747，可重入，`g_side = SideDB()` 整表替换）已提供 side_find/side_ne/side_dtype/side_bytes/side_meta_num/side_raw_range。
+- F686 `spec_layerskip_generate`（model_sycl.cc:4163）的 draft/verify 骨架可镜像：verify（`prefill_tops_tree`，tree mask 一次过）完全不动；greedy 投机解码**无损**——verify 的 argmax 就是目标自身的 greedy。
+**设计（三层）**：
+1. **side 张量设备缓存**（新 `side_cached_weight`）：按名首用读 side_raw_range → dequant_device → 小张量 f32、embed/head（>16M 元素）to_half 存 f16（镜像驻留路径大张量精度策略）。理由：draft 每步读权重，F687 moe_ffn 的"逐次文件读+反量化"模式在 draft 循环里不可接受（每步 531MB I/O）。预算：K=6 层 f32 ~350MB + embed f16 273MB ≈ 620MB，25GiB 设备充足；缓存字节数经 `side_cache_report` 入门输出。
+2. **side 前向**（新 `side_forward(q, toks, pos0, K, skv, want_top)`）：side embed 行（copy_row）→ K 层（side 的 attn/q/k/v+bias/o、ffn 三件套，复用 gemm/gemv/rmsnorm/rope/kv_store/attention/silu_mul/add_inplace 全套既有 kernel）→ side final_norm → tied head（side embed 作 lm_head，4096 行分块 gemv + 一次 600KB 读回 argmax）。自有 side-KVCache（f32、仅 K 层、cap 4096）；rope 表按 side meta 的 freq_base=1e6 现场构建。
+3. **spec 循环**（新 `spec_side_draft_generate`，镜像 F686）：目标 `prefill_top1` 取 ref → side 预填充 prompt（K 层，写 side-KV 行 0..len-1）→ 每轮 chain[0]=ref、chain[1..] 由 side_forward(T=1) 追加（写 side-KV）→ `prefill_tops_tree` 一次 verify → 接受前缀 + bonus。**上下文同步**：F686 的自用 draft 直接复用主 KV（同权重），独立 drafter 必须自维护——全接受（acc==cn）时最后一个接受 token 的 side 行未被 draft 写过，补一次 T=1 side_forward 写该行；accept<cn 时行已齐。守卫（room/eos/depth 上限 32）与回落（K=0、side 未加载、split/segment/graph 活跃 → plain greedy）镜像 F686。
+**门（自检 SIDE-DRAFT，插在 MOE-MERGE 之后——side_load 可重入，重载 xLAM 文件不伤 MOE-MERGE）**：
+- **位恒等硬门**：`model_spec_side_draft(0, $specIds, 24, 6, 4)` 的 ids == `$gRef`（plain greedy）——投机无损；
+- **acceptance > 0**：accepted/drafts 计数（证明独立 drafter 真贡献了被接受的 token）；rate 本身只报告不断言（F367 先例：acceptance 是两个微调的经验属性）；
+- 失败即 FAIL，不许静默降级为"无损但没用"。
+**验收**：自检 0 FAIL + SIDE-DRAFT PASS + 四 harness CHECK_EXIT=0 + SMOKE/PRETTY 不劣化 + check_gates 199/0（新门 +1）。
+**不做**：side 模型的 tree draft、双 side 模型、side 模型的 split；acceptance 调优（K/depth 扫描只报告）。
+
 ## F683 规格（2026-11-20）：约束解码进 batch 路径——消除 8001 混合负载序列化瓶颈
 **已闭合 2026-11-20，提交 `47cb76c`。** 全梯绿灯：BATCH-ALLOWED PASS、par-concurrent-schema PASS、SMOKE/PRETTY 197/0、PAR 26/0、FAIR 0、THRU 1.546×、PARITY 13/13、check_gates 198/0。
 **动机**：`api_serve_par` 的 `json_schema` 有限请求走同步 `api_number_bounded_value`/`api_number_value`（调 `model_session_start` + 循环 `model_session_next_allowed`），**阻塞整个事件循环**——所有其他活跃 slot 停转。这是混合负载下最大的吞吐瓶颈。~1.5× scaling 是单设备带宽受限 matvec 的物理上限（不是 bug），但序列化阻塞是可消除的人为瓶颈。
