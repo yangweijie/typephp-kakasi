@@ -5879,3 +5879,21 @@ major/minor 加载规则、能力位、last_error、所有权规则、static_ass
 **两轨状态**：原生插件轨道 v1 交付完成；acpp 轨道仍停车（ghcr 0 字节/12s）。载体最终判定
 待 acpp 解锁补测；即便 acpp 可行，插件 ABI 仍保留价值——厂商调优内核（cublas/MPS 级）本就
 需要出 SYCL 可移植面之外的口子，F650 的原始动机成立。
+
+## F694 v2 step 1（2026-11-21，mac 侧）：跨平台加载器 plugin_manager——单元验证 8/8，静态局部缓存缺陷当场抓出
+**交付**：`engine/src/plugins/plugin_manager.{h,cc}`——v2 的宿主侧半件：双分支加载
+（Windows LoadLibraryExA/GetProcAddress，POSIX dlopen/dlsym + dlerror 语义）、六类具名拒绝
+（open failed / entry missing / abi refused by plugin / abi incomplete / caps missing /
+caps null fn）、共享槽位不变量校验（`plugin_caps_slot_violation`：manager、harness、引擎三处
+同一实现，F651 同源判据）、`plugin_scan_dir`（F656/F657 形态，扩展名按 OS）。独立编译零引擎
+头文件依赖（可 mac 验证），引擎接线是 v2 step 2（需 Windows 梯）。
+**读数（PMGR-CHECK 8/8 PASS，证据 f694_pmgr_check.log）**：好插件经 manager 加载后
+device_count>0 且可 unload；abi 大版本拒绝具名；caps 缺失具名且掩码精确（missing=0x3c）；
+入口缺失具名；路径不存在具名；**声称全部能力但 gemv_mm=NULL 的 stub 被"caps null fn:
+bit=0x4 name=gemv_mm"具名拒绝**；scan_dir 命中 2 个、空目录 0。
+**判据（写入口径）**：
+1. **C++ 静态局部数组用运行时值（vtable 函数指针）初始化 = 动态初始化只跑一次**——首个插件的
+   指针被缓存，第二个插件（nullfn）被对着第一个插件的缓存指针校验，不变量恒过。多实例校验表
+   必须每次重建（本轮去 static 后 nullfn 立即被拒）。单元检查四实例序列（good→nocaps→noentry→
+   nullfn）正是让这类缺陷现形的形状。
+2. 拒绝掩码必须精确入串（missing=0x3c 被测试断言）——"缺能力"只有到 bit 级才可被负向对照。

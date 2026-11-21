@@ -3185,4 +3185,5 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - **v1 验收②③全绿（PLUGIN-CLOSED-LOOP: PASS，Apple M4）**：`engine/src/plugins/plugin_opencl.cc`（真动态库，dlopen 全路径）→ gemv_mm M=2/4 双形状 rel≤1.99e-07 + byte-identical 确定性、gemm_tiled rel=1.24e-06、dequant_q8_0 bit-exact、rmsnorm maxdiff=0；三拒绝路径具名输出全过（abi 大版本 NULL / 缺能力 stub missing=0x3c / 无入口 dlsym 拒绝）。
 - 过程判据：随机 f16 scale 撞 NaN 域（scale16=ffca）⇒ bit-exact 测试数据须钳 exp 全 1 域或 NaN-aware 比较（两道防线都上）；DIAG 补丁被 hook 拦截后不得假设已应用（读数"矛盾"两轮的根因）。证据：f694_closed_loop.log（git add -f）。
 - 漂移门两层设计定案（F650 条件③）：v1 op 级已实现（容差+bit-exact+确定性）；v2 引擎级 PLUGIN-DRIFT（报告不定阈 + 负向对照）。
+- **v2 step 1（同日）**：plugin_manager.{h,cc} 落成并单元验证 PMGR-CHECK 8/8 PASS（f694_pmgr_check.log）：好插件真加载可工作、五类拒绝全具名（含 missing=0x3c 精确掩码）、nullfn 槽位不变量、scan_dir n=2。判据：**C++ 静态局部数组以运行时 vtable 指针初始化会缓存第一个插件的指针**（nullfn 检查当场抓出）——多实例校验表禁 static。引擎接线 = v2 step 2（需 Windows 梯）。
 - 收口提交（选择性）：plugin_abi.h + plugin_opencl.cc + probe/acpp 全部源码 + f694_closed_loop.log + f693_handoff.patch + 三份 planning docs；engine/main.php 的 F693 块继续 PARKED 不提交。

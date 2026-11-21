@@ -197,6 +197,14 @@ payload，两 NaN 位型可比对出假不一致——判据入 findings）、rm
 同权重同 prompt 分别走 built-in SYCL 与 plugin 路径 greedy 生成，报告 max |logit| 漂移与首 token
 分歧位置，**只报告不断言**（F367/F688 先例），阈值待第一台真目标机读数落定后写死；负向对照 =
 篡改插件输出必须让漂移报告显著变化（gate 对"没测到"敏感，F660 先例）。
+**v2 step 1（2026-11-21，已闭合）**：跨平台加载器模块 `engine/src/plugins/plugin_manager.{h,cc}`
+落成——双 dlopen/LoadLibrary 分支、六类具名拒绝（open/entry/abi-plugin/caps-missing/caps-null-fn/
+abi-incomplete）、共享槽位不变量校验（manager/harness/引擎三处同一实现）、scan_dir（F656/F657
+的目录扫描形态，扩展名按 OS）。PMGR-CHECK 8/8 PASS（真 dylib 加载可工作 + 六拒绝路径具名 +
+scan n=2）：证据 f694_pmgr_check.log。判据：**静态局部数组用运行时 vtable 指针初始化 = 缓存
+第一个插件的函数指针**（C++ static local 动态初始化只跑一次），nullfn 单元检查当场抓到——
+多实例校验表禁止 static。引擎接线（model.cc 桥 + /plugins 报告 + OpTable 条目 + PLUGIN-DRIFT）
+仍待 Windows 梯，属 v2 step 2。
 **定位**：本规格落成头文件 `engine/src/plugins/plugin_abi.h`（纯 C 兼容头，跨系统唯一共享工件），
 v1 交付 = ABI 头 + 参考实现（OpenCL 后端插件，本机 Apple M4 可验证）+ 独立闭环 harness
 （加载→枚举设备→alloc→H2D→一次 gemvM/GEMM 对 CPU 参考→读回→断言）——**零引擎改动**；引擎

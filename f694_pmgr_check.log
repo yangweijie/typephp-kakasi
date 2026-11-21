@@ -1,0 +1,8 @@
+PMGR-CHECK load-good: reason="" ok
+PMGR-CHECK abi-refusal: reason="abi refused by plugin: want=0x00020000 major mismatch"
+PMGR-CHECK caps-refusal: reason="caps missing: role=0x3f missing=0x3c"
+PMGR-CHECK entry-refusal: reason="entry missing: kakasi_plugin_get_vtable not found in /tmp/f693/libplugin_stub_noentry.dylib"
+PMGR-CHECK open-refusal: reason="open failed: /tmp/f693/does_not_exist.dylib (dlopen(/tmp/f693/does_not_exist.dylib, 0x0006): tried: '/tmp/f693/does_not_exist.dylib' (no such file), '/System/Volumes/Preboot/Cryptexes/OS/tmp/f693/does_not_exist.dylib' (no such file), '/tmp/f693/does_not_e"
+PMGR-CHECK nullfn-refusal: reason="caps null fn: bit=0x4 name=gemv_mm"
+PMGR-CHECK scan-dir: n=2 empty=0
+PMGR-CHECK: PASS (loader + all refusal paths + scan via plugin_manager)
