@@ -97,6 +97,16 @@
 **判读口径**：acceptance 与每 token 成本都是资产对与 prompt 类的经验属性——只报告；losslessness 任一破位才 FAIL。若曲线揭示廉价杠杆（如 verify 小 M 批量效率、head 精度），如实记为后续项，不在本 F 内动引擎。
 **验收**：自检 0 FAIL + DRAFT-TUNE 全 lossless + 数字入 findings；check_gates 不劣化。
 
+- **F691 (side drafter step cost) — DONE + verified (2026-11-21).** The section probe CORRECTED the F690 attribution: draft step ~18 ms (layers 14, head 3.2) + VERIFY 17 ms, not a monolithic 50. Fixes gated: side layer weights cache f16 (layers 14->11, cache 968 MB, K=23 acceptance 18/21 unchanged, lossless intact); head is ONE gemv (the 3 ms is the 273 MB f16 read - physics). Verify exposed via g_stage: vs1=14.3 ms in the planned-path blocks = the named F692 lever. Speed reported: side-draft 24tok 1061 ms vs greedy 477 ms = 2.23x (improved from 1361/477, still unprofitable - honest). Ladder green: four harnesses, gate_live THRU 1.681x, check_gates 198/0. HEAD a653524.
+
+## F691 规格（2026-11-21）：消 side drafter 每步固定开销——探针定罪，不许猜
+**已闭合 2026-11-21，提交 a653524。** 探针纠偏：draft 18ms + verify 17ms（F690 的"50ms"是两者并账）。修复：side 层权重 f16（layers 14→11、cache 968MB、接受率/lossless 不回退）、head 单 kernel（省 0.2ms，3ms=f16 读物理值）。verify 借 g_stage 曝光 vs1=14.3ms（planned blocks）= F692 候选。速度报告：2.23× of greedy（如实）。判据：round 总账会错误归因；pos=0 曲线不能给 pos>0 的 pass 定价。以下为原始规格。
+**动机**：F690 实测 draft 步固定 ~45-50ms 且与 K 无关（K=6 与 K=23 每 token 同量级），层计算几乎不在账上——不盈利的唯一瓶颈。四个嫌疑（head 分块 38 次发射 / 每次 14 个 owned Dev 走 Ledger / 双 host sync / f32 side-KV 带宽）未经排序，不许按直觉修。
+**第一步（探针）**：`side_forward` 分段计时（setup/embed/layers/head/read），诊断开关 `model_set_side_step_timing`（0=热路径零开销），桥 `model_side_step_report`。门内 3 次采样打印，**读数定罪**。
+**第二步（修主项）**：只修探针指认的主项；每修一项独立门；SIDE-DRAFT（lossless + 双 K）不得回退。
+**判别门（SIDE-DRAFT-SPEED）**：同 prompt 下 side-draft 生成 24 token 的墙钟 < plain greedy 同题墙钟（真正的盈利判据）；若探针修完仍不达标，如实报告差距并再探，不硬凑。
+**验收**：自检 0 FAIL + SIDE-DRAFT 与 DRAFT-TUNE 不回退 + SIDE-DRAFT-SPEED 达标（或如实报告）+ check_gates 不劣化。
+
 ## F683 规格（2026-11-20）：约束解码进 batch 路径——消除 8001 混合负载序列化瓶颈
 **已闭合 2026-11-20，提交 `47cb76c`。** 全梯绿灯：BATCH-ALLOWED PASS、par-concurrent-schema PASS、SMOKE/PRETTY 197/0、PAR 26/0、FAIR 0、THRU 1.546×、PARITY 13/13、check_gates 198/0。
 **动机**：`api_serve_par` 的 `json_schema` 有限请求走同步 `api_number_bounded_value`/`api_number_value`（调 `model_session_start` + 循环 `model_session_next_allowed`），**阻塞整个事件循环**——所有其他活跃 slot 停转。这是混合负载下最大的吞吐瓶颈。~1.5× scaling 是单设备带宽受限 matvec 的物理上限（不是 bug），但序列化阻塞是可消除的人为瓶颈。
