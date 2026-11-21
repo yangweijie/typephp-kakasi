@@ -1,0 +1,13 @@
+== acpp install: adaptivecpp 25.10.0_1 via brew (NJU ghcr OCI mirror for portable-ruby 4.0.10, sha256 verified
+   832729e1...; env-gated diagnostic workaround HOMEBREW_SKIP_PREFIX_SANDBOX_CHECK=1 for the /Volumes/data prefix) ==
+ACPP-PROBE devices=1
+ACPP-PROBE device: AdaptiveCpp OpenMP host device | gpu=0
+ACPP-PROBE using: AdaptiveCpp OpenMP host device (gpu=0)
+ACPP-PROBE gemvM2 K=896 N=4864: maxdiff=1.192e-07 rel=1.171e-07 ms=31.940 ok
+ACPP-PROBE gemvM2 K=4864 N=896: maxdiff=3.576e-07 rel=1.658e-07 ms=7.230 ok
+ACPP-PROBE tiled_gemm M=512 K=896 N=4864: maxdiff=1.669e-06 rel=1.294e-06 ms=3176.387 ok
+ACPP-PROBE dequant_q8 blocks=10000: maxdiff=0.000e+00 ok (bit-exact)
+ACPP-PROBE rmsnorm D=896: maxdiff=2.384e-07 rel=9.471e-08 ms=0.1355 ok
+ACPP-PROBE attn_scores rows=46: maxdiff=2.235e-08 rel=9.780e-08 ms=0.7961 ok
+ACPP-PROBE: PASS (all ops within tolerance on the device above)
+== backends shipped by the bottle: librt-backend-omp.dylib ONLY (no opencl/cuda/hip runtime plugins) ==

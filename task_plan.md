@@ -152,10 +152,12 @@ A/B 才可信，比率不可外推）。
 **A 段判定（2026-11-21，读数已入 findings F694）**：OCLK-PROBE **PASS**——五个引擎热点内核形状
 （gemvM2 双向、tiled GEMM、Q8_0 反量化 bit-exact、rmsnorm、attention 打分）在 Apple M4 GPU 经
 系统 OpenCL 全部数值正确 ⇒ **内核数学在非 Intel GPU 上成立，原生插件轨道可开工**（F650 条件②
-核心已闭合）。acpp 轨道未测成（brew 被 portable-ruby 4.0.10 卡死：ghcr 慢流 + 三镜像 404/403 +
-一次并发自伤锁）——F2 的"一次编译多后端"仍开放，待工具链解锁补测。B 段：先 ABI 规格，再本机
-最小闭环，漂移门同步设计；两轨读数对比后定载体。判据两条已录：OpenCL global size 是 item 数
-不是 group 数（"恰好前 N/64 正确"= 组数算错签名）；判别实验探针写入必须用专用缓冲。
+核心已闭合）。acpp 轨道已补测（2026-11-21，见 findings）：**源码可移植性成立**（五内核经 acpp/omp 全对，
+maxdiff 与 OpenCL 路径同源一致）但 **brew 瓶体仅 librt-backend-omp.dylib、无 GPU 后端插件**
+⇒ 本机 acpp 触达不了 GPU。**两轨判定定案：跨系统 GPU 运行 = 原生插件轨道**（OpenCL 闭环已
+绿）；acpp = 源码可移植安全网 + 他机候选。B 段：先 ABI 规格，再本机最小闭环，漂移门同步设计
+——均已闭合（见下）。判据两条已录：OpenCL global size 是 item 数不是 group 数（"恰好前 N/64
+正确"= 组数算错签名）；判别实验探针写入必须用专用缓冲。
 **动机（用户方向，2026-11-21）**："本项目是多后端推理引擎 windows 那边任务差不多了 差非intel
 gpu的插件 要跨系统运行"。本机（Mac mini, Apple M4, 10 核 GPU, Metal 4, 16GB）本身就是非 Intel
 GPU 机器 ⇒ F650 撤回理由①"无厂商 SDK 不可验证"在本机不成立（Metal 是系统框架，无需装 SDK），

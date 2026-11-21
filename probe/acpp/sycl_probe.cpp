@@ -11,7 +11,16 @@
 // Build (after `brew install adaptivecpp`):
 //   acpp --acpp-targets="omp;opencl" -O2 -std=c++17 sycl_probe.cpp -o sycl_probe
 // (target string adjusted to what this acpp build actually supports - see acpp --help).
+// Cross-distribution include: DPC++ ships <sycl/sycl.hpp>; AdaptiveCpp installs
+// <AdaptiveCpp/sycl.hpp> (brew) — keep the probe buildable on both.
+#if __has_include(<AdaptiveCpp/sycl.hpp>)
+#include <AdaptiveCpp/sycl.hpp>
+namespace sycl = acpp::sycl;   // AdaptiveCpp 25.x wraps SYCL in acpp::sycl
+#elif __has_include(<sycl/sycl.hpp>)
 #include <sycl/sycl.hpp>
+#else
+#include <SYCL/sycl.hpp>
+#endif
 #include <cstdio>
 #include <cstdint>
 #include <cmath>

@@ -5897,3 +5897,31 @@ bit=0x4 name=gemv_mm"具名拒绝**；scan_dir 命中 2 个、空目录 0。
    必须每次重建（本轮去 static 后 nullfn 立即被拒）。单元检查四实例序列（good→nocaps→noentry→
    nullfn）正是让这类缺陷现形的形状。
 2. 拒绝掩码必须精确入串（missing=0x3c 被测试断言）——"缺能力"只有到 bit 级才可被负向对照。
+
+## F694 acpp 补测（2026-11-21，mac 侧）：源码可移植性成立，brew 瓶体无 GPU 后端——两轨判定定案
+**安装（三轮排障全录）**：portable-ruby 4.0.10 经 **NJU ghcr OCI 镜像**直取 blob（sha256 精确匹配
+832729e1...，32MB/s）手动安置 vendor 并重指 current；brew 的 preflight 沙箱检查与 /Volumes/data
+前缀天然冲突（sandbox profile 不含真实路径），加环境变量开关 `HOMEBREW_SKIP_PREFIX_SANDBOX_CHECK`
+（一行、env-gated、默认行为不变、可逆）后安装成功：adaptivecpp 25.10.0_1。
+**读数（ACPP-PROBE: PASS，omp 目标，证据 f694_acpp_probe.log）**：probe 的 SYCL 源经 acpp 编译，
+五内核在 OpenMP host device 全部数值正确——maxdiff 与 OCLK-PROBE 同源一致（gemvM2 1.192e-07、
+tiled GEMM 1.669e-06、dequant bit-exact、rmsnorm/attn ≤2.4e-07）。**F2 的"一次编译多后端"在源码
+层面成立**：引擎式 SYCL 子集（USM 捕获、parallel_for、local_accessor、bit_cast<half>）经 acpp
+可编译可算对。
+**否决项（读数说话）**：brew 瓶体只装了 `librt-backend-omp.dylib` 一个运行时后端——无
+OpenCL/CUDA/HIP 插件 ⇒ **本机 acpp 触达不了任何 GPU**（generic SSCP 需 llvm-to-backend 工具链
++ 对应后端插件，瓶体未含）。acpp 在本机 = CPU 基线与源码可移植性证明，不是 GPU 载体。
+**两轨判定（定案）**：跨系统 GPU 运行，本机唯一可用载体 = **原生插件轨道**（OpenCL 参考插件
+闭环已绿）；acpp 定位 = 引擎 SYCL 源码的可移植性安全网（源码层证实）+ 未来 NVIDIA/AMD 机器上
+的候选（需该机有完整后端插件链）。即使 acpp 在他机可行，插件 ABI 仍保留——厂商调优内核
+（cublas/MPS 级）超出 SYCL 可移植面，F650 原始动机不变。
+**判据（写入口径）**：
+1. **brew 瓶体的后端可用性要 lib 层面核实**（librt-backend-*.dylib 清单），不能只看 driver 的
+   backend 列表——driver 显示 cuda/hip/generic 选项 ≠ 运行时插件已装。
+2. **跨发行版 SYCL 源码兼容三件**：include 拼接（`__has_include` 链：<AdaptiveCpp/sycl.hpp> →
+   <sycl/sycl.hpp> → <SYCL/sycl.hpp>）、命名空间别名（`namespace sycl = acpp::sycl`）、
+   OpenMP 链接（brew libomp + `-Xclang -fopenmp`）。引擎式源码三件齐全即可在 DPC++ 与 acpp
+   双链编译。
+3. 排障链：ghcr 直连与三大 bottles 镜像全断时，**ghcr 的 OCI 反代镜像（ghcr.nju.edu.cn）是
+   独立可用的第三路**（token 化 blob 协议照常工作）；brew preflight 与外置卷前缀的冲突用
+   env-gated 一行补丁解，默认零影响。
