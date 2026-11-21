@@ -88,6 +88,8 @@ std::string side_cache_report();
 // F691: per-section timing of the LAST side_forward call (valid after the timing toggle is on).
 void set_side_step_timing(int on);
 std::string side_step_report();
+// F692: per-round ledger of the last spec_side_draft_generate call (timing mode only).
+std::string side_rounds_report();
 // F687: MoE FFN branch-merge on a side-loaded expert block.
 std::string moe_ffn(int backend, int token_id);
 std::string spec_stats();
@@ -332,6 +334,7 @@ php::Int php_model_set_side_step_timing(php::Int on) {
     return php::Int(1);
 }
 php::Str php_model_side_step_report() { return php::Str(model::side_step_report()); }
+php::Str php_model_side_rounds_report() { return php::Str(model::side_rounds_report()); }
 // F687: side-load a MoE GGUF (independent table; the main model is untouched), then run one
 // block's MoE FFN. The merge is verified inside the op against a host recomputation.
 php::Int php_model_moe_side_load(php::Str path) {

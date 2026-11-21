@@ -89,6 +89,7 @@ function model_side_cache_report(): string {}
 // F691: side_forward section-timing probe.
 function model_set_side_step_timing(int $on): int {}
 function model_side_step_report(): string {}
+function model_side_rounds_report(): string {}
 // F687: side-load a MoE GGUF and run one block's MoE FFN (router->top-k experts merge + shared).
 function model_moe_side_load(string $path): int {}
 function model_moe_error(): string {}

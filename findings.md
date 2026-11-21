@@ -5835,3 +5835,10 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **速度账（SIDE-DRAFT-SPEED 报告行，同 prompt 同 24 token 双新鲜）**：side-draft K=23 depth=4 = **1061ms vs greedy 476.9ms = 2.23×**（f16 修复已把 F689 同配置的 1361ms 降 300ms）——如实报告：仍不盈利。盈利路径已从"模糊的固定开销"变为**可指认的单项**：planned 路径 blocks 的 14.3ms（vs plain 同形状 ~8.7ms）。depth=2 已在满接受时打平（round≈32ms/2tok=16ms/tok vs greedy 20.8），acceptance 不足时仍是净亏——planned 路径修复 + acceptance 是同一枚硬币的两面。
 **判据（写入口径）**：①"步成本"必须拆段定罪，round 级总账会把两个不同性质的项（draft 与 verify）并成一个数字并导致错误归因；②curves 的可比性要盯 pos（attention 随上下文增长，pos=0 的曲线不能给 pos>0 的 pass 定价）。
 **梯**：selftest_f691d 0 FAIL、SIDE-DRAFT PASS（lossless 两档 + 18/21）、DRAFT-TUNE PASS、四 harness exit 0、gate_live f691（THRU 1.681×）、check_gates 198/0（cites selftest_f691d.log）。
+
+## F692（2026-11-21）：轮级账本 + 接受率崖封棺——模型类 drafter 结构性不可赢，盈利属零成本 drafter
+**轮级账本（F692 探针，每轮 drafts/verify/backfill/acc 逐轮入账）**：K=23 depth=4 七轮——drafts 68.6-81.8（3 次 side_forward，每 token ~24.5ms）、verify 17.4-18.6、backfill 20-24（全接受轮，T=1 重跑 23 层）、round 86-124；TOTAL rounds-loop=783.5ms 与各段**完全闭合**（F690/F691 遗留的每轮黑箱清零）。整体 986.4ms/24tok = 41.1ms/tok vs greedy 20.1 = 2.04×（F691 的 2.23 再降）。
+**结构性结论**：目标批量 verify 每 token ~4.5ms（T=4 一过 18ms），而 K=23 drafter 每 token ~24.5ms——**drafter 必须比目标便宜 ~5× 才能赢**；够准的 drafter（接受率 >0 需 K≥18）必然要跑大半深度 ≈ 目标自身的每 token 成本。**接受率崖封棺**：自用 drafter（同权重，F686 机制）在闲聊 prompt 上 K=6: 0/72、K=12: 0/72、K=18: 5/57、K=23: 13/36——低 K 塌崖是**深度固有**（greedy 轨迹对层截断混沌敏感），不是资产对属性（F690 的资产嫌疑正式解除）。两个约束夹死：低 K 免费但不接受；高 K 接受但不便宜 ⇒ **模型类 drafter 在本引擎（单用户、0.5B、深度崖）结构上不可赢**。
+**盈利归属**：零成本 drafter——prompt-lookup（F391 已上线：重复文本 1.865×、自适应窗口、不赢即自关）与本引擎的 batch 路径（M=3 per_tok 5.49ms、THRU 1.6×）。side-model drafter 的交付价值是**能力**（F689：跨模型无损投机 + 真接受计数），不是吞吐——原 FR-06.2 规格目标即能力，已达成。
+**判据（写入口径）**：评估 drafter 必须同时量"每 drafted-token 成本"与"目标批量 verify 每 token 成本"——只看接受率会误判（75% 接受仍 2× 亏损）；同权重自用 drafter 是"深度崖"与"资产距离"的判别器。
+**梯**：selftest_f692b 0 FAIL、四 harness exit 0、gate_live f692 GATE_LIVE_DONE、check_gates 198/0。仪表（分段/轮级计时，诊断开关，热路径零开销）按 F666 观测先例保留在库。

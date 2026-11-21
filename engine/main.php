@@ -21563,6 +21563,20 @@ function main(): void
         model_spec_side_draft(0, $specIds, 4, 12, 2);
         echo "F691 step-sections call " . $f691i . ": " . model_side_step_report() . chr(10);
     }
+    // F692: the per-round ledger for one full call (K=23 depth=4, the profitable-if shape).
+    model_spec_side_draft(0, $specIds, 24, 23, 4);
+    echo "F692 round-ledger:" . chr(10) . model_side_rounds_report() . chr(10);
+    // F692 cliff test: the SELF-drafter (same weights, F686) on the CASUAL prompt across K.
+    // If the acceptance cliff at low K holds for the drafter that shares the target's weights,
+    // it is inherent to depth, not to the asset pair - and the side-model drafter's economics
+    // are structurally settled: per-drafted-token cost (K/24 layers + head) vs the target's
+    // batched verify per-token cost (~4.5 ms at T=4).
+    $f692ChatTxt = "One quiet morning, the small robot in the workshop decided it wanted to learn how to paint. It picked up the brush and";
+    $f692ChatIds = tok_encode($f692ChatTxt);
+    foreach ([6, 12, 18, 23] as $f692K) {
+        model_spec_layerskip(0, $f692ChatIds, 24, $f692K, 4);
+        echo "F692 self-draft cliff chat K=" . $f692K . ": " . model_spec_stats() . chr(10);
+    }
     model_set_side_step_timing(0);
     // F691 speed report: the whole side-draft generate wall vs plain greedy on the same prompt
     // (both fresh, 24 tokens). REPORTED, not asserted - the F690/F691 numbers say speculation

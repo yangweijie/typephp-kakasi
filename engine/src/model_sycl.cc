@@ -4456,6 +4456,11 @@ std::string moe_ffn(int backend, int token_id) {
 // section is, before anything is "optimized".
 int g_side_step_timing = 0;
 std::string g_side_step_last;
+// F692: per-round breakdown of the LAST spec_side_draft_generate call (timing mode only):
+// one line per round with the draft-loop wall, the verify wall, the backfill wall and acc -
+// the F691 sections accounted draft(18) + verify(17) but the F690 rounds still held ~50 ms
+// that no section owned, so the round itself gets a ledger.
+std::string g_side_rounds_report;
 std::map<std::string, Wt> g_side_cache;
 size_t g_side_cache_bytes = 0;
 Wt side_cached_weight(sycl::queue& q, const std::string& name) {
@@ -4502,6 +4507,7 @@ std::string side_cache_report() {
 }
 void set_side_step_timing(int on) { g_side_step_timing = (on != 0) ? 1 : 0; }
 std::string side_step_report() { return g_side_step_last; }
+std::string side_rounds_report() { return g_side_rounds_report; }
 
 // F689: run `toks` through the side model's first K blocks (KV rows pos0..pos0+T-1 written
 // into the side KV), optionally returning the side head's argmax for the LAST row. All weights
@@ -4730,7 +4736,12 @@ std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int
         }
         return out;
     }
+    const bool f692t = g_side_step_timing != 0;
+    std::chrono::steady_clock::time_point f692g0 = std::chrono::steady_clock::now();
+    if (f692t) g_side_rounds_report.clear();
+    int f692r = 0;
     while (produced < n_new) {
+        const std::chrono::steady_clock::time_point f692r0 = std::chrono::steady_clock::now();
         int Dp = depth;
         const int room = (g_kv.cap < skv.cap ? g_kv.cap : skv.cap) - pos;
         if (room < 2) Dp = 1;
@@ -4739,12 +4750,16 @@ std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int
         std::vector<int> chain;
         chain.push_back(ref);           // depth 0: the target's own greedy token
         int dtok = ref;
+        const std::chrono::steady_clock::time_point f692d0 = std::chrono::steady_clock::now();
         for (int i = 1; i < Dp; ++i) {
             const int t = side_forward(q, std::vector<int>{dtok}, pos + i - 1, K, skv, true);
             if (t < 0) break;
             dtok = t;
             chain.push_back(dtok);
         }
+        const double f692dMs = f692t
+            ? std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f692d0).count()
+            : 0.0;
         if ((int) chain.size() < 2) {
             out.push_back(ref);
             ++produced;
@@ -4768,6 +4783,9 @@ std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int
         const bool f691vt = g_side_step_timing != 0;
         std::chrono::steady_clock::time_point f691v0 = std::chrono::steady_clock::now();
         std::vector<int> tops = prefill_tops_tree(backend, chain, pos, mask);
+        const double f692vMs = f692t
+            ? std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f691v0).count()
+            : 0.0;
         if (f691vt) {
             q.wait_and_throw();
             const double vms = std::chrono::duration<double, std::milli>(
@@ -4796,16 +4814,36 @@ std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int
         produced += take;
         // F689 context sync: on a FULL accept the last accepted token never served as a draft
         // input, so its side-KV row is unwritten - backfill it before pos moves past it.
+        const std::chrono::steady_clock::time_point f692b0 = std::chrono::steady_clock::now();
         if (acc == cn) {
             side_forward(q, std::vector<int>{chain[(size_t) cn - 1]}, pos + cn - 1, K, skv, false);
         }
+        const double f692bMs = f692t
+            ? std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f692b0).count()
+            : 0.0;
         pos += acc;
+        if (f692t) {
+            const double rMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - f692r0).count();
+            char rb[160];
+            std::snprintf(rb, sizeof(rb), "R%d drafts=%.2f verify=%.2f back=%.2f acc=%d cn=%d round=%.2f pos=%d",
+                          f692r, f692dMs, f692vMs, f692bMs, acc, cn, rMs, pos);
+            g_side_rounds_report += std::string(rb) + "\n";
+            ++f692r;
+        }
         g_spec_accepted += acc - 1;
         if (produced >= n_new) break;
         if (eos > 0 && !out.empty() && out.back() == eos) break;
         ref = tops[(size_t) (acc - 1)];
     }
     skv.free_all();
+    if (f692t) {
+        const double gMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - f692g0).count();
+        char gb[96];
+        std::snprintf(gb, sizeof(gb), "TOTAL rounds-loop=%.2f", gMs);
+        g_side_rounds_report += std::string(gb);
+    }
     return out;
 }
 

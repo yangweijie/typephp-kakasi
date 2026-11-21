@@ -3155,3 +3155,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - 修复：side 层权重 f16（cache 968MB、layers 14→11、K=23 接受 18/21 保持）、head 单 kernel（省 0.2ms，3ms=f16 读物理值）。
 - verify 借 g_stage 曝光：vs1=14.3（planned blocks）= F692 候选；速度报告行 side-draft/greedy=2.23×（如实报告）。
 - 梯全绿（四 harness、gate_live THRU 1.681×、check_gates 198/0）。提交：引擎四文件 + 日志 + docs。
+
+## F692 会话（2026-11-21）：轮级账本闭合 + 模型类 drafter 结构性判决
+- 轮级仪表（drafts/verify/backfill 逐轮）→ 783.5ms 完全闭合，每轮黑箱清零；整体 2.04×。
+- 结构判决：drafter 每 token ~24.5ms > 目标批量 verify 每 token ~4.5ms ⇒ 需 ~5× 便宜才赢；接受率崖（自用同权重在 chat 上 K≤12 全零）为深度固有 ⇒ 模型类 drafter 结构性不可赢。
+- 盈利归属零成本 drafter（prompt-lookup F391 + batch 路径）；side-model drafter 定位为能力交付（FR-06.2）。
+- 梯全绿（selftest_f692b 0 FAIL、四 harness、gate_live f692、check_gates 198/0）。提交：仪表 + 证据 + docs。
