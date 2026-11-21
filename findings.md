@@ -5816,3 +5816,12 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **门**：`SIDE-DRAFT`（自检，插 MOE-MERGE 后，side_load 可重入）——asset 回退（official → xLAM → SKIP）、双 K、lossless 合取 + 近深度 acceptance>0 为 PASS 条件。梯：自检 942 行 0 FAIL、四 harness VERDICT PASS、SMOKE/PRETTY 197/0、PARITY 13×3、PAR/FAIR 0、THRU 1.616×、哨兵 0、check_gates 198/0（cites selftest_f689c.log）。
 **诚实声明（吞吐）**：门计时 K=23 档 1718ms/24tok **含 side 缓存一次性预热**（491MB 读+反量化），且每 draft 步 head 读 273MB f16——当前形态吞吐不优于 plain greedy；本 F 交付的是**能力**（独立权重 drafter 接入、无损 verify、真接受计数），盈利路径（更匹配 prompt 类的小 K、int8 head、drafter 放 CPU 设备）留作后续测量项，不做口头承诺。
 **判据（写入口径）**：①资产选择可测：domain-shift 微调（xLAM）与直系亲本（官方 Instruct）的接受率差就是资产距离的直接度量；②快深度 acceptance=0 不是 drafter 坏了的证据——判别性实验必须覆盖"近深度"档（深度敏感 prompt 类上，连目标自身截断都会全拒）。
+
+## F690（2026-11-21）：drafter 吞吐实测——verify 头寸是真的，瓶颈在 draft 步固定开销
+**零引擎代码改动**（F688 纪律），DRAFT-TUNE 门全 lossless（8 配置），数字全部 steady-state（SIDE-DRAFT 已预热 side 缓存，cache 字节数逐行可见）。
+**verify 成本曲线（s1, 每 PASS，s2 恒 ~2ms）**：T=1→9.19、T=2→8.66、**T=4→10.07**、T=8→33.46、T=16→38.54 ms。**≤4 token 的链一次 verify 只花一个解码步的钱**（每 pass 权重重读主导 + gemvM 有真实权重复用）——投机的物理上限良好；T≥8 断层是 tiled gemm 小 M 效率（已知形状）。
+**基线**：plain greedy 20.78（factual）/ 19.23（chat）ms/token。
+**K×prompt 扫描（depth=4，24 token）**：factual 0/0/11/18 accepted（K=6/12/18/23），chat 0/0/4/9——acceptance 随 K 单调升，但**每 draft 步固定开销 ~45-50ms 且与 K 无关**（K=6 factual 1462ms/24tok = 24 轮 × ~61ms（1 draft + 1 verify）；K=23 factual 1188ms/24tok = 7 轮 × ~170ms（3 draft + 1 verify））⇒ 每轮 draft 部分贡献 ~50ms/步，层计算（K=6 才 ~6/24）几乎不在账上。
+**结论**：①verify 头寸真实（≤4 链 ≈ 10ms/次），若 draft 步降到 <10ms，K≤12 的投机即盈利（4 token/轮 ÷ (10+3×draft)）；②当前唯一瓶颈是 side_forward 的每次调用固定开销——嫌疑（按序）：head 分块 gemv 38 次发射（应合成单 kernel）、每次调用 14 个 owned Dev 分配/释放走 Ledger、双 wait_and_throw、f32 side-KV 注意力带宽、每层 12 个字符串拼 key 的 map 查找；③在固定开销消除之前，调 K 或换资产都不会改变不盈利的结论。
+**判据（写入口径）**：acceptance 高 ≠ 吞吐好——本轮 K=23 factual 接受 75%（18/21）仍比 greedy 慢 2.4×；先量每步固定成本再谈盈利。
+**后续（F691 候选，未开工）**：消 side_forward 每步固定开销，目标 draft 步 <10ms；配套 head 单 kernel + int8 化、side-KV f16 化、分配池化。每项独立成门。

@@ -21556,6 +21556,59 @@ function main(): void
         }
     }
 
+    // F690: drafter throughput measurement - REPORTED, not asserted (F688 discipline: this is
+    // an empirical property of the asset pair and the prompt class; the only assertions here
+    // are the losslessness checks, which must stay green). Three quantities decide whether
+    // speculative decoding can ever pay on this engine, and none of them had been measured:
+    // (a) the VERIFY cost curve - the verify pass re-reads every target weight once per PASS,
+    //     so its per-token cost is the physical ceiling on speculation gains;
+    // (b) the K sweep across two prompt classes - the factual-echo prompt is depth-sensitive
+    //     (F689: even the target's own K=12 truncation gets 0 there), a casual continuation is
+    //     the other extreme;
+    // (c) plain greedy per token as the baseline.
+    $f690Curve = "";
+    $f690AllTok = explode(",", tok_encode("The quick brown fox jumps over the lazy dog near the river bank every single autumn morning without any hurry at all while the old clock tower keeps its steady rhythm above the sleepy town square."));
+    foreach ([1, 2, 4, 8, 16] as $f690T) {
+        $f690Slice = array_slice($f690AllTok, 0, $f690T);
+        model_prefill(0, implode(",", $f690Slice), -1);
+        $f690Curve = $f690Curve . " T=" . $f690T . " s1=" . model_stage_at(1) . " s2=" . model_stage_at(2);
+    }
+    echo "DRAFT-TUNE verify-curve (s1=blocks s2=head, per PASS):" . $f690Curve . chr(10);
+    $f690SpecG = model_generate(0, $specIds, 24);
+    $t690g1 = microtime(true);
+    model_generate(0, $specIds, 24);
+    $f690SpecGms = (microtime(true) - $t690g1) * 1000.0;
+    $f690ChatTxt = "One quiet morning, the small robot in the workshop decided it wanted to learn how to paint. It picked up the brush and";
+    $f690ChatIds = tok_encode($f690ChatTxt);
+    $f690ChatG = model_generate(0, $f690ChatIds, 24);
+    $t690g2 = microtime(true);
+    model_generate(0, $f690ChatIds, 24);
+    $f690ChatGms = (microtime(true) - $t690g2) * 1000.0;
+    echo "DRAFT-TUNE greedy per-token: factual=" . round($f690SpecGms / 24.0, 2)
+        . " ms chat=" . round($f690ChatGms / 24.0, 2) . " ms" . chr(10);
+    $f690AllLossless = true;
+    foreach ([$specIds, $f690ChatIds] as $f690Prompt) {
+        foreach ([6, 12, 18, 23] as $f690K) {
+            $t690 = microtime(true);
+            $f690Out = model_spec_side_draft(0, $f690Prompt, 24, $f690K, 4);
+            $f690Ms = (microtime(true) - $t690) * 1000.0;
+            $f690St = model_spec_stats();
+            $f690Acc = 0;
+            if (preg_match('/accepted=(\d+)/', $f690St, $f690M)) { $f690Acc = (int) $f690M[1]; }
+            $f690Ref = ($f690Prompt === $specIds) ? $f690SpecG : $f690ChatG;
+            $f690Loss = ($f690Out == $f690Ref) ? "ok" : "DIFF";
+            if ($f690Loss != "ok") { $f690AllLossless = false; }
+            echo "DRAFT-TUNE K=" . $f690K . " prompt=" . (($f690Prompt === $specIds) ? "factual" : "chat")
+                . " " . round($f690Ms, 1) . " ms/24tok " . $f690St . " lossless=" . $f690Loss
+                . " cache[" . model_side_cache_report() . "]" . chr(10);
+        }
+    }
+    if ($f690AllLossless) {
+        echo "DRAFT-TUNE: PASS (lossless across the whole sweep; throughput figures above are REPORTED, not asserted)" . chr(10);
+    } else {
+        echo "DRAFT-TUNE: FAIL (a sweep config diverged from greedy - speculation must be lossless)" . chr(10);
+    }
+
     // SPEC-TREE-SAMPLE (F307): the same tree, verified by SAMPLING. Greedy verification can accept
     // only one branch (F273), so this is the first version where more than one bin can pay. Three
     // gates in one: temp=0 must reproduce the greedy tree token for token (regression guard), a

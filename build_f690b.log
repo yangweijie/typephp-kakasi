@@ -1,0 +1,38 @@
+==[1/4] SYCL objects via icx==
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+Intel(R) oneAPI DPC++/C++ Compiler for applications running on Intel(R) 64, Version 2026.1.1 Build 20260724
+Copyright (C) 1985-2026 Intel Corporation. All rights reserved.
+
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(3037,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 3037 |                 dW = {dStream, false};
+      |                                ^~~~~
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(3825,27): warning: null character(s) preserved in char literal [-Wnull-character]
+ 3825 |         if (e && e[0] != '<U+0000>') {
+      |                           ^
+2 warnings generated.
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(3037,32): warning: initialization of pointer of type 'const float *' to null from a constant boolean expression [-Wbool-conversion]
+ 3037 |                 dW = {dStream, false};
+      |                                ^~~~~
+C:\git\c\typephp-kakasi\engine\src\model_sycl.cc(3825,27): warning: null character(s) preserved in char literal [-Wnull-character]
+ 3825 |         if (e && e[0] != '<U+0000>') {
+      |                           ^
+2 warnings generated.
+==[2/4] tpc: PHP + bridge==
+Initialized platform/backend: Windows + MSVC (cl)
+prepare: src\gguf.stub.php
+prepare: src\backend.stub.php
+prepare: src\ops.stub.php
+prepare: src\model.stub.php
+prepare: src\tokenizer.stub.php
+prepare: main.php
+Fatal error: Syntax error, unexpected ';', expecting ')' in C:\git\c\typephp-kakasi\engine\main.php:21570
+#0 [internal function]: TypePhp\Diagnostics\CliDiagnosticReporter->fatal('...')
+#1 [internal function]: TypePhp\Translator->prepare('...')
+#2 [internal function]: TypePhp\Build\ProjectBuildRunner->run(Array)
+#3 D:\a\typephp\typephp\src\compiler.php(14): main(4, Array)
+TPC_BUILD_FAILED 
