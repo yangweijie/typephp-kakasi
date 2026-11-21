@@ -4450,6 +4450,12 @@ std::string moe_ffn(int backend, int token_id) {
 // file per draft step (the F687 moe_ffn pattern, fine for a one-shot gate) would swamp the
 // draft loop. Small tensors stay f32; the tied embedding (the one >16M-element tensor, doubled
 // as the head) goes to f16, mirroring the resident path's precision policy for its big tensors.
+// F691: per-section timing for one side_forward call, behind a diagnostic toggle (0 = hot
+// path untouched; 1 = section-end syncs + accumulation). The F690 sweep measured the draft
+// step at ~50 ms INDEPENDENT of K, so layer compute is not the driver - this probe says which
+// section is, before anything is "optimized".
+int g_side_step_timing = 0;
+std::string g_side_step_last;
 std::map<std::string, Wt> g_side_cache;
 size_t g_side_cache_bytes = 0;
 Wt side_cached_weight(sycl::queue& q, const std::string& name) {
@@ -4471,7 +4477,10 @@ Wt side_cached_weight(sycl::queue& q, const std::string& name) {
     if (!p) { g_err = "side draft: dequant " + name; return {}; }
     Wt w{p, nullptr, 0};
     size_t bytes = (size_t) numel * sizeof(float);
-    if (numel > (1u << 24)) {
+    // F691: f16 for every tensor above 512K elements (2 MB as f32) - the probe showed the
+    // layer section at 1.17 ms/layer on f32 weights, 3.4x the resident's per-layer cost, and
+    // the resident itself keeps its big tensors in f16. Norms and biases stay f32.
+    if (numel > (1u << 19)) {
         buf::BufferType* btp = dev_bt(q);
         sycl::half* ph = btp ? (sycl::half*) buf::alloc_bt(btp, numel * sizeof(sycl::half)) : nullptr;
         if (ph) {
@@ -4491,6 +4500,8 @@ std::string side_cache_report() {
     std::snprintf(buf, sizeof(buf), "tensors=%zu bytes=%zu", g_side_cache.size(), g_side_cache_bytes);
     return std::string(buf);
 }
+void set_side_step_timing(int on) { g_side_step_timing = (on != 0) ? 1 : 0; }
+std::string side_step_report() { return g_side_step_last; }
 
 // F689: run `toks` through the side model's first K blocks (KV rows pos0..pos0+T-1 written
 // into the side KV), optionally returning the side head's argmax for the LAST row. All weights
@@ -4532,6 +4543,13 @@ int side_forward(sycl::queue& q, const std::vector<int>& toks, int pos0, int K, 
     q.memcpy(dCos.p, ctab.data(), sizeof(float) * ctab.size());
     q.memcpy(dSin.p, stab.data(), sizeof(float) * stab.size());
     const float scale = 1.0f / sycl::sqrt((float) HD);
+    // F691 diagnostic: section timestamps. t_setup ends here (dims, cache lookups, tables,
+    // scratch allocation, table H2D); the later sections are embed / layer loop / head /
+    // readback. Syncs happen ONLY in timing mode.
+    const bool f691t = g_side_step_timing != 0;
+    std::chrono::steady_clock::time_point f691t0 = std::chrono::steady_clock::now();
+    double f691SetupMs = 0, f691EmbMs = 0, f691LayerMs = 0, f691HeadMs = 0, f691ReadMs = 0;
+    if (f691t) q.wait_and_throw();
     Dev x(&q, (size_t) T * D, true);
     Dev h(&q, (size_t) T * D, true);
     Dev qkv(&q, (size_t) T * D, true);
@@ -4546,10 +4564,12 @@ int side_forward(sycl::queue& q, const std::vector<int>& toks, int pos0, int K, 
     Dev sd(&q, (size_t) T * D, true);
     if (!dCos.p || !dSin.p || !x.p || !h.p || !qkv.p || !kt.p || !vt.p || !ao.p || !oo.p
         || !sc.p || !sg.p || !su.p || !sd.p) { g_err = "side draft: alloc failed"; return -1; }
+    if (f691t) { f691SetupMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f691t0).count(); f691t0 = std::chrono::steady_clock::now(); }
     for (int t = 0; t < T; ++t) {
         copy_row(q, emb, (uint64_t) toks[(size_t) t] * (uint64_t) D, x.p + (size_t) t * D, D);
     }
     q.wait_and_throw();
+    if (f691t) { f691EmbMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f691t0).count(); f691t0 = std::chrono::steady_clock::now(); }
     for (int l = 0; l < K; ++l) {
         const std::string p = "blk." + std::to_string(l) + ".";
         Wt anw = side_cached_weight(q, p + "attn_norm.weight");
@@ -4588,7 +4608,15 @@ int side_forward(sycl::queue& q, const std::vector<int>& toks, int pos0, int K, 
         gemm(q, sg.p, T, FFN, wd, D, sd.p, nullptr);
         add_inplace(q, x.p, sd.p, (size_t) T * D);
     }
-    if (!want_top) return 0;
+    if (f691t) { q.wait_and_throw(); f691LayerMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f691t0).count(); f691t0 = std::chrono::steady_clock::now(); }
+    if (!want_top) {
+        if (f691t) {
+            char b[220];
+            std::snprintf(b, sizeof(b), "setup=%.2f embed=%.2f layers=%.2f head=0 read=0 (want_top=0)", f691SetupMs, f691EmbMs, f691LayerMs);
+            g_side_step_last = std::string(b);
+        }
+        return 0;
+    }
     Wt onw = side_cached_weight(q, "output_norm.weight");
     if (!onw.p) return -1;
     Dev xn(&q, (size_t) D, true);
@@ -4596,15 +4624,19 @@ int side_forward(sycl::queue& q, const std::vector<int>& toks, int pos0, int K, 
     rmsnorm(q, x.p + (size_t) (T - 1) * D, 1, D, (const float*) onw.p, eps, xn.p);
     Dev dLog(&q, (size_t) V, true);
     if (!dLog.p) { g_err = "side draft: alloc failed"; return -1; }
-    const int chunk = 4096;
-    for (int c0 = 0; c0 < V; c0 += chunk) {
-        const int cn = (c0 + chunk <= V) ? chunk : (V - c0);
-        Wt wc{(void*) ((sycl::half*) emb.p + (size_t) c0 * D), nullptr, 1};
-        gemm(q, xn.p, 1, D, wc, cn, dLog.p + c0, nullptr);
-    }
+    // F691: ONE gemv over the whole vocabulary - the 38-chunk loop was 38 kernel launches
+    // (measured ~2 ms of host launch overhead) for the same bytes.
+    gemv(q, xn.p, D, emb, V, dLog.p, nullptr);
+    if (f691t) { q.wait_and_throw(); f691HeadMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f691t0).count(); f691t0 = std::chrono::steady_clock::now(); }
     q.wait_and_throw();
     std::vector<float> hl((size_t) V, 0.0f);
     q.memcpy(hl.data(), dLog.p, sizeof(float) * (size_t) V).wait_and_throw();
+    if (f691t) {
+        f691ReadMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f691t0).count();
+        char b[260];
+        std::snprintf(b, sizeof(b), "setup=%.2f embed=%.2f layers=%.2f head=%.2f read=%.2f", f691SetupMs, f691EmbMs, f691LayerMs, f691HeadMs, f691ReadMs);
+        g_side_step_last = std::string(b);
+    }
     int best = 0;
     double bv = -1e300;
     for (int i = 0; i < V; ++i) {
@@ -4730,7 +4762,24 @@ std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int
         ++g_spec_verified;
         g_spec_drafts += cn - 1;
         if (cn > g_spec_bmax) g_spec_bmax = cn;
+        // F691: the F690 round arithmetic only closed once the draft step was measured at
+        // 18 ms - the remaining ~27 ms per round lives in THIS verify call (plain prefill at
+        // T=4 costs 10 ms), so the verify gets the same treatment: timed under the toggle.
+        const bool f691vt = g_side_step_timing != 0;
+        std::chrono::steady_clock::time_point f691v0 = std::chrono::steady_clock::now();
         std::vector<int> tops = prefill_tops_tree(backend, chain, pos, mask);
+        if (f691vt) {
+            q.wait_and_throw();
+            const double vms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - f691v0).count();
+            // the verify ran its own prefill_top1, so g_stage IS the verify's stage split
+            const double vs0 = g_stage.size() > 0 ? g_stage[0] : -1.0;
+            const double vs1 = g_stage.size() > 1 ? g_stage[1] : -1.0;
+            const double vs2 = g_stage.size() > 2 ? g_stage[2] : -1.0;
+            char vb[128];
+            std::snprintf(vb, sizeof(vb), " verify=%.2f cn=%d vs0=%.2f vs1=%.2f vs2=%.2f", vms, cn, vs0, vs1, vs2);
+            g_side_step_last += std::string(vb);
+        }
         if ((int) tops.size() != cn) break;
         int acc = 1;
         for (int i = 1; i < cn; ++i) {

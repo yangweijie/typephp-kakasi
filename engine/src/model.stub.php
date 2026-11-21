@@ -86,6 +86,9 @@ function model_spec_layerskip(int $backend, string $tokens, int $n_new, int $dra
 // F689: speculative decoding with the independent side-loaded drafter; report of its device cache.
 function model_spec_side_draft(int $backend, string $tokens, int $n_new, int $draft_layers, int $depth): string {}
 function model_side_cache_report(): string {}
+// F691: side_forward section-timing probe.
+function model_set_side_step_timing(int $on): int {}
+function model_side_step_report(): string {}
 // F687: side-load a MoE GGUF and run one block's MoE FFN (router->top-k experts merge + shared).
 function model_moe_side_load(string $path): int {}
 function model_moe_error(): string {}

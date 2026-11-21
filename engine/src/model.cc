@@ -85,6 +85,9 @@ std::vector<int> spec_layerskip_generate(int backend, std::vector<int> ids, int 
 // F689: speculative decoding with the INDEPENDENT side-loaded drafter (FR-06.2).
 std::vector<int> spec_side_draft_generate(int backend, std::vector<int> ids, int n_new, int draft_layers, int depth);
 std::string side_cache_report();
+// F691: per-section timing of the LAST side_forward call (valid after the timing toggle is on).
+void set_side_step_timing(int on);
+std::string side_step_report();
 // F687: MoE FFN branch-merge on a side-loaded expert block.
 std::string moe_ffn(int backend, int token_id);
 std::string spec_stats();
@@ -323,6 +326,12 @@ php::Str php_model_spec_side_draft(php::Int backend, php::Str tokens, php::Int n
     return php::Str(s);
 }
 php::Str php_model_side_cache_report() { return php::Str(model::side_cache_report()); }
+// F691: flip the side_forward section-timing probe; read the last call's sections.
+php::Int php_model_set_side_step_timing(php::Int on) {
+    model::set_side_step_timing((int) on);
+    return php::Int(1);
+}
+php::Str php_model_side_step_report() { return php::Str(model::side_step_report()); }
 // F687: side-load a MoE GGUF (independent table; the main model is untouched), then run one
 // block's MoE FFN. The merge is verified inside the op against a host recomputation.
 php::Int php_model_moe_side_load(php::Str path) {

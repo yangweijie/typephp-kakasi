@@ -5825,3 +5825,13 @@ Human: A dog is playing in the park.`；`prefix_equal=1` 且**长度相同**。
 **结论**：①verify 头寸真实（≤4 链 ≈ 10ms/次），若 draft 步降到 <10ms，K≤12 的投机即盈利（4 token/轮 ÷ (10+3×draft)）；②当前唯一瓶颈是 side_forward 的每次调用固定开销——嫌疑（按序）：head 分块 gemv 38 次发射（应合成单 kernel）、每次调用 14 个 owned Dev 分配/释放走 Ledger、双 wait_and_throw、f32 side-KV 注意力带宽、每层 12 个字符串拼 key 的 map 查找；③在固定开销消除之前，调 K 或换资产都不会改变不盈利的结论。
 **判据（写入口径）**：acceptance 高 ≠ 吞吐好——本轮 K=23 factual 接受 75%（18/21）仍比 greedy 慢 2.4×；先量每步固定成本再谈盈利。
 **后续（F691 候选，未开工）**：消 side_forward 每步固定开销，目标 draft 步 <10ms；配套 head 单 kernel + int8 化、side-KV f16 化、分配池化。每项独立成门。
+
+## F691（2026-11-21）：side drafter 步成本——探针定罪 + 两项修复 + 速度如实入账
+**探针（分段计时，诊断开关，热路径零开销）修正了 F690 的归因**：draft 步本身 ~18ms（layers=14ms@K=12 主项 + head 3.2ms），F690 推算的"50ms 固定开销"其实是 **draft(18) + verify(17~27) 被并在一起**——归因错误在探针面前当场纠正。
+**修复（各带门）**：
+1. **side 层权重 f16 缓存**（>512K 元素即 f16，镜像驻留大张量精度策略）：layers 14→11ms（f32→f16 减半读带宽，剩余差距是 f32 side-KV 注意力与 kernel 开销）；side 缓存 1.64GB→968MB；**K=23 接受率保持 18/21、lossless 两档保持**（精度损失未伤接受）。
+2. **head 合成单 kernel**（38 次分块发射 → 1 次）：3.2→3.0ms——只省 0.2ms，证明 head 3ms 是 273MB f16 读的物理值（int8 化可再省 ~1.4ms，留给 F692 清单）。
+**verify 精确量化（借 g_stage 曝光 verify 自身的分阶段）**：17ms@cn=2，vs0=0.1 / **vs1=14.3（planned 路径的 blocks）** / vs2=2.4。注意可比性：verify 跑在 pos≈45 的 planned 路径，与 F690 曲线（pos=0 的 plain prefill，T=2 s1=8.66）不可直接对表——其中 ~5.6ms 的超额定罪需要深入 F359/F308 planned 机制（kv_store_slots/lo-hi 注意力），**列为 F692 候选，未猜未动**。
+**速度账（SIDE-DRAFT-SPEED 报告行，同 prompt 同 24 token 双新鲜）**：side-draft K=23 depth=4 = **1061ms vs greedy 476.9ms = 2.23×**（f16 修复已把 F689 同配置的 1361ms 降 300ms）——如实报告：仍不盈利。盈利路径已从"模糊的固定开销"变为**可指认的单项**：planned 路径 blocks 的 14.3ms（vs plain 同形状 ~8.7ms）。depth=2 已在满接受时打平（round≈32ms/2tok=16ms/tok vs greedy 20.8），acceptance 不足时仍是净亏——planned 路径修复 + acceptance 是同一枚硬币的两面。
+**判据（写入口径）**：①"步成本"必须拆段定罪，round 级总账会把两个不同性质的项（draft 与 verify）并成一个数字并导致错误归因；②curves 的可比性要盯 pos（attention 随上下文增长，pos=0 的曲线不能给 pos>0 的 pass 定价）。
+**梯**：selftest_f691d 0 FAIL、SIDE-DRAFT PASS（lossless 两档 + 18/21）、DRAFT-TUNE PASS、四 harness exit 0、gate_live f691（THRU 1.681×）、check_gates 198/0（cites selftest_f691d.log）。

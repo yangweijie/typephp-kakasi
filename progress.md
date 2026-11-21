@@ -3149,3 +3149,9 @@ Human: A dog is playing in the park.`**（24 token）；`prefix_equal=1`（44 �
 - 过程坑：tok_encode 返回 CSV 字符串被当数组切片（PHP fatal，RUN_EXIT=255）→ explode 修复；补闭括号；探针替换时损坏的 prompt 字符串复原。
 - 数据入 findings（verify ≤4 链 ≈ 10ms、draft 步固定 ~50ms K 无关、acceptance 随 K 升但不改不盈利结论）。
 - 梯：selftest_f690d 0 FAIL、DRAFT-TUNE PASS、gate_live f690（THRU 1.575×）、check_gates 198/0。提交：main.php 门 + 日志 + docs。
+
+## F691 会话（2026-11-21）：步成本定罪与两项修复
+- 探针（分段计时开关 + side_step_report 桥）纠偏 F690 归因：draft 18ms + verify 17-27ms，非"50ms 固定开销"。
+- 修复：side 层权重 f16（cache 968MB、layers 14→11、K=23 接受 18/21 保持）、head 单 kernel（省 0.2ms，3ms=f16 读物理值）。
+- verify 借 g_stage 曝光：vs1=14.3（planned blocks）= F692 候选；速度报告行 side-draft/greedy=2.23×（如实报告）。
+- 梯全绿（四 harness、gate_live THRU 1.681×、check_gates 198/0）。提交：引擎四文件 + 日志 + docs。

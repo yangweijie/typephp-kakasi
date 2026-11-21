@@ -21556,6 +21556,28 @@ function main(): void
         }
     }
 
+    // F691 probe: WHERE does the ~50 ms draft-step fixed cost live? Three timed calls with the
+    // section probe on; the numbers decide the fix, not intuition. Zero cost when off.
+    model_set_side_step_timing(1);
+    for ($f691i = 0; $f691i < 3; $f691i++) {
+        model_spec_side_draft(0, $specIds, 4, 12, 2);
+        echo "F691 step-sections call " . $f691i . ": " . model_side_step_report() . chr(10);
+    }
+    model_set_side_step_timing(0);
+    // F691 speed report: the whole side-draft generate wall vs plain greedy on the same prompt
+    // (both fresh, 24 tokens). REPORTED, not asserted - the F690/F691 numbers say speculation
+    // is near breakeven today (draft step ~15 ms after the f16 cache, verify ~17 ms dominated
+    // by its planned-path blocks); the named lever is the planned-path block cost, F692.
+    $t691s = microtime(true);
+    $g691s = model_spec_side_draft(0, $specIds, 24, 23, 4);
+    $f691SideMs = (microtime(true) - $t691s) * 1000.0;
+    $t691g = microtime(true);
+    $g691g = model_generate(0, $specIds, 24);
+    $f691GreedyMs = (microtime(true) - $t691g) * 1000.0;
+    echo "F691 speed: side-draft(24tok,K=23)=" . round($f691SideMs, 1) . " ms greedy="
+        . round($f691GreedyMs, 1) . " ms ratio=" . round($f691SideMs / max($f691GreedyMs, 0.001), 2)
+        . " lossless=" . ($g691s == $g691g ? "ok" : "DIFF") . chr(10);
+
     // F690: drafter throughput measurement - REPORTED, not asserted (F688 discipline: this is
     // an empirical property of the asset pair and the prompt class; the only assertions here
     // are the losslessness checks, which must stay green). Three quantities decide whether
