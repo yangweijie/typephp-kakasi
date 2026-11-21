@@ -1,9 +1,0 @@
-Initialized platform/backend: Windows + MSVC (cl)
-[cached] project preprocessing
-prepare completed: 6 source files in total
-generate arginfo file: src\gguf.stub.php
-generate arginfo file: src\backend.stub.php
-generate arginfo file: src\ops.stub.php
-generate arginfo file: src\model.stub.php
-generate arginfo file: src\tokenizer.stub.php
-convert: main.php
